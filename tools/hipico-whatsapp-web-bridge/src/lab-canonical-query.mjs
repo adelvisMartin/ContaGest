@@ -61,7 +61,7 @@ const TOPIC={
   status:/\b(?:estado|estatus|situacion|abierta|cerrada|como\s+va)\b/,
   summary:/\b(?:resumen|resumeme|sintesis|recapitulacion)\b/
 };
-const MONEY=/\b(?:apuesta|apostar|juega|jugada|consigue|pagar|cobrar|saldo|liquidar|cerrar|abrir|registrar|premio|dinero|bs|usdt)\b|\$/;
+const MONEY=/\b(?:apostar|apuestas?|jugadas?|juega|consigue|pagos?|pagar|cobros?|cobrar|depositar|depositos?|retirar|retiros?|saldos?|abonar|liquidacion(?:es)?|liquidar|ganancias?|deudas?|transferencias?|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|dineros?|premios?|bolivares?|balances?|bs|usdt)\b|\$/;
 const normalizeQuery=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 export function labReadOnlyQueryPurpose(text,classification){
   const value=normalizeQuery(text);
@@ -134,8 +134,7 @@ export async function queryCanonicalLab({
     }
     // 503 is an explicit overload/unavailable signal; do not amplify it.
     if([502,504].includes(response.status)&&attempt===0)continue;
-    // Only the actual media type is authority. A substring inside parameters,
-    // a JSONP suffix or a combined content-type cannot authorize a LAB reply.
+    // Reject JSONP, mixed MIME types or misleading substrings in HTTP metadata.
     const mediaType=response.headers.get('content-type')?.split(';',1)[0]?.trim().toLowerCase();
     if(response.status!==200||mediaType!=='application/json'){
       return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};

@@ -36,7 +36,8 @@ import { selectLabAnswer } from './lab-answer-policy.mjs';
 import { labOutgoingEvidenceMatches } from './lab-outgoing-evidence.mjs';
 import { composeLabAssistantReply } from './lab-assistant-replies.mjs';
 import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
-import { confirmedLabQuoteHint } from './lab-confirmed-quote-hint.mjs';
+import { createLabQueryBackoff } from './lab-query-backoff.mjs';
+import { createLabPendingQueryInbox, reconcileLabPendingObservation } from './lab-pending-query-inbox.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -78,6 +79,7 @@ const LEGACY_DEADLETTER_DIR = path.join(DATA_DIR, 'dead-letter');
 const SPOOL_V2_DIR = path.join(DATA_DIR, 'spool-v2');
 const SOURCE_REPLY_DIR = path.join(DATA_DIR, 'source-replies');
 const LAB_TEST_REPLY_DIR = path.join(DATA_DIR, 'lab-test-replies');
+const LAB_PENDING_INBOX_DIR = path.join(DATA_DIR, 'lab-pending-queries');
 const LAB_CONTEXT_FILE = path.join(DATA_DIR, `lab-conversation-${sha256(LAB_GROUP_ID || LAB_CHANNEL_KEY).slice(0,16)}.json`);
 const LAB_QUOTED_CONTEXT_FILE = path.join(DATA_DIR, `lab-quoted-races-${sha256(`${LAB_GROUP_ID}|${SOURCE_GROUP_ID}`).slice(0,16)}.json`);
 const TRAINING_DIR = path.join(DATA_DIR, 'training');
@@ -106,11 +108,14 @@ let labSeen = await loadLabSeen();
 const labTestReplyJournal = LAB_TEST_INPUT_ENABLED ? createLabTestReplyJournal({
   rootDir:LAB_TEST_REPLY_DIR,labGroupId:LAB_GROUP_ID,sourceGroupId:SOURCE_GROUP_ID
 }) : null;
-const labConversationContext = labTestReplyJournal ? createLabConversationContext({
-  file:LAB_CONTEXT_FILE,groupId:LAB_GROUP_ID
-}) : null;
 const labQuotedRaceJournal = labTestReplyJournal ? createLabQuotedRaceJournal({
   file:LAB_QUOTED_CONTEXT_FILE,labGroupId:LAB_GROUP_ID,sourceGroupId:SOURCE_GROUP_ID
+}) : null;
+const labPendingInbox = labTestReplyJournal && BACKEND_SYNC_ENABLED ? createLabPendingQueryInbox({
+  rootDir: LAB_PENDING_INBOX_DIR, labGroupId: LAB_GROUP_ID, sourceGroupId: SOURCE_GROUP_ID
+}) : null;
+const labConversationContext = labTestReplyJournal ? createLabConversationContext({
+  file:LAB_CONTEXT_FILE,groupId:LAB_GROUP_ID
 }) : null;
 let sourceBaselineCompleted = false;
 let activeSourceTitle = '';
@@ -136,6 +141,9 @@ let nonOperationalCount = 0;
 let lastPostStartedAt = 0;
 let lastLabTestPollAt = 0;
 let labBootstrapCompleted = false;
+let lastLabPendingPruneAt = 0;
+let lastLabPendingOffset = 0;
+const labQueryBackoff=createLabQueryBackoff();
 let sourceDiscoveryFailures = 0;
 let lastPrintedHealthLine = '';
 let lastHealthHeartbeatAt = 0;
@@ -247,6 +255,7 @@ async function writeHealth(extra = {}) {
   const spool = await spoolRuntime.snapshot();
   const sourceReplies = await sourceReplyJournal.snapshot();
   const labAck = labTestReplyJournal ? await labTestReplyJournal.snapshot() : null;
+  const labPending = labPendingInbox ? await labPendingInbox.snapshot() : null;
   labTestAmbiguousCount=labAck?.ambiguous ?? 0;
   const counters = {
     captured: capturedCount,
@@ -256,6 +265,7 @@ async function writeHealth(extra = {}) {
     sourceRepliesAmbiguous: sourceReplyAmbiguousCount,
     labTestReplyAmbiguous: labTestAmbiguousCount,
     labTestReplyPending: labAck?.pending ?? 0,
+    labPendingQueries: labPending?.pending ?? 0,
     labTestReplyStates: labAck?.counts ?? null,
     duplicateVisible: duplicateVisibleCount,
     nonOperational: nonOperationalCount,
@@ -627,7 +637,7 @@ async function requestCleanProfileReset(reason) {
     version: VERSION,
     reason,
     profileDir: PROFILE_DIR,
-    preserve: ['spool-v2', 'spool-events', 'spool-lab-mirror', 'dead-letter', 'training', 'seen-source-message-ids.json']
+    preserve: ['spool-v2', 'spool-events', 'spool-lab-mirror', 'dead-letter', 'training', 'seen-source-message-ids.json', 'source-replies', 'lab-test-replies', 'lab-pending-queries', path.basename(LAB_QUOTED_CONTEXT_FILE), path.basename(LAB_CONTEXT_FILE)]
   };
   await fs.writeFile(PROFILE_RESET_FLAG, JSON.stringify(payload, null, 2), 'utf8').catch(() => {});
   await log(`PROFILE_RESET_REQUIRED ${reason}`);
@@ -1182,6 +1192,227 @@ async function sendTextInCurrentLab(textValue, tag) {
     throw labSendFailure({sendAttempted,composerCleared:Boolean(cleared)});
   }
 }
+// Restore bounded encrypted LAB informational queries independently of DOM scroll state.
+// This operation runs only while the correct LAB group is open and pinned.
+// A durable LAB response ACK can outlive the journal hint persistence.
+// Rebuild only informational same-sender, explicit race context after ACK.
+// Only the immutable encrypted pre-query record can restore sender memory
+// after an ACK. Mutable DOM text has no post-crash authority.
+async function recoverConfirmedLabConversation(entry,confirmedAt) {
+  if(!entry||!labConversationContext)return false;
+  const sender=stableLabSenderKey(entry.messageId);
+  if(!sender||sender!==entry.senderId||!entry.race)return false;
+  const classification=classifyLocal(entry.text);
+  const verifiedPurpose=labReadOnlyQueryPurpose(entry.text,classification);
+  if(!verifiedPurpose||verifiedPurpose!==entry.purpose)return false;
+  const plan=planLabConversation(
+    {id:entry.messageId,text:entry.text,fromMe:false,hasMedia:false},
+    classification,null,entry.race
+  );
+  if(plan.scopeConflict||!plan.raceScope)return false;
+  try {
+    await labConversationContext.recoverConfirmed(sender,plan.raceScope,confirmedAt);
+    return true;
+  }catch{
+    await log('LAB_CONTEXT_ACK_RECOVERY_FAILED');
+    return false;
+  }
+}
+
+async function rememberConfirmedPendingLabQuote(entry) {
+  if(!labQuotedRaceJournal)return true;
+  const sender=stableLabSenderKey(entry.messageId);
+  const race=explicitLabRaceScope(entry.text);
+  const purpose=labReadOnlyQueryPurpose(entry.text,classifyLocal(entry.text));
+  if(!sender||sender!==entry.senderId||!race||!purpose)return true;
+  try{
+    await labQuotedRaceJournal.remember({
+      messageId:entry.messageId,senderId:sender,race,confirmed:true
+    });
+    return true;
+  }catch{
+    await log('LAB_QUOTE_HINT_PERSIST_FAILED');
+    // Preserve encrypted pending input for the next ACK-only recovery cycle.
+    return false;
+  }
+}
+
+// The confirmed send journal outranks the auxiliary seen file. Finish
+// quote persistence using the immutable encrypted pre-query record before
+// removing it; after a crash this can run again without ever pressing Enter.
+async function finalizeConfirmedVisibleLabQuote(row,body,{retainEncryptedInput=false}={}) {
+  const stored=await labPendingInbox?.read(row.id);
+  if(stored){
+    if(await rememberConfirmedPendingLabQuote(stored) && !retainEncryptedInput){
+      await labPendingInbox.remove(row.id);
+    }
+    return;
+  }
+  // Without the original encrypted, pre-query input we cannot prove the
+  // visible text/quoted race matches the immutable ACKed request. No memory
+  // backfill from mutable DOM content; the confirmed delivery still stands.
+  await log('LAB_QUOTE_HINT_NO_VERIFIED_INPUT');
+}
+
+async function resumePendingLabQueries(visibleIds = new Set()) {
+  if (!labPendingInbox || !BACKEND_SYNC_ENABLED) return;
+  const pending = await labPendingInbox.list(25,{offset:lastLabPendingOffset});
+  lastLabPendingOffset=(lastLabPendingOffset+Math.max(1,pending.length))%200;
+  for (const entry of pending) {
+    const tag = labTestTagFor(entry.messageId);
+    const state = await labTestReplyJournal.read(entry.messageId);
+    // An already confirmed ACK can finish its auxiliary HMAC hint even when
+    // the row is still visible or the canonical backend is offline. No Enter.
+    if (visibleIds.has(entry.messageId) && state?.state !== 'confirmed') continue;
+    if (state?.state === 'confirmed') {
+      const restored=await recoverConfirmedLabConversation(entry,state.updatedAt);
+      rememberLabSeen(entry.messageId);
+      await saveLabSeenNow();
+      if(await rememberConfirmedPendingLabQuote(entry) && (!entry.race||restored)){
+        await labPendingInbox.remove(entry.messageId);
+      }
+      continue;
+    }
+    if (state?.state === 'sending' || state?.state === 'ambiguous') {
+      await assertCurrentLabIdentity();
+      if (await visibleLabHasTag(tag)) {
+        const confirmed=await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
+        const restored=confirmed?.state==='confirmed'
+          ? await recoverConfirmedLabConversation(entry,confirmed.updatedAt)
+          : false;
+        rememberLabSeen(entry.messageId);
+        await saveLabSeenNow();
+        if(await rememberConfirmedPendingLabQuote(entry) && (!entry.race||restored)){
+          await labPendingInbox.remove(entry.messageId);
+        }
+        await log('LAB_PENDING_RECONCILED id='+tag);
+      }
+      // An uncertain Enter is never authorized to be repeated.
+      continue;
+    }
+    // A new response requires fresh verified canonical data. Only post-ACK
+    // housekeeping and strict-tag reconciliation may run without backend.
+    if (backendState !== 'online') continue;
+    const row = {
+      id:entry.messageId, text:entry.text, fromMe:false, hasMedia:false,
+      quotedId:entry.quotedMessageId, pre:''
+    };
+    const classification = classifyLocal(entry.text);
+    const sender = stableLabSenderKey(entry.messageId);
+    if (!sender || sender!==entry.senderId ||
+        !labConversationInput(row,classification).eligible ||
+        labReadOnlyQueryPurpose(entry.text,classification)!==entry.purpose) {
+      await labPendingInbox.remove(entry.messageId);
+      await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason=RISK_CHANGED');
+      continue;
+    }
+    // Encrypted identity remains immutable; never inherit newer sender memory.
+    const plan=planLabConversation(row,classification,null,entry.race);
+    if(plan.scopeConflict){
+      await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason=RACE_SCOPE_CHANGED');
+      continue;
+    }
+    const eligibilityArgs={
+      ingestUrl:INGEST_URL,token:TOKEN,labGroupId:LAB_GROUP_ID,
+      labChannelKey:LAB_CHANNEL_KEY,messageId:entry.messageId,
+      senderId:sender,race:entry.race,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+    };
+    const eligibleBefore=await checkLabSendEligibility(eligibilityArgs);
+    if(!eligibleBefore.allowed){
+      if(eligibleBefore.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(entry.messageId);
+        await saveLabSeenNow();
+        await labPendingInbox.remove(entry.messageId);
+      }
+      await log('LAB_PENDING_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
+      continue;
+    }
+    if (!labQueryBackoff.allowed(entry.messageId)) continue;
+    const canonical = await queryCanonicalLab({
+      ingestUrl:INGEST_URL,token:TOKEN,
+      labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
+      messageId:entry.messageId,senderId:entry.senderId,text:entry.text,
+      timestamp:entry.messageTimestamp,purpose:entry.purpose,quotedMessageId:entry.quotedMessageId,
+      race:entry.race,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+    });
+    if (canonical.available!==true) {
+      const delay=labQueryBackoff.fail(entry.messageId);
+      await log('LAB_PENDING_QUERY_RETRY id='+tag+' reason='+canonical.reason+' retryMs='+delay);
+      continue;
+    }
+    labQueryBackoff.clear(entry.messageId);
+    // HTTP can complete after the original WhatsApp message's ten-minute TTL.
+    // Recheck the durable encrypted record before starting a new send intent.
+    if (!(await labPendingInbox.read(entry.messageId))) {
+      await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
+      continue;
+    }
+    // The operator may take over while the canonical read is pending.
+    const eligibleAfter=await checkLabSendEligibility(eligibilityArgs);
+    if(!eligibleAfter.allowed){
+      if(eligibleAfter.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(entry.messageId);
+        await saveLabSeenNow();
+        await labPendingInbox.remove(entry.messageId);
+      }
+      await log('LAB_PENDING_HANDOFF_RECHECK_'+eligibleAfter.reason+' id='+tag);
+      continue;
+    }
+    // A handoff lookup itself may have crossed the original encrypted TTL.
+    if(!(await labPendingInbox.read(entry.messageId))){
+      await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
+      continue;
+    }
+    await labTestReplyJournal.prepare(entry.messageId);
+    await labTestReplyJournal.begin(entry.messageId);
+    try {
+      // WAL is prepared, but an operator takeover before Enter must still win.
+      const eligibleToSend=await checkLabSendEligibility(eligibilityArgs);
+      if(!eligibleToSend.allowed){
+        await labTestReplyJournal.retryPrepared(entry.messageId);
+        if(eligibleToSend.reason==='LAB_HANDOFF_HELD'){
+          rememberLabSeen(entry.messageId);
+          await saveLabSeenNow();
+          await labPendingInbox.remove(entry.messageId);
+        }
+        await log('LAB_PENDING_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
+        continue;
+      }
+      if(!(await labPendingInbox.read(entry.messageId))){
+        await labTestReplyJournal.retryPrepared(entry.messageId);
+        await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
+        continue;
+      }
+      await sendTextInCurrentLab(localLabTestReply(row,classification,plan,canonical),tag);
+      const confirmed=await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
+      rememberLabSeen(entry.messageId);
+      await saveLabSeenNow();
+      // Once an ACK is durable, only its immutable encrypted request can
+      // restore context; never extend its TTL with a new "remember" timestamp.
+      const restored=confirmed?.state==='confirmed'
+        ? await recoverConfirmedLabConversation(entry,confirmed.updatedAt)
+        : false;
+      const hintSaved=await rememberConfirmedPendingLabQuote(entry);
+      // Even after a successful send, a failed auxiliary write must not
+      // destroy the only source needed for ACK-only crash recovery.
+      if(hintSaved && (!entry.race||restored)){
+        await labPendingInbox.remove(entry.messageId);
+      }
+      await log('LAB_PENDING_RECOVERED id='+tag);
+    } catch(error) {
+      const current=await labTestReplyJournal.read(entry.messageId);
+      if(current?.state==='confirmed') throw error;
+      const outcome=labSeenOutcome({error});
+      if(outcome==='RETRY')await labTestReplyJournal.retryPrepared(entry.messageId);
+      if(outcome==='AMBIGUOUS'){
+        await labTestReplyJournal.markAmbiguous(entry.messageId);
+        labTestAmbiguousCount++;
+      }
+      await log('LAB_PENDING_SEND_'+outcome+' id='+tag);
+    }
+  }
+}
+
 let labTestProcessing=false;
 async function processLabTestInput() {
   if(labTestProcessing)return;
@@ -1218,41 +1449,32 @@ async function processLabTestInput() {
     // A confirmed ack survives restart even if the legacy seen-file did not.
     const journalRecord = await labTestReplyJournal.read(row.id);
     if (journalRecord?.state === 'confirmed') {
-      // Crash after confirmed ACK but before hint persistence: safe to backfill.
-      const verifiedSender=stableLabSenderKey(row.id);
-      const verifiedPurpose=labReadOnlyQueryPurpose(body,classifyLocal(body));
-      // Re-evaluate ambiguity after crash instead of trusting the first
-      // explicit race captured by a permissive regex.
-      const verifiedRace=confirmedLabQuoteHint(row,classifyLocal(body));
-      if(verifiedSender&&verifiedRace&&labQuotedRaceJournal){
-        try{await labQuotedRaceJournal.remember({
-          messageId:row.id,senderId:verifiedSender,race:verifiedRace,confirmed:true
-        });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
-      }
-      // A crash may occur after durable outgoing confirmation and before
-      // conversation hint persistence. Backfill only a fully explicit, safe,
-      // original-ACK-fresh scope without replacing any newer sender hint.
-      if(verifiedSender&&verifiedRace&&verifiedPurpose&&labConversationContext){
-        const safePlan=planLabConversation(row,classifyLocal(body),null,verifiedRace);
-        if(safePlan.raceScope&&!safePlan.scopeConflict){
-          try{
-            await labConversationContext.recoverConfirmed(
-              verifiedSender,safePlan.raceScope,journalRecord.updatedAt
-            );
-          }catch{await log('LAB_CONTEXT_ACK_RECOVERY_FAILED');}
-        }
-      }
+      // Never grant quote/memory authority to mutable DOM text after an ACK.
+      const encryptedOriginal=await labPendingInbox?.read(row.id);
+      const restored=encryptedOriginal
+        ? await recoverConfirmedLabConversation(encryptedOriginal,journalRecord.updatedAt)
+        : false;
       rememberLabSeen(row.id);
       await saveLabSeenNow();
+      await finalizeConfirmedVisibleLabQuote(row,body,{
+        retainEncryptedInput:Boolean(encryptedOriginal?.race)&&!restored
+      }); // HMAC hint only from encrypted input
       continue;
     }
     if (journalRecord?.state === 'ambiguous' || journalRecord?.state === 'sending') {
       // Never retry an uncertain Enter. Only an outbound tagged message is proof.
       await assertCurrentLabIdentity();
       if (await visibleLabHasTag(tag)) {
-        await labTestReplyJournal.confirm(row.id,{visibleTag:true});
+        const confirmed=await labTestReplyJournal.confirm(row.id,{visibleTag:true});
+        const encryptedOriginal=await labPendingInbox?.read(row.id);
+        const restored=encryptedOriginal && confirmed?.state==='confirmed'
+          ? await recoverConfirmedLabConversation(encryptedOriginal,confirmed.updatedAt)
+          : false;
         rememberLabSeen(row.id);
         await saveLabSeenNow();
+        await finalizeConfirmedVisibleLabQuote(row,body,{
+          retainEncryptedInput:Boolean(encryptedOriginal?.race)&&!restored
+        });
         await log('LAB_TEST_REPLY_RECONCILED id='+tag);
       }
       continue;
@@ -1280,10 +1502,53 @@ async function processLabTestInput() {
     const plan=planLabConversation(row, classification, prior, scopedRace);
     const verifiedRace=plan.scopeConflict?null:(scopedRace||plan.raceScope);
     const quotedVerified=Boolean(row.quotedId && !directRace && (visibleQuotedRace||durableQuotedRace));
+    // Persist immutable, pinned LAB question and verified sender before backend calls.
+    const parsedLabStamp=inquiryPurpose && BACKEND_SYNC_ENABLED ? parseWhatsAppPre(row.pre) : null;
+    // Context recalled from a previous message is only a conversational
+    // hint. An autonomous replay must never persist that implicit race as
+    // though it were explicitly scoped in this original inbound message.
+    // Only an explicit original race or a verified same-sender quote can
+    // be bound to the encrypted inbox and the canonical HTTP lookup.
+    let trustedRace=plan.scopeConflict?null:
+      (directRace||(quotedVerified?verifiedRace:null));
+    let trustedQuote=quotedVerified?row.quotedId:null;
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED){
+      if(!sender || !parsedLabStamp?.parsed || !Number.isFinite(Date.parse(parsedLabStamp.timestamp)) ||
+         Date.now()-Date.parse(parsedLabStamp.timestamp)>=10*60*1000 ||
+         Date.parse(parsedLabStamp.timestamp)>Date.now()+60000 || plan.scopeConflict){
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+        await log('LAB_PENDING_IDENTITY_SCOPE_OR_TIME_INVALID id='+tag);
+        continue;
+      }
+      if(labPendingInbox){
+        const saved=await labPendingInbox.read(row.id);
+        if(saved){
+          const verified=reconcileLabPendingObservation(saved,{
+            messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
+            messageTimestamp:parsedLabStamp.timestamp,quotedMessageId:row.quotedId||null,
+            explicitRace:explicitLabRaceScope(body)
+          });
+          if(!verified.valid){
+            await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason='+verified.reason);
+            continue;
+          }
+          trustedRace=verified.race;
+          trustedQuote=verified.quotedMessageId;
+        }else{
+          await labPendingInbox.enqueue({
+            messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
+            messageTimestamp:parsedLabStamp.timestamp,race:trustedRace||null,
+            quotedMessageId:trustedQuote
+          });
+        }
+      }
+      if(!labQueryBackoff.allowed(row.id))continue;
+    }
     const eligibilityArgs={
       ingestUrl:INGEST_URL,token:TOKEN,labGroupId:LAB_GROUP_ID,
       labChannelKey:LAB_CHANNEL_KEY,messageId:row.id,senderId:sender,
-      race:verifiedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+      race:trustedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
     };
     // Fail closed: a missing backend/identity/handoff table must never
     // silently turn a human-owned chat into an autonomous LAB send.
@@ -1294,6 +1559,8 @@ async function processLabTestInput() {
       if(eligibleBefore.reason==='LAB_HANDOFF_HELD'){
         rememberLabSeen(row.id); // avoid delayed bot reply after operator resumes
         await saveLabSeenNow();
+        // Drop durable work too: it must not be replayed after human handoff ends.
+        await labPendingInbox?.remove(row.id);
       }
       await log('LAB_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
       continue; // never prepare a send journal for a human-owned conversation
@@ -1303,24 +1570,24 @@ async function processLabTestInput() {
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
           messageId:row.id,senderId:sender,text:body,
-          purpose:inquiryPurpose,
-          quotedMessageId:quotedVerified?row.quotedId:null,
-          race:verifiedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          timestamp:parsedLabStamp?.timestamp,purpose:inquiryPurpose,
+          quotedMessageId:trustedQuote,
+          race:trustedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     if(canonical.reason==='LAB_HANDOFF_HELD'){
       rememberLabSeen(row.id);
       await saveLabSeenNow();
+      await labPendingInbox?.remove(row.id);
       await log('LAB_HANDOFF_QUERY_HELD id='+tag);
       continue;
     }
-    // Informational questions require a verified canonical read before any
-    // autonomous answer or durable send intent. A failed/invalid lookup may
-    // be retried on the next LAB poll; never send a locally inferred answer.
     if(inquiryPurpose && canonical.available!==true){
-      await log('LAB_CANONICAL_QUERY_PENDING id='+tag+' reason='+canonical.reason);
-      continue;
+      const delay=labQueryBackoff.fail(row.id);
+      await log('LAB_CANONICAL_QUERY_PENDING id='+tag+' reason='+canonical.reason+' retryMs='+delay);
+      continue; // No send intent while canonical truth is unknown.
     }
+    if(inquiryPurpose)labQueryBackoff.clear(row.id);
     // A slower canonical query may overlap operator takeover: recheck the
     // current ownership immediately before creating a durable send intent.
     const eligibleAfter=await checkLabSendEligibility(eligibilityArgs);
@@ -1328,8 +1595,15 @@ async function processLabTestInput() {
       if(eligibleAfter.reason==='LAB_HANDOFF_HELD'){
         rememberLabSeen(row.id);
         await saveLabSeenNow();
+        await labPendingInbox?.remove(row.id);
       }
       await log('LAB_HANDOFF_RECHECK_'+eligibleAfter.reason+' id='+tag);
+      continue;
+    }
+    // The canonical response and handoff checks may outlive a LAB message.
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox &&
+       !(await labPendingInbox.read(row.id))){
+      await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
       continue;
     }
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
@@ -1345,28 +1619,33 @@ async function processLabTestInput() {
         if(eligibleToSend.reason==='LAB_HANDOFF_HELD'){
           rememberLabSeen(row.id);
           await saveLabSeenNow();
+          await labPendingInbox?.remove(row.id);
         }
         await log('LAB_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
+        continue;
+      }
+      if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox &&
+         !(await labPendingInbox.read(row.id))){
+        await labTestReplyJournal.retryPrepared(row.id);
+        await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
         continue;
       }
       await sendTextInCurrentLab(localLabTestReply(row, classification, plan, canonical), tag);
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
-      // Hints are safe only after the durable confirmed LAB ACK; errors cannot
-      // authorize a second send or overwrite the underlying ACK.
-      const confirmedQuote=confirmedLabQuoteHint(row,classification);
-      if(sender&&confirmedQuote&&labQuotedRaceJournal){
-        try{await labQuotedRaceJournal.remember({
-          messageId:row.id,senderId:sender,race:confirmedQuote,confirmed:true
-        });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
-      }
+      // Quoted-race hints have already been finalized from the encrypted
+      // original request. Never write a second hint from the mutable DOM.
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
+      let contextPersisted=true;
       if (plan.rememberRace && labConversationContext) {
         try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope,{raceTrack:plan.raceTrack,raceDate:plan.raceDate}); }
-        catch { await log('LAB_CONTEXT_PERSIST_FAILED'); }
+        catch { contextPersisted=false; await log('LAB_CONTEXT_PERSIST_FAILED'); }
       }
+      // ACK is already durable; auxiliary failure retains the encrypted
+      // original for recovery and can never authorize a second WhatsApp send.
+      await finalizeConfirmedVisibleLabQuote(row,body,{retainEncryptedInput:!contextPersisted});
       processed += 1;
       await log('LAB_TEST_READ id='+tag+' intent='+classification.intent);
     } catch (error) {
@@ -1385,6 +1664,7 @@ async function processLabTestInput() {
     }
   }
 
+  await resumePendingLabQueries(new Set(visible.map(row=>row?.id).filter(Boolean)));
   labBootstrapCompleted = true;
   await saveLabSeenNow();
   if (processed) console.log('LAB prueba: '+processed+' mensaje(s) leído(s) y clasificado(s).');
@@ -1447,6 +1727,8 @@ async function printHealthSummary(force = false) {
   const eventSpool = spool.pendingBackend;
   const mirrorSpool = spool.pendingLab;
   const deadLetters = spool.quarantined;
+  const pendingStatus = labPendingInbox ? await labPendingInbox.snapshot() : null;
+  const pendingQueries = pendingStatus?.pending ?? 0;
   const cooldown = Math.max(0, backendNextAllowedAt - Date.now());
   const backendLabel = BACKEND_SYNC_ENABLED ? backendState : 'local-only';
   const readiness = assessRuntimeReadiness({
@@ -1458,7 +1740,7 @@ async function printHealthSummary(force = false) {
     mirrorSpool,
     deadLetters
   });
-  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | dead=${deadLetters}`;
+  const line = `HEALTH ready=${readiness.ready} mode=${RUNTIME_MODE} source=${activeSourceTitle || 'buscando'} | backend=${backendLabel}${cooldown && BACKEND_SYNC_ENABLED ? ` cooldown=${Math.ceil(cooldown/1000)}s` : ''} | capturados=${capturedCount} | spool=${eventSpool} | sourceReply=${sourceReplies.pending}/${sourceReplies.ambiguous} | labPend=${mirrorSpool} | labQueries=${pendingQueries} | labNearExpiry=${pendingStatus?.nearingExpiry ?? 0} | labOldestSec=${pendingStatus?.oldestAgeSeconds ?? 0} | dead=${deadLetters}`;
   const heartbeatDue = Date.now() - lastHealthHeartbeatAt >= 300000;
   if (force && (line !== lastPrintedHealthLine || heartbeatDue)) {
     console.log(line);
@@ -1473,6 +1755,11 @@ async function monitor() {
   let lastHealthPrint = 0;
   while (!stopping && page && !page.isClosed()) {
     try {
+      if(labPendingInbox && Date.now()-lastLabPendingPruneAt>=60000){
+        lastLabPendingPruneAt=Date.now();
+        const expired=await labPendingInbox.prune();
+        if(expired>0)await log('LAB_PENDING_EXPIRED count='+expired);
+      }
       if (await hasWhatsAppBrowserDatabaseError()) {
         await requestCleanProfileReset('WHATSAPP_BROWSER_DATABASE_ERROR');
         break;
@@ -1556,6 +1843,10 @@ async function main() {
   const sourceReplyInit = await sourceReplyJournal.initialize();
   await labConversationContext?.initialize();
   await labQuotedRaceJournal?.initialize();
+  if (labPendingInbox) {
+    const restored = await labPendingInbox.initialize();
+    await log('LAB_PENDING_INBOX_READY count='+restored.recovered);
+  }
   if (labTestReplyJournal) {
     const labInit=await labTestReplyJournal.initialize();
     const labState=await labTestReplyJournal.snapshot();
@@ -1615,6 +1906,7 @@ async function shutdown() {
   try { await saveRetryState(); } catch {}
   try { await writeHealth({ stopping: true }); } catch {}
   try { await context?.close(); } catch {}
+  try { await labPendingInbox?.close(); } catch {}
 }
 process.on('SIGINT', async () => { await shutdown(); process.exit(0); });
 process.on('SIGTERM', async () => { await shutdown(); process.exit(0); });

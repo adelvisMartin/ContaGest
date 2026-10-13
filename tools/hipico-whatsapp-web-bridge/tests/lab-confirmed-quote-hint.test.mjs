@@ -35,20 +35,30 @@ test('money, corrupt calendar, unpinned sender and echo are not quotable hints',
   assert.equal(confirmedLabQuoteHint({...row(full),hasMedia:true},classifyLocal(full)),null);
 });
 
-test('both normal confirmed ACK and crash recovery use identical quote-hint eligibility',()=>{
+test('confirmed ACK never creates a secondary DOM-derived race hint',()=>{
   const src=readFileSync(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const helperStart=src.indexOf('async function finalizeConfirmedVisibleLabQuote(');
+  const helperEnd=src.indexOf('async function resumePendingLabQueries(',helperStart);
+  assert.ok(helperStart>=0&&helperEnd>helperStart);
+  const helper=src.slice(helperStart,helperEnd);
+  assert.match(helper,/labPendingInbox\?\.read\(row\.id\)/);
+  assert.match(helper,/rememberConfirmedPendingLabQuote\(stored\)/);
+  assert.match(helper,/LAB_QUOTE_HINT_NO_VERIFIED_INPUT/);
+  assert.doesNotMatch(helper,/senderId:sender,text:body/);
+
   const begin=src.indexOf('async function processLabTestInput()');
   const end=src.indexOf('async function visibleLabHasTag(tag)',begin);
   const lab=src.slice(begin,end);
-  const recovered=lab.indexOf('if (journalRecord?.state === \'confirmed\')');
-  const evaluated=lab.indexOf('confirmedLabQuoteHint(row,classifyLocal(body))',recovered);
-  const live=lab.indexOf('confirmedLabQuoteHint(row,classification)',evaluated);
-  const send=lab.indexOf('await sendTextInCurrentLab(',evaluated);
-  const ack=lab.indexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});',send);
-  assert.ok(recovered>=0&&evaluated>recovered&&evaluated<send&&
-    live>ack,'confirmed crash recovery and normal delivery must share pure guard');
-  const hintWrite=lab.indexOf('labQuotedRaceJournal.remember(',live);
-  assert.ok(hintWrite>live&&hintWrite>ack);
-  assert.match(lab,/const confirmedQuote=confirmedLabQuoteHint\(row,classification\)/);
-  assert.match(lab,/race:confirmedQuote,confirmed:true/);
+  const confirmed=lab.slice(lab.indexOf("if (journalRecord?.state === 'confirmed')"),
+    lab.indexOf("if (journalRecord?.state === 'ambiguous'"));
+  assert.match(confirmed,/await finalizeConfirmedVisibleLabQuote\(row,body\)/);
+  assert.match(confirmed,/labPendingInbox\?\.read\(row\.id\)/);
+  assert.doesNotMatch(confirmed,/confirmedLabQuoteHint|labQuotedRaceJournal\.remember/);
+
+  const normal=lab.slice(lab.indexOf('await sendTextInCurrentLab('));
+  const ack=normal.indexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});');
+  const finalizer=normal.indexOf('await finalizeConfirmedVisibleLabQuote(row,body)');
+  assert.ok(ack>=0&&finalizer>ack);
+  assert.doesNotMatch(normal,/confirmedLabQuoteHint\(|labQuotedRaceJournal\.remember\(/,
+    'the normal send path must not independently trust mutable DOM after ACK');
 });
