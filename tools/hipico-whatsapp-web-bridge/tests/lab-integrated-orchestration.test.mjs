@@ -5,6 +5,8 @@ import vm from 'node:vm';
 import { labOutgoingEvidenceMatches } from '../src/lab-outgoing-evidence.mjs';
 import { labReadOnlyQueryPurpose } from '../src/lab-canonical-query.mjs';
 import { composeLabAssistantReply } from '../src/lab-assistant-replies.mjs';
+import { classifyLocal } from '../src/runtime-utils.mjs';
+import { labConversationInput, planLabConversation } from '../src/lab-conversation-context.mjs';
 
 const bridge=readFileSync(new URL('../src/index.mjs',import.meta.url),'utf8');
 const query=readFileSync(new URL('../../../backend/src/modules/hipico-bot/hipico-bridge.routes.ts',import.meta.url),'utf8');
@@ -126,4 +128,49 @@ test('current integrated Bridge verifies pinned LAB outgoing DOM twice and never
   const mirror=bridge.slice(bridge.indexOf('function localMirrorText('),
     bridge.indexOf('function shouldMirror('));
   assert.doesNotMatch(mirror,/canonical\?\.|plan\?\./);
+});
+
+test('completed multi-turn race reference is passed to the canonical query, not only handoff',()=>{
+  const lookup=lab.indexOf('await queryCanonicalLab({');
+  const end=lab.indexOf('})',lookup);
+  assert.ok(lookup>=0&&end>lookup);
+  const request=lab.slice(lookup,end);
+  assert.match(request,/race:verifiedRace/);
+  assert.doesNotMatch(request,/race:scopedRace/);
+  assert.match(lab,/const verifiedRace=plan\.scopeConflict\?null:\(scopedRace\|\|plan\.raceScope\)/);
+  assert.match(lab,/inquiryPurpose && sender && !plan\.scopeConflict/);
+
+  const row=(number,text)=>({
+    id:'false_120363222222222222@g.us_'+number+'_123456789012@lid',text
+  });
+  const starter=row(1,'¿Cuál es el estado de la carrera 5?');
+  const first=planLabConversation(starter,classifyLocal(starter.text));
+  assert.equal(first.raceNumber,5);
+  assert.equal(first.raceScope,null);
+  const track=row(2,'La Rinconada');
+  const trackKind=classifyLocal(track.text);
+  assert.equal(labConversationInput(track,trackKind,{raceNumber:5}).eligible,true);
+  const partial=planLabConversation(track,trackKind,{raceNumber:5});
+  assert.equal(partial.raceTrack,'La Rinconada');
+  const day=row(3,'2026-10-12');
+  const dayKind=classifyLocal(day.text);
+  const completed=planLabConversation(day,dayKind,{
+    raceNumber:5,raceTrack:partial.raceTrack
+  });
+  assert.deepEqual(completed.raceScope,{
+    raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'
+  });
+  const follow=row(4,'¿Y el estado de esa carrera?');
+  const classify=classifyLocal(follow.text);
+  assert.equal(labReadOnlyQueryPurpose(follow.text,classify),'status');
+  const resolved=planLabConversation(follow,classify,{
+    raceNumber:5,raceScope:completed.raceScope
+  });
+  assert.deepEqual(resolved.raceScope,completed.raceScope);
+  const conflicting=row(5,'¿Estado de carrera 6 o carrera 5?');
+  const unsafe=planLabConversation(conflicting,classifyLocal(conflicting.text),{
+    raceNumber:5,raceScope:completed.raceScope
+  });
+  assert.equal(unsafe.scopeConflict,true);
+  assert.equal(unsafe.raceScope,null);
 });
