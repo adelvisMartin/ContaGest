@@ -68,8 +68,11 @@ export function resolveQuotedLabRaceScope(row,visibleRows){
   const quotedPlan=planLabConversation(prior,safety,null,scope);
   if(quotedPlan.scopeConflict||!quotedPlan.raceScope||
      quotedPlan.raceScope.raceNumber!==scope.raceNumber)return null;
-  const currentRace=normalizeQuery(row.text).match(/\bcarrera\s*(?:numero|nro)?\.?\s*(\d{1,3})\b/);
-  if(currentRace&&Number(currentRace[1])!==scope.raceNumber)return null;
+  // A follow-up may name a different race via "carrera 6", "6ta",
+  // "la sexta", or multiple references. Never let quoting race 5 override it.
+  const followup=planLabConversation(row,classifyLocal(row.text),null,scope);
+  if(followup.scopeConflict||!followup.raceScope||
+     followup.raceScope.raceNumber!==scope.raceNumber)return null;
   return scope;
 }
 
