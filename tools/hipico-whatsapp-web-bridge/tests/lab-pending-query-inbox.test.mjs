@@ -535,6 +535,7 @@ test('confirmed LAB queries finish ACK-only hints while still visible or backend
   ]){
     const actions=[];
     const context={
+      lastLabPendingOffset:0,
       labPendingInbox:{
         list:async()=>[entry],
         remove:async()=>{actions.push('remove');}
@@ -625,6 +626,7 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
   const actions=[];
   const entry=candidate();
   const context={
+    lastLabPendingOffset:0,
     labPendingInbox:{
       list:async()=>[entry],
       read:async id=>{assert.equal(id,MESSAGE);actions.push('freshness-read');return null;}
