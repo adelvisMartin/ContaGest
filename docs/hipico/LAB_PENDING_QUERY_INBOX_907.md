@@ -70,6 +70,8 @@ monetarias y no se crea otro motor de conversación ni tabla de dominio.
 cd tools/hipico-whatsapp-web-bridge
 npm ci
 npm run qa
+npm run test:lab:recovery
+npm run test:lab:tcp
 ```
 
 Incluye pruebas unitarias de cifrado/reinicio, ámbito, idempotencia,
