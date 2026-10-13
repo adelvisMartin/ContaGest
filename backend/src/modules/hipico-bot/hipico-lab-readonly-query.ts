@@ -2,7 +2,7 @@ import type { IntentResult } from './hipico-operational-classifier.js';
 import type { LabRaceQuestion } from './hipico-lab-canonical-read.js';
 import type { LabSchedulePurpose } from './hipico-lab-schedule-read.js';
 
-const PROHIBITED=/\b(?:apostar|apuestas?|jugadas?|juega|consigue|pagos?|pagar|cobros?|cobrar|depositar|depositos?|retirar|retiros?|saldos?|abonar|liquidaciones?|liquidar|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|dineros?|premios?|bolivares?|balances?|bs|usdt)\b|\$/i;
+const PROHIBITED=/\b(?:apostar|apuestas?|jugadas?|juega|consigue|pagos?|pagar|cobros?|cobrar|depositar|depositos?|retirar|retiros?|saldos?|abonar|liquidacion(?:es)?|liquidar|ganancias?|deudas?|transferencias?|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|dineros?|premios?|bolivares?|balances?|bs|usdt)\b|\$/i;
 const TOPICS:Record<LabRaceQuestion|LabSchedulePurpose,RegExp>={
   next:/\b(?:proxima carrera|carrera sigue|siguiente carrera)\b/,
   active:/\b(?:carrera activa|carrera abierta|cual esta abierta)\b/,
