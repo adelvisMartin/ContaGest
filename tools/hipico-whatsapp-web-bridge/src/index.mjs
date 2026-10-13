@@ -1546,6 +1546,8 @@ async function processLabTestInput() {
       if(eligibleBefore.reason==='LAB_HANDOFF_HELD'){
         rememberLabSeen(row.id); // avoid delayed bot reply after operator resumes
         await saveLabSeenNow();
+        // Drop durable work too: it must not be replayed after human handoff ends.
+        await labPendingInbox?.remove(row.id);
       }
       await log('LAB_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
       continue; // never prepare a send journal for a human-owned conversation
@@ -1563,6 +1565,7 @@ async function processLabTestInput() {
     if(canonical.reason==='LAB_HANDOFF_HELD'){
       rememberLabSeen(row.id);
       await saveLabSeenNow();
+      await labPendingInbox?.remove(row.id);
       await log('LAB_HANDOFF_QUERY_HELD id='+tag);
       continue;
     }
@@ -1579,6 +1582,7 @@ async function processLabTestInput() {
       if(eligibleAfter.reason==='LAB_HANDOFF_HELD'){
         rememberLabSeen(row.id);
         await saveLabSeenNow();
+        await labPendingInbox?.remove(row.id);
       }
       await log('LAB_HANDOFF_RECHECK_'+eligibleAfter.reason+' id='+tag);
       continue;
@@ -1602,6 +1606,7 @@ async function processLabTestInput() {
         if(eligibleToSend.reason==='LAB_HANDOFF_HELD'){
           rememberLabSeen(row.id);
           await saveLabSeenNow();
+          await labPendingInbox?.remove(row.id);
         }
         await log('LAB_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
         continue;
