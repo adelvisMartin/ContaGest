@@ -135,7 +135,7 @@ test('live LAB uses immutable encrypted race for all post-read handoff and canon
   const third=live.indexOf('const eligibleToSend=await checkLabSendEligibility(');
   const send=live.indexOf('await sendTextInCurrentLab(',third);
   const ack=live.indexOf('await labTestReplyJournal.confirm(row.id',send);
-  assert.ok(first>=0&&persist>first&&bind>persist&&query>bind&&ttl>query&&
+  assert.ok(persist>=0&&bind>persist&&first>bind&&query>first&&ttl>query&&
     after>ttl&&begin>after&&third>begin&&send>third&&ack>send);
 });
 
@@ -144,4 +144,31 @@ test('inbox validator and source route recognize bounded read-only race summarie
   assert.match(inbox,/const PURPOSES=new Set\(\[[^\]]*'summary'/);
   assert.match(source,/const inquiryPurpose=labReadOnlyQueryPurpose\(body,classification\)/);
   assert.doesNotMatch(recoveredSource,/sendTextInCurrentSource/);
+});
+
+test('offline queries are encrypted before any backend-online handoff gate',()=>{
+  const live=source.slice(source.indexOf('async function processLabTestInput()'),
+    source.indexOf('async function visibleLabHasTag(tag)'));
+  const durable=live.indexOf('await labPendingInbox.enqueue(');
+  const gate=live.indexOf('const eligibleBefore=sender && BACKEND_SYNC_ENABLED && backendState');
+  const reject=live.indexOf('if(!eligibleBefore.allowed)',gate);
+  assert.ok(durable>=0&&gate>durable&&reject>gate,
+    'persist first, then handoff; backend outage must not lose input');
+  assert.match(live.slice(durable,gate),/eligibilityArgs\.race=trustedRace/);
+});
+
+test('human-owned visible messages remove pending query on each takeover outcome',()=>{
+  const live=source.slice(source.indexOf('async function processLabTestInput()'),
+    source.indexOf('async function visibleLabHasTag(tag)'));
+  for(const [begin,end] of [
+    ["if(!eligibleBefore.allowed)","const canonical = inquiryPurpose"],
+    ["if(canonical.reason==='LAB_HANDOFF_HELD')","if(inquiryPurpose && canonical.available!==true)"],
+    ["if(!eligibleAfter.allowed)","await labTestReplyJournal.prepare(row.id)"],
+    ["if(!eligibleToSend.allowed)","await sendTextInCurrentLab("]
+  ]){
+    const a=live.indexOf(begin),b=live.indexOf(end,a);
+    assert.ok(a>=0&&b>a,begin);
+    const part=live.slice(a,b);
+    assert.match(part,/await labPendingInbox\?\.remove\(row\.id\)/,begin);
+  }
 });
