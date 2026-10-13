@@ -23,7 +23,7 @@ export async function checkLabHandoff(input:{
   const labKey=String(input.labGroupKey||'').trim();
   // Both authorities are mandatory. Never downgrade to a one-channel check
   // because an env value is missing or two pins accidentally overlap.
-  if(!sender||!sourceKey||!labKey||sourceKey===labKey){
+  if(!sender||!sourceKey||!labKey||sourceKey.toLowerCase()===labKey.toLowerCase()){
     return{allowed:false,reason:'LAB_HANDOFF_SCOPE_INVALID'};
   }
   const keys=[sourceKey,labKey];
