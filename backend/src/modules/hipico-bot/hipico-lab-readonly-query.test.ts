@@ -54,6 +54,10 @@ test('race summary is read-only and excludes transcript summaries and financial 
     'hazme un resumen de lo que hablamos sobre carrera 5',
     'resume los mensajes del chat de carrera 5',
     'resumen de saldo de carrera 5',
+    'Resumen de apuestas y saldos de carrera 5',
+    'Hazme resumen de pagos, premios y jugadas de la carrera 5',
+    '¿Resumen de transferencias y ganancias de carrera 5?',
+    'Resumen de liquidaciones de la carrera 5',
     '¿resumen de apuesta carrera 5?',
     'resumen de carrera 5, confirma el pago',
     'resumen de carrera 5; registrar cierre'
