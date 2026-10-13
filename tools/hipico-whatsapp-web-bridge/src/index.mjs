@@ -1399,11 +1399,15 @@ async function resumePendingLabQueries(visibleIds = new Set(), alreadySeenIds = 
       // WAL is prepared, but an operator takeover before Enter must still win.
       const eligibleToSend=await checkLabSendEligibility(eligibilityArgs);
       if(!eligibleToSend.allowed){
-        await labTestReplyJournal.retryPrepared(entry.messageId);
         if(eligibleToSend.reason==='LAB_HANDOFF_HELD'){
+          // The fsynced seen marker must precede any retryable WAL state.
+          // Crashes between these writes cannot resurrect human-owned work.
           rememberLabSeen(entry.messageId);
           await saveLabSeenNow();
+          await labTestReplyJournal.retryPrepared(entry.messageId);
           await labPendingInbox.remove(entry.messageId);
+        }else{
+          await labTestReplyJournal.retryPrepared(entry.messageId);
         }
         await log('LAB_PENDING_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
         continue;
@@ -1649,11 +1653,16 @@ async function processLabTestInput() {
       // return the WAL to prepared rather than creating an ambiguous receipt.
       const eligibleToSend=await checkLabSendEligibility(eligibilityArgs);
       if(!eligibleToSend.allowed){
-        await labTestReplyJournal.retryPrepared(row.id);
         if(eligibleToSend.reason==='LAB_HANDOFF_HELD'){
+          // The operator's terminal decision must be durable BEFORE the WAL
+          // can return from sending to retryable prepared. A crash sooner
+          // leaves an ambiguous delivery, never an unauthorized new Enter.
           rememberLabSeen(row.id);
           await saveLabSeenNow();
+          await labTestReplyJournal.retryPrepared(row.id);
           await labPendingInbox?.remove(row.id);
+        }else{
+          await labTestReplyJournal.retryPrepared(row.id);
         }
         await log('LAB_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
         continue;

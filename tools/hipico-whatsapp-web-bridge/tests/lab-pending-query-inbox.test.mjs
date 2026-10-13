@@ -1206,3 +1206,55 @@ test('previously seen confirmed or ambiguous LAB replies still reconcile by ACK 
     assert.equal(calls.includes('query'),false);
   }
 });
+
+
+test('operator takeover fsync precedes retryable WAL in both LAB send routes',async()=>{
+  const vm=await import('node:vm');
+  const index=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const sections=[
+    ['pending',index.slice(index.indexOf('async function resumePendingLabQueries('),
+      index.indexOf('let labTestProcessing=false;')),'entry.messageId'],
+    ['visible',index.slice(index.indexOf('async function processLabTestInput()'),
+      index.indexOf('async function visibleLabHasTag(')),'row.id']
+  ];
+  for(const [label,section,id] of sections){
+    const begin=section.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)');
+    const stop=section.indexOf('continue;\n      }',begin);
+    assert.ok(begin>=0&&stop>begin,label+' send gate');
+    const snippet=section.slice(begin,stop+'continue;\n      }'.length);
+    const seen=snippet.indexOf('rememberLabSeen('+id+')');
+    const fsync=snippet.indexOf('await saveLabSeenNow()');
+    const retry=snippet.indexOf('await labTestReplyJournal.retryPrepared('+id+')');
+    const remove=snippet.indexOf('await labPendingInbox');
+    assert.ok(seen>=0&&fsync>seen&&retry>fsync&&remove>retry,label+' order');
+    const wrap='(async()=>{for(const once of [true]){'+snippet+'}})()';
+    const events=[];
+    let saved=false;
+    const ctx={
+      eligibilityArgs:{},tag:'[LABTEST:012345abcd]',
+      checkLabSendEligibility:async()=>({allowed:false,reason:'LAB_HANDOFF_HELD'}),
+      row:{id:MESSAGE},entry:{messageId:MESSAGE},
+      rememberLabSeen:()=>events.push('seen'),
+      saveLabSeenNow:async()=>{saved=true;events.push('fsync')},
+      labTestReplyJournal:{retryPrepared:async()=>{
+        assert.equal(saved,true,'no retryable WAL before durable handoff');
+        events.push('prepared');
+      }},
+      labPendingInbox:{remove:async()=>events.push('removed')},
+      log:async()=>events.push('logged')
+    };
+    await vm.runInNewContext(wrap,ctx);
+    assert.deepEqual(events,['seen','fsync','prepared','removed','logged'],label);
+    const broken=[];
+    const failedCtx={
+      ...ctx,
+      rememberLabSeen:()=>broken.push('seen'),
+      saveLabSeenNow:async()=>{broken.push('fsync-failed');throw new Error('DISK_WRITE_FAILED')},
+      labTestReplyJournal:{retryPrepared:async()=>broken.push('UNSAFE_PREPARED')},
+      labPendingInbox:{remove:async()=>broken.push('UNSAFE_REMOVE')},
+      log:async()=>broken.push('UNSAFE_LOG')
+    };
+    await assert.rejects(vm.runInNewContext(wrap,failedCtx),/DISK_WRITE_FAILED/);
+    assert.deepEqual(broken,['seen','fsync-failed'],label);
+  }
+});
