@@ -1289,7 +1289,7 @@ async function processLabTestInput() {
           messageId:row.id,senderId:sender,text:body,
           purpose:inquiryPurpose,
           quotedMessageId:quotedVerified?row.quotedId:null,
-          race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          race:verifiedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     if(canonical.reason==='LAB_HANDOFF_HELD'){
