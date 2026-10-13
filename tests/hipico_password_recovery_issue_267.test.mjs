@@ -132,3 +132,10 @@ test('#267 removes invalid recovery credentials from URL without accepting them 
   assert.equal(regular.url.searchParams.get('retry'),'1');
   assert.doesNotMatch(source,/service[_-]?role|SUPABASE_SERVICE_ROLE_KEY|sb_secret_/i);
 });
+
+test('#267 conflicting provider error overrides a recovery token', async () => {
+  const source = await fs.readFile(recoveryPath,'utf8');
+  assert.match(source,/type === 'recovery' && token && !hashError && !queryError/);
+  assert.match(source,/!hash\.has\('error_code'\) && !query\.has\('error_code'\)/);
+  assert.match(source,/if \(hadAuthMaterial\) history\.replaceState/);
+});
