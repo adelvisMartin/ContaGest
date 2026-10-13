@@ -34,6 +34,7 @@ import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resol
 import { selectLabAnswer } from './lab-answer-policy.mjs';
 import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
 import { labOutgoingEvidenceMatches } from './lab-outgoing-evidence.mjs';
+import { checkLabSendEligibility } from './lab-handoff-eligibility.mjs';
 import { createLabQueryBackoff } from './lab-query-backoff.mjs';
 import { createLabPendingQueryInbox, reconcileLabPendingObservation } from './lab-pending-query-inbox.mjs';
 
@@ -1284,6 +1285,17 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason=RISK_CHANGED');
       continue;
     }
+    const eligibilityArgs={ingestUrl:INGEST_URL,token:TOKEN,labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,messageId:entry.messageId,senderId:sender,race:entry.race,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)};
+    const eligibleBefore=await checkLabSendEligibility(eligibilityArgs);
+    if(!eligibleBefore.allowed){
+      if(eligibleBefore.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(entry.messageId);
+        await saveLabSeenNow();
+        await labPendingInbox.remove(entry.messageId);
+      }
+      await log('LAB_PENDING_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
+      continue;
+    }
     if (!labQueryBackoff.allowed(entry.messageId)) continue;
     const canonical = await queryCanonicalLab({
       ingestUrl:INGEST_URL,token:TOKEN,
@@ -1305,9 +1317,30 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       continue;
     }
     const plan=planLabConversation(row,classification,labConversationContext?.get(sender));
+    const eligibleAfter=await checkLabSendEligibility(eligibilityArgs);
+    if(!eligibleAfter.allowed){
+      if(eligibleAfter.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(entry.messageId);
+        await saveLabSeenNow();
+        await labPendingInbox.remove(entry.messageId);
+      }
+      await log('LAB_PENDING_HANDOFF_RECHECK_'+eligibleAfter.reason+' id='+tag);
+      continue;
+    }
     await labTestReplyJournal.prepare(entry.messageId);
     await labTestReplyJournal.begin(entry.messageId);
     try {
+      const eligibleToSend=await checkLabSendEligibility(eligibilityArgs);
+      if(!eligibleToSend.allowed){
+        await labTestReplyJournal.retryPrepared(entry.messageId);
+        if(eligibleToSend.reason==='LAB_HANDOFF_HELD'){
+          rememberLabSeen(entry.messageId);
+          await saveLabSeenNow();
+          await labPendingInbox.remove(entry.messageId);
+        }
+        await log('LAB_PENDING_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
+        continue;
+      }
       await sendTextInCurrentLab(localLabTestReply(row,classification,plan,canonical),tag);
       await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
       rememberLabSeen(entry.messageId);
@@ -1410,6 +1443,19 @@ async function processLabTestInput() {
       : null;
     const scopedRace=directRace||visibleQuotedRace||durableQuotedRace||null;
     const quotedVerified=Boolean(row.quotedId && !directRace && (visibleQuotedRace||durableQuotedRace));
+    const eligibilityArgs={ingestUrl:INGEST_URL,token:TOKEN,labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,messageId:row.id,senderId:sender,race:scopedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)};
+    const eligibleBefore=sender&&BACKEND_SYNC_ENABLED&&backendState==='online'
+      ? await checkLabSendEligibility(eligibilityArgs)
+      : {allowed:false,reason:'LAB_HANDOFF_UNAVAILABLE'};
+    if(!eligibleBefore.allowed){
+      if(eligibleBefore.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+        if(labPendingInbox)await labPendingInbox.remove(row.id);
+      }
+      await log('LAB_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
+      continue;
+    }
     const parsedLabStamp=inquiryPurpose && BACKEND_SYNC_ENABLED ? parseWhatsAppPre(row.pre) : null;
     if(inquiryPurpose && BACKEND_SYNC_ENABLED && (!parsedLabStamp?.parsed ||
         Date.now()-Date.parse(parsedLabStamp.timestamp)>=10*60*1000 ||
@@ -1439,6 +1485,7 @@ async function processLabTestInput() {
         }
         trustedRace=verified.race;
         trustedQuote=verified.quotedMessageId;
+        eligibilityArgs.race=trustedRace;
       }else{
         await labPendingInbox.enqueue({
           messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
@@ -1481,9 +1528,30 @@ async function processLabTestInput() {
       await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
       continue;
     }
+    const eligibleAfter=await checkLabSendEligibility(eligibilityArgs);
+    if(!eligibleAfter.allowed){
+      if(eligibleAfter.reason==='LAB_HANDOFF_HELD'){
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+        if(labPendingInbox)await labPendingInbox.remove(row.id);
+      }
+      await log('LAB_HANDOFF_RECHECK_'+eligibleAfter.reason+' id='+tag);
+      continue;
+    }
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
+      const eligibleToSend=await checkLabSendEligibility(eligibilityArgs);
+      if(!eligibleToSend.allowed){
+        await labTestReplyJournal.retryPrepared(row.id);
+        if(eligibleToSend.reason==='LAB_HANDOFF_HELD'){
+          rememberLabSeen(row.id);
+          await saveLabSeenNow();
+          if(labPendingInbox)await labPendingInbox.remove(row.id);
+        }
+        await log('LAB_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
+        continue;
+      }
       await sendTextInCurrentLab(localLabTestReply(row, classification, plan, canonical), tag);
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending

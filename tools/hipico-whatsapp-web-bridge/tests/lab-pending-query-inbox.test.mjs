@@ -673,6 +673,7 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
       allowed:()=>{actions.push('backoff-allowed');return true;},
       clear:()=>{actions.push('backoff-clear');}
     },
+    checkLabSendEligibility:async()=>({allowed:true,reason:'LAB_HANDOFF_CLEAR'}),
     queryCanonicalLab:async()=>{actions.push('canonical-read');return {available:true};},
     log:async message=>{
       assert.match(message,/^LAB_PENDING_EXPIRED_BEFORE_SEND id=/);
@@ -863,4 +864,56 @@ test('LAB health reveals aggregate near-expiry pressure without leaking input id
   assert.equal(await inbox.read(MESSAGE),null);
   assert.notEqual(await inbox.read(second),null);
   await inbox.close();
+});
+
+
+test('encrypted pending reply is suppressed when the operator holds LAB',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const resume=source.slice(source.indexOf('async function resumePendingLabQueries('),source.indexOf('let labTestProcessing=false;')).trim();
+  const events=[];
+  const entry=candidate();
+  const ctx={
+    labPendingInbox:{
+      list:async()=>[entry],
+      remove:async id=>{assert.equal(id,MESSAGE);events.push('remove');}
+    },
+    BACKEND_SYNC_ENABLED:true,backendState:'online',labPendingRecoveryOffset:0,
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{
+      read:async()=>null,
+      prepare:async()=>{throw new Error('NO_WAL_ON_HANDOFF');}
+    },
+    classifyLocal:()=>({intent:'conversation',risk:'safe'}),
+    stableLabSenderKey:()=>SENDER,
+    labConversationInput:()=>({eligible:true}),
+    labReadOnlyQueryPurpose:()=>entry.purpose,
+    checkLabSendEligibility:async()=>{events.push('handoff');return{allowed:false,reason:'LAB_HANDOFF_HELD'};},
+    rememberLabSeen:()=>{events.push('seen');},
+    saveLabSeenNow:async()=>{events.push('save');},
+    queryCanonicalLab:async()=>{throw new Error('NO_HTTP_ON_HANDOFF');},
+    log:async msg=>{assert.match(msg,/LAB_PENDING_HANDOFF_PRECHECK_LAB_HANDOFF_HELD/);events.push('log');}
+  };
+  await vm.runInNewContext('('+resume+')',ctx)(new Set());
+  assert.deepEqual(events,['handoff','seen','save','remove','log']);
+});
+
+test('LAB fresh replies require handoff precheck, postcheck and keyboard gate in both paths',async()=>{
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const contexts=[
+    source.slice(source.indexOf('async function resumePendingLabQueries('),source.indexOf('let labTestProcessing=false;')),
+    source.slice(source.indexOf('async function processLabTestInput()'),source.indexOf('async function visibleLabHasTag(tag)'))
+  ];
+  for(const body of contexts){
+    const pre=body.indexOf('const eligibleBefore=');
+    const query=body.indexOf('await queryCanonicalLab(',pre);
+    const post=body.indexOf('const eligibleAfter=await checkLabSendEligibility(',query);
+    const prepare=body.indexOf('await labTestReplyJournal.prepare(',post);
+    const begin=body.indexOf('await labTestReplyJournal.begin(',prepare);
+    const last=body.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)',begin);
+    const rollback=body.indexOf('await labTestReplyJournal.retryPrepared(',last);
+    const enter=body.indexOf('await sendTextInCurrentLab(',rollback);
+    assert.ok(pre>=0&&query>pre&&post>query&&prepare>post&&begin>prepare&&
+      last>begin&&rollback>last&&enter>rollback);
+  }
 });
