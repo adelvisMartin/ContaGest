@@ -231,7 +231,14 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       }catch(e){
         const mine=token;
         token=null;
-        if(mine){try{await fs.rm(lockFile);}catch{}}
+        if(mine){
+          // Another owner may have replaced this lock after a crash/restart.
+          // Initialization cleanup may only delete the token we acquired.
+          try{
+            const owned=JSON.parse(await fs.readFile(lockFile,'utf8'));
+            if(owned?.token===mine)await fs.rm(lockFile);
+          }catch{}
+        }
         throw e;
       }
     },
