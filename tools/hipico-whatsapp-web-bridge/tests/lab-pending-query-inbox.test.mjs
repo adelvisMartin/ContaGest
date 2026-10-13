@@ -1320,3 +1320,43 @@ test('late human takeover with failed seen fsync stays ambiguous, never permits 
   assert.ok(events.includes('ambiguous'));
   assert.equal(events.includes('logged'),true);
 });
+
+
+test('non-handoff eligibility outage before LAB Enter rolls back WAL without terminal human marker',async()=>{
+  const vm=await import('node:vm');
+  const index=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const sections=[
+    ['pending',index.slice(index.indexOf('async function resumePendingLabQueries('),
+      index.indexOf('let labTestProcessing=false;'))],
+    ['visible',index.slice(index.indexOf('async function processLabTestInput()'),
+      index.indexOf('async function visibleLabHasTag('))]
+  ];
+  for(const [label,section] of sections){
+    const begin=section.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)');
+    const stop=section.indexOf('continue;\n      }',begin);
+    assert.ok(begin>=0&&stop>begin,label);
+    const gate=section.slice(begin,stop+'continue;\n      }'.length);
+    const calls=[];
+    const context={
+      eligibilityArgs:{},tag:'[LABTEST:012345abcd]',
+      row:{id:MESSAGE},entry:{messageId:MESSAGE},
+      checkLabSendEligibility:async()=>({
+        allowed:false,reason:'LAB_HANDOFF_UNAVAILABLE'
+      }),
+      rememberLabSeen:()=>{throw new Error('OUTAGE_IS_NOT_HUMAN_TAKEOVER');},
+      saveLabSeenNow:async()=>{throw new Error('OUTAGE_MUST_NOT_PERSIST_TERMINAL_SEEN');},
+      labTestReplyJournal:{
+        retryPrepared:async id=>{assert.equal(id,MESSAGE);calls.push('prepared');}
+      },
+      labPendingInbox:{
+        remove:async()=>{throw new Error('OUTAGE_MUST_RETAIN_ENCRYPTED_INBOX');}
+      },
+      log:async msg=>{
+        assert.match(msg,/LAB_HANDOFF_UNAVAILABLE/);
+        calls.push('logged');
+      }
+    };
+    await vm.runInNewContext('(async()=>{for(const once of [true]){'+gate+'}})()',context);
+    assert.deepEqual(calls,['prepared','logged'],label);
+  }
+});
