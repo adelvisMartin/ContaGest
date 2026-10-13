@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {CONFIG_MANIFEST_V665 as MANIFEST} from '../config/environment-manifest-v665.mjs';
 import {checkEnvironmentManifest,loadVersionedSamples,parseTemplateInventory} from '../scripts/check-environment-manifest-v665.mjs';
 
@@ -149,4 +150,48 @@ test('#665 malformed sample diagnostics never include credential material',()=>{
  for(const value of ['top-secret-string','unclosed-secret-string','another-private-value']){
   assert.equal(JSON.stringify(report).includes(value),false);
  }
+});
+
+
+test('#665 deleting frontend or LAB Bridge owner can never produce a manifest PASS',()=>{
+ for(const owner of ['backend','frontend','bridge','build']){
+  const missing=JSON.parse(JSON.stringify(MANIFEST));
+  delete missing.surfaces[owner];
+  delete missing.variables[owner];
+  const result=checkEnvironmentManifest(samples,missing);
+  assert.equal(result.status,'FAIL',owner);
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_REQUIRED_SURFACE_INVALID'&&f.owner===owner));
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_OWNER_CATALOG_MISSING'&&f.owner===owner));
+ }
+});
+
+test('#665 changing template paths or emptying a catalog fails closed',()=>{
+ for(const owner of ['backend','frontend','bridge']){
+  const different=JSON.parse(JSON.stringify(MANIFEST));
+  different.surfaces[owner].examplePath='../../private/.env';
+  assert.ok(checkEnvironmentManifest(samples,different).findings.some(f=>
+    f.code==='MANIFEST_REQUIRED_SURFACE_INVALID'&&f.owner===owner));
+  const disabled=JSON.parse(JSON.stringify(MANIFEST));
+  disabled.surfaces[owner].examplePath=null;
+  disabled.variables[owner]={};
+  const result=checkEnvironmentManifest(samples,disabled);
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_REQUIRED_SURFACE_INVALID'&&f.owner===owner));
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_OWNER_CATALOG_MISSING'&&f.owner===owner));
+ }
+});
+
+test('#665 undeclared surfaces/catalogs are rejected without reading their paths',()=>{
+ const registry=JSON.parse(JSON.stringify(MANIFEST));
+ registry.surfaces.external={examplePath:'../../private/.env'};
+ registry.variables.external={PRIVATE_TOKEN:{
+  type:'secret',visibility:'server',sensitive:true,requiredWhen:'optional',sample:'required'
+ }};
+ const result=checkEnvironmentManifest(samples,registry);
+ assert.equal(result.status,'FAIL');
+ assert.ok(result.findings.some(f=>f.code==='MANIFEST_UNEXPECTED_SURFACE'&&f.owner==='external'));
+ assert.ok(result.findings.some(f=>f.code==='MANIFEST_UNEXPECTED_CATALOG'&&f.owner==='external'));
+ const source=readFileSync(new URL('../scripts/check-environment-manifest-v665.mjs',import.meta.url),'utf8');
+ const loader=source.slice(source.indexOf('export function loadVersionedSamples(){'));
+ assert.match(loader,/Object\.entries\(EXPECTED_SURFACES\)/);
+ assert.doesNotMatch(loader,/Object\.entries\(CONFIG_MANIFEST_V665\.surfaces\)/);
 });
