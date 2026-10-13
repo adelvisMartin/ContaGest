@@ -373,3 +373,29 @@ cubren transporte y autoridad persistente, pero no constituyen aún el
 E2E completo con browser, usuario real, corte de red y dispositivo Android.
 Sin enviar nada a SOURCE. #899 y #837 deben mantenerse abiertos hasta
 certificación física y soak.
+
+## Verificación estricta de mensaje saliente LAB y espejo local (#837)
+
+El Bridge ahora considera una etiqueta `[LABTEST:...]` como evidencia de
+respuesta **solo si es la primera línea de una burbuja `.message-out`**
+del panel `#main` correspondiente al grupo LAB pinneado. Además verifica
+el encabezado `🧪 CONTROL HÍPICO · PRUEBA LAB` y las líneas `Respuesta:`
+y `Fuente:`. La coincidencia como subcadena dentro de un texto citado,
+mensaje ajeno o reenvío NO confirma un ACK ni saca un envío de cuarentena.
+
+La identificación del chat se comprueba antes y después del escaneo DOM.
+Para los espejos `[SHADOW:...]` se exige también etiqueta íntegra
+como primera línea, sin obligarlos a usar el formato de respuestas LAB.
+El espejo local ahora declara `LAB_LOCAL_ONLY` y no hace referencia a
+variables de una consulta canónica inexistente. No se inventa una lectura
+de base de datos para mensajes capturados en SOURCE.
+
+Si WhatsApp modifica su DOM o coloca contenido inesperado antes de la
+etiqueta, el sistema puede producir un **falso negativo seguro**:
+deja el envío sin confirmar y exige conciliación, en vez de reenviarlo
+o afirmar una entrega. La validación de la etiqueta visible no reemplaza
+el QA físico ni la confirmación de recepción en otro dispositivo.
+
+Pruebas incorporadas: coincidencias exactas y falsas, citas con tags,
+separación SHADOW/LABTEST, hash inválido, aislamiento al panel saliente,
+acuses durables y ejecución del formateador de espejo local.
