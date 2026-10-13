@@ -219,7 +219,7 @@ router.post('/bridge/lab/query',async(req,res)=>{
     // The duplicate request must observe the SAME canonical revision/text;
     // never resurrect a result after a later operator correction.
     let receiptProjection:Awaited<ReturnType<typeof reconcileCanonicalLabReceipt>>|null=null;
-    if(['status','result','next','active','schedule'].includes(input.purpose)&&canonical.available){
+    if(['status','result','summary','next','active','schedule'].includes(input.purpose)&&canonical.available){
       const readiness=await responseSafetyReadiness();
       if(!readiness.ready)return res.status(503).json({ok:false,error:'LAB_QUERY_RECEIPT_STORE_UNAVAILABLE'});
       const raceKey=input.race?operationalRaceContextKey(input.race):null;
@@ -231,7 +231,7 @@ router.post('/bridge/lab/query',async(req,res)=>{
         ownerId,sourceGroupKey:OFFICIAL_SOURCE_CHANNEL_KEY,
         labGroupId:input.groupId,labChannelKey:input.channelKey,
         senderId:sender,externalMessageId:input.externalMessageId,
-        purpose:input.purpose as 'status'|'result'|'next'|'active'|'schedule',canonical,
+        purpose:input.purpose as 'status'|'result'|'summary'|'next'|'active'|'schedule',canonical,
         timestamp:input.timestamp,nowMs:Date.now(),
         humanOwned:labGlobalHandoff.ownership==='human'||labRaceHandoff?.ownership==='human'
       });
