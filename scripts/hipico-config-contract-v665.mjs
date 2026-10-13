@@ -32,19 +32,20 @@ const PUBLIC_URL_PROTOCOLS = new Set([
 const SENSITIVE_URL_PARAMS = new Set([
   'accesstoken', 'refreshtoken', 'apikey', 'xapikey', 'clientsecret',
   'clienttoken', 'servicerolekey', 'password', 'passwd', 'authorization',
-  'jwt', 'secret', 'token', 'auth'
+  'jwt', 'secret', 'token', 'auth', 'idtoken', 'sessiontoken',
+  'authorizationcode', 'oauthcode'
 ]);
 const containsUrlSecret = params => [...params].some(([key, value]) =>
   value.length > 0 && SENSITIVE_URL_PARAMS.has(key.toLowerCase().replace(/[^a-z0-9]/g, ''))
 );
 // Frontend template URLs are public: userinfo and credentialed query/fragment
 // parameters are unsafe even when VITE_* variable names look innocuous.
-// Accept root-relative frontend routes as well as supported absolute URLs.
+// Accept root-relative and query/hash-only frontend routes, as well as supported URLs.
 // Findings expose only the variable name, never parameter values or credentials.
 function exposesUrlCredentials(value) {
   try {
     const raw = String(value);
-    const relative = raw.startsWith('/');
+    const relative = /^(?:\/|\?|#|\.{1,2}\/)/.test(raw);
     const url = relative ? new URL(raw, 'https://config.invalid') : new URL(raw);
     if (!relative && !PUBLIC_URL_PROTOCOLS.has(url.protocol)) return false;
     const fragment = url.hash.slice(1);
