@@ -1343,6 +1343,16 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       timestamp:entry.messageTimestamp,purpose:entry.purpose,quotedMessageId:entry.quotedMessageId,
       race:entry.race,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
     });
+    // The canonical endpoint may learn about human takeover after the first
+    // eligibility check. This is a permanent handoff for the original
+    // inbound message, NOT a network error eligible for later replay.
+    if(canonical.reason==='LAB_HANDOFF_HELD'){
+      rememberLabSeen(entry.messageId);
+      await saveLabSeenNow();
+      await labPendingInbox.remove(entry.messageId);
+      await log('LAB_PENDING_QUERY_HANDED_OFF id='+tag);
+      continue;
+    }
     if (canonical.available!==true) {
       const delay=labQueryBackoff.fail(entry.messageId);
       await log('LAB_PENDING_QUERY_RETRY id='+tag+' reason='+canonical.reason+' retryMs='+delay);

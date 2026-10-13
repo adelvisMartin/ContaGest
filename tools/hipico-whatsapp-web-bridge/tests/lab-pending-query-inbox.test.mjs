@@ -943,3 +943,57 @@ test('confirmed ACK retains encrypted input until conversation context persisten
   assert.match(recovery,/!entry\.race\|\|restored/);
   assert.match(live,/retainEncryptedInput:Boolean\(encryptedOriginal\?\.race\)&&!restored/);
 });
+
+
+test('canonical handoff during out-of-DOM LAB read cancels encrypted replay permanently',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const first=source.indexOf('async function resumePendingLabQueries(');
+  const last=source.indexOf('let labTestProcessing=false;',first);
+  assert.ok(first>=0&&last>first);
+  const code=source.slice(first,last).trim();
+  const entry=candidate();
+  const events=[];
+  const ctx={
+    BACKEND_SYNC_ENABLED:true,backendState:'online',lastLabPendingOffset:0,
+    INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
+    TOKEN:'fixture-only',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',
+    BACKEND_TIMEOUT_MS:4500,
+    labPendingInbox:{
+      list:async()=>[entry],
+      remove:async id=>{assert.equal(id,MESSAGE);events.push('removed');},
+      read:async()=>{throw new Error('NO_TTL_READ_AFTER_HANDOFF');}
+    },
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{
+      read:async()=>null,
+      prepare:async()=>{throw new Error('NO_WAL_AFTER_HANDOFF');},
+      begin:async()=>{throw new Error('NO_ENTER_AFTER_HANDOFF');}
+    },
+    classifyLocal:()=>({intent:'conversation',risk:'safe'}),
+    stableLabSenderKey:()=>SENDER,
+    labConversationInput:()=>({eligible:true}),
+    labReadOnlyQueryPurpose:()=>entry.purpose,
+    planLabConversation:()=>({scopeConflict:false}),
+    checkLabSendEligibility:async()=>{
+      events.push('precheck-clear');
+      return{allowed:true,reason:'LAB_HANDOFF_CLEAR'};
+    },
+    labQueryBackoff:{
+      allowed:()=>true,
+      fail:()=>{throw new Error('HANDOFF_IS_NOT_RETRYABLE_NETWORK_ERROR');},
+      clear:()=>{throw new Error('HANDOFF_CANNOT_CLEAR_PENDING_QUERY');}
+    },
+    queryCanonicalLab:async()=>{events.push('canonical-held');return{
+      available:false,reason:'LAB_HANDOFF_HELD'
+    };},
+    rememberLabSeen:id=>{assert.equal(id,MESSAGE);events.push('seen');},
+    saveLabSeenNow:async()=>{events.push('seen-saved');},
+    log:async message=>{assert.match(message,/^LAB_PENDING_QUERY_HANDED_OFF id=/);events.push('logged');}
+  };
+  const recover=vm.runInNewContext('('+code+')',ctx);
+  await recover(new Set());
+  assert.deepEqual(events,[
+    'precheck-clear','canonical-held','seen','seen-saved','removed','logged'
+  ]);
+});
