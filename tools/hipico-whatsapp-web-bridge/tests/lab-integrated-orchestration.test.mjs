@@ -249,3 +249,73 @@ test('LAB pending inbox and human handoff protect visible + out-of-DOM recovery'
   assert.match(replay,/await labTestReplyJournal\.retryPrepared\(entry\.messageId\)/);
   assert.doesNotMatch(replay,/sendTextInCurrentSource|sourceWriteAllowed:true/);
 });
+
+
+test('out-of-DOM recovery rejects operator takeover before query, after query and before Enter',async()=>{
+  const source=part(bridge,'async function resumePendingLabQueries(','let labTestProcessing=false');
+  const entry={
+    messageId:'false_120363222222222222@g.us_1_123456789012@lid',
+    senderId:'123456789012@lid',text:'¿Estado de la carrera 5?',purpose:'status',
+    messageTimestamp:'2026-10-12T23:00:00.000Z',quotedMessageId:null,
+    race:{raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'}
+  };
+  const scenario=async(grants,{expireAfterRead=false}={})=>{
+    const actions=[];let index=0;
+    const context={
+      labPendingInbox:{
+        list:async()=>[entry],
+        read:async()=>{actions.push('expiry-check');return expireAfterRead?null:entry;},
+        remove:async()=>actions.push('remove')
+      },
+      BACKEND_SYNC_ENABLED:true,backendState:'online',
+      labTestReplyJournal:{
+        read:async()=>{actions.push('journal-read');return null;},
+        prepare:async()=>actions.push('prepare'),
+        begin:async()=>actions.push('begin'),
+        confirm:async()=>actions.push('confirm'),
+        retryPrepared:async()=>actions.push('rollback')
+      },
+      labTestTagFor:()=> 'tag',labQueryBackoff:{allowed:()=>true,fail:()=>0,clear:()=>{}},
+      classifyLocal:()=>({risk:'safe',intent:'status_non_monetary'}),
+      stableLabSenderKey:()=>entry.senderId,
+      labConversationInput:()=>({eligible:true}),
+      labReadOnlyQueryPurpose:()=>entry.purpose,
+      planLabConversation:()=>({scopeConflict:false,rememberRace:true,sender:entry.senderId,
+        raceNumber:5,raceScope:entry.race,raceTrack:'La Rinconada',raceDate:'2026-10-12'}),
+      checkLabSendEligibility:async()=>{
+        const allowed=grants[index++]??false;
+        actions.push('gate-'+index+':'+allowed);
+        return{allowed,reason:allowed?'LAB_ALLOWED':'LAB_HANDOFF_HELD'};
+      },
+      queryCanonicalLab:async()=>{actions.push('canonical');return{
+        available:true,reason:'CANONICAL_STATE_FOUND',text:'Estado interno verificado.'};},
+      INGEST_URL:'https://example.org/bridge/events',TOKEN:'test',
+      LAB_GROUP_ID:'120363222222222222@g.us',LAB_CHANNEL_KEY:'lab',BACKEND_TIMEOUT_MS:5000,
+      log:async()=>{},rememberLabSeen:()=>actions.push('seen'),
+      saveLabSeenNow:async()=>{},rememberConfirmedPendingLabQuote:async()=>true,
+      localLabTestReply:()=> 'Respuesta LAB',
+      sendTextInCurrentLab:async()=>actions.push('send'),
+      labConversationContext:{remember:async()=>{}},
+      labTestAmbiguousCount:0,labSeenOutcome:()=> 'AMBIGUOUS'
+    };
+    const fn=vm.runInNewContext('('+source.trim()+')',context);
+    await fn(new Set());
+    return actions;
+  };
+  const before=await scenario([false]);
+  assert.ok(!before.includes('canonical')&&!before.includes('send'));
+  assert.ok(before.includes('remove'));
+  const after=await scenario([true,false]);
+  assert.ok(after.includes('canonical')&&!after.includes('prepare')&&!after.includes('send'));
+  assert.ok(after.includes('remove'));
+  const preEnter=await scenario([true,true,false]);
+  assert.ok(preEnter.includes('prepare')&&preEnter.includes('begin'));
+  assert.ok(preEnter.includes('rollback')&&!preEnter.includes('send'));
+  assert.ok(preEnter.includes('remove'));
+  const expired=await scenario([true,true,true],{expireAfterRead:true});
+  assert.ok(expired.includes('canonical')&&!expired.includes('prepare')&&!expired.includes('send'));
+  const allowed=await scenario([true,true,true]);
+  assert.equal(allowed.filter(action=>action==='send').length,1);
+  assert.ok(allowed.indexOf('send')>allowed.indexOf('gate-3:true'));
+  assert.ok(allowed.indexOf('confirm')>allowed.indexOf('send'));
+});
