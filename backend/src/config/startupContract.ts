@@ -17,7 +17,10 @@ export function checkBackendStartupConfig(config: BackendStartupInput) {
     // Coercing with Number alone allows empty strings and fractional ports.
     const candidate=String(config.PORT).trim();
     const port=Number(candidate);
-    if(!/^[0-9]{1,5}$/.test(candidate)||!Number.isInteger(port)||port<1||port>65535)
+    // Node port 0 is useful for ephemeral test/dev listeners, but it is
+    // not a stable production endpoint and must not silently auto-bind.
+    if(!/^[0-9]{1,5}$/.test(candidate)||!Number.isInteger(port)||port>65535||
+       (port===0&&(vercelEnv==='production'||nodeEnv==='production')))
       failures.push('PORT_OUT_OF_RANGE');
   }
   const production=vercelEnv==='production'||(!vercelEnv&&nodeEnv==='production');

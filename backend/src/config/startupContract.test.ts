@@ -56,6 +56,9 @@ test('#665 port validation rejects invalid and out-of-range values before listen
   for(const PORT of ['1','3030','65535']){
     assert.equal(checkBackendStartupConfig({...production,PORT}).ok,true,PORT);
   }
+  assert.equal(checkBackendStartupConfig({NODE_ENV:'test',PORT:'0'}).ok,true,
+    'OS-assigned ephemeral port remains available to test harnesses');
+  assert.equal(checkBackendStartupConfig({NODE_ENV:'development',PORT:'0'}).ok,true);
 });
 
 test('#665 startup errors do not disclose environment variable values',()=>{
