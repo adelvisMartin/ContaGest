@@ -1220,6 +1220,7 @@ async function processLabTestInput() {
     if (journalRecord?.state === 'confirmed') {
       // Crash after confirmed ACK but before hint persistence: safe to backfill.
       const verifiedSender=stableLabSenderKey(row.id);
+      const verifiedPurpose=labReadOnlyQueryPurpose(body,classifyLocal(body));
       // Re-evaluate ambiguity after crash instead of trusting the first
       // explicit race captured by a permissive regex.
       const verifiedRace=confirmedLabQuoteHint(row,classifyLocal(body));

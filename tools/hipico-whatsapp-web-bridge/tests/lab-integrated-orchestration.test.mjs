@@ -177,3 +177,42 @@ test('completed multi-turn race reference is passed to the canonical query, not 
   assert.equal(unsafe.scopeConflict,true);
   assert.equal(unsafe.raceScope,null);
 });
+
+
+test('confirmed LAB ACK recovers context only for a verified informational purpose without re-sending',async()=>{
+  const start=lab.indexOf("if (journalRecord?.state === 'confirmed') {");
+  const end=lab.indexOf("if (journalRecord?.state === 'ambiguous'",start);
+  assert.ok(start>=0&&end>start,'confirmed ACK recovery branch missing');
+  const confirmed=lab.slice(start,end);
+  assert.match(confirmed,/const verifiedPurpose=labReadOnlyQueryPurpose\(body,classifyLocal\(body\)\)/);
+  let seen=0,quoteHints=0,contextCalls=0,recoveredAt=null;
+  const scope={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const restore=vm.runInNewContext(
+    '(async function(row,body,journalRecord){for(const once of [row]){\n'+confirmed+'\n}})',
+    {
+      stableLabSenderKey:()=> 'sender-stable',
+      labReadOnlyQueryPurpose, classifyLocal,
+      confirmedLabQuoteHint:()=> scope,
+      labQuotedRaceJournal:{remember:async()=>{quoteHints++;}},
+      labConversationContext:{recoverConfirmed:async(sender,race,at)=>{
+        assert.equal(sender,'sender-stable');
+        assert.equal(race.raceNumber,5);
+        recoveredAt=at;
+        contextCalls++;
+      }},
+      planLabConversation:()=>({raceScope:scope,scopeConflict:false}),
+      rememberLabSeen:()=>{seen++;},
+      saveLabSeenNow:async()=>{},
+      log:async()=>{}
+    }
+  );
+  const row={id:'false_120363222222222222@g.us_1_123456789012@lid'};
+  const journal={state:'confirmed',updatedAt:'2026-10-12T23:00:00.000Z'};
+  await restore(row,'¿Cuál es el estado de la carrera 5?',journal);
+  assert.equal(contextCalls,1);
+  assert.equal(quoteHints,1);
+  assert.equal(recoveredAt,journal.updatedAt,'original ACK timestamp must not extend TTL');
+  await restore(row,'Registrar apuesta para carrera 5',journal);
+  assert.equal(contextCalls,1,'monetary message cannot restore domain context');
+  assert.equal(seen,2,'confirmed message is never re-sent, including unsafe intent');
+});
