@@ -1211,8 +1211,10 @@ async function recoverConfirmedLabConversation(entry,confirmedAt) {
   );
   if(plan.scopeConflict||!plan.raceScope)return false;
   try {
-    await labConversationContext.recoverConfirmed(sender,plan.raceScope,confirmedAt);
-    return true;
+    // False means the context store intentionally declined the backfill
+    // (expired ACK or a newer sender hint). Do not report it as restored or
+    // discard the encrypted original merely because the call did not throw.
+    return (await labConversationContext.recoverConfirmed(sender,plan.raceScope,confirmedAt))===true;
   }catch{
     await log('LAB_CONTEXT_ACK_RECOVERY_FAILED');
     return false;
@@ -1534,8 +1536,12 @@ async function processLabTestInput() {
         if(saved){
           const verified=reconcileLabPendingObservation(saved,{
             messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
-            messageTimestamp:parsedLabStamp.timestamp,quotedMessageId:row.quotedId||null,
-            explicitRace:explicitLabRaceScope(body)
+            // An explicit self-contained race never binds to the attached
+            // WhatsApp reply. Keep strict quote equality only for a query
+            // whose scope was actually obtained from that verified quote.
+            messageTimestamp:parsedLabStamp.timestamp,
+            quotedMessageId:directRace?null:(row.quotedId||null),
+            explicitRace:directRace
           });
           if(!verified.valid){
             await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason='+verified.reason);
@@ -1646,13 +1652,21 @@ async function processLabTestInput() {
       // original request. Never write a second hint from the mutable DOM.
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
-      let contextPersisted=true;
-      if (plan.rememberRace && labConversationContext) {
-        try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope,{raceTrack:plan.raceTrack,raceDate:plan.raceDate}); }
-        catch { contextPersisted=false; await log('LAB_CONTEXT_PERSIST_FAILED'); }
+      let contextPersisted=!plan.rememberRace;
+      if(plan.rememberRace && labConversationContext){
+        try{
+          // A non-throwing false is a rejected durable write, not success.
+          contextPersisted=(await labConversationContext.remember(
+            plan.sender,plan.raceNumber,plan.raceScope,
+            {raceTrack:plan.raceTrack,raceDate:plan.raceDate}
+          ))===true;
+        }catch{
+          contextPersisted=false;
+          await log('LAB_CONTEXT_PERSIST_FAILED');
+        }
       }
-      // ACK is already durable; auxiliary failure retains the encrypted
-      // original for recovery and can never authorize a second WhatsApp send.
+      // No second Enter may follow a durable ACK. Retain the original
+      // encrypted request if the auxiliary conversation write was declined.
       await finalizeConfirmedVisibleLabQuote(row,body,{retainEncryptedInput:!contextPersisted});
       processed += 1;
       await log('LAB_TEST_READ id='+tag+' intent='+classification.intent);
