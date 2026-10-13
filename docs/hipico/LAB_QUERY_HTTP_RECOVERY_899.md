@@ -92,3 +92,25 @@ Regresiones del adaptador: códigos ajenos, respuestas de control terminales
 y códigos informativos válidos. Las comprobaciones V8 aisladas del SHA del
 PR pasaron 15/15, pero la suite Node completa y pruebas reales de Windows,
 PostgreSQL y WhatsApp LAB siguen pendientes.
+
+
+### Coherencia entre propósito y respuesta confirmada
+
+Además del catálogo cerrado de `status`, una respuesta positiva debe coincidir
+con el propósito inmutable del mensaje original antes de habilitar la entrega:
+`CANONICAL_STATE_FOUND → status`,
+`CANONICAL_RESULT_CONFIRMED_INTERNAL → result`,
+`CANONICAL_RACE_SUMMARY → summary`,
+`CANONICAL_NEXT_RACE → next`,
+`CANONICAL_ACTIVE_RACE → active` y
+`CANONICAL_SCHEDULE_FOUND → schedule`.
+
+Una respuesta positiva de otro propósito falla con
+`LAB_CANONICAL_INVALID_RESPONSE` y no concede autoridad de envío. Los estados
+`LAB_CANONICAL_RECOVERED` y `LAB_CANONICAL_REVISION_CHANGED` únicamente
+pueden corresponder a propósitos que participan en el diario inmutable de
+recibos; las consultas `participants` no tienen esa autoridad. Los motivos
+de ausencia/revisión conservan su tratamiento informativo o terminal según
+el contrato existente. Se añadieron regresiones de 46 combinaciones de
+propósito/estado y se ejecutaron aisladas en V8 con HTTP simulado, 46/46 PASS;
+Node, Windows/WhatsApp y las pruebas de integración aún necesitan evidencia.
