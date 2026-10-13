@@ -59,8 +59,15 @@ export async function runHipicoSmoke(baseUrl, request = fetch) {
     const mediaType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
     if (mediaType !== 'text/html') return false;
     const html = await response.text();
-    return /Control Hípico/.test(html)
-      && /assets\/js\/app\.js/.test(html);
+    // A splash/error document can mention the expected strings in comments or
+    // prose without loading the application. Require the real HTML entrypoint.
+    const markup = html.replace(/<!--[\s\S]*?-->/g, '');
+    const hasTitle = /<title(?:\s[^>]*)?>\s*Control Hípico\s*<\/title\s*>/i.test(markup);
+    const hasModule = [...markup.matchAll(/<script\b[^>]*>/gi)].some(([tag]) =>
+      /\stype\s*=\s*(["'])module\1/i.test(tag) &&
+      /\ssrc\s*=\s*(["'])\.\/assets\/js\/app\.js\1/i.test(tag)
+    );
+    return hasTitle && hasModule;
   });
   const status = checks.some(x => x.status === 'FAIL') ? 'FAIL' : checks.some(x => x.status === 'BLOCKED') ? 'BLOCKED' : 'PASS';
   return { schema: 'hipico-operational-smoke-v1', status, checks };
