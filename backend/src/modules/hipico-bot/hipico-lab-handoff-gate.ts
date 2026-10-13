@@ -19,9 +19,14 @@ export async function checkLabHandoff(input:{
   sender:string;sourceGroupKey:string;labGroupKey:string;race?:Race|null;at?:Date
 },read:Loader=loadHandoff):Promise<LabHandoffCheck>{
   const sender=String(input.sender||'').trim();
-  const keys=[...new Set([input.sourceGroupKey,input.labGroupKey]
-    .map(value=>String(value||'').trim()).filter(Boolean))];
-  if(!sender||!keys.length)return{allowed:false,reason:'LAB_HANDOFF_SCOPE_INVALID'};
+  const sourceKey=String(input.sourceGroupKey||'').trim();
+  const labKey=String(input.labGroupKey||'').trim();
+  // Both authorities are mandatory. Never downgrade to a one-channel check
+  // because an env value is missing or two pins accidentally overlap.
+  if(!sender||!sourceKey||!labKey||sourceKey===labKey){
+    return{allowed:false,reason:'LAB_HANDOFF_SCOPE_INVALID'};
+  }
+  const keys=[sourceKey,labKey];
   const race=input.race??null;
   const date=String(race?.raceDate||'');
   const validDate=!race||(/^\d{4}-\d{2}-\d{2}$/.test(date)&&
