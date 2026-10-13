@@ -1240,10 +1240,10 @@ async function rememberConfirmedPendingLabQuote(entry) {
 // The confirmed send journal outranks the auxiliary seen file. Finish
 // quote persistence using the immutable encrypted pre-query record before
 // removing it; after a crash this can run again without ever pressing Enter.
-async function finalizeConfirmedVisibleLabQuote(row,body) {
+async function finalizeConfirmedVisibleLabQuote(row,body,{retainEncryptedInput=false}={}) {
   const stored=await labPendingInbox?.read(row.id);
   if(stored){
-    if(await rememberConfirmedPendingLabQuote(stored)){
+    if(await rememberConfirmedPendingLabQuote(stored) && !retainEncryptedInput){
       await labPendingInbox.remove(row.id);
     }
     return;
@@ -1265,10 +1265,10 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
     // the row is still visible or the canonical backend is offline. No Enter.
     if (visibleIds.has(entry.messageId) && state?.state !== 'confirmed') continue;
     if (state?.state === 'confirmed') {
-      await recoverConfirmedLabConversation(entry,state.updatedAt);
+      const restored=await recoverConfirmedLabConversation(entry,state.updatedAt);
       rememberLabSeen(entry.messageId);
       await saveLabSeenNow();
-      if(await rememberConfirmedPendingLabQuote(entry)){
+      if(await rememberConfirmedPendingLabQuote(entry) && (!entry.race||restored)){
         await labPendingInbox.remove(entry.messageId);
       }
       continue;
@@ -1277,12 +1277,12 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       await assertCurrentLabIdentity();
       if (await visibleLabHasTag(tag)) {
         const confirmed=await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
-        if(confirmed?.state==='confirmed'){
-          await recoverConfirmedLabConversation(entry,confirmed.updatedAt);
-        }
+        const restored=confirmed?.state==='confirmed'
+          ? await recoverConfirmedLabConversation(entry,confirmed.updatedAt)
+          : false;
         rememberLabSeen(entry.messageId);
         await saveLabSeenNow();
-        if(await rememberConfirmedPendingLabQuote(entry)){
+        if(await rememberConfirmedPendingLabQuote(entry) && (!entry.race||restored)){
           await labPendingInbox.remove(entry.messageId);
         }
         await log('LAB_PENDING_RECONCILED id='+tag);
@@ -1447,12 +1447,14 @@ async function processLabTestInput() {
     if (journalRecord?.state === 'confirmed') {
       // Never grant quote/memory authority to mutable DOM text after an ACK.
       const encryptedOriginal=await labPendingInbox?.read(row.id);
-      if(encryptedOriginal){
-        await recoverConfirmedLabConversation(encryptedOriginal,journalRecord.updatedAt);
-      }
+      const restored=encryptedOriginal
+        ? await recoverConfirmedLabConversation(encryptedOriginal,journalRecord.updatedAt)
+        : false;
       rememberLabSeen(row.id);
       await saveLabSeenNow();
-      await finalizeConfirmedVisibleLabQuote(row,body); // HMAC hint only from encrypted input
+      await finalizeConfirmedVisibleLabQuote(row,body,{
+        retainEncryptedInput:Boolean(encryptedOriginal?.race)&&!restored
+      }); // HMAC hint only from encrypted input
       continue;
     }
     if (journalRecord?.state === 'ambiguous' || journalRecord?.state === 'sending') {
@@ -1461,12 +1463,14 @@ async function processLabTestInput() {
       if (await visibleLabHasTag(tag)) {
         const confirmed=await labTestReplyJournal.confirm(row.id,{visibleTag:true});
         const encryptedOriginal=await labPendingInbox?.read(row.id);
-        if(encryptedOriginal && confirmed?.state==='confirmed'){
-          await recoverConfirmedLabConversation(encryptedOriginal,confirmed.updatedAt);
-        }
+        const restored=encryptedOriginal && confirmed?.state==='confirmed'
+          ? await recoverConfirmedLabConversation(encryptedOriginal,confirmed.updatedAt)
+          : false;
         rememberLabSeen(row.id);
         await saveLabSeenNow();
-        await finalizeConfirmedVisibleLabQuote(row,body);
+        await finalizeConfirmedVisibleLabQuote(row,body,{
+          retainEncryptedInput:Boolean(encryptedOriginal?.race)&&!restored
+        });
         await log('LAB_TEST_REPLY_RECONCILED id='+tag);
       }
       continue;
@@ -1620,15 +1624,18 @@ async function processLabTestInput() {
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
-      await finalizeConfirmedVisibleLabQuote(row,body);
       // Quoted-race hints have already been finalized from the encrypted
       // original request. Never write a second hint from the mutable DOM.
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
+      let contextPersisted=true;
       if (plan.rememberRace && labConversationContext) {
         try { await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope,{raceTrack:plan.raceTrack,raceDate:plan.raceDate}); }
-        catch { await log('LAB_CONTEXT_PERSIST_FAILED'); }
+        catch { contextPersisted=false; await log('LAB_CONTEXT_PERSIST_FAILED'); }
       }
+      // ACK is already durable; auxiliary failure retains the encrypted
+      // original for recovery and can never authorize a second WhatsApp send.
+      await finalizeConfirmedVisibleLabQuote(row,body,{retainEncryptedInput:!contextPersisted});
       processed += 1;
       await log('LAB_TEST_READ id='+tag+' intent='+classification.intent);
     } catch (error) {
