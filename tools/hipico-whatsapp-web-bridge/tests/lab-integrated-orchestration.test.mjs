@@ -262,6 +262,7 @@ test('out-of-DOM recovery rejects operator takeover before query, after query an
   const scenario=async(grants,{expireAfterRead=false}={})=>{
     const actions=[];let index=0;
     const context={
+      lastLabPendingOffset:0,
       labPendingInbox:{
         list:async()=>[entry],
         read:async()=>{actions.push('expiry-check');return expireAfterRead?null:entry;},
