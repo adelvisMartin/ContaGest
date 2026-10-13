@@ -97,3 +97,39 @@ test('release evidence is emitted only from a real release PASS, never from smok
   },policy);
   assert.equal(blocked,null);
 });
+
+test('malformed or impossible 24h soak metrics cannot PASS',()=>{
+  const mutations=[
+    {durationMs:NaN},{rssEndMb:NaN},{heapEndMb:Infinity},
+    {healthFailures:-1},{healthFailures:101},{spoolAvailableChecks:101},
+    {healthChecks:101},{spoolChecks:101},{samples:.5},
+    {lostDecisions:-1},{maxSpoolBytes:-1}
+  ];
+  for(const mutation of mutations){
+    const checked=evaluateSoak({...base,...mutation},policy);
+    assert.equal(checked.status,'BLOCKED',Object.keys(mutation).join(','));
+    assert.ok(checked.blocked.includes('SOAK_METRICS_INVALID'));
+  }
+});
+
+test('release producer rechecks raw soak metrics rather than trusting forged PASS',()=>{
+  const pass=evaluateSoak(base,policy);
+  const common={
+    candidateSha:base.candidateSha,attemptId:'real-run',operatorId:'qa-operator',
+    startedAt:'2026-10-10T00:00:00.000Z',completedAt:'2026-10-11T00:00:00.000Z',
+    durationRequestedMinutes:1440,policyVersion:5,
+    summaryInput:base,evaluation:pass,evidenceIntegrity:{
+      samplesSha256:'1'.repeat(64),physicalEvidenceSha256:'2'.repeat(64),
+      safetyEvidenceSha256:'3'.repeat(64),drillEvidenceSha256:'4'.repeat(64),
+      physicalVerifiedFiles:1,safetyMaterial:[],drillMaterial:[]
+    }
+  };
+  assert.ok(createSoakReleaseEvidence(common,policy));
+  for(const variant of [
+    {...common,summaryInput:{...base,sourceReadOnly:'FAIL' as const}},
+    {...common,summaryInput:{...base,healthFailures:-1}},
+    {...common,evaluation:{...pass,durationHours:48}},
+    {...common,completedAt:'2026-10-10T00:05:00.000Z'},
+    {...common,completedAt:'not-a-date'}
+  ])assert.equal(createSoakReleaseEvidence(variant,policy),null);
+});
