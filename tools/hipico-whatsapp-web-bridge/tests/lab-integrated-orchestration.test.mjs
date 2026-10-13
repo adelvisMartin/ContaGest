@@ -49,7 +49,8 @@ test('current LAB send reconciles all authorities before the durable journal',()
     prepare>handoff2&&begin>prepare&&preEnter>begin&&rollback>preEnter&&
     send>rollback&&ack>send&&memo>ack);
   assert.match(lab,/inquiryPurpose && sender && !plan\.scopeConflict/);
-  assert.match(lab,/race:verifiedRace/);
+  assert.match(lab,/race:trustedRace/);
+  assert.match(lab,/const verifiedRace=plan\.scopeConflict\?null:\(scopedRace\|\|plan\.raceScope\)/);
   assert.match(lab,/labQuotedRaceJournal\.remember\(/);
   assert.match(lab,/eligibleBefore\.reason==='LAB_HANDOFF_HELD'/);
   assert.match(lab,/eligibleAfter\.reason==='LAB_HANDOFF_HELD'/);
@@ -215,4 +216,35 @@ test('confirmed LAB ACK recovers context only for a verified informational purpo
   await restore(row,'Registrar apuesta para carrera 5',journal);
   assert.equal(contextCalls,1,'monetary message cannot restore domain context');
   assert.equal(seen,2,'confirmed message is never re-sent, including unsafe intent');
+});
+
+
+test('LAB pending inbox and human handoff protect visible + out-of-DOM recovery',()=>{
+  const replay=part(bridge,'async function resumePendingLabQueries(','let labTestProcessing=false');
+  const stage=lab.indexOf('await labPendingInbox.enqueue({');
+  const before=lab.indexOf('const eligibleBefore=');
+  const query=lab.indexOf('await queryCanonicalLab({');
+  const after=lab.indexOf('const eligibleAfter=await checkLabSendEligibility(');
+  const prepare=lab.indexOf('await labTestReplyJournal.prepare(row.id)');
+  const send=lab.indexOf('await sendTextInCurrentLab(');
+  assert.ok(stage>=0&&before>stage&&query>before&&after>query&&prepare>after&&send>prepare);
+  assert.match(lab,/LAB_PENDING_IDENTITY_SCOPE_OR_TIME_INVALID/);
+  assert.match(lab,/reconcileLabPendingObservation\(saved,/);
+  assert.match(lab,/timestamp:parsedLabStamp\?\.timestamp/);
+  assert.match(lab,/canonical\.available!==true/);
+  const p=[
+    replay.indexOf('const eligibleBefore=await checkLabSendEligibility(eligibilityArgs)'),
+    replay.indexOf('const canonical = await queryCanonicalLab({'),
+    replay.indexOf('const eligibleAfter=await checkLabSendEligibility(eligibilityArgs)'),
+    replay.indexOf('await labTestReplyJournal.prepare(entry.messageId)'),
+    replay.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)'),
+    replay.indexOf('await sendTextInCurrentLab(')
+  ];
+  assert.ok(p.every((position,index)=>position>=0&&(index===0||position>p[index-1])));
+  assert.match(replay,/LAB_PENDING_EXPIRED_BEFORE_SEND/);
+  assert.match(replay,/LAB_PENDING_HANDOFF_PRECHECK_/);
+  assert.match(replay,/LAB_PENDING_HANDOFF_RECHECK_/);
+  assert.match(replay,/LAB_PENDING_HANDOFF_SEND_GATE_/);
+  assert.match(replay,/await labTestReplyJournal\.retryPrepared\(entry\.messageId\)/);
+  assert.doesNotMatch(replay,/sendTextInCurrentSource|sourceWriteAllowed:true/);
 });
