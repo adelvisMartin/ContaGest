@@ -90,7 +90,8 @@ export async function queryCanonicalLab({
       if(attempt===0)continue;
       return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
     }
-    if([502,503,504].includes(response.status)&&attempt===0)continue;
+    // 503 is an explicit overload/unavailable signal; do not amplify it.
+    if([502,504].includes(response.status)&&attempt===0)continue;
     if(response.status!==200||!response.headers.get('content-type')?.toLowerCase().includes('application/json')){
       return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};
     }
