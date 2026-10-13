@@ -125,6 +125,29 @@ test('scan expiry predicate cannot be shadowed by expired-count accumulator',asy
   }
 });
 
+
+test('health near-expiry uses the earliest bounded LAB ciphertext deadline',async t=>{
+  const h=await harness(t);
+  const inbox=h.create();await inbox.initialize();
+  const future=candidate({
+    messageTimestamp:new Date(h.now()+60_000).toISOString()
+  });
+  await inbox.enqueue(future);
+  h.advance(8*60*1000);
+  const warning=await inbox.snapshot();
+  assert.equal(warning.pending,1);
+  assert.equal(warning.nearingExpiry,1,
+    '8-minute capture age reaches warning threshold despite 7-minute remote timestamp age');
+  assert.equal(warning.oldestAgeSeconds,480,
+    'operator diagnostic must reflect earliest expiry time');
+  h.advance(2*60*1000);
+  const expired=await inbox.snapshot();
+  assert.equal(expired.pending,0);
+  assert.equal(expired.nearingExpiry,0);
+  assert.equal(expired.oldestAgeSeconds,0);
+  await inbox.close();
+});
+
 test('future-dated LAB message expires at capture TTL even before WhatsApp timestamp TTL',async t=>{
   const h=await harness(t);
   const inbox=h.create();await inbox.initialize();
