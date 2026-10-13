@@ -106,3 +106,74 @@ test('the Bridge checks handoff before read, before journal and immediately befo
   assert.match(block,/finally \{labTestProcessing=false;\}/);
   assert.doesNotMatch(block,/sendTextInCurrentSource/);
 });
+
+
+test('oversized streamed handoff permission is rejected before buffering and reader is cancelled',async()=>{
+  let reads=0,cancels=0,textCalls=0;
+  const result=await checkLabSendEligibility({...base,fetchImpl:async()=>({
+    status:200,headers:new Headers({'content-type':'application/json'}),
+    body:{getReader:()=>({
+      read:async()=>{reads++;return{done:false,value:new Uint8Array(4097)};},
+      cancel:async()=>{cancels++;},releaseLock:()=>{}
+    })},
+    text:async()=>{textCalls++;throw new Error('must never buffer oversized stream');}
+  })});
+  assert.deepEqual(result,{allowed:false,reason:'LAB_HANDOFF_INVALID_RESPONSE'});
+  assert.equal(reads,1);
+  assert.equal(cancels,1);
+  assert.equal(textCalls,0);
+});
+
+test('split UTF-8 streamed handoff grants only validated explicit operator permission',async()=>{
+  const body=JSON.stringify({ok:true,mode:'shadow',allowed:true,status:'LAB_HANDOFF_CLEAR',
+    authority,detail:'autorización'});
+  const bytes=new TextEncoder().encode(body);
+  const split=bytes.indexOf(0xc3);
+  assert.ok(split>=0);
+  const parts=[bytes.slice(0,split+1),bytes.slice(split+1)];
+  let reads=0,cancels=0;
+  const outcome=await checkLabSendEligibility({...base,fetchImpl:async()=>({
+    status:200,headers:new Headers({'content-type':'application/json'}),
+    body:{getReader:()=>({
+      read:async()=>reads<parts.length?{done:false,value:parts[reads++]}:{done:true},
+      cancel:async()=>{cancels++;},releaseLock:()=>{}
+    })},
+    text:async()=>{throw new Error('stream must not use text()');}
+  })});
+  assert.deepEqual(outcome,{allowed:true,reason:'LAB_HANDOFF_CLEAR'});
+  assert.equal(reads,2);
+  assert.equal(cancels,0);
+});
+
+test('invalid content length and malformed UTF-8 handoff permissions fail closed',async()=>{
+  for(const length of ['garbage','-1','4097','999999999999999999999']){
+    let reads=0;
+    const result=await checkLabSendEligibility({...base,fetchImpl:async()=>({
+      status:200,headers:new Headers({'content-type':'application/json','content-length':length}),
+      text:async()=>{reads++;return '{}';}
+    })});
+    assert.deepEqual(result,{allowed:false,reason:'LAB_HANDOFF_INVALID_RESPONSE'});
+    assert.equal(reads,0,length);
+  }
+  let cancels=0;
+  const invalid=await checkLabSendEligibility({...base,fetchImpl:async()=>({
+    status:200,headers:new Headers({'content-type':'application/json'}),
+    body:{getReader:()=>({
+      read:async()=>({done:false,value:new Uint8Array([0xff])}),
+      cancel:async()=>{cancels++;},releaseLock:()=>{}
+    })}
+  })});
+  assert.deepEqual(invalid,{allowed:false,reason:'LAB_HANDOFF_INVALID_RESPONSE'});
+  assert.equal(cancels,1);
+});
+
+test('streamless handoff adapters also enforce UTF-8 byte length, not character count',async()=>{
+  const result=await checkLabSendEligibility({...base,fetchImpl:async()=>({
+    status:200,headers:new Headers({'content-type':'application/json'}),
+    text:async()=>JSON.stringify({
+      ok:true,mode:'shadow',allowed:true,status:'LAB_HANDOFF_CLEAR',
+      authority,detail:'á'.repeat(3000)
+    })
+  })});
+  assert.deepEqual(result,{allowed:false,reason:'LAB_HANDOFF_INVALID_RESPONSE'});
+});
