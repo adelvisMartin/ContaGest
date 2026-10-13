@@ -115,6 +115,11 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       await fs.lstat(keyFile);
     }catch(error){
       if(error?.code!=='ENOENT')throw error;
+      // Never generate a different AES key if durable ciphertext already
+      // exists. An operator can restore the original key from backup.
+      if((await fs.readdir(root)).some(name=>name.endsWith('.json'))){
+        throw new Error('LAB_PENDING_KEY_MISSING_WITH_RECORDS');
+      }
       const temp=path.join(root,'inbox.key.'+crypto.randomUUID()+'.tmp');
       let handle;
       try{
