@@ -8,6 +8,15 @@ const VALID_TYPES=new Set(['string','url','integer','number','boolean','enum','s
 const VALID_VISIBILITY=new Set(['public','server','build']);
 const VALID_REQUIRED=new Set(['optional','production','lab-send','supabase-enabled']);
 const VALID_SAMPLE=new Set(['required','optional','not-applicable']);
+// These repository-owned inputs are invariant. An editable manifest cannot
+// remove a whole owner, switch a sample path to a private file, or grant itself
+// a PASS by replacing a versioned template with null.
+const EXPECTED_SURFACES=Object.freeze({
+ backend:'backend/.env.example',
+ frontend:'frontend/.env.example',
+ bridge:'tools/hipico-whatsapp-web-bridge/.env.example',
+ build:null
+});
 
 // Inspect only versioned examples; no access to OS or provider secrets.
 export function parseTemplateInventory(source){
@@ -58,7 +67,25 @@ function sampleMatchesDeclaredType(value,record,owner){
 
 export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
  const findings=[],add=(code,owner,key)=>findings.push({code,owner,key});
- for(const [owner,meta] of Object.entries(registry.surfaces)){
+ // Audit missing metadata before traversing the editable registry; an absent
+ // frontend/bridge is a FAIL, not an empty set of obligations.
+ for(const [owner,examplePath] of Object.entries(EXPECTED_SURFACES)){
+  if(!Object.hasOwn(registry?.surfaces??{},owner)||
+     registry.surfaces[owner]?.examplePath!==examplePath)
+    add('MANIFEST_REQUIRED_SURFACE_INVALID',owner,owner);
+  if(!registry?.variables?.[owner]||
+     !Object.keys(registry.variables[owner]).length)
+    add('MANIFEST_OWNER_CATALOG_MISSING',owner,owner);
+ }
+ for(const owner of Object.keys(registry?.surfaces??{})){
+  if(!Object.hasOwn(EXPECTED_SURFACES,owner))
+    add('MANIFEST_UNEXPECTED_SURFACE',owner,owner);
+ }
+ for(const owner of Object.keys(registry?.variables??{})){
+  if(!Object.hasOwn(EXPECTED_SURFACES,owner))
+    add('MANIFEST_UNEXPECTED_CATALOG',owner,owner);
+ }
+ for(const [owner,meta] of Object.entries(registry?.surfaces??{})){
   const catalog=registry.variables[owner]||{};
   const parsed=meta.examplePath?parseTemplateInventory(samples[owner]??''):{entries:new Map(),duplicates:[],malformed:[]};
   for(const key of parsed.malformed)add('MANIFEST_MALFORMED_SAMPLE_LINE',owner,key);
@@ -100,9 +127,11 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
 }
 
 export function loadVersionedSamples(){
- return Object.fromEntries(Object.entries(CONFIG_MANIFEST_V665.surfaces)
-  .filter(([,meta])=>meta.examplePath)
-  .map(([owner,meta])=>[owner,readFileSync(resolve(repositoryRoot,meta.examplePath),'utf8')]));
+ // Read pinned repository templates, never file paths supplied by a modified
+ // manifest (which might otherwise point at private, untracked credentials).
+ return Object.fromEntries(Object.entries(EXPECTED_SURFACES)
+  .filter(([,path])=>path)
+  .map(([owner,path])=>[owner,readFileSync(resolve(repositoryRoot,path),'utf8')]));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const report=checkEnvironmentManifest(loadVersionedSamples());
