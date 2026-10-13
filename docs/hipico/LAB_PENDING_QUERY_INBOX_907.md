@@ -178,3 +178,9 @@ conciliación ambigua fuera del DOM con evidencia saliente estricta.
 La función efectiva del Bridge se ejecutó con dependencias controladas como
 smoke test de secuenciación; esto **no sustituye** la suite Node completa,
 el CI exact-SHA ni la verificación física de WhatsApp en Windows.
+
+## Integridad del contexto después de ACK (2026-10-13)
+
+Si el journal de salida ya tiene un ACK confirmado pero **no existe** la entrada cifrada original de la consulta, el Bridge no reconstruye pistas de carrera a partir del texto mutable del DOM. Mantiene el ACK, registra únicamente `LAB_QUOTE_HINT_NO_VERIFIED_INPUT` y omite la pista auxiliar. Una entrada cifrada que sí existe tiene prioridad sobre texto/cita visible y se elimina únicamente después de guardar la pista HMAC. Esto no provoca un segundo envío ni afecta SOURCE.
+
+Regresión: DOM con otra carrera + bandeja vacía no genera pistas; DOM alterado + entrada cifrada válida usa solamente la entrada cifrada. QA Node/CI exact-SHA y Windows físico siguen como gates independientes.
