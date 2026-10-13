@@ -10,6 +10,14 @@ const paths = Object.freeze({
 });
 
 // Reads only versioned templates; never examines .env, OS secrets or credentials.
+// Handle dotenv-style inline comments, including after quoted values.
+// Never strip # inside quotes or attached URL fragments.
+function parseTemplateValue(raw){
+  const trimmed=raw.trim();
+  const quoted=/^(?:"([\s\S]*)"|'([\s\S]*)')(?:\s+#.*)?$/.exec(trimmed);
+  return quoted?(quoted[1]??quoted[2]):trimmed.replace(/\s+#.*$/,'').trim();
+}
+
 export function parseEnvTemplate(source) {
   const vars = new Map();
   const duplicates = [];
@@ -19,7 +27,7 @@ export function parseEnvTemplate(source) {
     const match = /^(?:export\s+)?([A-Z][A-Z0-9_]*)=(.*)$/.exec(line);
     if (!match) continue;
     if (vars.has(match[1])) duplicates.push({ key: match[1], line: index + 1 });
-    vars.set(match[1], match[2].trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, (_, a, b) => a ?? b));
+    vars.set(match[1], parseTemplateValue(match[2]));
   }
   return { vars, duplicates };
 }
@@ -36,6 +44,16 @@ function exposesUrlCredentials(value) {
     const url = new URL(value);
     return PUBLIC_URL_PROTOCOLS.has(url.protocol) && Boolean(url.username || url.password);
   } catch { return false; }
+}
+
+// A service_role JWT is server-only, even if named VITE_SUPABASE_ANON_KEY.
+// This is a detection heuristic, never token verification/authentication.
+function exposesPrivilegedSupabaseJwt(value){
+  const parts=String(value).split('.');
+  if(parts.length!==3||parts.some(part=>!part))return false;
+  if(!/^[A-Za-z0-9_-]{1,8192}={0,2}$/.test(parts[1]))return false;
+  try{return JSON.parse(Buffer.from(parts[1],'base64url').toString('utf8'))?.role==='service_role';}
+  catch{return false;}
 }
 
 export function checkHipicoConfigTemplates(sources) {
@@ -76,6 +94,7 @@ export function checkHipicoConfigTemplates(sources) {
   for (const [key, sample] of parsed.frontend.vars) {
     if (/^VITE_.*(?:SECRET|SERVICE_ROLE|PASSWORD|PRIVATE|TOKEN)/i.test(key)) add('PUBLIC_SECRET_KEY', 'frontend', key);
     if (/(?:sb_secret_|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)/i.test(sample) || exposesUrlCredentials(sample)) add('PUBLIC_SECRET_VALUE', 'frontend', key);
+    if(exposesPrivilegedSupabaseJwt(sample))add('PUBLIC_PRIVILEGED_JWT','frontend',key);
   }
   return { status: findings.length ? 'FAIL' : 'PASS', findings };
 }
