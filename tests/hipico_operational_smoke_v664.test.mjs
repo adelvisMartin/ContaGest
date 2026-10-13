@@ -12,7 +12,7 @@ async function withServer(responder, run) {
 }
 const respond = (options = {}) => (req, res) => {
   if (req.url === '/api/hipico/status') {
-    res.writeHead(options.httpCode || 200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.writeHead(options.httpCode || 200, { 'Content-Type': options.statusContentType ?? 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(options.body || status));
   } else if (req.url === '/hipico-control/') {
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -50,5 +50,23 @@ test('#664 offline backend is BLOCKED, never reported as PASS', async () => {
     const result = await runHipicoSmoke(url, unreachable);
     assert.equal(result.status, 'BLOCKED');
     assert.doesNotMatch(JSON.stringify(result), /secret token/);
+  });
+});
+
+test('#664 status refuses spoofed JSON under HTML, JSONP or mixed MIME', async () => {
+  for (const statusContentType of ['text/html', 'application/jsonp', 'application/json, text/html']) {
+    await withServer(respond({ statusContentType }), async url => {
+      const result = await runHipicoSmoke(url);
+      assert.equal(result.status, 'FAIL', statusContentType);
+      assert.deepEqual(result.checks[0], { name: 'status', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+      assert.equal(result.checks[1].status, 'PASS');
+    });
+  }
+});
+
+test('#664 status accepts application/json with standard charset parameter', async () => {
+  await withServer(respond({ statusContentType: 'application/json; charset=utf-8' }), async url => {
+    const result = await runHipicoSmoke(url);
+    assert.equal(result.status, 'PASS');
   });
 });
