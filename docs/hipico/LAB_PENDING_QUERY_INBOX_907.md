@@ -139,3 +139,20 @@ dentro de una cita o un reenvío no confirma ni reactiva el mensaje.
 Se incluyeron regresiones de archivos temporales huérfanos, publicación
 completa y citas con etiquetas falsificadas. Estas pruebas de código no
 sustituyen su ejecución real en Node/Windows ni el soak.
+
+## Recuperación tras ACK sin duplicar envíos (2026-10-13)
+
+También el ciclo LAB **visible** conserva el texto cifrado hasta que la pista
+HMAC de carrera, si corresponde, se haya guardado después del ACK físico
+confirmado. Los casos `confirmed`, `sending/ambiguous` conciliados por
+burbuja saliente y `send + confirm` comparten
+`finalizeConfirmedVisibleLabQuote`. Un fallo al guardar esa pista mantiene
+la entrada pendiente para un ciclo siguiente, pero nunca repite `Enter`.
+La suite comprueba tanto la secuencia positiva
+`read → hint → remove` como el fallo seguro `read → hint` sin borrado.
+
+Si un archivo definitivo cifrado está corrupto, la inicialización falla
+cerrada sin destruir ese registro. Al salir por error, el proceso únicamente
+elimina `owner.lock` cuando su token todavía coincide con el propietario
+que adquirió el candado; no borra un candado reemplazado por otro proceso.
+La recuperación manual de datos corruptos exige intervención operacional.
