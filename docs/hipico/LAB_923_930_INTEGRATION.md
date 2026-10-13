@@ -39,6 +39,24 @@ en el grupo LAB con ID verificado. SOURCE sigue READ-ONLY/NO-GO.
 9. Mantener los límites: máximo 200 entradas, TTL diez minutos y
    selección de 25 entradas por ciclo con round-robin volátil.
 
+## Caída del backend y relevo humano
+
+La persistencia mínima y cifrada ocurre **antes** de consultar elegibilidad
+online, por lo que una consulta informativa validada puede sobrevivir a una
+caída del backend o a la desaparición del mensaje del DOM. Esto **no**
+autoriza responder: la lectura canónica, el handoff y el journal se comprueban
+al recuperar. Si el backend informa `LAB_HANDOFF_HELD`, tanto el recorrido
+visible como el recuperado descartan la consulta no entregada y registran
+`seen`: no se responde más tarde simplemente porque el operador liberó
+el control. Si solo hay un fallo temporal de conexión, se mantiene la entrada
+hasta la caducidad original.
+
+Una carrera extraída únicamente de memoria conversacional **no** se guarda
+como alcance canónico durable. Para consultas con referencias implícitas se
+conserva la orientación del agente; el ámbito para recuperación debe proceder
+del mensaje explícito o de una cita verificada del mismo JID. No se promociona
+una sugerencia contextual a autoridad de datos.
+
 ## QA reproducible
 
 ```powershell
