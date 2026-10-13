@@ -10,7 +10,7 @@ import { labReadOnlyQueryPurpose, explicitLabRaceScope } from './lab-canonical-q
 const SCHEMA=1;
 const HASH=/^[a-f0-9]{64}$/;
 const HEX=/^[a-f0-9]+$/;
-const PURPOSES=new Set(['status','result','participants','next','active','schedule']);
+const PURPOSES=new Set(['status','result','participants','next','active','schedule','summary']);
 const MAX_AGE_MS=10*60*1000;
 const MAX_RECORDS=200;
 const MAX_SIZE=12*1024;
