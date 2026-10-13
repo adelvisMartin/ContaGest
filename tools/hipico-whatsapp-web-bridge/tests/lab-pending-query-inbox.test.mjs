@@ -1258,3 +1258,65 @@ test('operator takeover fsync precedes retryable WAL in both LAB send routes',as
     assert.deepEqual(broken,['seen','fsync-failed'],label);
   }
 });
+
+
+test('late human takeover with failed seen fsync stays ambiguous, never permits another LAB Enter',async()=>{
+  const vm=await import('node:vm');
+  const file=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const begin=file.indexOf('async function resumePendingLabQueries(');
+  const end=file.indexOf('let labTestProcessing=false;',begin);
+  assert.ok(begin>=0&&end>begin);
+  const original=candidate();
+  const events=[];
+  let checks=0,state=null;
+  const ctx={
+    BACKEND_SYNC_ENABLED:true,backendState:'online',lastLabPendingOffset:0,
+    INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
+    TOKEN:'fixture',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',BACKEND_TIMEOUT_MS:4500,
+    labPendingInbox:{
+      list:async()=>[original],
+      read:async()=>original,
+      remove:async()=>{throw new Error('NO_REMOVE_BEFORE_DURABLE_HANDOFF');}
+    },
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{
+      read:async()=>state===null?null:{state},
+      prepare:async()=>{state='prepared';events.push('prepare');},
+      begin:async()=>{state='sending';events.push('begin');},
+      retryPrepared:async()=>{throw new Error('UNSAFE_RETRYABLE_WAL');},
+      markAmbiguous:async()=>{
+        assert.equal(state,'sending');
+        state='ambiguous';events.push('ambiguous');
+      },
+      confirm:async()=>{throw new Error('NO_CONFIRMED_SEND');}
+    },
+    classifyLocal:()=>({risk:'safe',intent:'conversation'}),
+    stableLabSenderKey:()=>SENDER,
+    labConversationInput:()=>({eligible:true}),
+    labReadOnlyQueryPurpose:()=>original.purpose,
+    planLabConversation:()=>({scopeConflict:false}),
+    checkLabSendEligibility:async()=>{
+      checks++;
+      events.push('gate-'+checks);
+      return checks===3?{allowed:false,reason:'LAB_HANDOFF_HELD'}
+        :{allowed:true,reason:'LAB_HANDOFF_CLEAR'};
+    },
+    labQueryBackoff:{
+      allowed:()=>true,clear:()=>{},fail:()=>{throw new Error('NO_QUERY_BACKOFF');}
+    },
+    queryCanonicalLab:async()=>({available:true,text:'Respuesta interna'}),
+    rememberLabSeen:()=>events.push('seen-in-memory'),
+    saveLabSeenNow:async()=>{events.push('fsync-failed');throw new Error('DISK_UNAVAILABLE');},
+    labSeenOutcome:()=> 'AMBIGUOUS',
+    labTestAmbiguousCount:0,
+    sendTextInCurrentLab:async()=>{throw new Error('NO_ENTER_AFTER_HANDOFF');},
+    log:async()=>events.push('logged')
+  };
+  await vm.runInNewContext('('+file.slice(begin,end).trim()+')',ctx)(new Set(),new Set());
+  assert.equal(checks,3);
+  assert.equal(state,'ambiguous');
+  assert.equal(ctx.labTestAmbiguousCount,1);
+  assert.ok(events.indexOf('fsync-failed')>events.indexOf('begin'));
+  assert.ok(events.includes('ambiguous'));
+  assert.equal(events.includes('logged'),true);
+});
