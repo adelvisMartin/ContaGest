@@ -51,6 +51,9 @@ export async function readScopedLabSchedule(input:{
   // One bounded DB result set is reused for the answer and its fingerprint.
   // 201 rows indicate truncation risk: never attest a partial program.
   const rows=await store.listRaces(input.ownerId,input.groupKey,String(meetings[0].id),201);
+  if(rows.length===0){
+    return unavailable('CANONICAL_SCHEDULE_NOT_FOUND','No hay carreras registradas para esta reunión.');
+  }
   const revision=versionLabScheduleSnapshot(String(meetings[0].id),rows);
   if(!revision){
     return unavailable('CANONICAL_SCHEDULE_REVISION_UNAVAILABLE',
