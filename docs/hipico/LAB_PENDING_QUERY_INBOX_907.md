@@ -266,3 +266,29 @@ consultas a los 4, 8, 9:59 y 10 minutos, incluida la eliminación exacta
 del registro vencido y la continuidad del segundo. La función efectiva
 `snapshot()` se ejecutó con entradas temporales controladas; no reemplaza
 QA de Node en Windows ni las verificaciones de integración del PR.
+
+## Cierre de handoff y de ventana ACK/contexto (2026-10-13)
+
+Cuando el operador humano toma control durante el precheck, la consulta canónica,
+la revalidación o justo antes de pulsar Enter, el Bridge persiste el identificador
+como atendido, descarta la consulta cifrada pendiente y no la reanuda aunque
+más adelante el operador libere el control. Si ya se marcó el envío como
+sending, antes de Enter vuelve el journal a prepared. No hay autorización
+de nuevo mensaje a WhatsApp. En cambio, ante un fallo transitorio de backend,
+la consulta cifrada puede permanecer pendiente, bajo su TTL original.
+
+Después de confirmar el ACK durable de una respuesta, el orden seguro es:
+ACK → guardar contexto conversacional → finalizar pista HMAC →
+retirar la entrada cifrada original. Si falla el guardado de memoria o de la
+pista HMAC, se conserva temporalmente la entrada cifrada original para
+reintentar solamente la persistencia auxiliar: jamás se repite Enter.
+
+Tanto la recuperación visible como la recuperación fuera del DOM se basan
+únicamente en la entrada cifrada original (remitente, propósito y carrera),
+no en texto visible mutable. El TTL máximo de diez minutos continúa vigente.
+
+Regresiones incorporadas: cuatro escenarios de handoff con descarte de inbox,
+tres casos de finalización posterior al ACK, y comprobación del orden de
+persistencia. Se ejecutó la función real en V8 con dependencias controladas.
+La suite Node completa, PostgreSQL real y Chromium/Windows siguen pendientes
+de validación; SOURCE conserva su política de solo lectura.
