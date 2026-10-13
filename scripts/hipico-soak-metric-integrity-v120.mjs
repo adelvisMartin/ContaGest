@@ -17,11 +17,15 @@ const DERIVED_FIELDS=[
 const close=(actual,expected)=>typeof actual==='number'
   && Number.isFinite(actual) && Math.abs(actual-expected)<=1e-9*Math.max(1,Math.abs(expected));
 
-export function validSoakMetricEvidence(data,minimumHours=24){
+export function validSoakMetricEvidence(data,minimumHours=24,sampleSeconds=30){
   const s=data?.summaryInput, e=data?.evaluation;
-  if(!s||!e||!Number.isFinite(minimumHours)||minimumHours<=0)return false;
+  if(!s||!e||!Number.isFinite(minimumHours)||minimumHours<=0||
+     !Number.isFinite(sampleSeconds)||sampleSeconds<1)return false;
   if(FLOAT_FIELDS.some(key=>typeof s[key]!=='number'||!Number.isFinite(s[key])||s[key]<0))return false;
   if(COUNT_FIELDS.some(key=>!Number.isSafeInteger(s[key])))return false;
+  // A reported 24h wall clock with a handful of samples cannot prove soak.
+  // Require at least 90% of the policy's configured sample cadence.
+  if(s.samples<Math.floor(s.durationMs/(sampleSeconds*1000)*0.9))return false;
   if(s.samples===0 || s.healthChecks>s.samples || s.spoolChecks>s.samples ||
      s.healthFailures>s.healthChecks || s.spoolAvailableChecks>s.spoolChecks)return false;
   const start=Date.parse(data.startedAt),end=Date.parse(data.completedAt);
