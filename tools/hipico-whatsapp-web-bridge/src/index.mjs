@@ -1227,12 +1227,10 @@ async function finalizeConfirmedVisibleLabQuote(row,body) {
     }
     return;
   }
-  const sender=stableLabSenderKey(row.id);
-  if(sender){
-    await rememberConfirmedPendingLabQuote({
-      messageId:row.id,senderId:sender,text:body
-    });
-  }
+  // Without the original encrypted, pre-query input we cannot prove the
+  // visible text/quoted race matches the immutable ACKed request. No memory
+  // backfill from mutable DOM content; the confirmed delivery still stands.
+  await log('LAB_QUOTE_HINT_NO_VERIFIED_INPUT');
 }
 
 async function resumePendingLabQueries(visibleIds = new Set()) {
