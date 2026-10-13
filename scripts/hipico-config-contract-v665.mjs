@@ -32,7 +32,7 @@ const PUBLIC_URL_PROTOCOLS = new Set([
 const SENSITIVE_URL_PARAMS = new Set([
   'accesstoken', 'refreshtoken', 'apikey', 'xapikey', 'clientsecret',
   'clienttoken', 'servicerolekey', 'password', 'passwd', 'authorization',
-  'jwt', 'secret', 'token'
+  'jwt', 'secret', 'token', 'auth'
 ]);
 const containsUrlSecret = params => [...params].some(([key, value]) =>
   value.length > 0 && SENSITIVE_URL_PARAMS.has(key.toLowerCase().replace(/[^a-z0-9]/g, ''))
