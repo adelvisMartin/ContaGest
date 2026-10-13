@@ -82,4 +82,19 @@ test('v31 stable release rejects incoherent soak counters and forged durations',
     {completedAt:'2026-10-10T00:05:00.000Z'},
     {completedAt:'not-a-date'}
   ])assert.equal(validSoakMetricEvidence({...good,...change},24),false);
+  const sparse={...summaryInput,samples:1,healthChecks:1,
+    spoolChecks:1,spoolAvailableChecks:1};
+  assert.equal(validSoakMetricEvidence({...good,summaryInput:sparse,
+    evaluation:{...evaluation}},24,30),false,
+    '24 hours must not be attested by one health/spool sample');
+  const minimum=Math.floor(24*60*60/30*.9);
+  const bounded={...summaryInput,samples:minimum,healthChecks:minimum,
+    spoolChecks:minimum,spoolAvailableChecks:minimum};
+  assert.equal(validSoakMetricEvidence({...good,summaryInput:bounded},24,30),true);
+  assert.equal(validSoakMetricEvidence({...good,summaryInput:{...bounded,
+    samples:minimum-1}},24,30),false);
+  assert.equal(validSoakMetricEvidence({...good},24,0),false);
+  assert.equal(validSoakMetricEvidence({...good},24,NaN),false);
+  const verifier=read('scripts/hipico-verify-evidence-v290.mjs');
+  assert.match(verifier,/validSoakMetricEvidence\(data,[\s\S]*?soakPolicy\?\.sampleSeconds/);
 });
