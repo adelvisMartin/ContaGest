@@ -36,6 +36,7 @@ import { selectLabAnswer } from './lab-answer-policy.mjs';
 import { labOutgoingEvidenceMatches } from './lab-outgoing-evidence.mjs';
 import { composeLabAssistantReply } from './lab-assistant-replies.mjs';
 import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
+import { confirmedLabQuoteHint } from './lab-confirmed-quote-hint.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -1219,9 +1220,10 @@ async function processLabTestInput() {
     if (journalRecord?.state === 'confirmed') {
       // Crash after confirmed ACK but before hint persistence: safe to backfill.
       const verifiedSender=stableLabSenderKey(row.id);
-      const verifiedRace=explicitLabRaceScope(body);
-      const verifiedPurpose=labReadOnlyQueryPurpose(body,classifyLocal(body));
-      if(verifiedSender&&verifiedRace&&verifiedPurpose&&labQuotedRaceJournal){
+      // Re-evaluate ambiguity after crash instead of trusting the first
+      // explicit race captured by a permissive regex.
+      const verifiedRace=confirmedLabQuoteHint(row,classifyLocal(body));
+      if(verifiedSender&&verifiedRace&&labQuotedRaceJournal){
         try{await labQuotedRaceJournal.remember({
           messageId:row.id,senderId:verifiedSender,race:verifiedRace,confirmed:true
         });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
@@ -1345,9 +1347,10 @@ async function processLabTestInput() {
       await saveLabSeenNow();
       // Hints are safe only after the durable confirmed LAB ACK; errors cannot
       // authorize a second send or overwrite the underlying ACK.
-      if(sender&&directRace&&inquiryPurpose&&labQuotedRaceJournal){
+      const confirmedQuote=confirmedLabQuoteHint(row,classification);
+      if(sender&&confirmedQuote&&labQuotedRaceJournal){
         try{await labQuotedRaceJournal.remember({
-          messageId:row.id,senderId:sender,race:directRace,confirmed:true
+          messageId:row.id,senderId:sender,race:confirmedQuote,confirmed:true
         });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
       }
       // The WAL-backed confirmed acknowledgement is the single send authority.
