@@ -76,7 +76,7 @@ test('network failure, missing auth, malformed JSON or invalid authority all fai
   assert.equal((await checkLabSendEligibility({...base,token:''})).allowed,false);
 });
 
-test('the Bridge checks ownership twice before preparing a send and skips held messages',()=>{
+test('the Bridge checks handoff before read, before journal and immediately before browser send',()=>{
   const text=readFileSync(new URL('../src/index.mjs',import.meta.url),'utf8');
   const a=text.indexOf('async function processLabTestInput()');
   const b=text.indexOf('async function visibleLabHasTag',a);
@@ -86,10 +86,18 @@ test('the Bridge checks ownership twice before preparing a send and skips held m
   const second=block.indexOf('const eligibleAfter=await checkLabSendEligibility(',query);
   const prepare=block.indexOf('await labTestReplyJournal.prepare(row.id)',second);
   const begin=block.indexOf('await labTestReplyJournal.begin(row.id)',prepare);
-  const send=block.indexOf('await sendTextInCurrentLab(',begin);
+  const last=block.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)',begin);
+  const rollback=block.indexOf('await labTestReplyJournal.retryPrepared(row.id)',last);
+  const send=block.indexOf('await sendTextInCurrentLab(',last);
   const ack=block.indexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});',send);
   assert.ok(first>=0&&query>first&&second>query&&prepare>second&&
-    begin>prepare&&send>begin&&ack>send);
+    begin>prepare&&last>begin&&rollback>last&&send>rollback&&ack>send);
+  assert.match(block,/if\(!eligibleToSend\.allowed\)\{/);
+  assert.match(block,/eligibleToSend\.reason==='LAB_HANDOFF_HELD'/);
+  assert.match(block,/LAB_HANDOFF_SEND_GATE_/);
+  // A denied pre-send permit rolls the WAL back without marking delivery.
+  const denied=block.slice(last,send);
+  assert.doesNotMatch(denied,/labTestReplyJournal\.confirm|page\.keyboard\.press|sendTextInCurrentLab/);
   assert.match(block,/eligibleBefore\.reason==='LAB_HANDOFF_HELD'/);
   assert.match(block,/eligibleAfter\.reason==='LAB_HANDOFF_HELD'/);
   assert.match(block,/canonical\.reason==='LAB_HANDOFF_HELD'/);
