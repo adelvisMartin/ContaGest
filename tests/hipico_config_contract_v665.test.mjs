@@ -73,7 +73,11 @@ test('#665 rejects embedded URL query and fragment credentials without logging s
     'https://api.example.test/v1#refresh_token=dummy-secret',
     'https://api.example.test/#/callback?access_token=dummy-secret',
     '/?auth=dummy-secret',
-    '//operator:dummy-secret@api.example.test/v1'
+    '//operator:dummy-secret@api.example.test/v1',
+    '?access_token=dummy-secret',
+    '#id_token=dummy-secret',
+    './callback?session_token=dummy-secret',
+    '../login#authorization_code=dummy-secret'
   ];
   for (const url of secretUrls) {
     const result = check({ frontend: frontend + '\nVITE_HIPICO_ENDPOINT=' + url });
@@ -89,7 +93,10 @@ test('#665 permits harmless URL parameters and empty credentials', () => {
     'https://api.example.test/v1#documentation',
     'https://api.example.test/?token=',
     '/?module=login',
-    '/#/landing?module=login'
+    '/#/landing?module=login',
+    '?module=login',
+    '#/callback?module=login',
+    './index.html?sort=date'
   ];
   for (const url of safeUrls) {
     assert.deepEqual(check({ frontend: frontend + '\nVITE_HIPICO_ENDPOINT=' + url }), { status: 'PASS', findings: [] });
