@@ -90,6 +90,8 @@ test('missing or overlapping pinned channels never turn a partial handoff check 
     {...input,labGroupKey:''},
     {...input,sourceGroupKey:'control-hipico-lab'},
     {...input,labGroupKey:'official-source'},
+    {...input,sourceGroupKey:'CONTROL-HIPICO-LAB'},
+    {...input,labGroupKey:'OFFICIAL-SOURCE'},
     {...input,sender:''}
   ]){
     assert.deepEqual(await checkLabHandoff(config,read),
