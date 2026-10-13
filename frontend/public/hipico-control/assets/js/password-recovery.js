@@ -45,7 +45,13 @@ function readRecoveryContext() {
   // exposing the login screen and show a generic recovery error.
   const hadAuthMaterial = RECOVERY_URL_PARAMS.some(key => hash.has(key) || query.has(key));
   if (hadAuthMaterial) history.replaceState(history.state, '', cleanAppUrl().toString());
-  if (type === 'recovery' && token) {
+  // A contradictory callback (success token plus provider error) is not
+  // authorized recovery. Never activate its token even if type=recovery.
+  // Presence of any provider error field vetoes the token, even if its value
+  // is empty. A contradictory callback must fail closed.
+  const providerHasError = ['error', 'error_description', 'error_code']
+    .some(key => hash.has(key) || query.has(key));
+  if (type === 'recovery' && token && !providerHasError) {
     recoveryAccessToken = token;
     recoveryError = '';
     return;

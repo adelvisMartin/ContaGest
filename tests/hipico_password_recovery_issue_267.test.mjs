@@ -116,7 +116,15 @@ test('#267 removes invalid recovery credentials from URL without accepting them 
     'https://example.org/hipico-control/#type=signup&access_token=secret',
     'https://example.org/hipico-control/?access_token=secret&refresh_token=private&retry=1',
     'https://example.org/hipico-control/?type=recovery&code=auth-code&token_hash=one-time',
-    'https://example.org/hipico-control/#error=access_denied&error_description=private'
+    'https://example.org/hipico-control/#error=access_denied&error_description=private',
+    'https://example.org/hipico-control/?error=access_denied#type=recovery&access_token=secret',
+    'https://example.org/hipico-control/#type=recovery&access_token=secret&error_description=denied',
+    'https://example.org/hipico-control/#type=recovery&access_token=secret&error_code=access_denied',
+    'https://example.org/hipico-control/?error_code=otp_expired#type=recovery&access_token=secret',
+    'https://example.org/hipico-control/#type=recovery&access_token=secret&error=',
+    'https://example.org/hipico-control/#type=recovery&access_token=secret&error_description=',
+    'https://example.org/hipico-control/?error=#type=recovery&access_token=secret',
+    'https://example.org/hipico-control/?error_description=#type=recovery&access_token=secret'
   ]){
     const state=run(url);
     assert.equal(state.token,'','invalid recovery context cannot grant access');
@@ -131,4 +139,12 @@ test('#267 removes invalid recovery credentials from URL without accepting them 
   assert.equal(regular.error,'');
   assert.equal(regular.url.searchParams.get('retry'),'1');
   assert.doesNotMatch(source,/service[_-]?role|SUPABASE_SERVICE_ROLE_KEY|sb_secret_/i);
+});
+
+test('#267 conflicting provider error overrides a recovery token', async () => {
+  const source = await fs.readFile(recoveryPath,'utf8');
+  assert.match(source,/const providerHasError = \['error', 'error_description', 'error_code'\]/);
+  assert.match(source,/\.some\(key => hash\.has\(key\) \|\| query\.has\(key\)\)/);
+  assert.match(source,/type === 'recovery' && token && !providerHasError/);
+  assert.match(source,/if \(hadAuthMaterial\) history\.replaceState/);
 });
