@@ -166,8 +166,12 @@ pinneado. La consulta es estrictamente de solo lectura; el operador
 controla la pausa/reanudación mediante la ruta autenticada existente.
 
 Para cada mensaje LAB candidato, se comprueba la titularidad **antes
-y después** de la lectura canónica y siempre antes de preparar el journal
-de envío. Se revisa la titularidad general del participante en
+y después** de la lectura canónica y **una tercera vez tras marcar el
+journal como «en envío», inmediatamente antes de tocar el compositor**
+de WhatsApp. Si el operador toma la conversación en esta última ventana,
+el intento se devuelve duraderamente a «preparado» sin pulsar Enter,
+sin marcar la entrega como confirmada y sin guardar memoria.
+Se revisa la titularidad general del participante en
 `HIPICO_OFFICIAL_SOURCE_CHANNEL_KEY` y en el canal LAB configurado; cuando
 hay una referencia completa de carrera, también se comprueba su ámbito
 específico. No se acepta que el remitente seleccione dueño de datos,
@@ -203,8 +207,8 @@ y con una carrera específica. `npm run qa` incluye los tests
 **Límite de carrera:** existe una ventana inevitable entre la última
 comprobación remota y el envío de WhatsApp; cerrar esa ventana por
 completo requeriría un protocolo transaccional de permisos de envío.
-La doble comprobación la reduce, pero no constituye una garantía
-atómica de tiempo real. Es imprescindible probar el caso de takeover
+Las tres comprobaciones reducen esa ventana, pero no constituyen una
+garantía atómica de tiempo real. Es imprescindible probar el caso de takeover
 concurrente antes de una promoción a producción.
 
 ## Asistente conversacional LAB · respuesta natural y memoria acotada
