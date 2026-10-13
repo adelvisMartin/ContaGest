@@ -33,6 +33,7 @@ import { localKillSwitchState } from './promotion-guard.mjs';
 import { queryCanonicalLab, explicitLabRaceScope, labReadOnlyQueryPurpose, resolveQuotedLabRaceScope } from './lab-canonical-query.mjs';
 import { checkLabSendEligibility } from './lab-handoff-eligibility.mjs';
 import { selectLabAnswer } from './lab-answer-policy.mjs';
+import { labOutgoingEvidenceMatches } from './lab-outgoing-evidence.mjs';
 import { composeLabAssistantReply } from './lab-assistant-replies.mjs';
 import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
 
@@ -342,8 +343,8 @@ function localMirrorText(event, classification) {
     `Remitente: ${event.senderLabel || 'participante'}`,
     `Mensaje: ${(event.text || `[${event.mediaKind || 'media'}]`).slice(0, 1000)}`,
     `Lectura: ${classification.intent} · riesgo ${classification.risk} · confianza ${(classification.confidence * 100).toFixed(1)}%`,
-    `Respuesta contextual: ${canonical?.available ? canonical.text : plan?.guidance || 'Sin contexto adicional disponible.'}`,
-    `Estado de consulta canónica: ${canonical?.reason || 'LAB_LOCAL_ONLY'}`,
+    'Respuesta contextual: Espejo informativo local; no se ha consultado una fuente canónica.',
+    'Estado de consulta canónica: LAB_LOCAL_ONLY',
     `Propuesta: ${localSuggestion(classification)}`,
     '⚠️ SOLO LABORATORIO. No registró ni modificó dinero, jugadas, resultados o saldos reales.'
   ];
@@ -1015,12 +1016,20 @@ function localLabTestReply(row, classification, plan = null, canonical = null) {
   const answer=selectLabAnswer({
     canonical,plan,localFallback:localSuggestion(classification)
   });
-  const text=composeLabAssistantReply({
+  const natural=composeLabAssistantReply({
     classification,plan,canonical,answer,assistantName:LAB_ASSISTANT_NAME
   });
-  // Preserve durable visible LABTEST tag even when the human-facing answer
-  // is a bounded clarification; neither a canonical read nor memory is ACK.
-  return [text,labTestTagFor(row.id)].join('\n').slice(0,3900);
+  // The exact outgoing proof is a first-line tag plus bounded LAB metadata,
+  // never an arbitrary quoted substring. The human-facing answer remains
+  // natural; its receipt source is explicitly marked as internal or local.
+  return [
+    labTestTagFor(row.id),
+    '🧪 CONTROL HÍPICO · PRUEBA LAB',
+    'Respuesta: '+String(natural||'No tengo datos autorizados para responder.')
+      .replace(/\s+/g,' ').trim().slice(0,1500),
+    'Fuente: '+answer.source,
+    'Consulta: '+answer.reason
+  ].join('\n').slice(0,3900);
 }
 
 async function clearComposerSafely(composer) {
@@ -1346,10 +1355,18 @@ async function processLabTestInput() {
   } finally {labTestProcessing=false;}
 }
 async function visibleLabHasTag(tag) {
-  return page.evaluate((needle) => {
-    const messages = Array.from(document.querySelectorAll('.message-out')).slice(-100);
-    return messages.some((node) => String(node.innerText || '').includes(needle));
-  }, tag).catch(() => false);
+  // A matching substring in a quote or unrelated outgoing message is NOT
+  // evidence. Scope must still be the exact pinned LAB group before and
+  // after collecting bounded outgoing DOM text.
+  await assertCurrentLabIdentity();
+  const outgoingTexts = await page.evaluate(() => {
+    const main=document.querySelector('#main');
+    if(!main)return[];
+    return Array.from(main.querySelectorAll('.message-out')).slice(-100)
+      .map(node=>String(node.innerText||node.textContent||'').slice(0,4201));
+  }).catch(() => []);
+  await assertCurrentLabIdentity();
+  return outgoingTexts.some(text=>labOutgoingEvidenceMatches(text,tag));
 }
 async function sendMirrorToLab(mirror) {
   if (!LAB_SEND_ENABLED) return false;
