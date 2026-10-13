@@ -30,7 +30,8 @@ const TOPIC={
   schedule:/\b(?:programacion|cartelera|programa de carreras|carreras programadas)\b/,
   result:/\b(?:resultado|llegada|pizarra|ganador|gano|primero|segundo|tercero)\b/,
   participants:/\b(?:participantes|ejemplares|caballos|inscritos|quienes\s+corren)\b/,
-  status:/\b(?:estado|estatus|situacion|abierta|cerrada|como\s+va)\b/
+  status:/\b(?:estado|estatus|situacion|abierta|cerrada|como\s+va)\b/,
+  summary:/\b(?:resumen|resumeme|sintesis|recapitulacion)\b/
 };
 const MONEY=/\b(?:apuesta|apostar|juega|jugada|consigue|pagar|cobrar|saldo|liquidar|cerrar|abrir|registrar|premio|dinero|bs|usdt)\b|\$/;
 const normalizeQuery=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
@@ -40,8 +41,10 @@ export function labReadOnlyQueryPurpose(text,classification){
     classification?.risk==='monetary'||
     !['safe','review'].includes(classification?.risk)||
     !['conversation','status_non_monetary','help'].includes(classification?.intent))return null;
-  if(!/[¿?]/.test(text)&&!/^(?:consulta|dime|muestra|indica|resultado|participantes|pizarra|estado)/.test(value))return null;
-  for(const key of ['next','active','schedule','result','participants','status']){
+  if(TOPIC.summary.test(value) && /\b(?:chat|conversacion|mensajes?|historial|hablamos)\b/.test(value))return null;
+  if(TOPIC.summary.test(value) && !/\b(?:carrera|hipodromo)\b/.test(value))return null;
+  if(!/[¿?]/.test(text)&&!/^(?:consulta|dime|muestra|indica|dame|hazme|resumen|resumeme|sintesis|recapitulacion|resultado|participantes|pizarra|estado)/.test(value))return null;
+  for(const key of ['next','active','schedule','summary','result','participants','status']){
     if(TOPIC[key].test(value))return key;
   }
   return null;
