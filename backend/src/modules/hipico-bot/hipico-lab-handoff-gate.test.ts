@@ -57,10 +57,14 @@ test('expired takeover releases without DB writes; permanent operator takeover s
   const expired=human(input.sourceGroupKey,input.sender,null,1000);
   const later=new Date(now.getTime()+2000);
   assert.deepEqual(await checkLabHandoff({...input,at:later},
-    async()=>expired),{allowed:true,reason:'LAB_HANDOFF_CLEAR'});
+    async(group,sender,context)=>group===input.sourceGroupKey
+      ? expired : initialHandoffState(group,sender,context,now)),
+    {allowed:true,reason:'LAB_HANDOFF_CLEAR'});
   const permanent=applyOperatorCommand(initialHandoffState('official-source',input.sender,null,now),
     'pause',{authenticatedOperator:true,operatorId:'operator-internal-1',ttlMs:0,at:now});
-  assert.equal((await checkLabHandoff({...input,at:later},async()=>permanent)).allowed,false);
+  assert.equal((await checkLabHandoff({...input,at:later},
+    async(group,sender,context)=>group===input.sourceGroupKey
+      ? permanent : initialHandoffState(group,sender,context,now))).allowed,false);
 });
 
 test('invalid scope and unknown ownership never silently allow a LAB send',async()=>{
@@ -92,6 +96,32 @@ test('missing or overlapping pinned channels never turn a partial handoff check 
       {allowed:false,reason:'LAB_HANDOFF_SCOPE_INVALID'});
   }
   assert.equal(calls,0,'no DB reads with incomplete or overlapping pinned identity');
+});
+
+test('handoff lookup must be bound to exact group, sender and race; mismatches deny autonomously',async()=>{
+  const valid={...input,race};
+  const key=operationalRaceContextKey(race);
+  const initial=initialHandoffState(input.sourceGroupKey,input.sender,null,now);
+  const corrupt=[
+    {...initial,conversationKey:'hconv_'+ 'f'.repeat(24)},
+    {...initial,groupKey:input.labGroupKey},
+    {...initial,participantId:'another-sender'},
+    {...initial,raceId:key},
+    {...initial,ownership:'unknown' as HandoffState['ownership']},
+    {...initial,clarificationCount:-1},
+    {...initial,clarificationCount:Number.NaN}
+  ];
+  for(const record of corrupt){
+    const gate=await checkLabHandoff(valid,async(group,sender,ctx)=>{
+      if(group===input.sourceGroupKey && ctx===null)return record;
+      return initialHandoffState(group,sender,ctx,now);
+    });
+    assert.deepEqual(gate,{allowed:false,reason:'LAB_HANDOFF_HELD'},
+      'invalid persisted authority must never resolve to bot-owned');
+  }
+  const good=await checkLabHandoff(valid,
+    async(group,sender,ctx)=>initialHandoffState(group,sender,ctx,now));
+  assert.deepEqual(good,{allowed:true,reason:'LAB_HANDOFF_CLEAR'});
 });
 
 test('DB outage is propagated for route 503 fail closed, never mistaken for a bot-owned row',async()=>{
