@@ -51,7 +51,7 @@ test('#665 public examples reject embedded URL credentials without exposing thei
     'redis://:secret@localhost:6379/0'
   ];
   for (const secret of secrets) {
-    const result = check({ frontend: frontend + '\\nVITE_HIPICO_ENDPOINT=' + secret });
+    const result = check({ frontend: frontend + '\nVITE_HIPICO_ENDPOINT=' + secret });
     assert.equal(result.status, 'FAIL');
     assert.ok(result.findings.some(f => f.code === 'PUBLIC_SECRET_VALUE' && f.key === 'VITE_HIPICO_ENDPOINT'));
     assert.equal(JSON.stringify(result).includes(secret), false);
@@ -60,7 +60,7 @@ test('#665 public examples reject embedded URL credentials without exposing thei
 });
 test('#665 public non-credentialed endpoints remain allowed', () => {
   for (const url of ['https://api.example.test/v1', 'postgres://db.example.test:5432/hipico']) {
-    const result = check({ frontend: frontend + '\\nVITE_HIPICO_ENDPOINT=' + url });
+    const result = check({ frontend: frontend + '\nVITE_HIPICO_ENDPOINT=' + url });
     assert.equal(result.status, 'PASS', url);
   }
 });
