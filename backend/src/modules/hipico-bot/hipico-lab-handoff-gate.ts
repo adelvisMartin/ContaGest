@@ -1,5 +1,5 @@
 import { loadHandoff } from './hipico-handoff.store.js';
-import { recoverExpiredHandoff, type HandoffState } from './hipico-response-safety.js';
+import { conversationKey, recoverExpiredHandoff, type HandoffState } from './hipico-response-safety.js';
 import { operationalRaceContextKey } from './hipico-race-context-key.js';
 
 type Loader=(groupKey:string,participantId:string,raceId:string|null)=>Promise<HandoffState>;
@@ -37,8 +37,20 @@ export async function checkLabHandoff(input:{
   const now=input.at??new Date();
   for(const groupKey of keys){
     for(const context of raceId?[null,raceId]:[null]){
-      const state=recoverExpiredHandoff(await read(groupKey,sender,context),now);
-      if(state.ownership!=='bot')return{allowed:false,reason:'LAB_HANDOFF_HELD'};
+      const state=await read(groupKey,sender,context);
+      // Do not authorize an autonomous send from an inconsistent DB row or a
+      // mistaken loader key. Handoff records are scoped to the same exact
+      // participant, channel and optional race as the caller.
+      if(!state || state.conversationKey!==conversationKey(groupKey,sender,context) ||
+          state.groupKey!==groupKey || state.participantId!==sender ||
+          state.raceId!==context ||
+          !['bot','human'].includes(state.ownership) ||
+          !Number.isInteger(state.clarificationCount) ||
+          state.clarificationCount<0){
+        return{allowed:false,reason:'LAB_HANDOFF_HELD'};
+      }
+      const resolved=recoverExpiredHandoff(state,now);
+      if(resolved.ownership!=='bot')return{allowed:false,reason:'LAB_HANDOFF_HELD'};
     }
   }
   return{allowed:true,reason:'LAB_HANDOFF_CLEAR'};
