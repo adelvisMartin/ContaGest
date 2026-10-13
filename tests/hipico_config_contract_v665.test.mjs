@@ -82,7 +82,7 @@ test('#665 rejects public credential URLs with quoted comments and privileged JW
   };
   for(const key of ['VITE_SUPABASE_ANON_KEY','VITE_PUBLIC_SETTINGS']){
     const value=key==='VITE_SUPABASE_ANON_KEY'
-      ?frontend.replace('VITE_SUPABASE_ANON_KEY=replace_with_supabase_anon_key',
+      ?frontend.replace('VITE_SUPABASE_ANON_KEY=replace_me',
         'VITE_SUPABASE_ANON_KEY="'+jwt('service_role')+'" # comment')
       :frontend+'\nVITE_PUBLIC_SETTINGS="'+jwt('service_role')+'" # comment';
     const report=check({frontend:value});
@@ -90,7 +90,7 @@ test('#665 rejects public credential URLs with quoted comments and privileged JW
     assert.doesNotMatch(JSON.stringify(report),/service_role|fixture/);
   }
   const anon=check({frontend:frontend.replace(
-    'VITE_SUPABASE_ANON_KEY=replace_with_supabase_anon_key',
+    'VITE_SUPABASE_ANON_KEY=replace_me',
     'VITE_SUPABASE_ANON_KEY='+jwt('authenticated')
   )});
   assert.equal(anon.status,'PASS');
