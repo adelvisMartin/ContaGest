@@ -1390,6 +1390,7 @@ async function processLabTestInput() {
       }
       rememberLabSeen(row.id);
       await saveLabSeenNow();
+      await finalizeConfirmedVisibleLabQuote(row,body);
       continue;
     }
     if (journalRecord?.state === 'ambiguous' || journalRecord?.state === 'sending') {
@@ -1427,10 +1428,47 @@ async function processLabTestInput() {
     const plan=planLabConversation(row, classification, prior, scopedRace);
     const verifiedRace=plan.scopeConflict?null:(scopedRace||plan.raceScope);
     const quotedVerified=Boolean(row.quotedId && !directRace && (visibleQuotedRace||durableQuotedRace));
+    // Persist immutable, pinned LAB question and verified sender before backend calls.
+    const parsedLabStamp=inquiryPurpose && BACKEND_SYNC_ENABLED ? parseWhatsAppPre(row.pre) : null;
+    let trustedRace=verifiedRace;
+    let trustedQuote=quotedVerified?row.quotedId:null;
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED){
+      if(!sender || !parsedLabStamp?.parsed || !Number.isFinite(Date.parse(parsedLabStamp.timestamp)) ||
+         Date.now()-Date.parse(parsedLabStamp.timestamp)>=10*60*1000 ||
+         Date.parse(parsedLabStamp.timestamp)>Date.now()+60000 || plan.scopeConflict){
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+        await log('LAB_PENDING_IDENTITY_SCOPE_OR_TIME_INVALID id='+tag);
+        continue;
+      }
+      if(labPendingInbox){
+        const saved=await labPendingInbox.read(row.id);
+        if(saved){
+          const verified=reconcileLabPendingObservation(saved,{
+            messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
+            messageTimestamp:parsedLabStamp.timestamp,quotedMessageId:row.quotedId||null,
+            explicitRace:explicitLabRaceScope(body)
+          });
+          if(!verified.valid){
+            await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason='+verified.reason);
+            continue;
+          }
+          trustedRace=verified.race;
+          trustedQuote=verified.quotedMessageId;
+        }else{
+          await labPendingInbox.enqueue({
+            messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
+            messageTimestamp:parsedLabStamp.timestamp,race:trustedRace||null,
+            quotedMessageId:trustedQuote
+          });
+        }
+      }
+      if(!labQueryBackoff.allowed(row.id))continue;
+    }
     const eligibilityArgs={
       ingestUrl:INGEST_URL,token:TOKEN,labGroupId:LAB_GROUP_ID,
       labChannelKey:LAB_CHANNEL_KEY,messageId:row.id,senderId:sender,
-      race:verifiedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+      race:trustedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
     };
     // Fail closed: a missing backend/identity/handoff table must never
     // silently turn a human-owned chat into an autonomous LAB send.
@@ -1450,9 +1488,9 @@ async function processLabTestInput() {
           ingestUrl:INGEST_URL,token:TOKEN,
           labGroupId:LAB_GROUP_ID,labChannelKey:LAB_CHANNEL_KEY,
           messageId:row.id,senderId:sender,text:body,
-          purpose:inquiryPurpose,
-          quotedMessageId:quotedVerified?row.quotedId:null,
-          race:verifiedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
+          timestamp:parsedLabStamp?.timestamp,purpose:inquiryPurpose,
+          quotedMessageId:trustedQuote,
+          race:trustedRace,timeoutMs:Math.min(5000,BACKEND_TIMEOUT_MS)
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     if(canonical.reason==='LAB_HANDOFF_HELD'){
@@ -1461,6 +1499,12 @@ async function processLabTestInput() {
       await log('LAB_HANDOFF_QUERY_HELD id='+tag);
       continue;
     }
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && canonical.available!==true){
+      const delay=labQueryBackoff.fail(row.id);
+      await log('LAB_CANONICAL_QUERY_PENDING id='+tag+' reason='+canonical.reason+' retryMs='+delay);
+      continue; // No send intent while canonical truth is unknown.
+    }
+    if(inquiryPurpose)labQueryBackoff.clear(row.id);
     // A slower canonical query may overlap operator takeover: recheck the
     // current ownership immediately before creating a durable send intent.
     const eligibleAfter=await checkLabSendEligibility(eligibilityArgs);
@@ -1493,6 +1537,7 @@ async function processLabTestInput() {
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
+      await finalizeConfirmedVisibleLabQuote(row,body);
       // Hints are safe only after the durable confirmed LAB ACK; errors cannot
       // authorize a second send or overwrite the underlying ACK.
       const confirmedQuote=confirmedLabQuoteHint(row,classification);
