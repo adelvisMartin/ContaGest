@@ -576,7 +576,7 @@ test('confirmed LAB queries finish ACK-only hints while still visible or backend
         remove:async()=>{actions.push('remove');}
       },
       backendState:scenario.online?'online':'offline',
-      BACKEND_SYNC_ENABLED:true,
+      labSeen:new Set(),BACKEND_SYNC_ENABLED:true,
       labTestTagFor:()=> '[LABTEST:012345abcd]',
       labTestReplyJournal:{
         read:async()=>{actions.push('journal-read');return scenario.state?{state:scenario.state}:null;},
@@ -694,7 +694,7 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
       list:async()=>[entry],
       read:async id=>{assert.equal(id,MESSAGE);actions.push('freshness-read');return null;}
     },
-    backendState:'online',BACKEND_SYNC_ENABLED:true,
+    backendState:'online',labSeen:new Set(),BACKEND_SYNC_ENABLED:true,
     labTestTagFor:()=> '[LABTEST:012345abcd]',
     labTestReplyJournal:{
       read:async()=>{actions.push('journal-read');return null;},
@@ -787,7 +787,7 @@ test('live LAB recovery serves all 200 encrypted pending IDs within eight bounde
   const inspected=[];
   const offsets=[];
   const context={
-    BACKEND_SYNC_ENABLED:true,
+    labSeen:new Set(),BACKEND_SYNC_ENABLED:true,
     lastLabPendingOffset:0,
     labPendingInbox:{
       list:async (limit,{offset}={})=>{
@@ -956,7 +956,7 @@ test('canonical handoff during out-of-DOM LAB read cancels encrypted replay perm
   const entry=candidate();
   const events=[];
   const ctx={
-    BACKEND_SYNC_ENABLED:true,backendState:'online',lastLabPendingOffset:0,
+    labSeen:new Set(),BACKEND_SYNC_ENABLED:true,backendState:'online',lastLabPendingOffset:0,
     INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
     TOKEN:'fixture-only',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',
     BACKEND_TIMEOUT_MS:4500,
@@ -1010,7 +1010,7 @@ test('real canonical transport propagates backend empty-text takeover to encrypt
   const original=candidate();
   const events=[];
   const context={
-    BACKEND_SYNC_ENABLED:true,backendState:'online',lastLabPendingOffset:0,
+    labSeen:new Set(),BACKEND_SYNC_ENABLED:true,backendState:'online',lastLabPendingOffset:0,
     INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
     TOKEN:'test-token',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-integration',
     BACKEND_TIMEOUT_MS:4500,
@@ -1064,4 +1064,64 @@ test('real canonical transport propagates backend empty-text takeover to encrypt
   assert.deepEqual(events,[
     'eligibility-clear','backend-handoff','seen','saved','removed','logged'
   ]);
+});
+
+
+test('persisted seen handoff prevents LAB replay even when ciphertext cleanup fails',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('async function resumePendingLabQueries(');
+  const end=source.indexOf('let labTestProcessing=false;',start);
+  assert.ok(start>=0&&end>start);
+  const entry=candidate();
+  const events=[];
+  const context={
+    labSeen:new Set([MESSAGE]),BACKEND_SYNC_ENABLED:true,lastLabPendingOffset:0,
+    labPendingInbox:{
+      list:async()=>[entry],
+      remove:async id=>{
+        assert.equal(id,MESSAGE);
+        events.push('cleanup-failed');
+        throw new Error('simulated cleanup EACCES');
+      }
+    },
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{
+      read:async()=>null,
+      prepare:async()=>{throw new Error('NO_WAL_AFTER_PERSISTED_HANDOFF');}
+    },
+    log:async message=>{
+      assert.ok(message.startsWith('LAB_PENDING_SEEN_CLEANUP_FAILED id='));
+      events.push('logged');
+    }
+  };
+  const resume=vm.runInNewContext('('+source.slice(start,end).trim()+')',context);
+  await resume(new Set());
+  await resume(new Set());
+  assert.deepEqual(events,['cleanup-failed','logged','cleanup-failed','logged']);
+});
+
+test('persisted seen handoff cleans orphaned encrypted record without querying or sending',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('async function resumePendingLabQueries(');
+  const end=source.indexOf('let labTestProcessing=false;',start);
+  assert.ok(start>=0&&end>start);
+  const entry=candidate();
+  const events=[];
+  const context={
+    labSeen:new Set([MESSAGE]),BACKEND_SYNC_ENABLED:true,lastLabPendingOffset:0,
+    labPendingInbox:{
+      list:async()=>[entry],
+      remove:async id=>{assert.equal(id,MESSAGE);events.push('cleaned');}
+    },
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{
+      read:async()=>null,
+      prepare:async()=>{throw new Error('NO_WAL_FOR_SEEN_MESSAGE');}
+    },
+    log:async()=>{throw new Error('NO_CLEANUP_ERROR_EXPECTED');}
+  };
+  await vm.runInNewContext('('+source.slice(start,end).trim()+')',context)(new Set());
+  assert.deepEqual(events,['cleaned']);
 });

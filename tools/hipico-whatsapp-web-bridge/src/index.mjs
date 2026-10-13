@@ -1300,6 +1300,13 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       // An uncertain Enter is never authorized to be repeated.
       continue;
     }
+    // A persisted seen marker after operator handoff also forbids replay.
+    // A failed encrypted-record delete must not resurrect an autonomous send.
+    if (labSeen.has(entry.messageId)) {
+      try { await labPendingInbox.remove(entry.messageId); }
+      catch { await log('LAB_PENDING_SEEN_CLEANUP_FAILED id='+tag); }
+      continue;
+    }
     // A new response requires fresh verified canonical data. Only post-ACK
     // housekeeping and strict-tag reconciliation may run without backend.
     if (backendState !== 'online') continue;
