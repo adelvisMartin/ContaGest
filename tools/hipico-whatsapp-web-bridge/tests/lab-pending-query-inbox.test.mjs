@@ -339,7 +339,7 @@ test('confirmed LAB ACK, including restart and ambiguous reconciliation, backfil
   assert.match(helper,/labQuotedRaceJournal\.remember\(\{/);
   assert.match(helper,/confirmed:true/);
   assert.match(helper,/sender!==entry\.senderId/);
-  assert.match(helper,/explicitLabRaceScope\(entry\.text\)/);
+  assert.match(helper,/confirmedLabQuoteHint\(\{/);
   assert.match(helper,/return false;/); // Hint failure retains encrypted pending data.
 
   const recovery=source.slice(source.indexOf('async function resumePendingLabQueries('),
