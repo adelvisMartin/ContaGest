@@ -1277,8 +1277,7 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
     if (state?.state === 'sending' || state?.state === 'ambiguous') {
       await assertCurrentLabIdentity();
       if (await visibleLabHasTag(tag)) {
-        await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
-        const confirmed=await labTestReplyJournal.read(entry.messageId);
+        const confirmed=await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
         if(confirmed?.state==='confirmed'){
           await recoverConfirmedLabConversation(entry,confirmed.updatedAt);
         }
@@ -1461,7 +1460,11 @@ async function processLabTestInput() {
       // Never retry an uncertain Enter. Only an outbound tagged message is proof.
       await assertCurrentLabIdentity();
       if (await visibleLabHasTag(tag)) {
-        await labTestReplyJournal.confirm(row.id,{visibleTag:true});
+        const confirmed=await labTestReplyJournal.confirm(row.id,{visibleTag:true});
+        const encryptedOriginal=await labPendingInbox?.read(row.id);
+        if(encryptedOriginal && confirmed?.state==='confirmed'){
+          await recoverConfirmedLabConversation(encryptedOriginal,confirmed.updatedAt);
+        }
         rememberLabSeen(row.id);
         await saveLabSeenNow();
         await finalizeConfirmedVisibleLabQuote(row,body);
