@@ -1473,21 +1473,10 @@ async function processLabTestInput() {
     };
     // Fail closed: a missing backend/identity/handoff table must never
     // silently turn a human-owned chat into an autonomous LAB send.
-    const eligibleBefore=sender && BACKEND_SYNC_ENABLED && backendState === 'online'
-      ? await checkLabSendEligibility(eligibilityArgs)
-      : {allowed:false,reason:'LAB_HANDOFF_UNAVAILABLE'};
-    if(!eligibleBefore.allowed){
-      if(eligibleBefore.reason==='LAB_HANDOFF_HELD'){
-        rememberLabSeen(row.id); // avoid delayed bot reply after operator resumes
-        await saveLabSeenNow();
-      }
-      await log('LAB_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
-      continue; // never prepare a send journal for a human-owned conversation
-    }
     let parsedLabStamp=null;
     let trustedRace=verifiedRace;
     let trustedQuote=quotedVerified?row.quotedId:null;
-    if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox){
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox && sender){
       parsedLabStamp=parseWhatsAppPre(row.pre);
       const stamp=parsedLabStamp?.timestamp;
       const age=Date.now()-Date.parse(stamp||'');
@@ -1521,6 +1510,18 @@ async function processLabTestInput() {
       eligibilityArgs.race=trustedRace;
       if(!labQueryBackoff.allowed(row.id))continue;
     }
+    const eligibleBefore=sender && BACKEND_SYNC_ENABLED && backendState === 'online'
+      ? await checkLabSendEligibility(eligibilityArgs)
+      : {allowed:false,reason:'LAB_HANDOFF_UNAVAILABLE'};
+    if(!eligibleBefore.allowed){
+      if(eligibleBefore.reason==='LAB_HANDOFF_HELD'){
+        await labPendingInbox?.remove(row.id); // no delayed bot reply after handoff
+        rememberLabSeen(row.id);
+        await saveLabSeenNow();
+      }
+      await log('LAB_HANDOFF_PRECHECK_'+eligibleBefore.reason+' id='+tag);
+      continue; // never prepare a send journal for a human-owned conversation
+    }
     const canonical = inquiryPurpose && sender && !plan.scopeConflict && BACKEND_SYNC_ENABLED && backendState === 'online'
       ? await queryCanonicalLab({
           ingestUrl:INGEST_URL,token:TOKEN,
@@ -1532,6 +1533,7 @@ async function processLabTestInput() {
         })
       : {available:false,reason:'LAB_CANONICAL_NOT_QUERIED'};
     if(canonical.reason==='LAB_HANDOFF_HELD'){
+      await labPendingInbox?.remove(row.id);
       rememberLabSeen(row.id);
       await saveLabSeenNow();
       await log('LAB_HANDOFF_QUERY_HELD id='+tag);
@@ -1557,6 +1559,7 @@ async function processLabTestInput() {
     const eligibleAfter=await checkLabSendEligibility(eligibilityArgs);
     if(!eligibleAfter.allowed){
       if(eligibleAfter.reason==='LAB_HANDOFF_HELD'){
+        await labPendingInbox?.remove(row.id);
         rememberLabSeen(row.id);
         await saveLabSeenNow();
       }
@@ -1574,6 +1577,7 @@ async function processLabTestInput() {
       if(!eligibleToSend.allowed){
         await labTestReplyJournal.retryPrepared(row.id);
         if(eligibleToSend.reason==='LAB_HANDOFF_HELD'){
+          await labPendingInbox?.remove(row.id);
           rememberLabSeen(row.id);
           await saveLabSeenNow();
         }
