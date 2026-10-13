@@ -1536,8 +1536,12 @@ async function processLabTestInput() {
         if(saved){
           const verified=reconcileLabPendingObservation(saved,{
             messageId:row.id,senderId:sender,text:body,purpose:inquiryPurpose,
-            messageTimestamp:parsedLabStamp.timestamp,quotedMessageId:row.quotedId||null,
-            explicitRace:explicitLabRaceScope(body)
+            // An explicit self-contained race never binds to the attached
+            // WhatsApp reply. Keep strict quote equality only for a query
+            // whose scope was actually obtained from that verified quote.
+            messageTimestamp:parsedLabStamp.timestamp,
+            quotedMessageId:directRace?null:(row.quotedId||null),
+            explicitRace:directRace
           });
           if(!verified.valid){
             await log('LAB_PENDING_REVIEW_REQUIRED id='+tag+' reason='+verified.reason);
