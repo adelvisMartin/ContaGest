@@ -42,6 +42,19 @@ de todos los entrypoints, QA Node/TS exact-SHA, bundle de frontend, secretos
 del proveedor y smoke Docker. No cerrar #665 antes de esas evidencias.
 
 
+## URL schemes con autoridad por variable
+
+Las 14 variables declaradas `type:'url'` incluyen `allowedSchemes`.
+Los endpoints del frontend, backend y Bridge solo admiten HTTP(S) en sus
+plantillas; las conexiones `DATABASE_RUNTIME_URL`, `DATABASE_URL` y
+`DIRECT_DATABASE_URL` solamente admiten `postgres:` o `postgresql:`.
+`VITE_MARKETING_DEMO_URL` es la única entrada que permite una ruta
+relativa del frontend, mediante `allowRelative:true`.
+
+Este control evita confundir una URL de base de datos con un endpoint público
+o aceptar `/api` como URL absoluta de Supabase. No lee credenciales reales,
+no migrará PostgreSQL y no sustituye el auditor de secretos del frontend.
+
 ## Fail-closed de plantillas y superficies
 
 El auditor también debe fallar cuando la sintaxis de un `.env.example` no

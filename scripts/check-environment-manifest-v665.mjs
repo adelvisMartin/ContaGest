@@ -18,48 +18,51 @@ const EXPECTED_SURFACES=Object.freeze({
  build:null
 });
 
+
+
 // Inspect only versioned examples; no access to OS or provider secrets.
 export function parseTemplateInventory(source){
- const entries=new Map(),duplicates=[],malformed=[];
- const lines=String(source).split(/\r?\n/);
- for(let i=0;i<lines.length;i++){
-   const line=lines[i].trim();
+ const entries=new Map(),duplicates=[],invalidLines=[];
+ for(const [index,raw] of String(source).split(/\r?\n/).entries()){
+   const line=raw.trim();
    if(!line||line.startsWith('#'))continue;
    const m=/^(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*)$/.exec(line);
-   // A misspelled assignment must not disappear from the config audit.
-   // Only record a bounded identifier or line number; never echo values.
-   const key=m?.[1]||
-     /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]{0,127})\b/.exec(line)?.[1]||
-     'line_'+String(i+1);
-   if(!m){malformed.push(key);continue;}
+   if(!m){invalidLines.push(index+1);continue;}
    const rawValue=m[2].trim();
    const quoted=/^(?:"([\s\S]*)"|'([\s\S]*)')(?:\s+#.*)?$/.exec(rawValue);
-   // Unterminated quotes and garbage after a quoted value are invalid
-   // even when the declared type is a permissive "string".
-   if((rawValue.startsWith('"')||rawValue.startsWith("'"))&&!quoted)
-     malformed.push(key);
+   if((rawValue.startsWith('"')||rawValue.startsWith("'"))&&!quoted){
+     invalidLines.push(index+1);continue;
+   }
    const value=quoted?(quoted[1]??quoted[2]):rawValue.replace(/\s+#.*$/,'').trim();
    if(entries.has(m[1]))duplicates.push(m[1]);
    entries.set(m[1],value);
  }
- return{entries,duplicates,malformed};
+ return{entries,duplicates,invalidLines};
 }
 
 const URL_SCHEMES=new Set(['http:','https:','postgres:','postgresql:','mysql:','mongodb:','mongodb+srv:','redis:','rediss:']);
 function sampleMatchesDeclaredType(value,record,owner){
- if(value==='')return true; // Empty placeholders are intentional.
+ // Empty string/URL/secret placeholders are intentional, but typed control
+ // switches, counts and enums cannot silently become unset in required samples.
+ if(value==='')return !['boolean','integer','number','enum'].includes(record.type);
  switch(record.type){
   case 'boolean':return value==='true'||value==='false';
   case 'integer':return /^(?:0|[1-9][0-9]*)$/.test(value)&&Number.isSafeInteger(Number(value));
   case 'number':return /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/.test(value)&&Number.isFinite(Number(value));
   case 'enum':return Array.isArray(record.allowedValues)&&record.allowedValues.includes(value);
   case 'url':{
-   // A marketing deep link may be relative; infrastructure URLs cannot.
-   if(owner==='frontend'&&value.startsWith('/')&&!value.startsWith('//'))
+   // Relative URLs are explicitly authorized only by catalog metadata.
+   // A backend/Bridge endpoint or Supabase public API may not silently
+   // become a relative marketing route or a PostgreSQL connection string.
+   if(record.allowRelative===true&&owner==='frontend'&&
+      value.startsWith('/')&&!value.startsWith('//'))
      return !/[\s\\]/.test(value);
    const normalized=value.replace(/\[[A-Za-z0-9_-]+\]/g,'example');
-   try{const url=new URL(normalized);return URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname);}
-   catch{return false;}
+   try{
+     const url=new URL(normalized);
+     return Array.isArray(record.allowedSchemes)&&record.allowedSchemes.includes(url.protocol)&&
+       URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname);
+   }catch{return false;}
   }
   default:return true;
  }
@@ -87,8 +90,9 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
  }
  for(const [owner,meta] of Object.entries(registry?.surfaces??{})){
   const catalog=registry.variables[owner]||{};
-  const parsed=meta.examplePath?parseTemplateInventory(samples[owner]??''):{entries:new Map(),duplicates:[],malformed:[]};
-  for(const key of parsed.malformed)add('MANIFEST_MALFORMED_SAMPLE_LINE',owner,key);
+  const parsed=meta.examplePath?parseTemplateInventory(samples[owner]??''):{entries:new Map(),duplicates:[],invalidLines:[]};
+  // Only line numbers may enter diagnostics; never echo malformed lines or values.
+  for(const line of parsed.invalidLines)add('MANIFEST_INVALID_SAMPLE_LINE',owner,'line '+line);
   for(const key of parsed.duplicates)add('DUPLICATE_SAMPLE_KEY',owner,key);
   for(const [key,record] of Object.entries(catalog)){
    if(!VALID_TYPES.has(record.type)||!VALID_VISIBILITY.has(record.visibility)||
@@ -107,6 +111,17 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
       record.allowedValues.some(v=>typeof v!=='string'||!v)||
       new Set(record.allowedValues).size!==record.allowedValues.length))
      add('MANIFEST_ENUM_VALUES_INVALID',owner,key);
+   // Protocol authority belongs to the manifest, never to a heuristic
+   // that allows any URL scheme for all URL-typed fields.
+   if(record.type==='url'&&(
+      !Array.isArray(record.allowedSchemes)||record.allowedSchemes.length===0||
+      record.allowedSchemes.some(v=>typeof v!=='string'||!URL_SCHEMES.has(v))||
+      new Set(record.allowedSchemes).size!==record.allowedSchemes.length||
+      (record.allowRelative!==undefined&&typeof record.allowRelative!=='boolean')||
+      (record.allowRelative===true&&(owner!=='frontend'||key!=='VITE_MARKETING_DEMO_URL'))))
+     add('MANIFEST_URL_POLICY_INVALID',owner,key);
+   if(record.type!=='url'&&(record.allowedSchemes!==undefined||record.allowRelative!==undefined))
+     add('MANIFEST_URL_POLICY_INVALID',owner,key);
    if(parsed.entries.has(key)&&!sampleMatchesDeclaredType(parsed.entries.get(key),record,owner))
      add('MANIFEST_SAMPLE_TYPE_INVALID',owner,key);
    if(record.safeSample!==undefined&&parsed.entries.has(key)&&parsed.entries.get(key)!==record.safeSample)

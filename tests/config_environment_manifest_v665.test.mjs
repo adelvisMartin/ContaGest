@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {CONFIG_MANIFEST_V665 as MANIFEST} from '../config/environment-manifest-v665.mjs';
-import {checkEnvironmentManifest,loadVersionedSamples,parseTemplateInventory} from '../scripts/check-environment-manifest-v665.mjs';
+import {checkEnvironmentManifest,loadVersionedSamples} from '../scripts/check-environment-manifest-v665.mjs';
 
 const samples=loadVersionedSamples();
 const check=(part={})=>checkEnvironmentManifest({...samples,...part});
@@ -98,60 +98,74 @@ test('#665 missing or duplicate enum values fail the registry validation',()=>{
  assert.ok(checkEnvironmentManifest(samples,duplicate).findings.some(x=>x.code==='MANIFEST_ENUM_VALUES_INVALID'));
 });
 
+test('#665 malformed active template lines fail closed without leaking values',()=>{
+  for(const [owner,line] of [
+    ['frontend','VITE_BAD-TOKEN=secret-do-not-echo'],
+    ['frontend','VITE_DANGLING="secret-do-not-echo'],
+    ['backend','PORT:3030'],
+    ['bridge','export HIPICO_LAB_SEND_ENABLED false']
+  ]){
+    const report=check({[owner]:samples[owner]+'\n'+line});
+    assert.equal(report.status,'FAIL',owner);
+    assert.ok(report.findings.some(f=>f.code==='MANIFEST_INVALID_SAMPLE_LINE'&&f.owner===owner),owner);
+    assert.equal(JSON.stringify(report).includes('secret-do-not-echo'),false);
+    assert.equal(JSON.stringify(report).includes(line),false);
+  }
+  assert.equal(check({backend:samples.backend+'\n# note: ignored\n'}).status,'PASS');
+});
 
-test('#665 malformed dotenv lines cannot hide new public environment variables',()=>{
- for(const bad of [
-  'VITE_NEW_SECRET: should-not-be-printed',
-  'VITE_NEW_SECRET should-not-be-printed',
-  'export VITE_NEW_SECRET should-not-be-printed',
-  'set VITE_NEW_SECRET=should-not-be-printed'
+test('#665 blank booleans counts and enumerations are invalid, blank secrets stay valid',()=>{
+  for(const [owner,key,value] of [
+    ['backend','PORT','3030'],
+    ['backend','NODE_ENV','development'],
+    ['backend','ALLOW_DEV_TENANT_HEADER','false'],
+    ['bridge','HIPICO_POLL_MS','1000'],
+    ['bridge','HIPICO_LAB_SEND_ENABLED','false']
+  ]){
+    const original=key+'='+value;
+    assert.ok(samples[owner].includes(original),original);
+    const report=check({[owner]:samples[owner].replace(original,key+'=')});
+    assert.ok(report.findings.some(f=>f.code==='MANIFEST_SAMPLE_TYPE_INVALID'&&f.key===key),original);
+  }
+  assert.equal(check().status,'PASS');
+});
+
+test('#665 URL protocols are scoped to frontend/API, Bridge and PostgreSQL roles',()=>{
+ for(const [owner,key,unsafe] of [
+  ['frontend','VITE_API_BASE_URL','postgresql://postgres@example.test:5432/postgres'],
+  ['frontend','VITE_API_BASE_URL','/api/v1'],
+  ['frontend','VITE_SUPABASE_URL','postgresql://postgres@example.test:5432/postgres'],
+  ['backend','DATABASE_RUNTIME_URL','https://db.example.test/postgres'],
+  ['backend','DIRECT_DATABASE_URL','https://db.example.test/postgres'],
+  ['bridge','HIPICO_INGEST_URL','postgresql://postgres@example.test:5432/postgres'],
+  ['frontend','VITE_MARKETING_DEMO_URL','postgresql://postgres@example.test:5432/postgres']
  ]){
-  const report=check({frontend:samples.frontend+'\n'+bad});
-  assert.equal(report.status,'FAIL',bad.split(' ')[0]);
-  assert.ok(report.findings.some(f=>f.code==='MANIFEST_MALFORMED_SAMPLE_LINE'));
-  assert.doesNotMatch(JSON.stringify(report),/should-not-be-printed/);
+  const before=samples[owner];
+  const expression=new RegExp('^'+key+'=.*$','m');
+  assert.match(before,expression,key+' must exist in the versioned template');
+  const modified=before.replace(expression,key+'='+unsafe);
+  const results=check({[owner]:modified});
+  assert.ok(results.findings.some(x=>x.code==='MANIFEST_SAMPLE_TYPE_INVALID'&&x.key===key),owner+'/'+key);
+  assert.ok(!JSON.stringify(results).includes(unsafe),'auditor must not reveal URLs');
  }
+ assert.equal(check({frontend:samples.frontend.replace(
+  /^VITE_MARKETING_DEMO_URL=.*$/m,'VITE_MARKETING_DEMO_URL=/landing?campaign=demo'
+ )}).status,'PASS','marketing deep link is the only frontend relative URL role');
 });
 
-test('#665 malformed or unterminated quoted values cannot pass as string types',()=>{
- for(const fragment of [
-  'VITE_MARKETING_DEMO_URL="/landing',
-  "VITE_MARKETING_DEMO_URL='/landing",
-  'VITE_MARKETING_DEMO_URL="/landing" trailing-untrusted',
-  'VITE_API_BASE_URL="https://example.org/api" unexpected'
+test('#665 missing, duplicate and cross-owner URL policies fail closed',()=>{
+ for(const change of [
+  m=>{delete m.variables.frontend.VITE_API_BASE_URL.allowedSchemes;},
+  m=>{m.variables.bridge.HIPICO_INGEST_URL.allowedSchemes=['http:','http:'];},
+  m=>{m.variables.backend.APP_URL.allowRelative=true;},
+  m=>{m.variables.frontend.VITE_SUPABASE_ANON_KEY.allowedSchemes=['https:'];}
  ]){
-  const key=fragment.split('=')[0];
-  const edited=samples.frontend.replace(
-    new RegExp('^'+key+'=.*$','m'),fragment
-  );
-  const report=check({frontend:edited});
-  assert.ok(report.findings.some(f=>f.code==='MANIFEST_MALFORMED_SAMPLE_LINE'&&f.key===key),fragment);
-  assert.equal(report.status,'FAIL');
-  assert.doesNotMatch(JSON.stringify(report),/trailing-untrusted|unexpected/);
- }
- const valid=parseTemplateInventory(
-  'VITE_HEADING="Control #1" # comentario\n' +
-  "VITE_PATH='/landing?ref=1' # comentario"
- );
- assert.deepEqual(valid.malformed,[]);
- assert.equal(valid.entries.get('VITE_HEADING'),'Control #1');
- assert.equal(valid.entries.get('VITE_PATH'),'/landing?ref=1');
-});
-
-test('#665 malformed sample diagnostics never include credential material',()=>{
- const source='=top-secret-string\n' +
-   'JWT_SECRET="unclosed-secret-string\n' +
-   'VITE_NEW_TOKEN: another-private-value';
- const parser=parseTemplateInventory(source);
- assert.equal(parser.malformed.length,3);
- const report=check({backend:samples.backend+'\n'+source});
- assert.equal(report.status,'FAIL');
- assert.ok(report.findings.some(f=>f.code==='MANIFEST_MALFORMED_SAMPLE_LINE'));
- for(const value of ['top-secret-string','unclosed-secret-string','another-private-value']){
-  assert.equal(JSON.stringify(report).includes(value),false);
+  const altered=JSON.parse(JSON.stringify(MANIFEST));
+  change(altered);
+  const report=checkEnvironmentManifest(samples,altered);
+  assert.ok(report.findings.some(x=>x.code==='MANIFEST_URL_POLICY_INVALID'),JSON.stringify(report.findings));
  }
 });
-
 
 test('#665 deleting frontend or LAB Bridge owner can never produce a manifest PASS',()=>{
  for(const owner of ['backend','frontend','bridge','build']){
