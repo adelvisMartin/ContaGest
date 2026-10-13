@@ -156,3 +156,25 @@ cerrada sin destruir ese registro. Al salir por error, el proceso únicamente
 elimina `owner.lock` cuando su token todavía coincide con el propietario
 que adquirió el candado; no borra un candado reemplazado por otro proceso.
 La recuperación manual de datos corruptos exige intervención operacional.
+
+## Post-ACK offline, aun cuando el mensaje continúe visible
+
+La reconciliación de `lab-pending-queries` distingue **entrega** de
+**consulta**. Puede completar el hint HMAC de un envío con journal `confirmed`
+aunque `labSeen` ya marque la fila visible y aunque el backend esté
+`offline`. Así se cierra el hueco en que el poll LAB omite la fila vista,
+pero el registro cifrado no puede limpiarse porque falló un guardado auxiliar.
+
+Un envío `sending/ambiguous` sin fila visible sólo se confirma ante prueba
+estricta de una burbuja saliente LAB, no por conexión del backend. Por el
+contrario, las preguntas todavía sin ACK **no** disparan consulta HTTP ni
+`Enter` mientras el backend esté desconectado. El envío sigue necesitando
+una consulta canónica reciente y el journal de envío.
+
+Regresiones agregadas: ACK ya confirmado + fila visible + backend offline
+con éxito/error de HMAC; consulta nueva sin conexión que no realiza envío;
+conciliación ambigua fuera del DOM con evidencia saliente estricta.
+
+La función efectiva del Bridge se ejecutó con dependencias controladas como
+smoke test de secuenciación; esto **no sustituye** la suite Node completa,
+el CI exact-SHA ni la verificación física de WhatsApp en Windows.
