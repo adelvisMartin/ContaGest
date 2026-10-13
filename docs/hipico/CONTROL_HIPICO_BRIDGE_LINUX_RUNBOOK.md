@@ -297,7 +297,8 @@ se conservan como gates antes de cerrar #899 y #837.
 Además de estado/llegada, el backend ahora autoriza un recibo canónico para
 `purpose=next|active|schedule` solo si **todas las carreras de la reunión**
 poseen ID, `state_version`, `updated_at`, número, reunión, estado y horario
-coherentes. `RaceLifecycleStore.listRaces` lee hasta **201 filas** y la
+coherentes. `RaceLifecycleStore.listRacesForLabSnapshot` lee solo metadatos
+(no carga `result_data`, nombres, apuestas ni participantes), con **LIMIT 201**; la
 proyección rechaza la reunión si sobrepasa 200 o contiene una revisión incompleta.
 El texto mostrado y la huella SHA-256 se derivan de **una única lectura**
 de la reunión, reutilizada por `RaceQueryService`, sin otra consulta susceptible
