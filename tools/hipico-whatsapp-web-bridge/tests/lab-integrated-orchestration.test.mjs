@@ -404,3 +404,86 @@ test('human LAB handoff cancels persisted pending replay at every visible-send g
     assert.equal(events.at(-1),'log',testCase.name);
   }
 });
+
+
+test('replayed LAB ACK keeps ciphertext when auxiliary writes fail and never repeats Enter',async()=>{
+  const replay=part(bridge,'async function resumePendingLabQueries(','let labTestProcessing=false').trim();
+  const entry={
+    messageId:'false_120363222222222222@g.us_1_123456789012@lid',
+    senderId:'123456789012@lid',text:'¿Estado de carrera 5?',
+    purpose:'status',messageTimestamp:'2026-10-12T23:00:00.000Z',
+    quotedMessageId:null,
+    race:{raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'}
+  };
+  async function scenario({contextFirst=false,hintFirst=true}){
+    const actions=[];let journal=null,removed=false,contextReady=contextFirst,hintReady=hintFirst;
+    const fixedAck='2026-10-12T23:05:00.000Z';
+    const harness={
+      lastLabPendingOffset:0,
+      BACKEND_SYNC_ENABLED:true,backendState:'online',
+      labPendingInbox:{
+        list:async()=>removed?[]:[entry],
+        read:async()=>entry,
+        remove:async()=>{actions.push('remove-original');removed=true;}
+      },
+      labTestReplyJournal:{
+        read:async()=>journal,
+        prepare:async()=>actions.push('prepare'),
+        begin:async()=>actions.push('begin'),
+        confirm:async()=>{journal={state:'confirmed',updatedAt:fixedAck};actions.push('confirm');return journal;}
+      },
+      labTestTagFor:()=> '[LABTEST:fixture]',
+      classifyLocal:()=>({risk:'safe',intent:'status_non_monetary'}),
+      stableLabSenderKey:()=>entry.senderId,
+      labConversationInput:()=>({eligible:true}),
+      labReadOnlyQueryPurpose:()=>entry.purpose,
+      planLabConversation:()=>({scopeConflict:false,rememberRace:true,raceScope:entry.race}),
+      checkLabSendEligibility:async()=>({allowed:true,reason:'LAB_ALLOWED'}),
+      labQueryBackoff:{allowed:()=>true,clear:()=>{},fail:()=>0},
+      queryCanonicalLab:async()=>({available:true,text:'Estado verificado'}),
+      INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
+      TOKEN:'fixture',LAB_GROUP_ID:'120363222222222222@g.us',
+      LAB_CHANNEL_KEY:'lab',BACKEND_TIMEOUT_MS:5000,
+      log:async()=>{},rememberLabSeen:()=>{},saveLabSeenNow:async()=>{},
+      sendTextInCurrentLab:async()=>actions.push('send-Enter'),
+      localLabTestReply:()=> 'Respuesta LAB',
+      recoverConfirmedLabConversation:async(original,at)=>{
+        assert.equal(original,entry);
+        assert.equal(at,fixedAck);
+        actions.push('persist-context:'+contextReady);
+        return contextReady;
+      },
+      rememberConfirmedPendingLabQuote:async(original)=>{
+        assert.equal(original,entry);
+        actions.push('persist-HMAC:'+hintReady);
+        return hintReady;
+      },
+      labTestAmbiguousCount:0,labSeenOutcome:()=> 'AMBIGUOUS'
+    };
+    const fn=vm.runInNewContext('('+replay+')',harness);
+    await fn(new Set());
+    assert.equal(actions.filter(v=>v==='send-Enter').length,1);
+    assert.equal(actions.filter(v=>v==='confirm').length,1);
+    if(!contextReady||!hintReady){
+      assert.equal(removed,false,'encrypted original must survive failed auxiliary persistence');
+    }
+    contextReady=true;hintReady=true;
+    await fn(new Set());
+    assert.equal(actions.filter(v=>v==='send-Enter').length,1,
+      'confirmed delivery cannot be repeated during ACK-only recovery');
+    assert.equal(actions.filter(v=>v==='confirm').length,1);
+    assert.equal(actions.filter(v=>v==='remove-original').length,1);
+    assert.ok(actions.indexOf('confirm')<actions.indexOf('persist-context:true') ||
+      actions.indexOf('confirm')<actions.indexOf('persist-context:false'));
+    assert.ok(actions.indexOf('persist-HMAC:true')<actions.indexOf('remove-original'));
+    return actions;
+  }
+  const contextFailed=await scenario({contextFirst:false,hintFirst:true});
+  assert.ok(contextFailed.indexOf('persist-context:false')<contextFailed.indexOf('remove-original'));
+  const hintFailed=await scenario({contextFirst:true,hintFirst:false});
+  assert.ok(hintFailed.indexOf('persist-HMAC:false')<hintFailed.indexOf('remove-original'));
+  const success=await scenario({contextFirst:true,hintFirst:true});
+  assert.ok(success.indexOf('confirm')<success.indexOf('remove-original'));
+  assert.match(replay,/const confirmed=await labTestReplyJournal\.confirm\(entry\.messageId/);
+  assert.doesNotMatch(replay,/labConversationContext\.remember\(plan\.sender/);
+});
