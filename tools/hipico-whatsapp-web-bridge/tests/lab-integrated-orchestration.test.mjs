@@ -205,6 +205,7 @@ test('confirmed LAB ACK recovers context only for a verified informational purpo
       planLabConversation:()=>({raceScope:scope,scopeConflict:false}),
       rememberLabSeen:()=>{seen++;},
       saveLabSeenNow:async()=>{},
+      finalizeConfirmedVisibleLabQuote:async()=>{},
       log:async()=>{}
     }
   );
