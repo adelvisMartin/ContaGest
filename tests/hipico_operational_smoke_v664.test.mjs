@@ -70,3 +70,22 @@ test('#664 status accepts application/json with standard charset parameter', asy
     assert.equal(result.status, 'PASS');
   });
 });
+
+test('#664 invalid MIME short-circuits status JSON parsing before touching untrusted body', async () => {
+  for (const mediaType of ['text/html', 'application/jsonp', 'application/json, text/html', 'application/problem+json']) {
+    let parsed = 0;
+    const request = async url => url.pathname === '/api/hipico/status' ? {
+      ok: true, status: 200,
+      headers: new Headers({ 'content-type': mediaType, 'cache-control': 'no-store' }),
+      json: async () => { parsed++; throw new Error('MIME must be checked before body parsing'); }
+    } : {
+      ok: true, status: 200,
+      headers: new Headers({ 'content-type': 'text/html' }),
+      text: async () => '<title>Control Hípico</title><script src="./assets/js/app.js"></script>'
+    };
+    const result = await runHipicoSmoke('http://127.0.0.1:8080/', request);
+    assert.deepEqual(result.checks[0], { name: 'status', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+    assert.equal(result.checks[1].status, 'PASS');
+    assert.equal(parsed, 0, 'invalid content-type may not invoke response.json()');
+  }
+});
