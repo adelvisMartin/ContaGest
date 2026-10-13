@@ -230,22 +230,30 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     try{return openRecord(JSON.parse(await fs.readFile(file,'utf8')),hash);}
     catch{throw new Error('LAB_PENDING_RECORD_INVALID');}
   }
+  // A WhatsApp client clock can be ahead by up to 60 seconds when enqueued.
+  // Expire on the EARLIEST of message age and local capture age so no restart
+  // or direct read can extend ciphertext retention beyond the original TTL.
+  function expired(item){
+    const at=clock();
+    return at-Date.parse(item.messageTimestamp)>=maxAgeMs ||
+      at-item.capturedAt>=maxAgeMs;
+  }
   async function scan(){
     const names=(await fs.readdir(root)).filter(n=>n.endsWith('.json'));
-    const rows=[];let expired=0;
+    const rows=[];let expiredCount=0;
     for(const filename of names.sort()){
       if(!/^[a-f0-9]{64}\.json$/.test(filename))throw new Error('LAB_PENDING_FILE_INVALID');
       const hash=filename.slice(0,-5);
       let item;
       try{item=await openFile(hash);}catch(e){throw e;}
       if(item){
-        if(clock()-Date.parse(item.messageTimestamp)>=maxAgeMs){
-          await fs.rm(fileFor(hash));expired++;
+        if(expired(item)){
+          await fs.rm(fileFor(hash));expiredCount++;
         }else rows.push(item);
       }
     }
     if(rows.length>maxEntries)throw new Error('LAB_PENDING_CAPACITY_EXCEEDED');
-    return {rows,expired};
+    return {rows,expired:expiredCount};
   }
   return Object.freeze({
     async initialize(){
@@ -284,7 +292,7 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       const hash=identity(messageId);
       const item=await openFile(hash);
       if(!item)return null;
-      if(clock()-Date.parse(item.messageTimestamp)>=maxAgeMs){
+      if(expired(item)){
         await fs.rm(fileFor(hash));
         return null;
       }
@@ -364,7 +372,12 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       // Aggregate-only status for operators. Never expose encrypted content,
       // group/sender IDs, quoted scopes or delivery authority to health output.
       const timestamp=clock();
-      const ages=rows.map(item=>Math.max(0,timestamp-Date.parse(item.messageTimestamp)));
+      // An ahead-of-time WhatsApp clock must not hide expiry proximity:
+      // the same earliest deadline controls both pruning and health metrics.
+      const ages=rows.map(item=>Math.max(0,
+        timestamp-Date.parse(item.messageTimestamp),
+        timestamp-item.capturedAt
+      ));
       const nearExpiryAt=maxAgeMs-Math.min(120_000,Math.floor(maxAgeMs/4));
       return {
         pending:rows.length,

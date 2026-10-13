@@ -87,6 +87,116 @@ test('verified quoted race rejects invalid calendar day and accepts leap day',as
   await inbox.close();
 });
 
+
+
+test('scan expiry predicate cannot be shadowed by expired-count accumulator',async t=>{
+  const source=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
+  const begin=source.indexOf('  async function scan(){');
+  const end=source.indexOf('  return Object.freeze({',begin);
+  assert.ok(begin>=0&&end>begin,'canonical inbox scan source missing');
+  const section=source.slice(begin,end);
+  const checks=await import('node:vm');
+  const cases=[
+    {age:100_000,expired:0,recovered:1},
+    {age:600_000,expired:1,recovered:0}
+  ];
+  for(const c of cases){
+    let removals=0;
+    const hash='a'.repeat(64);
+    const now=700_000;
+    const entry={
+      messageTimestamp:new Date(now-c.age).toISOString(),
+      capturedAt:now-c.age
+    };
+    const env={
+      fs:{readdir:async()=>[hash+'.json'],rm:async()=>{removals++;}},
+      root:'/inbox',
+      openFile:async()=>entry,
+      fileFor:()=>'/inbox/'+hash+'.json',
+      expired:item=>now-Date.parse(item.messageTimestamp)>=600_000||
+        now-item.capturedAt>=600_000,
+      maxEntries:200
+    };
+    const scan=checks.runInNewContext('(()=>{'+section+'return scan;})()',env);
+    const out=await scan();
+    assert.equal(out.expired,c.expired);
+    assert.equal(out.rows.length,c.recovered);
+    assert.equal(removals,c.expired);
+  }
+});
+
+
+test('health near-expiry uses the earliest bounded LAB ciphertext deadline',async t=>{
+  const h=await harness(t);
+  const inbox=h.create();await inbox.initialize();
+  const future=candidate({
+    messageTimestamp:new Date(h.now()+60_000).toISOString()
+  });
+  await inbox.enqueue(future);
+  h.advance(8*60*1000);
+  const warning=await inbox.snapshot();
+  assert.equal(warning.pending,1);
+  assert.equal(warning.nearingExpiry,1,
+    '8-minute capture age reaches warning threshold despite 7-minute remote timestamp age');
+  assert.equal(warning.oldestAgeSeconds,480,
+    'operator diagnostic must reflect earliest expiry time');
+  h.advance(2*60*1000);
+  const expired=await inbox.snapshot();
+  assert.equal(expired.pending,0);
+  assert.equal(expired.nearingExpiry,0);
+  assert.equal(expired.oldestAgeSeconds,0);
+  await inbox.close();
+});
+
+test('future-dated LAB message expires at capture TTL even before WhatsApp timestamp TTL',async t=>{
+  const h=await harness(t);
+  const inbox=h.create();await inbox.initialize();
+  const original=candidate({
+    messageTimestamp:new Date(h.now()+60_000).toISOString()
+  });
+  assert.deepEqual(await inbox.enqueue(original),{created:true});
+  h.advance(10*60*1000-1);
+  assert.equal((await inbox.read(original.messageId))?.messageId,original.messageId);
+  assert.equal((await inbox.snapshot()).pending,1);
+  h.advance(1); // 10 min since local capture, only 9 min since client timestamp.
+  assert.equal(await inbox.read(original.messageId),null,
+    'direct lookups cannot extend TTL using a client clock in the future');
+  assert.deepEqual(await inbox.list(),[]);
+  assert.equal((await inbox.snapshot()).pending,0);
+  const files=await fs.readdir(h.rootDir);
+  assert.equal(files.some(name=>/^[a-f0-9]{64}\.json$/.test(name)),false,
+    'expired ciphertext must be physically removed');
+  await inbox.close();
+});
+
+test('restart pruning uses local capturedAt when the source message clock is ahead',async t=>{
+  const h=await harness(t);
+  const first=h.create();await first.initialize();
+  const message=candidate({
+    messageTimestamp:new Date(h.now()+60_000).toISOString()
+  });
+  await first.enqueue(message);
+  await first.close();
+  h.advance(10*60*1000); // captured clock expired; message timestamp has not.
+  const second=h.create();
+  assert.deepEqual(await second.initialize(),{recovered:0});
+  assert.equal((await second.snapshot()).pending,0);
+  assert.equal(await second.read(message.messageId),null);
+  await second.close();
+});
+
+test('message age remains authoritative when it expires before local capture TTL',async t=>{
+  const h=await harness(t);
+  const inbox=h.create();await inbox.initialize();
+  const timestamp=new Date(h.now()-30_000).toISOString();
+  const message=candidate({messageTimestamp:timestamp});
+  await inbox.enqueue(message);
+  h.advance(10*60*1000-30_000);
+  assert.equal((await inbox.snapshot()).pending,0);
+  assert.equal(await inbox.read(message.messageId),null);
+  await inbox.close();
+});
+
 test('expired queries are discarded even while backend is down; no stale reply can be recovered',async t=>{
   const f=await harness(t);const inbox=f.create();await inbox.initialize();
   await inbox.enqueue(candidate());
