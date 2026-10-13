@@ -435,6 +435,36 @@ test('confirmed visible LAB ACK only clears inbox after private quote persistenc
   assert.deepEqual(actions,['read','hint','remove'],'durable HMAC hint precedes inbox deletion');
 });
 
+test('confirmed LAB ACK never backfills race from mutable DOM without encrypted input',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const from=source.indexOf('async function finalizeConfirmedVisibleLabQuote(');
+  const to=source.indexOf('async function resumePendingLabQueries(',from);
+  assert.ok(from>=0&&to>from);
+  const helper=source.slice(from,to).trim();
+  const actions=[];
+  let stored=null;
+  const fn=vm.runInNewContext('('+helper+')',{
+    labPendingInbox:{
+      read:async id=>{assert.equal(id,MESSAGE);actions.push('read');return stored;},
+      remove:async id=>{assert.equal(id,MESSAGE);actions.push('remove');}
+    },
+    rememberConfirmedPendingLabQuote:async entry=>{
+      actions.push('hint');
+      assert.equal(entry,stored,'hint must come from original encrypted input');
+      return true;
+    },
+    log:async reason=>{assert.equal(reason,'LAB_QUOTE_HINT_NO_VERIFIED_INPUT');actions.push('no-verified-input');}
+  });
+  await fn({id:MESSAGE},'Consulta: carrera 6 en La Rinconada el 2026-10-12');
+  assert.deepEqual(actions,['read','no-verified-input'],'unverified DOM can never establish quoted context');
+  actions.length=0;
+  stored=candidate();
+  await fn({id:MESSAGE},'Consulta: carrera 6 en La Rinconada el 2026-10-12');
+  assert.deepEqual(actions,['read','hint','remove'],'verified encrypted context wins over changed DOM');
+  assert.doesNotMatch(helper,/senderId:sender,text:body/);
+});
+
 test('live LAB confirmed, ambiguous and normal send paths share ACK-only quote finalization',async()=>{
   const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
   const start=source.indexOf('async function processLabTestInput()');
