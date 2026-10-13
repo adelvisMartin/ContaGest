@@ -1294,6 +1294,12 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       continue;
     }
     labQueryBackoff.clear(entry.messageId);
+    // HTTP can complete after the original WhatsApp message's ten-minute TTL.
+    // Recheck the durable encrypted record before starting a new send intent.
+    if (!(await labPendingInbox.read(entry.messageId))) {
+      await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
+      continue;
+    }
     const plan=planLabConversation(row,classification,labConversationContext?.get(sender));
     await labTestReplyJournal.prepare(entry.messageId);
     await labTestReplyJournal.begin(entry.messageId);
@@ -1464,6 +1470,13 @@ async function processLabTestInput() {
       continue;
     }
     if(inquiryPurpose)labQueryBackoff.clear(row.id);
+    // The visible query must obey the same original-message TTL as recovery.
+    // Never reply if the canonical read crossed the encrypted inbox deadline.
+    if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox &&
+       !(await labPendingInbox.read(row.id))){
+      await log('LAB_PENDING_EXPIRED_BEFORE_SEND id='+tag);
+      continue;
+    }
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {

@@ -614,3 +614,61 @@ test('inbox source acquires owner lock before generating encryption key',async()
   assert.match(src,/await fs\.rename\(temp,keyFile\)/);
   assert.match(src,/await handle\.sync\(\)/);
 });
+
+test('rechecks original LAB TTL after a slow canonical HTTP response before sending',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('async function resumePendingLabQueries(');
+  const end=source.indexOf('let labTestProcessing=false;',start);
+  assert.ok(start>=0&&end>start);
+  const body=source.slice(start,end).trim();
+  const actions=[];
+  const entry=candidate();
+  const context={
+    labPendingInbox:{
+      list:async()=>[entry],
+      read:async id=>{assert.equal(id,MESSAGE);actions.push('freshness-read');return null;}
+    },
+    backendState:'online',BACKEND_SYNC_ENABLED:true,
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{
+      read:async()=>{actions.push('journal-read');return null;},
+      prepare:async()=>{throw new Error('EXPIRED_QUERY_MUST_NOT_PREPARE');},
+      begin:async()=>{throw new Error('EXPIRED_QUERY_MUST_NOT_BEGIN');}
+    },
+    classifyLocal:()=>({intent:'result'}),
+    stableLabSenderKey:()=>SENDER,
+    labConversationInput:()=>({eligible:true}),
+    labReadOnlyQueryPurpose:()=>entry.purpose,
+    labQueryBackoff:{
+      allowed:()=>{actions.push('backoff-allowed');return true;},
+      clear:()=>{actions.push('backoff-clear');}
+    },
+    queryCanonicalLab:async()=>{actions.push('canonical-read');return {available:true};},
+    log:async message=>{
+      assert.match(message,/^LAB_PENDING_EXPIRED_BEFORE_SEND id=/);
+      actions.push('expired-log');
+    }
+  };
+  const resume=vm.runInNewContext('('+body+')',context);
+  await resume(new Set());
+  assert.deepEqual(actions,[
+    'journal-read','backoff-allowed','canonical-read','backoff-clear',
+    'freshness-read','expired-log'
+  ]);
+});
+
+test('visible LAB canonical response rechecks encrypted TTL before WAL send intent',async()=>{
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const start=source.indexOf('async function processLabTestInput()');
+  const end=source.indexOf('async function visibleLabHasTag(tag)',start);
+  assert.ok(start>=0&&end>start);
+  const live=source.slice(start,end);
+  const canonical=live.indexOf('const canonical = inquiryPurpose');
+  const guard=live.indexOf('if(inquiryPurpose && BACKEND_SYNC_ENABLED && labPendingInbox &&');
+  const sendIntent=live.indexOf('await labTestReplyJournal.prepare(row.id)');
+  assert.ok(canonical>=0&&guard>canonical&&sendIntent>guard);
+  assert.match(live.slice(guard,sendIntent),/await labPendingInbox\.read\(row\.id\)/);
+  assert.match(live.slice(guard,sendIntent),/LAB_PENDING_EXPIRED_BEFORE_SEND/);
+  assert.match(live.slice(guard,sendIntent),/continue;/);
+});
