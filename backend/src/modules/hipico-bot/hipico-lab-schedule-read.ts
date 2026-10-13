@@ -4,7 +4,7 @@ import { parseExplicitLabMeeting } from './hipico-lab-meeting-selection.js';
 import { versionLabScheduleSnapshot } from './hipico-lab-schedule-version.js';
 
 export type LabSchedulePurpose='next'|'active'|'schedule';
-type ReadStore=Pick<RaceLifecycleStore,'listRaces'|'listMeetings'|'getMeeting'|'findMeetingsForLabQuery'>;
+type ReadStore=Pick<RaceLifecycleStore,'listRaces'|'listMeetings'|'getMeeting'|'findMeetingsForLabQuery'|'listRacesForLabSnapshot'>;
 const AUTHORITY={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false,officiality:'NOT_EXTERNALLY_VERIFIED'} as const;
 const ALLOWED_STATES=new Set(['DISCOVERED','ANNOUNCED','OPEN','CLOSING','RUNNING']);
 const QUERY_TEXT:Record<LabSchedulePurpose,string>={
@@ -50,7 +50,7 @@ export async function readScopedLabSchedule(input:{
   }
   // One bounded DB result set is reused for the answer and its fingerprint.
   // 201 rows indicate truncation risk: never attest a partial program.
-  const rows=await store.listRaces(input.ownerId,input.groupKey,String(meetings[0].id),201);
+  const rows=await store.listRacesForLabSnapshot(input.ownerId,input.groupKey,String(meetings[0].id));
   if(rows.length===0){
     return unavailable('CANONICAL_SCHEDULE_NOT_FOUND','No hay carreras registradas para esta reunión.');
   }
