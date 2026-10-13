@@ -11,19 +11,29 @@ const VALID_SAMPLE=new Set(['required','optional','not-applicable']);
 
 // Inspect only versioned examples; no access to OS or provider secrets.
 export function parseTemplateInventory(source){
- const entries=new Map(),duplicates=[];
- for(const raw of String(source).split(/\r?\n/)){
-   const line=raw.trim();
+ const entries=new Map(),duplicates=[],malformed=[];
+ const lines=String(source).split(/\r?\n/);
+ for(let i=0;i<lines.length;i++){
+   const line=lines[i].trim();
    if(!line||line.startsWith('#'))continue;
    const m=/^(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*)$/.exec(line);
-   if(!m)continue;
+   // A misspelled assignment must not disappear from the config audit.
+   // Only record a bounded identifier or line number; never echo values.
+   const key=m?.[1]||
+     /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]{0,127})\b/.exec(line)?.[1]||
+     'line_'+String(i+1);
+   if(!m){malformed.push(key);continue;}
    const rawValue=m[2].trim();
    const quoted=/^(?:"([\s\S]*)"|'([\s\S]*)')(?:\s+#.*)?$/.exec(rawValue);
+   // Unterminated quotes and garbage after a quoted value are invalid
+   // even when the declared type is a permissive "string".
+   if((rawValue.startsWith('"')||rawValue.startsWith("'"))&&!quoted)
+     malformed.push(key);
    const value=quoted?(quoted[1]??quoted[2]):rawValue.replace(/\s+#.*$/,'').trim();
    if(entries.has(m[1]))duplicates.push(m[1]);
    entries.set(m[1],value);
  }
- return{entries,duplicates};
+ return{entries,duplicates,malformed};
 }
 
 const URL_SCHEMES=new Set(['http:','https:','postgres:','postgresql:','mysql:','mongodb:','mongodb+srv:','redis:','rediss:']);
@@ -50,7 +60,8 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
  const findings=[],add=(code,owner,key)=>findings.push({code,owner,key});
  for(const [owner,meta] of Object.entries(registry.surfaces)){
   const catalog=registry.variables[owner]||{};
-  const parsed=meta.examplePath?parseTemplateInventory(samples[owner]??''):{entries:new Map(),duplicates:[]};
+  const parsed=meta.examplePath?parseTemplateInventory(samples[owner]??''):{entries:new Map(),duplicates:[],malformed:[]};
+  for(const key of parsed.malformed)add('MANIFEST_MALFORMED_SAMPLE_LINE',owner,key);
   for(const key of parsed.duplicates)add('DUPLICATE_SAMPLE_KEY',owner,key);
   for(const [key,record] of Object.entries(catalog)){
    if(!VALID_TYPES.has(record.type)||!VALID_VISIBILITY.has(record.visibility)||
