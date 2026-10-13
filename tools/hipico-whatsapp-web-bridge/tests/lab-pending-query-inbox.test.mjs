@@ -921,3 +921,67 @@ test('LAB fresh replies require handoff precheck, postcheck and keyboard gate in
       last>begin&&rollback>last&&enter>rollback);
   }
 });
+
+
+test('human takeover after canonical HTTP or WAL begin prevents Enter during pending recovery',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const fn=source.slice(source.indexOf('async function resumePendingLabQueries('),
+    source.indexOf('let labTestProcessing=false;')).trim();
+  const entry=candidate();
+  for(const phase of [2,3]){
+    let checks=0;const events=[];
+    const context={
+      labPendingInbox:{
+        list:async()=>[entry],
+        read:async()=>{events.push('ttl');return entry;},
+        remove:async()=>{events.push('remove');}
+      },
+      BACKEND_SYNC_ENABLED:true,backendState:'online',labPendingRecoveryOffset:0,
+      INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
+      TOKEN:'fixture-only',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',BACKEND_TIMEOUT_MS:4500,
+      labTestTagFor:()=> '[LABTEST:012345abcd]',
+      labTestReplyJournal:{
+        read:async()=>null,
+        prepare:async()=>{events.push('prepare');},
+        begin:async()=>{events.push('begin');},
+        retryPrepared:async()=>{events.push('rollback');},
+        confirm:async()=>{throw new Error('HANDOFF_CANNOT_CONFIRM');}
+      },
+      classifyLocal:()=>({intent:'conversation',risk:'safe'}),
+      stableLabSenderKey:()=>SENDER,
+      labConversationInput:()=>({eligible:true}),
+      labReadOnlyQueryPurpose:()=>entry.purpose,
+      labQueryBackoff:{
+        allowed:()=>true,
+        clear:()=>events.push('backoff-clear')
+      },
+      planLabConversation:()=>({rememberRace:false}),
+      labConversationContext:null,
+      checkLabSendEligibility:async()=>{
+        checks++;
+        events.push('handoff-'+checks);
+        return checks===phase
+          ? {allowed:false,reason:'LAB_HANDOFF_HELD'}
+          : {allowed:true,reason:'LAB_HANDOFF_CLEAR'};
+      },
+      queryCanonicalLab:async()=>{events.push('canonical');return{available:true,text:'Dato verificado'};},
+      sendTextInCurrentLab:async()=>{throw new Error('HANDOFF_MUST_NOT_PRESS_ENTER');},
+      rememberLabSeen:()=>events.push('seen'),
+      saveLabSeenNow:async()=>events.push('save'),
+      log:async()=>events.push('log')
+    };
+    await vm.runInNewContext('('+fn+')',context)(new Set());
+    assert.equal(checks,phase);
+    assert.ok(events.includes('seen')&&events.includes('remove'));
+    assert.ok(!events.includes('confirm'));
+    if(phase===2){
+      assert.ok(!events.includes('prepare')&&!events.includes('begin')&&!events.includes('rollback'));
+      assert.ok(events.indexOf('handoff-2')>events.indexOf('ttl'));
+    }else{
+      assert.ok(events.indexOf('prepare')>events.indexOf('handoff-2'));
+      assert.ok(events.indexOf('begin')>events.indexOf('prepare'));
+      assert.ok(events.indexOf('rollback')>events.indexOf('handoff-3'));
+    }
+  }
+});
