@@ -1312,6 +1312,20 @@ async function processLabTestInput() {
     await labTestReplyJournal.prepare(row.id); // fsync before any browser send
     await labTestReplyJournal.begin(row.id); // durable sending intent
     try {
+      // The operator may take over while the WAL is being prepared. Before
+      // touching the composer, revalidate on the same pinned backend/sender/
+      // race scope. On deny, NO keyboard/Enter has been attempted, so safely
+      // return the WAL to prepared rather than creating an ambiguous receipt.
+      const eligibleToSend=await checkLabSendEligibility(eligibilityArgs);
+      if(!eligibleToSend.allowed){
+        await labTestReplyJournal.retryPrepared(row.id);
+        if(eligibleToSend.reason==='LAB_HANDOFF_HELD'){
+          rememberLabSeen(row.id);
+          await saveLabSeenNow();
+        }
+        await log('LAB_HANDOFF_SEND_GATE_'+eligibleToSend.reason+' id='+tag);
+        continue;
+      }
       await sendTextInCurrentLab(localLabTestReply(row, classification, plan, canonical), tag);
       await labTestReplyJournal.confirm(row.id,{visibleTag:true});
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
