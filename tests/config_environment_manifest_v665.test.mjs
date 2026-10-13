@@ -48,6 +48,13 @@ test('#665 registry rejects invalid public sensitivity and missing core template
  const changed=structuredClone(MANIFEST);
  changed.variables.frontend.VITE_SUPABASE_ANON_KEY.sensitive=true;
  assert.ok(checkEnvironmentManifest(samples,changed).findings.some(f=>f.code==='MANIFEST_PUBLIC_SECRET'));
+ // A contradictory type:secret + sensitive:false is still private material.
+ // The front-end bundle may never publish a credential by metadata override.
+ const hiddenSecret=structuredClone(MANIFEST);
+ hiddenSecret.variables.frontend.VITE_SUPABASE_ANON_KEY.type='secret';
+ hiddenSecret.variables.frontend.VITE_SUPABASE_ANON_KEY.sensitive=false;
+ assert.ok(checkEnvironmentManifest(samples,hiddenSecret).findings.some(f=>
+   f.code==='MANIFEST_PUBLIC_SECRET'&&f.key==='VITE_SUPABASE_ANON_KEY'));
  const missing=samples.bridge.replace(/^HIPICO_SOURCE_AUTO_REPLY_ENABLED=false\r?\n/m,'');
  assert.ok(check({bridge:missing}).findings.some(f=>f.code==='MANIFEST_MISSING_SAMPLE_KEY'));
 });
