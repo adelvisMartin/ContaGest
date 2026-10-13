@@ -108,13 +108,38 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     await fs.chmod(root,0o700).catch(()=>{});
   }
   async function loadKey(){
-    let handle;
+    // The owner lock MUST already be held. Never publish a partially written
+    // AES key: a crash can leave only an untrusted staging file, never inbox.key.
+    if(!token)throw new Error('LAB_PENDING_LOCK_REQUIRED_FOR_KEY');
     try{
-      handle=await fs.open(keyFile,'wx',0o600);
-      await handle.writeFile(crypto.randomBytes(32));
-      await handle.sync();
-    }catch(e){if(e?.code!=='EEXIST')throw e;}
-    finally{await handle?.close();}
+      await fs.lstat(keyFile);
+    }catch(error){
+      if(error?.code!=='ENOENT')throw error;
+      const temp=path.join(root,'inbox.key.'+crypto.randomUUID()+'.tmp');
+      let handle;
+      try{
+        handle=await fs.open(temp,'wx',0o600);
+        await handle.writeFile(crypto.randomBytes(32));
+        await handle.sync();
+        await handle.close();handle=null;
+        // Owner-lock isolation makes this rename the only legitimate key
+        // publisher. Never overwrite an existing key, even if malformed.
+        try{
+          await fs.lstat(keyFile);
+          throw new Error('LAB_PENDING_KEY_ALREADY_EXISTS');
+        }catch(e){
+          if(e?.code!=='ENOENT')throw e;
+        }
+        await fs.rename(temp,keyFile);
+        try{
+          const dir=await fs.open(root,'r');
+          try{await dir.sync();}finally{await dir.close();}
+        }catch{}
+      }finally{
+        await handle?.close().catch(()=>{});
+        await fs.rm(temp,{force:true}).catch(()=>{});
+      }
+    }
     const stat=await fs.lstat(keyFile);
     if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==32)throw new Error('LAB_PENDING_KEY_INVALID');
     return await fs.readFile(keyFile);
@@ -221,16 +246,17 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     async initialize(){
       if(initialized)return;
       await safeRoot();
-      key=await loadKey();
+      // Serialize key creation before accessing any encrypted payload.
       await lockOwner();
       try{
-        // Only this instance holds the owner lock. Abandoned .tmp files can
-        // never represent a completed candidate and are safe to discard.
         for(const name of await fs.readdir(root)){
-          if(/^[a-f0-9]{64}\.[a-f0-9-]{36}\.tmp$/.test(name)){
+          // Both inbox record and key staging files are never committed state.
+          if(/^[a-f0-9]{64}\.[a-f0-9-]{36}\.tmp$/.test(name)||
+             /^inbox\.key\.[a-f0-9-]{36}\.tmp$/.test(name)){
             await fs.rm(path.join(root,name));
           }
         }
+        key=await loadKey();
         const {rows}=await scan(); // Never silently accept corrupted encrypted input.
         initialized=true;
         return {recovered:rows.length};
@@ -303,11 +329,20 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       const state=await scan();
       return state.expired;
     },
-    async list(limit=25){
+    async list(limit=25,{offset=0}={}){
       assertReady();
-      if(!Number.isInteger(limit)||limit<1||limit>maxEntries)throw new Error('LAB_PENDING_LIST_LIMIT_INVALID');
+      if(!Number.isInteger(limit)||limit<1||limit>maxEntries||
+         !Number.isInteger(offset)||offset<0||offset>=maxEntries){
+        throw new Error('LAB_PENDING_LIST_LIMIT_INVALID');
+      }
       const {rows}=await scan();
-      return rows.sort((a,b)=>a.capturedAt-b.capturedAt).slice(0,limit);
+      rows.sort((a,b)=>a.capturedAt-b.capturedAt || a.messageId.localeCompare(b.messageId));
+      if(rows.length<=limit)return rows;
+      // A first batch of ambiguous/temporarily blocked queries must not
+      // monopolize every poll. Rotate a bounded window without persisting
+      // any sensitive cursor or changing immutable encrypted records.
+      const start=offset%rows.length;
+      return Array.from({length:limit},(_,i)=>rows[(start+i)%rows.length]);
     },
     async remove(id){
       assertReady();
