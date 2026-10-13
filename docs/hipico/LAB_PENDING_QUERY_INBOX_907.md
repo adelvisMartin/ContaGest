@@ -333,3 +333,50 @@ la respuesta HTTP a un resumen de carrera, el segundo intento conserva el
 mismo identificador, canal LAB, alcance y propósito read-only. Esta
 reconciliación de Git no es por sí sola evidencia de suite Node, CI o pruebas
 Windows/WhatsApp ejecutadas. SOURCE continúa sin autoridad de escritura.
+
+
+## QA Windows · último handoff humano, WAL y recuperación (PR #947)
+
+Estos casos corresponden **solo al grupo LAB autorizado**. Ejecutar con el
+Bridge detenido antes de crear una copia de seguridad de su directorio local
+`data/`. No copiar ni publicar claves AES, sesiones, mensajes, JID o tokens;
+no borrar registros para provocar artificialmente un PASS. El canal SOURCE
+continúa NO-GO para escritura.
+
+Desde `tools/hipico-whatsapp-web-bridge` en Windows, con **Node.js 22**:
+
+```powershell
+node --version
+npm ci --no-audit --no-fund
+npm run check
+npm run test:lab:recovery
+npm run qa
+npm run source:policy
+```
+
+Registrar el SHA exacto de `git rev-parse HEAD`, versión de Node, exit codes y
+la conclusión de GitHub Actions. Si el ZIP no incluye `.git`, anotar el SHA
+del release/archivo publicado; el nombre del ZIP por sí solo no prueba
+identidad binaria. No interpretar un workflow `queued` como PASS.
+
+Matriz de fault-injection para la fase LAB supervisada (nunca SOURCE):
+
+| Escenario | Resultado obligatorio |
+| --- | --- |
+| El operador toma LAB antes de consultar backend | No HTTP canónico adicional, no WAL, no Enter; mensaje atendido. |
+| El operador toma LAB tras HTTP, antes de preparar WAL | No envío; solicitud cifrada invalidada. |
+| El operador toma LAB tras `begin`, antes de Enter | Primero marca `seen` durable, luego devuelve WAL a `prepared`; no Enter ni nueva respuesta al reiniciar. |
+| Falla fsync de `LAB_SEEN_FILE` durante ese último gate | No volver WAL a `prepared`; queda `ambiguous` hasta conciliación estricta, sin reenvío. |
+| El fsync tuvo éxito pero falla borrar la entrada cifrada | Se registra `HANDOFF_CLEANUP_DEFERRED`; no `ambiguous` nuevo; el siguiente arranque limpia el residuo usando `seen` persistente. |
+| Permiso no disponible (`LAB_HANDOFF_UNAVAILABLE`) | No inventar toma humana; rollback previo a Enter, conservar ciphertext bajo el TTL original. |
+| Tras `begin` el compositor ya pulsó Enter y se pierde el ACK | Sólo un TAG saliente verificado confirma; nunca repetir automáticamente un Enter ambiguo. |
+
+Verificar en `npm run diagnostic:status` y `npm run lab:ack-report` los
+estados de revisión sin exponer contenidos; comprobar con dos remitentes
+distintos que no se comparte contexto. Para ensayar un cierre entre escrituras
+utilizar el arnés Node de regresión/fallos inyectados, **no** cerrar de forma
+aleatoria una sesión personal de WhatsApp o manipular archivos cifrados reales.
+
+Criterio de salida: `npm run qa` PASS sobre el SHA correcto, CI final PASS,
+prueba física de Windows/WhatsApp LAB documentada y soak independiente #120.
+Hasta entonces #907, #892 y #837 continúan abiertos y release NO-GO.

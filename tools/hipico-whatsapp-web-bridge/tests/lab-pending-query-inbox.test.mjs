@@ -1206,3 +1206,201 @@ test('previously seen confirmed or ambiguous LAB replies still reconcile by ACK 
     assert.equal(calls.includes('query'),false);
   }
 });
+
+
+test('operator takeover fsync precedes retryable WAL in both LAB send routes',async()=>{
+  const vm=await import('node:vm');
+  const index=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const sections=[
+    ['pending',index.slice(index.indexOf('async function resumePendingLabQueries('),
+      index.indexOf('let labTestProcessing=false;')),'entry.messageId'],
+    ['visible',index.slice(index.indexOf('async function processLabTestInput()'),
+      index.indexOf('async function visibleLabHasTag(')),'row.id']
+  ];
+  for(const [label,section,id] of sections){
+    const begin=section.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)');
+    const stop=section.indexOf('continue;\n      }',begin);
+    assert.ok(begin>=0&&stop>begin,label+' send gate');
+    const snippet=section.slice(begin,stop+'continue;\n      }'.length);
+    const seen=snippet.indexOf('rememberLabSeen('+id+')');
+    const fsync=snippet.indexOf('await saveLabSeenNow()');
+    const retry=snippet.indexOf('await labTestReplyJournal.retryPrepared('+id+')');
+    const remove=snippet.indexOf('await labPendingInbox');
+    assert.ok(seen>=0&&fsync>seen&&retry>fsync&&remove>retry,label+' order');
+    const wrap='(async()=>{for(const once of [true]){'+snippet+'}})()';
+    const events=[];
+    let saved=false;
+    const ctx={
+      eligibilityArgs:{},tag:'[LABTEST:012345abcd]',
+      checkLabSendEligibility:async()=>({allowed:false,reason:'LAB_HANDOFF_HELD'}),
+      row:{id:MESSAGE},entry:{messageId:MESSAGE},
+      rememberLabSeen:()=>events.push('seen'),
+      saveLabSeenNow:async()=>{saved=true;events.push('fsync')},
+      labTestReplyJournal:{retryPrepared:async()=>{
+        assert.equal(saved,true,'no retryable WAL before durable handoff');
+        events.push('prepared');
+      }},
+      labPendingInbox:{remove:async()=>events.push('removed')},
+      log:async()=>events.push('logged')
+    };
+    await vm.runInNewContext(wrap,ctx);
+    assert.deepEqual(events,['seen','fsync','prepared','removed','logged'],label);
+    const broken=[];
+    const failedCtx={
+      ...ctx,
+      rememberLabSeen:()=>broken.push('seen'),
+      saveLabSeenNow:async()=>{broken.push('fsync-failed');throw new Error('DISK_WRITE_FAILED')},
+      labTestReplyJournal:{retryPrepared:async()=>broken.push('UNSAFE_PREPARED')},
+      labPendingInbox:{remove:async()=>broken.push('UNSAFE_REMOVE')},
+      log:async()=>broken.push('UNSAFE_LOG')
+    };
+    await assert.rejects(vm.runInNewContext(wrap,failedCtx),/DISK_WRITE_FAILED/);
+    assert.deepEqual(broken,['seen','fsync-failed'],label);
+  }
+});
+
+
+test('late human takeover with failed seen fsync stays ambiguous, never permits another LAB Enter',async()=>{
+  const vm=await import('node:vm');
+  const file=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const begin=file.indexOf('async function resumePendingLabQueries(');
+  const end=file.indexOf('let labTestProcessing=false;',begin);
+  assert.ok(begin>=0&&end>begin);
+  const original=candidate();
+  const events=[];
+  let checks=0,state=null;
+  const ctx={
+    BACKEND_SYNC_ENABLED:true,backendState:'online',lastLabPendingOffset:0,
+    INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
+    TOKEN:'fixture',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',BACKEND_TIMEOUT_MS:4500,
+    labPendingInbox:{
+      list:async()=>[original],
+      read:async()=>original,
+      remove:async()=>{throw new Error('NO_REMOVE_BEFORE_DURABLE_HANDOFF');}
+    },
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{
+      read:async()=>state===null?null:{state},
+      prepare:async()=>{state='prepared';events.push('prepare');},
+      begin:async()=>{state='sending';events.push('begin');},
+      retryPrepared:async()=>{throw new Error('UNSAFE_RETRYABLE_WAL');},
+      markAmbiguous:async()=>{
+        assert.equal(state,'sending');
+        state='ambiguous';events.push('ambiguous');
+      },
+      confirm:async()=>{throw new Error('NO_CONFIRMED_SEND');}
+    },
+    classifyLocal:()=>({risk:'safe',intent:'conversation'}),
+    stableLabSenderKey:()=>SENDER,
+    labConversationInput:()=>({eligible:true}),
+    labReadOnlyQueryPurpose:()=>original.purpose,
+    planLabConversation:()=>({scopeConflict:false}),
+    checkLabSendEligibility:async()=>{
+      checks++;
+      events.push('gate-'+checks);
+      return checks===3?{allowed:false,reason:'LAB_HANDOFF_HELD'}
+        :{allowed:true,reason:'LAB_HANDOFF_CLEAR'};
+    },
+    labQueryBackoff:{
+      allowed:()=>true,clear:()=>{},fail:()=>{throw new Error('NO_QUERY_BACKOFF');}
+    },
+    queryCanonicalLab:async()=>({available:true,text:'Respuesta interna'}),
+    rememberLabSeen:()=>events.push('seen-in-memory'),
+    saveLabSeenNow:async()=>{events.push('fsync-failed');throw new Error('DISK_UNAVAILABLE');},
+    labSeenOutcome:()=> 'AMBIGUOUS',
+    labTestAmbiguousCount:0,
+    sendTextInCurrentLab:async()=>{throw new Error('NO_ENTER_AFTER_HANDOFF');},
+    log:async()=>events.push('logged')
+  };
+  await vm.runInNewContext('('+file.slice(begin,end).trim()+')',ctx)(new Set(),new Set());
+  assert.equal(checks,3);
+  assert.equal(state,'ambiguous');
+  assert.equal(ctx.labTestAmbiguousCount,1);
+  assert.ok(events.indexOf('fsync-failed')>events.indexOf('begin'));
+  assert.ok(events.includes('ambiguous'));
+  assert.equal(events.includes('logged'),true);
+});
+
+
+test('non-handoff eligibility outage before LAB Enter rolls back WAL without terminal human marker',async()=>{
+  const vm=await import('node:vm');
+  const index=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const sections=[
+    ['pending',index.slice(index.indexOf('async function resumePendingLabQueries('),
+      index.indexOf('let labTestProcessing=false;'))],
+    ['visible',index.slice(index.indexOf('async function processLabTestInput()'),
+      index.indexOf('async function visibleLabHasTag('))]
+  ];
+  for(const [label,section] of sections){
+    const begin=section.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)');
+    const stop=section.indexOf('continue;\n      }',begin);
+    assert.ok(begin>=0&&stop>begin,label);
+    const gate=section.slice(begin,stop+'continue;\n      }'.length);
+    const calls=[];
+    const context={
+      eligibilityArgs:{},tag:'[LABTEST:012345abcd]',
+      row:{id:MESSAGE},entry:{messageId:MESSAGE},
+      checkLabSendEligibility:async()=>({
+        allowed:false,reason:'LAB_HANDOFF_UNAVAILABLE'
+      }),
+      rememberLabSeen:()=>{throw new Error('OUTAGE_IS_NOT_HUMAN_TAKEOVER');},
+      saveLabSeenNow:async()=>{throw new Error('OUTAGE_MUST_NOT_PERSIST_TERMINAL_SEEN');},
+      labTestReplyJournal:{
+        retryPrepared:async id=>{assert.equal(id,MESSAGE);calls.push('prepared');}
+      },
+      labPendingInbox:{
+        remove:async()=>{throw new Error('OUTAGE_MUST_RETAIN_ENCRYPTED_INBOX');}
+      },
+      log:async msg=>{
+        assert.match(msg,/LAB_HANDOFF_UNAVAILABLE/);
+        calls.push('logged');
+      }
+    };
+    await vm.runInNewContext('(async()=>{for(const once of [true]){'+gate+'}})()',context);
+    assert.deepEqual(calls,['prepared','logged'],label);
+  }
+});
+
+
+test('failed encrypted deletion after fsynced handoff does not reclassify pre-Enter WAL as ambiguous',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const chunks=[
+    ['pending',source.slice(source.indexOf('async function resumePendingLabQueries('),
+      source.indexOf('let labTestProcessing=false;'))],
+    ['visible',source.slice(source.indexOf('async function processLabTestInput()'),
+      source.indexOf('async function visibleLabHasTag('))]
+  ];
+  for(const [label,section] of chunks){
+    const begin=section.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)');
+    const stop=section.indexOf('continue;\n      }',begin);
+    assert.ok(begin>=0&&stop>begin,label);
+    const gate=section.slice(begin,stop+'continue;\n      }'.length);
+    const events=[];
+    let durable=false,wal='sending';
+    const context={
+      eligibilityArgs:{},tag:'[LABTEST:012345abcd]',
+      row:{id:MESSAGE},entry:{messageId:MESSAGE},
+      checkLabSendEligibility:async()=>({allowed:false,reason:'LAB_HANDOFF_HELD'}),
+      rememberLabSeen:()=>events.push('seen'),
+      saveLabSeenNow:async()=>{durable=true;events.push('fsync')},
+      labTestReplyJournal:{
+        retryPrepared:async()=>{
+          assert.equal(durable,true);
+          wal='prepared';
+          events.push('prepared');
+        },
+        markAmbiguous:async()=>{throw new Error('PRE_ENTER_CANCEL_IS_NOT_AMBIGUOUS');}
+      },
+      labPendingInbox:{
+        remove:async()=>{events.push('remove-failed');throw new Error('DISK_REMOVE_FAILED');}
+      },
+      log:async line=>events.push(line.includes('CLEANUP_DEFERRED')?'deferred':'gate-logged')
+    };
+    await vm.runInNewContext('(async()=>{for(const once of [true]){'+gate+'}})()',context);
+    assert.equal(wal,'prepared');
+    assert.deepEqual(events,[
+      'seen','fsync','prepared','remove-failed','deferred','gate-logged'
+    ],label);
+  }
+});
