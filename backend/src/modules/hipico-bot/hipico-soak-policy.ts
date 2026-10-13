@@ -53,6 +53,7 @@ export type SoakEvaluation={
 };
 export type SoakPolicy={
   releaseMinimumHours:number;
+  sampleSeconds?:number;
   requiredDrills:string[];
   minimumHealthCoverageRatio:number;
   minimumSpoolCoverageRatio:number;
@@ -106,9 +107,19 @@ export function createSoakReleaseEvidence(input:SoakReleaseEvidenceInput,policy:
   const summarySha=String(input.summaryInput?.candidateSha||'').trim().toLowerCase();
   const operatorId=String(input.operatorId||'').trim();
   const minimumMinutes=policy.releaseMinimumHours*60;
-  const releasePass=input.evaluation?.status==='PASS'
-    && input.evaluation.durationHours>=policy.releaseMinimumHours
-    && input.durationRequestedMinutes>=minimumMinutes;
+  if(!input.summaryInput||!input.evaluation)return null;
+  // Never accept a caller-provided PASS without re-evaluating the raw metrics.
+  // A mismatched report or a forged duration must not yield a release artifact.
+  const verified=evaluateSoak(input.summaryInput,policy);
+  const elapsedMs=Date.parse(input.completedAt)-Date.parse(input.startedAt);
+  const timingConsistent=Number.isFinite(elapsedMs)
+    && elapsedMs>=minimumMinutes*60_000
+    && Math.abs(elapsedMs-input.summaryInput.durationMs)<=60_000;
+  const releasePass=verified.status==='PASS'
+    && JSON.stringify(verified)===JSON.stringify(input.evaluation)
+    && verified.durationHours>=policy.releaseMinimumHours
+    && input.durationRequestedMinutes>=minimumMinutes
+    && timingConsistent;
   if(!releasePass||!/^[a-f0-9]{40}$/i.test(candidateSha)||summarySha!==candidateSha||!operatorId)return null;
   return{
     schema:'hipico-soak-evidence.v120',
@@ -121,7 +132,7 @@ export function createSoakReleaseEvidence(input:SoakReleaseEvidenceInput,policy:
     durationRequestedMinutes:input.durationRequestedMinutes,
     policyVersion:input.policyVersion,
     summaryInput:input.summaryInput,
-    evaluation:input.evaluation,
+    evaluation:verified,
     evidenceIntegrity:input.evidenceIntegrity
   };
 }
@@ -135,6 +146,32 @@ export function evaluateSoak(input:SoakSummaryInput,policy:SoakPolicy):SoakEvalu
   const healthCoverageRatio=input.samples?input.healthChecks/input.samples:0;
   const spoolCoverageRatio=input.spoolChecks?input.spoolAvailableChecks/input.spoolChecks:0;
   const violations:string[]=[];const blocked:string[]=[];
+  // Sample data is not trustworthy merely because it comes from the runner.
+  // NaN, negative counters and impossible sampling ratios must fail closed.
+  const metrics=[
+    'durationMs','rssStartMb','rssEndMb','heapStartMb','heapEndMb',
+    'eventLoopP95Ms','maxBacklogAgeSeconds','maxSpoolBytes',
+    'unexpectedDuplicateResponses','lostDecisions','contextLeaks',
+    'samples','healthChecks','healthFailures','spoolChecks','spoolAvailableChecks'
+  ] as const;
+  const counters=[
+    'samples','healthChecks','healthFailures','spoolChecks','spoolAvailableChecks',
+    'unexpectedDuplicateResponses','lostDecisions','contextLeaks','maxSpoolBytes'
+  ] as const;
+  // A full-day PASS needs sustained sampling, not just a claimed wall clock
+  // and one healthy reading. Allow 10% scheduling jitter on the policy's
+  // canonical sampling cadence; a slower override cannot self-authorize PASS.
+  const sampleSeconds=Number(policy.sampleSeconds??30);
+  if(!Number.isFinite(sampleSeconds)||sampleSeconds<1||
+     input.samples<Math.floor(input.durationMs/(sampleSeconds*1000)*0.9)){
+    blocked.push('SOAK_SAMPLE_CADENCE_INSUFFICIENT');
+  }
+  if(metrics.some(key=>!Number.isFinite(input[key])||input[key]<0) ||
+     counters.some(key=>!Number.isSafeInteger(input[key])) ||
+     input.healthChecks>input.samples ||
+     input.spoolChecks>input.samples ||
+     input.healthFailures>input.healthChecks ||
+     input.spoolAvailableChecks>input.spoolChecks)blocked.push('SOAK_METRICS_INVALID');
 
   if(!/^[a-f0-9]{40}$/i.test(input.candidateSha))blocked.push('CANDIDATE_SHA_UNBOUND');
   if(!input.operatorPresent)blocked.push('OPERATOR_NOT_IDENTIFIED');

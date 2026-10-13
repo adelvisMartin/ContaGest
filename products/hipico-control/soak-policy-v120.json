@@ -24,7 +24,12 @@
     "lab-reconnect",
     "source-session-reconnect-readonly"
   ],
-  "allowedDrillStatuses": ["PASS", "FAIL", "BLOCKED", "NOT_EXECUTED"],
+  "allowedDrillStatuses": [
+    "PASS",
+    "FAIL",
+    "BLOCKED",
+    "NOT_EXECUTED"
+  ],
   "drillEvidenceRequired": true,
   "drillMaterialEvidenceRequiredForRelease": true,
   "physicalEvidenceRequiredForRelease": true,
@@ -35,5 +40,5 @@
   "invariantEvidenceRequiredForRelease": true,
   "sourceInvariant": "SOURCE remains read-only for the entire run; all generated replay/response traffic is LAB/local only.",
   "sessionInvariant": "Reconnect/restart must never promote SOURCE into a write destination or silently swap SOURCE/LAB sessions.",
-  "releaseRule": "Duration >=24h, exact candidate SHA, completed #119 Physical QA evidence with verified file hashes, identified QA operator, run-bound material evidence for SOURCE read-only/LAB-only/session fallback, health coverage >=90%, valid spool-v2 structure observed >=90%, all required restart/reconnect drills PASS with run-bound material evidence, and no threshold violation are required for release PASS. Short runs are SMOKE_ONLY."
+  "releaseRule": "Duration >=24h with >=90% of samples at the policy's 30-second cadence, exact candidate SHA, completed #119 Physical QA evidence with verified file hashes, identified QA operator, run-bound material evidence for SOURCE read-only/LAB-only/session fallback, health coverage >=90%, valid spool-v2 structure observed >=90%, all required restart/reconnect drills PASS with run-bound material evidence, and no threshold violation are required for release PASS. Short runs are SMOKE_ONLY."
 }

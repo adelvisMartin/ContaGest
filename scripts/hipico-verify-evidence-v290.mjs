@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { validSoakMetricEvidence } from './hipico-soak-metric-integrity-v120.mjs';
 
 const SHA40 = /^[0-9a-f]{40}$/i;
 const STATUSES = Object.freeze(['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
@@ -77,6 +78,8 @@ function validateSoakEvidence(data) {
     && Date.parse(data.completedAt) >= Date.parse(data.startedAt)
     && String(data?.operatorId || '').trim().length > 0
     && summarySha === candidateSha
+    && validSoakMetricEvidence(data,
+      Number(soakPolicy?.releaseMinimumHours), Number(soakPolicy?.sampleSeconds))
     && Number(data?.durationRequestedMinutes) >= Number(soakPolicy?.releaseMinimumHours) * 60
     && evaluation?.status === 'PASS'
     && Number(evaluation?.durationHours) >= Number(soakPolicy?.releaseMinimumHours)
