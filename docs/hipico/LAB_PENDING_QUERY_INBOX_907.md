@@ -227,3 +227,18 @@ rechazo de desplazamientos inválidos y avance del cursor antes del control
 de backend. El selector real se ejecutó con 31 registros simulados:
 cobertura 31/31 en dos ventanas, **PASS**. La validación de Node con cifrado
 y filesystem real permanece pendiente de CI/Windows.
+
+## Clave AES ausente con ciphertext existente (2026-10-13)
+
+Durante `initialize`, después de adquirir el candado exclusivo, el arranque
+**rechaza** crear una clave AES nueva si falta `inbox.key` y existe al menos
+un registro persistido `.json` en la bandeja: `LAB_PENDING_KEY_MISSING_WITH_RECORDS`.
+El Bridge libera únicamente su propio candado y conserva todo el ciphertext.
+Un operador debe restaurar la **clave original** desde un respaldo protegido;
+no debe eliminar ni regenerar registros para forzar el arranque. Un primer
+arranque realmente vacío puede crear una clave nueva con publicación atómica.
+
+Se añadió regresión de pérdida de clave, rechazo sin rotación, conservación
+byte a byte de los registros y recuperación tras restaurar la clave original.
+No implica validación física de NTFS/Windows, ejecución de suite completa ni
+permiso de envío al grupo SOURCE.
