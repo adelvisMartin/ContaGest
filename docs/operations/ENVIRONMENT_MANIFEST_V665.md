@@ -40,3 +40,32 @@ No usar `DATABASE_URL` como alias de `DATABASE_RUNTIME_URL` ni
 **Pendientes:** integrar progresivamente el catálogo con validación runtime
 de todos los entrypoints, QA Node/TS exact-SHA, bundle de frontend, secretos
 del proveedor y smoke Docker. No cerrar #665 antes de esas evidencias.
+
+
+## Fail-closed de plantillas y superficies
+
+El auditor también debe fallar cuando la sintaxis de un `.env.example` no
+corresponde a una asignación válida `NOMBRE=valor`, o cuando una cadena
+entrecomillada no está cerrada. La regla evita que una variable nueva
+malformada se omita silenciosamente y produzca `PASS`. El hallazgo
+`MANIFEST_MALFORMED_SAMPLE_LINE` registra únicamente un identificador
+acotado o un número de línea, **nunca el valor del ejemplo**.
+
+Las cuatro superficies son inmutables para esta fase:
+
+- `backend → backend/.env.example`
+- `frontend → frontend/.env.example`
+- `bridge → tools/hipico-whatsapp-web-bridge/.env.example`
+- `build → sin plantilla`
+
+Eliminar una superficie o su catálogo, intercambiar un archivo por otro
+(o por una ruta privada) o agregar una superficie nueva sin autoridad genera
+`FAIL`. El lector de ejemplos utiliza rutas fijadas por el código,
+independientes de la metadata modificable del manifiesto. Esta lectura no
+accede a `.env` privados ni credenciales de proveedores.
+
+Las pruebas de regresión incluyen líneas sin `=`, asignaciones malformadas,
+comillas inconclusas, diagnósticos sin secretos, propietarios faltantes,
+catálogos vacíos y sustitución de rutas; los ejemplos actualmente versionados
+siguen aceptándose. Las comprobaciones aisladas en V8 no sustituyen el gate
+`npm run test:config:manifest` ni el CI exact-SHA.
