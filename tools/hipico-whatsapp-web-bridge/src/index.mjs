@@ -38,7 +38,6 @@ import { composeLabAssistantReply } from './lab-assistant-replies.mjs';
 import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
 import { createLabQueryBackoff } from './lab-query-backoff.mjs';
 import { createLabPendingQueryInbox, reconcileLabPendingObservation } from './lab-pending-query-inbox.mjs';
-import { confirmedLabQuoteHint } from './lab-confirmed-quote-hint.mjs';
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
@@ -1622,14 +1621,8 @@ async function processLabTestInput() {
       rememberLabSeen(row.id); // confirmed delivery/tag; never ack before sending
       await saveLabSeenNow();
       await finalizeConfirmedVisibleLabQuote(row,body);
-      // Hints are safe only after the durable confirmed LAB ACK; errors cannot
-      // authorize a second send or overwrite the underlying ACK.
-      const confirmedQuote=confirmedLabQuoteHint(row,classification);
-      if(sender&&confirmedQuote&&labQuotedRaceJournal){
-        try{await labQuotedRaceJournal.remember({
-          messageId:row.id,senderId:sender,race:confirmedQuote,confirmed:true
-        });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
-      }
+      // Quoted-race hints have already been finalized from the encrypted
+      // original request. Never write a second hint from the mutable DOM.
       // The WAL-backed confirmed acknowledgement is the single send authority.
       // Context is only a local hint; failed persistence can never resend LAB.
       if (plan.rememberRace && labConversationContext) {
