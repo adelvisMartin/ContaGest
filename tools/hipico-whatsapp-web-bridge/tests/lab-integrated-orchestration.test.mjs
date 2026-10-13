@@ -39,12 +39,15 @@ test('current LAB send reconciles all authorities before the durable journal',()
   const handoff2=lab.indexOf('const eligibleAfter=await checkLabSendEligibility(');
   const prepare=lab.indexOf('await labTestReplyJournal.prepare(row.id)');
   const begin=lab.indexOf('await labTestReplyJournal.begin(row.id)',prepare);
-  const send=lab.indexOf('await sendTextInCurrentLab(',begin);
+  const preEnter=lab.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)',begin);
+  const rollback=lab.indexOf('await labTestReplyJournal.retryPrepared(row.id)',preEnter);
+  const send=lab.indexOf('await sendTextInCurrentLab(',preEnter);
   const ack=lab.indexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});',send);
   const memo=lab.indexOf('labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope',ack);
   assert.ok(sender>=0&&prior>sender&&eligible>prior&&quoted>eligible&&
     plan>quoted&&handoff1>plan&&canonical>handoff1&&handoff2>canonical&&
-    prepare>handoff2&&begin>prepare&&send>begin&&ack>send&&memo>ack);
+    prepare>handoff2&&begin>prepare&&preEnter>begin&&rollback>preEnter&&
+    send>rollback&&ack>send&&memo>ack);
   assert.match(lab,/inquiryPurpose && sender && !plan\.scopeConflict/);
   assert.match(lab,/race:verifiedRace/);
   assert.match(lab,/labQuotedRaceJournal\.remember\(/);
