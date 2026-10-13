@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { assertBackendStartupConfig } from './startupContract.js';
 
 const DEFAULT_APP_URL = 'http://localhost:8080';
 const DEVELOPMENT_JWT_SECRET = 'dev_secret_change_me_please_32_chars';
@@ -65,6 +66,9 @@ function deriveSecret(seed: string, purpose: string) {
   return createHash('sha256').update(`contagest-ve:${purpose}:v11.15:${seed}`).digest('base64url');
 }
 
+// Fail closed at module import time for Node, Docker and serverless entrypoints.
+// A production mock or tenant-header bypass must not reach any HTTP routes.
+assertBackendStartupConfig(process.env);
 const parsedEnv = envSchema.parse(process.env);
 export const deploymentEnvironment = process.env.VERCEL_ENV || parsedEnv.NODE_ENV;
 export const isVercelPreview = process.env.VERCEL_ENV === 'preview';
