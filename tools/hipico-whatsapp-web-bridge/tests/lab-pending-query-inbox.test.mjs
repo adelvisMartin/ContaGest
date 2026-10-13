@@ -606,6 +606,33 @@ test('damaged existing AES key is never re-created or replaced on restart',async
   await restored.close();
 });
 
+test('missing AES key blocks startup while encrypted records remain and permits restoration',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();
+  await inbox.enqueue(candidate());
+  await inbox.close();
+  const keyFile=path.join(f.rootDir,'inbox.key');
+  const backupKey=path.join(f.rootDir,'inbox.key.operator-backup');
+  const record=(await fs.readdir(f.rootDir)).find(name=>name.endsWith('.json'));
+  const ciphertext=await fs.readFile(path.join(f.rootDir,record));
+  await fs.rename(keyFile,backupKey);
+
+  const reboot=f.create();
+  await assert.rejects(reboot.initialize(),/LAB_PENDING_KEY_MISSING_WITH_RECORDS/);
+  assert.equal((await fs.readdir(f.rootDir)).includes('inbox.key'),false,
+    'must not silently rotate key when ciphertext already exists');
+  assert.equal((await fs.readdir(f.rootDir)).includes('owner.lock'),false,
+    'failed initialization must release its own owner lock');
+  assert.deepEqual(await fs.readFile(path.join(f.rootDir,record)),ciphertext,
+    'existing encrypted query is never destroyed during missing-key failure');
+
+  await fs.rename(backupKey,keyFile);
+  const restored=f.create();await restored.initialize();
+  assert.equal((await restored.read(MESSAGE))?.text,TEXT,
+    'original backed-up key recovers the durable encrypted query');
+  await restored.close();
+});
+
 test('inbox source acquires owner lock before generating encryption key',async()=>{
   const src=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
   const init=src.slice(src.indexOf('    async initialize(){'),src.indexOf('    async read(messageId)'));
