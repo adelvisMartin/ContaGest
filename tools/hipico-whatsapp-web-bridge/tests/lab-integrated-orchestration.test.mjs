@@ -139,7 +139,8 @@ test('completed multi-turn race reference is passed to the canonical query, not 
   const end=lab.indexOf('})',lookup);
   assert.ok(lookup>=0&&end>lookup);
   const request=lab.slice(lookup,end);
-  assert.match(request,/race:verifiedRace/);
+  assert.match(request,/race:trustedRace/);
+  assert.match(lab,/const verifiedRace=plan\.scopeConflict\?null:\(scopedRace\|\|plan\.raceScope\)/);
   assert.doesNotMatch(request,/race:scopedRace/);
   assert.match(lab,/const verifiedRace=plan\.scopeConflict\?null:\(scopedRace\|\|plan\.raceScope\)/);
   assert.match(lab,/inquiryPurpose && sender && !plan\.scopeConflict/);
