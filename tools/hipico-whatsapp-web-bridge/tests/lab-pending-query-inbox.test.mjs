@@ -209,7 +209,7 @@ test('live LAB read uses immutable restored scope rather than disappearing visib
   const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
   const live=src.slice(src.indexOf('async function processLabTestInput()'),src.indexOf('async function visibleLabHasTag'));
   const read=live.indexOf('await labPendingInbox.read(row.id)');
-  const reconcile=live.indexOf('reconcileLabPendingObservation(original');
+  const reconcile=live.indexOf('reconcileLabPendingObservation(stored');
   const lookup=live.indexOf('await queryCanonicalLab({');
   assert.ok(read>=0&&reconcile>read&&lookup>reconcile);
   assert.match(live,/trustedRace=verified\.race/);
