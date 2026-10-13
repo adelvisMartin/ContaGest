@@ -119,6 +119,34 @@ test('quoted race context requires exact prior visible LAB message and the same 
   assert.equal(resolveQuotedLabRaceScope(reply,[{...prior,hasMedia:true},reply]),null);
 });
 
+test('visible quote context rejects ambiguous original and conflicting ordinal follow-ups',()=>{
+  const sender='123456789012@lid';
+  const target={id:'false_120363222222222222@g.us_q-1_'+sender,
+    text:'Consulta: carrera 5 en La Rinconada el 2026-10-12',fromMe:false,hasMedia:false};
+  const reply={id:'false_120363222222222222@g.us_q-2_'+sender,
+    text:'¿Y el estado de esa carrera?',quotedId:target.id};
+  const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  assert.deepEqual(resolveQuotedLabRaceScope(reply,[target,reply]),race);
+  for(const text of [
+    target.text+' o carrera 6',
+    target.text+' o la sexta',
+    target.text+' o 6ta',
+    target.text+' y pagar 200 Bs',
+    target.text+' para registrar saldo'
+  ]){
+    const modified={...target,text};
+    assert.equal(resolveQuotedLabRaceScope(reply,[modified,reply]),null,text);
+  }
+  for(const text of [
+    '¿Y el estado de carrera 6?',
+    '¿Y el resultado de la sexta?',
+    '¿Y el resultado de 6ta?',
+    '¿Y el resultado de carrera 5 o carrera 6?'
+  ]){
+    assert.equal(resolveQuotedLabRaceScope({...reply,text},[target,reply]),null,text);
+  }
+});
+
 test('query adapter sends purpose and verified quoted identity only in the LAB query payload',async()=>{
   let sent;
   const prior={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
