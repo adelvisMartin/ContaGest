@@ -574,3 +574,37 @@ test('canonical REVIEW_REQUIRED is terminal and cannot authorize a WhatsApp LAB 
   })});
   assert.equal(canonical.available,true,'verified informational absence remains allowed');
 });
+
+test('canonical LAB rejects unrecognized send statuses even with innocent-looking false authority',async()=>{
+  const authority={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false};
+  for(const status of [
+    'FINANCIAL_SETTLEMENT_APPROVED','SOURCE_WRITE_COMPLETE','TRANSFER_APPROVED',
+    'CANONICAL_UNKNOWN_FUTURE_OPERATION','LAB_HANDOFF_CLEAR'
+  ]){
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>json({
+      ok:true,mode:'shadow',status,text:'Respuesta no autorizada.',authority
+    })});
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},status);
+  }
+  for(const status of [
+    'LAB_CANONICAL_HUMAN_HANDOFF',
+    'LAB_CANONICAL_REQUEST_STALE',
+    'LAB_CANONICAL_RECEIPT_NOT_VERIFIABLE'
+  ]){
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>json({
+      ok:true,mode:'shadow',status,text:'No se confirmó un hecho publicable.',authority
+    })});
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'},status);
+  }
+  for(const status of [
+    'CANONICAL_STATE_FOUND','CANONICAL_RACE_NOT_FOUND',
+    'CANONICAL_RACE_SUMMARY','CANONICAL_NEXT_RACE',
+    'LAB_CANONICAL_REVISION_CHANGED','LAB_CANONICAL_RECOVERED'
+  ]){
+    const result=await queryCanonicalLab({...base,fetchImpl:async()=>json({
+      ok:true,mode:'shadow',status,text:'Respuesta informativa verificada.',authority
+    })});
+    assert.equal(result.available,true,status);
+    assert.equal(result.reason,status);
+  }
+});
