@@ -292,3 +292,28 @@ tres casos de finalización posterior al ACK, y comprobación del orden de
 persistencia. Se ejecutó la función real en V8 con dependencias controladas.
 La suite Node completa, PostgreSQL real y Chromium/Windows siguen pendientes
 de validación; SOURCE conserva su política de solo lectura.
+
+## Contrato de resúmenes canónicos y lenguaje financiero plural (2026-10-13)
+
+El clasificador del Bridge y la ruta read-only del backend autorizan los
+mismos siete propósitos LAB: status, result, participants, summary, next,
+active y schedule. El inbox AES-256-GCM admite ahora también summary;
+antes lo rechazaba pese a ser válido en el transporte y el servidor.
+
+Una solicitud de resumen de carrera puede persistir y recuperarse solamente
+cuando pasa la clasificación no monetaria y la validación de identidad,
+mensaje original, alcance explícito o cita verificada, límite temporal y
+recepción canónica. Una pregunta sin fecha o pista completas no crea una
+carrera ficticia y no hereda autoridad de la memoria conversacional.
+
+Tanto el Bridge como el backend rechazan términos financieros singulares y
+plurales: apuestas, saldos, pagos, premios, jugadas, transferencias, ganancias,
+liquidaciones y operaciones similares. Este filtro se aplica aunque un
+clasificador genérico devuelva conversación segura. Resumir la conversación
+o estados financieros no autoriza lecturas operativas ni envíos autónomos.
+
+Regresiones añadidas al inbox cifrado, adaptador de consultas y guardia del
+backend. Comprobación aislada de funciones reales (V8): nueve mensajes
+positivos/negativos y cinco validaciones del inbox con resultados esperados.
+Node tests completos, PostgreSQL y Windows todavía no tienen evidencia verde
+del SHA final. No se activó SOURCE ni ninguna autoridad monetaria.
