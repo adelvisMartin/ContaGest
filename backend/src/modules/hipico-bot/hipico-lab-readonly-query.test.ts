@@ -54,6 +54,10 @@ test('race summary is read-only and excludes transcript summaries and financial 
     'hazme un resumen de lo que hablamos sobre carrera 5',
     'resume los mensajes del chat de carrera 5',
     'resumen de saldo de carrera 5',
+    'Resumen de apuestas y saldos de carrera 5',
+    'Hazme resumen de pagos, premios y jugadas de la carrera 5',
+    '¿Resumen de transferencias y ganancias de carrera 5?',
+    'Resumen de liquidaciones de la carrera 5',
     '¿resumen de apuesta carrera 5?',
     'resumen de carrera 5, confirma el pago',
     'resumen de carrera 5; registrar cierre'
@@ -62,11 +66,12 @@ test('race summary is read-only and excludes transcript summaries and financial 
   assert.equal(isLabInformationRequest('Resumen de carrera 5','summary',classified('race_result','review')),false);
 });
 
-
 test('canonical backend blocks plural betting and balance words in read-only summaries',()=>{
   const safe=classified('conversation','safe');
   for(const term of ['saldos','apuestas','jugadas','premios','pagos','montos',
-    'saldo','apuesta','premio','pago','monto','depositar','retirar']){
+    'saldo','apuesta','premio','pago','monto','depositar','retirar',
+    'transferencias','ganancias','deudas','liquidaciones','balances',
+    'depósitos','retiros','cobros','bolívares']){
     const summary='¿Resumen de '+term+' de la carrera 5?';
     assert.equal(isLabInformationRequest(summary,'summary',safe),false,summary);
     assert.equal(isLabInformationRequest('¿Estado de carrera 5 y '+term+'?','status',safe),

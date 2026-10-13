@@ -61,8 +61,10 @@ export async function checkLabSendEligibility({
       body:JSON.stringify(body),
       signal:AbortSignal.timeout(Math.min(5000,Math.max(500,timeoutMs)))
     });
-    if(response.status!==200||
-      !response.headers.get('content-type')?.toLowerCase().includes('application/json')){
+    // A substring within JSONP, parameters, or a combined MIME header
+    // is not a valid security decision from the handoff service.
+    const mediaType=response.headers.get('content-type')?.split(';',1)[0]?.trim().toLowerCase();
+    if(response.status!==200||mediaType!=='application/json'){
       return {allowed:false,reason:'LAB_HANDOFF_UNAVAILABLE'};
     }
     const lengthHeader=response.headers.get('content-length');

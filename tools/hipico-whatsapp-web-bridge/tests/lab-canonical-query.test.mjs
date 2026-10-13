@@ -241,6 +241,21 @@ test('LAB supports only explicit race summaries, not whole-chat or monetary summ
   assert.equal(labReadOnlyQueryPurpose('resumen de carrera 5', {intent:'betting_or_balance',risk:'monetary'}),null);
 });
 
+test('plural financial summary requests cannot gain LAB canonical read authority',()=>{
+  const safe={intent:'conversation',risk:'safe'};
+  for(const text of [
+    'Resumen de apuestas y saldos de carrera 5',
+    'Hazme resumen de pagos, premios y jugadas de la carrera 5',
+    '¿Resumen de transferencias y ganancias de carrera 5?',
+    'Resumen de liquidaciones de la carrera 5',
+    '¿Resumen de depósitos y retiros de carrera 5?'
+  ])assert.equal(labReadOnlyQueryPurpose(text,safe),null,text);
+  for(const text of [
+    'Hazme un resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12',
+    '¿Resumen de la carrera 5?'
+  ])assert.equal(labReadOnlyQueryPurpose(text,safe),'summary',text);
+});
+
 test('LAB summary transport preserves pinned identity, no SOURCE write, and strict read-only purpose',async()=>{
   let submitted=null;
   const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
@@ -260,6 +275,20 @@ test('LAB summary transport preserves pinned identity, no SOURCE write, and stri
   assert.deepEqual(JSON.parse(submitted.options.body).race,race);
 });
 
+test('lost HTTP response retries read-only lookup once with identical message identity',async()=>{
+  let calls=0;const envelopes=[];
+  const result=await queryCanonicalLab({...base,fetchImpl:async(_url,options)=>{
+    calls++;
+    envelopes.push(JSON.parse(options.body));
+    if(calls===1)throw new TypeError('network socket dropped after backend read');
+    return json({ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text:'Estado interno verificado.',
+      authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+  }});
+  assert.equal(calls,2);
+  assert.deepEqual(envelopes[0],envelopes[1]);
+  assert.equal(result.available,true);
+  assert.equal(result.text,'Estado interno verificado.');
+});
 
 test('only 502/504 gateway failures retry; 503/auth/rate-limit/invalid authority fail closed',async()=>{
   for(const status of [502,504]){
@@ -289,6 +318,22 @@ test('only 502/504 gateway failures retry; 503/auth/rate-limit/invalid authority
   assert.equal(invalid.reason,'LAB_CANONICAL_INVALID_RESPONSE');
 });
 
+test('exhausted network recovery does not create an ACK or send intent for a canonical question',async()=>{
+  let calls=0;
+  const result=await queryCanonicalLab({...base,fetchImpl:async()=>{calls++;throw new TypeError('network');}});
+  assert.equal(calls,2);
+  assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'});
+  const source=await fs.readFile(path.join(path.dirname(fileURLToPath(import.meta.url)),'..','src','index.mjs'),'utf8');
+  const section=source.slice(source.indexOf('async function processLabTestInput()'),source.indexOf('async function visibleLabHasTag'));
+  const lookup=section.indexOf('await queryCanonicalLab({');
+  const hold=section.indexOf("if(inquiryPurpose && BACKEND_SYNC_ENABLED && canonical.available!==true)");
+  const prepare=section.indexOf('await labTestReplyJournal.prepare(row.id)');
+  const send=section.indexOf('await sendTextInCurrentLab(');
+  assert.ok(lookup>=0&&hold>lookup&&prepare>hold&&send>prepare);
+  assert.match(section,/LAB_CANONICAL_QUERY_PENDING/);
+  assert.match(section,/if\(!sender \|\| !parsedLabStamp\?\.parsed/);
+});
+
 
 test('blank canonical response never authorizes a LAB send or local factual fallback',async()=>{
   for(const text of ['', '  \t  ']){
@@ -302,7 +347,6 @@ test('blank canonical response never authorizes a LAB send or local factual fall
     assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
   }
 });
-
 
 test('LAB HTTP response stream caps bytes before full-body buffering',async()=>{
   let reads=0,cancels=0,fetches=0;
@@ -320,7 +364,6 @@ test('LAB HTTP response stream caps bytes before full-body buffering',async()=>{
   assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
   assert.equal(fetches,1);assert.equal(reads,1);assert.equal(cancels,1);
 });
-
 
 test('LAB HTTP streamed multi-byte UTF-8 preserves valid JSON and read-only envelope',async()=>{
   const reply='Hipódromo La Rinconada, resultado interno.';
@@ -344,7 +387,6 @@ test('LAB HTTP streamed multi-byte UTF-8 preserves valid JSON and read-only enve
   assert.equal(index,2);
 });
 
-
 test('LAB canonical response rejects invalid length headers without reading or retrying',async()=>{
   for(const length of ['invalid','-1','16385','999999999999999999999']){
     let fetches=0,reads=0;
@@ -361,7 +403,6 @@ test('LAB canonical response rejects invalid length headers without reading or r
   }
 });
 
-
 test('LAB streamless adapters apply byte limit on UTF-8, not UTF-16 length',async()=>{
   const result=await queryCanonicalLab({...base,fetchImpl:async()=>({
     status:200,headers:new Headers({'content-type':'application/json'}),
@@ -372,7 +413,6 @@ test('LAB streamless adapters apply byte limit on UTF-8, not UTF-16 length',asyn
   })});
   assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
 });
-
 
 test('canonical adapter accepts only the exact application/json HTTP media type',async()=>{
   const canonical={
@@ -411,11 +451,45 @@ test('canonical adapter accepts only the exact application/json HTTP media type'
   }
 });
 
+test('lost HTTP in a scoped LAB race summary preserves immutable read-only request across retry',async()=>{
+  const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const question='¿Resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12?';
+  assert.equal(labReadOnlyQueryPurpose(question,{intent:'conversation',risk:'safe'}),'summary');
+  const seen=[];
+  let calls=0;
+  const result=await queryCanonicalLab({...base,race,text:question,purpose:'summary',
+    fetchImpl:async(url,options)=>{
+      calls++;
+      seen.push({url,method:options.method,redirect:options.redirect,
+        token:options.headers['x-hipico-bridge-token'],body:options.body});
+      if(calls===1)throw new TypeError('ECONNRESET_AFTER_READ_ONLY_BACKEND_COMMIT');
+      return json({ok:true,mode:'shadow',status:'CANONICAL_RACE_SUMMARY',
+        text:'Resumen interno, sin carácter oficial.',
+        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}
+      });
+    }});
+  assert.equal(calls,2);
+  assert.deepEqual(seen[0],seen[1],'a lost response may only retry an identical read-only request');
+  assert.equal(seen[0].redirect,'manual');
+  assert.equal(seen[0].method,'POST');
+  const envelope=JSON.parse(seen[1].body);
+  assert.equal(envelope.externalMessageId,base.messageId);
+  assert.equal(envelope.groupId,base.labGroupId);
+  assert.equal(envelope.channelRole,'lab');
+  assert.equal(envelope.shadowMode,true);
+  assert.equal(envelope.purpose,'summary');
+  assert.deepEqual(envelope.race,race);
+  assert.equal(result.available,true);
+  assert.equal(result.reason,'CANONICAL_RACE_SUMMARY');
+  assert.equal(result.text,'Resumen interno, sin carácter oficial.');
+});
 
 test('race summaries reject plural money-related topics on LAB Bridge',()=>{
   const classification={intent:'conversation',risk:'safe'};
   const monetaryTopics=['saldos','apuestas','jugadas','premios','pagos','montos',
-    'saldo','apuesta','premio','pago','monto','depositar','retirar'];
+    'saldo','apuesta','premio','pago','monto','depositar','retirar',
+    'transferencias','ganancias','deudas','liquidaciones','balances',
+    'depósitos','retiros','cobros','bolívares'];
   for(const topic of monetaryTopics){
     const text='¿Resumen de '+topic+' de la carrera 5?';
     assert.equal(labReadOnlyQueryPurpose(text,classification),null,text);

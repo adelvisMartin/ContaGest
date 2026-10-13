@@ -192,3 +192,33 @@ test('lying short Content-Length cannot bypass the real 4096-byte stream limit',
   assert.equal(cancel,1);
 });
 
+
+
+test('handoff permission refuses misleading MIME before parsing or granting a send',async()=>{
+  const trusted={
+    ok:true,mode:'shadow',allowed:true,status:'LAB_HANDOFF_CLEAR',authority
+  };
+  for(const contentType of [
+    'text/plain; note=application/json','application/jsonp',
+    'application/problem+json','application/json, text/html',
+    'text/html, application/json','application/javascript',''
+  ]){
+    let reads=0;
+    const result=await checkLabSendEligibility({...base,fetchImpl:async()=>({
+      status:200,headers:new Headers({'content-type':contentType}),
+      text:async()=>{reads++;return JSON.stringify(trusted);}
+    })});
+    assert.deepEqual(result,{allowed:false,reason:'LAB_HANDOFF_UNAVAILABLE'},contentType);
+    assert.equal(reads,0,'invalid MIME cannot authorize even a syntactically valid JSON body');
+  }
+  for(const contentType of [
+    'application/json','Application/JSON; charset=utf-8',
+    'application/json ; charset=UTF-8'
+  ]){
+    const result=await checkLabSendEligibility({...base,fetchImpl:async()=>({
+      status:200,headers:new Headers({'content-type':contentType}),
+      text:async()=>JSON.stringify(trusted)
+    })});
+    assert.deepEqual(result,{allowed:true,reason:'LAB_HANDOFF_CLEAR'},contentType);
+  }
+});
