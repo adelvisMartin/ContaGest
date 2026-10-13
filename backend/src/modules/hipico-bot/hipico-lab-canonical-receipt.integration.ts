@@ -254,3 +254,41 @@ test('real PostgreSQL: adding a scheduled race invalidates the old program but p
   assert.equal((await receiptsFor(input.externalMessageId)).length,1);
   assert.equal((await receiptsFor('pg-schedule-new-'+suffix)).length,1);
 });
+
+test('real PostgreSQL: race summary HTTP loss recovers same snapshot and rejects corrected narrative',async()=>{
+  const summary={
+    ...base.canonical,reason:'CANONICAL_RACE_SUMMARY',
+    text:'Resumen interno carrera 5: abierta, sin llegada confirmada.',
+    state:'OPEN',version:4
+  };
+  const input={...base,externalMessageId:'pg-summary-'+suffix,
+    purpose:'summary' as const,canonical:summary};
+  const first=await reconcileCanonicalLabReceipt(input);
+  assert.equal(first.available,true);
+  assert.equal(first.reason,'CANONICAL_RACE_SUMMARY');
+  const before=await receiptsFor(input.externalMessageId);
+  assert.equal(before.length,1);
+  assert.equal(before[0].status,'planned');
+  assert.equal(before[0].responseHash,
+    crypto.createHash('sha256').update(summary.text).digest('hex'));
+  const recovered=await reconcileCanonicalLabReceipt(input);
+  assert.equal(recovered.available,true);
+  assert.equal(recovered.reason,'LAB_CANONICAL_RECOVERED');
+  assert.equal(recovered.text,summary.text);
+  assert.deepEqual(await receiptsFor(input.externalMessageId),before);
+  const correction=await reconcileCanonicalLabReceipt({
+    ...input,canonical:{...summary,
+      state:'RESULT_RECEIVED',version:5,
+      text:'Resumen interno carrera 5: llegada corregida 1 - 3 - 7.'}
+  });
+  assert.equal(correction.available,false);
+  assert.equal(correction.reason,'LAB_CANONICAL_REVISION_CHANGED');
+  assert.deepEqual(await receiptsFor(input.externalMessageId),before);
+  const newMessage=await reconcileCanonicalLabReceipt({
+    ...input,externalMessageId:'pg-summary-fresh-'+suffix,
+    canonical:{...summary,state:'RESULT_RECEIVED',version:5,
+      text:'Resumen interno carrera 5: llegada confirmada 1 - 3 - 7.'}
+  });
+  assert.equal(newMessage.available,true);
+  assert.equal((await receiptsFor('pg-summary-fresh-'+suffix)).length,1);
+});
