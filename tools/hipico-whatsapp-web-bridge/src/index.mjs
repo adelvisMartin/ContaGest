@@ -139,6 +139,7 @@ let lastPostStartedAt = 0;
 let lastLabTestPollAt = 0;
 let labBootstrapCompleted = false;
 let lastLabPendingPruneAt = 0;
+let labPendingRecoveryOffset = 0; // Volatile, rotates over at most 200 encrypted pending queries.
 const labQueryBackoff=createLabQueryBackoff();
 let sourceDiscoveryFailures = 0;
 let lastPrintedHealthLine = '';
@@ -1235,7 +1236,10 @@ async function finalizeConfirmedVisibleLabQuote(row,body) {
 
 async function resumePendingLabQueries(visibleIds = new Set()) {
   if (!labPendingInbox || !BACKEND_SYNC_ENABLED) return;
-  const pending = await labPendingInbox.list(25);
+  const pending = await labPendingInbox.list(25,{offset:labPendingRecoveryOffset});
+  // Advance even when every sampled record is ambiguous or under backoff.
+  // This is scheduling only; it never authorizes a query or WhatsApp send.
+  labPendingRecoveryOffset=(labPendingRecoveryOffset+25)%200;
   for (const entry of pending) {
     const tag = labTestTagFor(entry.messageId);
     const state = await labTestReplyJournal.read(entry.messageId);
