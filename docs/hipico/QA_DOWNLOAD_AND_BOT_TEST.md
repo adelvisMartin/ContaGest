@@ -7,6 +7,35 @@
 
 Este procedimiento es la autoridad manual mientras los GitHub-hosted runners no ejecuten steps. Un comando local sólo cuenta como PASS si realmente termina correctamente en tu laptop.
 
+## 0. Descarga ZIP por SHA exacto (sin Git)
+
+En GitHub, abre `https://github.com/adelvisMartin/ContaGest/commits/main` y copia el SHA completo de 40 caracteres del commit de `main` que quieres instalar. No uses el SHA de un PR sin fusionar. En PowerShell, sustituye el valor de `$sha`:
+
+```powershell
+$sha = 'PEGAR_SHA_COMPLETO_DE_MAIN'
+if ($sha -notmatch '^[a-fA-F0-9]{40}$') { throw 'El SHA debe contener 40 caracteres hexadecimales.' }
+$zip = Join-Path $env:USERPROFILE ('Downloads\ContaGest-' + $sha + '.zip')
+Invoke-WebRequest -Uri ('https://github.com/adelvisMartin/ContaGest/archive/' + $sha + '.zip') -OutFile $zip
+Get-FileHash -LiteralPath $zip -Algorithm SHA256
+Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $env:USERPROFILE 'Desktop\ContaGest-QA')
+```
+
+Guarda el SHA de `main`, la huella SHA-256 del ZIP, la fecha y la versión de Node.js; la huella identifica el archivo descargado, no demuestra por sí sola la autoría del commit. Entra a la carpeta extraída que contiene `package.json`. **Si elegiste ZIP, omite la sección 1 (sólo sirve para checkout Git).**
+
+Un ZIP no tiene `.git`. El gate `QA-PRODUCCION.ps1` ejecuta `git diff --check` y por eso no puede declararse PASS completo desde ZIP. Para comenzar las pruebas reales del Bridge LAB en Node.js 22 desde la raíz extraída:
+
+```powershell
+cd tools\hipico-whatsapp-web-bridge
+npm ci
+npm run qa
+npm run source:policy
+cd ..\..
+$env:GIT_SHA = $sha
+node scripts/hipico-physical-qa-v119.mjs init
+```
+
+El comando `init` crea únicamente la matriz física inicial con `NOT_EXECUTED`, no evidencia PASS. Las pruebas Android, Chromium/Windows, PostgreSQL y el soak #120 se ejecutan y documentan por separado. SOURCE permanece sólo lectura y LAB pinneado es el único destino permitido. No subas tokens, sesiones, datos `.env` ni perfiles de WhatsApp a Git/artifacts.
+
 ## 1. Actualizar el proyecto
 
 En la terminal de VS Code / PowerShell:
