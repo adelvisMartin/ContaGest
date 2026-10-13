@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {CONFIG_MANIFEST_V665 as MANIFEST} from '../config/environment-manifest-v665.mjs';
-import {checkEnvironmentManifest,loadVersionedSamples} from '../scripts/check-environment-manifest-v665.mjs';
+import {checkEnvironmentManifest,loadVersionedSamples,parseTemplateInventory} from '../scripts/check-environment-manifest-v665.mjs';
 
 const samples=loadVersionedSamples();
 const check=(part={})=>checkEnvironmentManifest({...samples,...part});
@@ -95,4 +95,58 @@ test('#665 missing or duplicate enum values fail the registry validation',()=>{
  const duplicate=JSON.parse(JSON.stringify(MANIFEST));
  duplicate.variables.backend.NODE_ENV.allowedValues=['development','development'];
  assert.ok(checkEnvironmentManifest(samples,duplicate).findings.some(x=>x.code==='MANIFEST_ENUM_VALUES_INVALID'));
+});
+
+
+test('#665 malformed dotenv lines cannot hide new public environment variables',()=>{
+ for(const bad of [
+  'VITE_NEW_SECRET: should-not-be-printed',
+  'VITE_NEW_SECRET should-not-be-printed',
+  'export VITE_NEW_SECRET should-not-be-printed',
+  'set VITE_NEW_SECRET=should-not-be-printed'
+ ]){
+  const report=check({frontend:samples.frontend+'\n'+bad});
+  assert.equal(report.status,'FAIL',bad.split(' ')[0]);
+  assert.ok(report.findings.some(f=>f.code==='MANIFEST_MALFORMED_SAMPLE_LINE'));
+  assert.doesNotMatch(JSON.stringify(report),/should-not-be-printed/);
+ }
+});
+
+test('#665 malformed or unterminated quoted values cannot pass as string types',()=>{
+ for(const fragment of [
+  'VITE_MARKETING_DEMO_URL="/landing',
+  "VITE_MARKETING_DEMO_URL='/landing",
+  'VITE_MARKETING_DEMO_URL="/landing" trailing-untrusted',
+  'VITE_API_BASE_URL="https://example.org/api" unexpected'
+ ]){
+  const key=fragment.split('=')[0];
+  const edited=samples.frontend.replace(
+    new RegExp('^'+key+'=.*$','m'),fragment
+  );
+  const report=check({frontend:edited});
+  assert.ok(report.findings.some(f=>f.code==='MANIFEST_MALFORMED_SAMPLE_LINE'&&f.key===key),fragment);
+  assert.equal(report.status,'FAIL');
+  assert.doesNotMatch(JSON.stringify(report),/trailing-untrusted|unexpected/);
+ }
+ const valid=parseTemplateInventory(
+  'VITE_HEADING="Control #1" # comentario\n' +
+  "VITE_PATH='/landing?ref=1' # comentario"
+ );
+ assert.deepEqual(valid.malformed,[]);
+ assert.equal(valid.entries.get('VITE_HEADING'),'Control #1');
+ assert.equal(valid.entries.get('VITE_PATH'),'/landing?ref=1');
+});
+
+test('#665 malformed sample diagnostics never include credential material',()=>{
+ const source='=top-secret-string\n' +
+   'JWT_SECRET="unclosed-secret-string\n' +
+   'VITE_NEW_TOKEN: another-private-value';
+ const parser=parseTemplateInventory(source);
+ assert.equal(parser.malformed.length,3);
+ const report=check({backend:samples.backend+'\n'+source});
+ assert.equal(report.status,'FAIL');
+ assert.ok(report.findings.some(f=>f.code==='MANIFEST_MALFORMED_SAMPLE_LINE'));
+ for(const value of ['top-secret-string','unclosed-secret-string','another-private-value']){
+  assert.equal(JSON.stringify(report).includes(value),false);
+ }
 });
