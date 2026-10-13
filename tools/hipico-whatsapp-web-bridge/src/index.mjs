@@ -1314,6 +1314,13 @@ async function processLabTestInput() {
       await log('LAB_HANDOFF_QUERY_HELD id='+tag);
       continue;
     }
+    // Informational questions require a verified canonical read before any
+    // autonomous answer or durable send intent. A failed/invalid lookup may
+    // be retried on the next LAB poll; never send a locally inferred answer.
+    if(inquiryPurpose && canonical.available!==true){
+      await log('LAB_CANONICAL_QUERY_PENDING id='+tag+' reason='+canonical.reason);
+      continue;
+    }
     // A slower canonical query may overlap operator takeover: recheck the
     // current ownership immediately before creating a durable send intent.
     const eligibleAfter=await checkLabSendEligibility(eligibilityArgs);
