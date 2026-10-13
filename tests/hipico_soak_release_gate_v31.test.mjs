@@ -51,3 +51,35 @@ test('v31 production PR workflow observes soak sources but never runs a syntheti
   assert.doesNotMatch(workflow,/soak_status:/);
   assert.doesNotMatch(workflow,/HIPICO_GATE_SOAK/);
 });
+
+
+test('v31 stable release rejects incoherent soak counters and forged durations',async()=>{
+  const {validSoakMetricEvidence}=await import('../scripts/hipico-soak-metric-integrity-v120.mjs');
+  const summaryInput={
+    durationMs:24*3600000,samples:100,rssStartMb:100,rssEndMb:120,
+    heapStartMb:50,heapEndMb:60,eventLoopP95Ms:10,maxBacklogAgeSeconds:5,
+    maxSpoolBytes:1024,unexpectedDuplicateResponses:0,lostDecisions:0,contextLeaks:0,
+    healthChecks:100,healthFailures:0,spoolChecks:100,spoolAvailableChecks:100
+  };
+  const evaluation={
+    durationHours:24,rssGrowthMbPerHour:20/24,heapGrowthMbPerHour:10/24,
+    healthFailureRate:0,healthCoverageRatio:1,spoolCoverageRatio:1
+  };
+  const good={
+    summaryInput,evaluation,
+    startedAt:'2026-10-10T00:00:00.000Z',completedAt:'2026-10-11T00:00:00.000Z'
+  };
+  assert.equal(validSoakMetricEvidence(good,24),true);
+  for(const change of [
+    {summaryInput:{...summaryInput,durationMs:NaN}},
+    {summaryInput:{...summaryInput,samples:.5}},
+    {summaryInput:{...summaryInput,healthFailures:-1}},
+    {summaryInput:{...summaryInput,spoolAvailableChecks:101}},
+    {summaryInput:{...summaryInput,healthChecks:101}},
+    {summaryInput:{...summaryInput,rssEndMb:Infinity}},
+    {evaluation:{...evaluation,durationHours:48}},
+    {evaluation:{...evaluation,healthCoverageRatio:1.2}},
+    {completedAt:'2026-10-10T00:05:00.000Z'},
+    {completedAt:'not-a-date'}
+  ])assert.equal(validSoakMetricEvidence({...good,...change},24),false);
+});
