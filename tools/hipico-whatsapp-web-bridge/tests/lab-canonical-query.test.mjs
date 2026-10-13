@@ -119,6 +119,34 @@ test('quoted race context requires exact prior visible LAB message and the same 
   assert.equal(resolveQuotedLabRaceScope(reply,[{...prior,hasMedia:true},reply]),null);
 });
 
+test('visible quote context rejects ambiguous original and conflicting ordinal follow-ups',()=>{
+  const sender='123456789012@lid';
+  const target={id:'false_120363222222222222@g.us_q-1_'+sender,
+    text:'Consulta: carrera 5 en La Rinconada el 2026-10-12',fromMe:false,hasMedia:false};
+  const reply={id:'false_120363222222222222@g.us_q-2_'+sender,
+    text:'¿Y el estado de esa carrera?',quotedId:target.id};
+  const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  assert.deepEqual(resolveQuotedLabRaceScope(reply,[target,reply]),race);
+  for(const text of [
+    target.text+' o carrera 6',
+    target.text+' o la sexta',
+    target.text+' o 6ta',
+    target.text+' y pagar 200 Bs',
+    target.text+' para registrar saldo'
+  ]){
+    const modified={...target,text};
+    assert.equal(resolveQuotedLabRaceScope(reply,[modified,reply]),null,text);
+  }
+  for(const text of [
+    '¿Y el estado de carrera 6?',
+    '¿Y el resultado de la sexta?',
+    '¿Y el resultado de 6ta?',
+    '¿Y el resultado de carrera 5 o carrera 6?'
+  ]){
+    assert.equal(resolveQuotedLabRaceScope({...reply,text},[target,reply]),null,text);
+  }
+});
+
 test('query adapter sends purpose and verified quoted identity only in the LAB query payload',async()=>{
   let sent;
   const prior={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
@@ -192,6 +220,61 @@ test('backend canonical revision mismatch is returned as non-authoritative fallb
   assert.equal(result.available,true); // informational fallback, not an authorization to send money
 });
 
+test('LAB supports only explicit race summaries, not whole-chat or monetary summaries',async()=>{
+  const safe={intent:'conversation',risk:'safe'};
+  for(const message of [
+    'Hazme un resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12',
+    '¿Resumen de la carrera 5?',
+    'Dame una sintesis de carrera 5'
+  ])assert.equal(labReadOnlyQueryPurpose(message,safe),'summary',message);
+  for(const message of [
+    'hazme un resumen de lo que hablamos',
+    'hazme un resumen de lo que hablamos sobre carrera 5',
+    'resume los mensajes del chat de carrera 5',
+    'resumen de los saldos de carrera 5',
+    'resumen de apuesta de carrera 5',
+    'resumen de carrera 5 y registra la jugada',
+    'resumen de carrera 5 y cobrar premio'
+  ])assert.equal(labReadOnlyQueryPurpose(message,safe),null,message);
+  assert.equal(labReadOnlyQueryPurpose('¿Estado de carrera 5?',safe),'status');
+  assert.equal(labReadOnlyQueryPurpose('¿Resultado carrera 5?',{intent:'conversation',risk:'review'}),'result');
+  assert.equal(labReadOnlyQueryPurpose('resumen de carrera 5', {intent:'betting_or_balance',risk:'monetary'}),null);
+});
+
+test('plural financial summary requests cannot gain LAB canonical read authority',()=>{
+  const safe={intent:'conversation',risk:'safe'};
+  for(const text of [
+    'Resumen de apuestas y saldos de carrera 5',
+    'Hazme resumen de pagos, premios y jugadas de la carrera 5',
+    '¿Resumen de transferencias y ganancias de carrera 5?',
+    'Resumen de liquidaciones de la carrera 5',
+    '¿Resumen de depósitos y retiros de carrera 5?'
+  ])assert.equal(labReadOnlyQueryPurpose(text,safe),null,text);
+  for(const text of [
+    'Hazme un resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12',
+    '¿Resumen de la carrera 5?'
+  ])assert.equal(labReadOnlyQueryPurpose(text,safe),'summary',text);
+});
+
+test('LAB summary transport preserves pinned identity, no SOURCE write, and strict read-only purpose',async()=>{
+  let submitted=null;
+  const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
+  const res=await queryCanonicalLab({...base,race,purpose:'summary',
+    text:'resumen de carrera 5 en hipódromo La Rinconada el 2026-10-12',
+    fetchImpl:async(_url,options)=>{
+      submitted={url:_url,options};
+      return json({ok:true,mode:'shadow',status:'CANONICAL_RACE_SUMMARY',
+        text:'Resumen del registro interno de carrera 5: estado abierta.',
+        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+    }});
+  assert.equal(res.available,true);
+  assert.equal(res.reason,'CANONICAL_RACE_SUMMARY');
+  assert.equal(submitted.options.redirect,'manual');
+  assert.equal(JSON.parse(submitted.options.body).purpose,'summary');
+  assert.equal(JSON.parse(submitted.options.body).channelRole,'lab');
+  assert.deepEqual(JSON.parse(submitted.options.body).race,race);
+});
+
 test('lost HTTP response retries read-only lookup once with identical message identity',async()=>{
   let calls=0;const envelopes=[];
   const result=await queryCanonicalLab({...base,fetchImpl:async(_url,options)=>{
@@ -248,7 +331,7 @@ test('exhausted network recovery does not create an ACK or send intent for a can
   const send=section.indexOf('await sendTextInCurrentLab(');
   assert.ok(lookup>=0&&hold>lookup&&prepare>hold&&send>prepare);
   assert.match(section,/LAB_CANONICAL_QUERY_PENDING/);
-  assert.match(section,/if\(inquiryPurpose && BACKEND_SYNC_ENABLED && !sender\)/);
+  assert.match(section,/if\(!sender \|\| !parsedLabStamp\?\.parsed/);
 });
 
 
@@ -264,7 +347,6 @@ test('blank canonical response never authorizes a LAB send or local factual fall
     assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
   }
 });
-
 
 test('LAB HTTP response stream caps bytes before full-body buffering',async()=>{
   let reads=0,cancels=0,fetches=0;
@@ -332,7 +414,6 @@ test('LAB streamless adapters apply byte limit on UTF-8, not UTF-16 length',asyn
   assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
 });
 
-
 test('canonical adapter accepts only the exact application/json HTTP media type',async()=>{
   const canonical={
     ok:true,mode:'shadow',status:'CANONICAL_STATE_FOUND',text:'Estado interno verificado.',
@@ -370,35 +451,35 @@ test('canonical adapter accepts only the exact application/json HTTP media type'
   }
 });
 
-
-test('enforces a scoped safe race summary after a network retry',async()=>{
-  const text='¿Resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12?';
-  const kind={intent:'conversation',risk:'safe'};
-  assert.equal(labReadOnlyQueryPurpose(text,kind),'summary');
-  for(const blocked of [
-    '¿Resumen de los mensajes del chat de carrera 5?',
-    '¿Resumen de lo que hablamos sobre carrera 5?',
-    '¿Resumen de saldos de la carrera 5?',
-    '¿Resumen de apuestas de carrera 5?',
-    '¿Resumen de jugadas de carrera 5?',
-    '¿Resumen de pagos de carrera 5?',
-    '¿Resumen de premios de carrera 5?'
-  ])assert.equal(labReadOnlyQueryPurpose(blocked,kind),null,blocked);
-  let count=0;
+test('lost HTTP in a scoped LAB race summary preserves immutable read-only request across retry',async()=>{
   const race={raceNumber:5,racetrack:'La Rinconada',raceDate:'2026-10-12'};
-  const response=await queryCanonicalLab({...base,text,purpose:'summary',race,
-    fetchImpl:async(_url,options)=>{
-      count++;
-      const payload=JSON.parse(options.body);
-      assert.equal(payload.purpose,'summary');
-      assert.equal(payload.channelRole,'lab');
-      assert.deepEqual(payload.race,race);
-      if(count===1)throw new Error('NETWORK_LOST_AFTER_CANONICAL_COMMIT');
+  const question='¿Resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12?';
+  assert.equal(labReadOnlyQueryPurpose(question,{intent:'conversation',risk:'safe'}),'summary');
+  const seen=[];
+  let calls=0;
+  const result=await queryCanonicalLab({...base,race,text:question,purpose:'summary',
+    fetchImpl:async(url,options)=>{
+      calls++;
+      seen.push({url,method:options.method,redirect:options.redirect,
+        token:options.headers['x-hipico-bridge-token'],body:options.body});
+      if(calls===1)throw new TypeError('ECONNRESET_AFTER_READ_ONLY_BACKEND_COMMIT');
       return json({ok:true,mode:'shadow',status:'CANONICAL_RACE_SUMMARY',
-        text:'Resumen interno confirmado, sin oficialidad externa.',
-        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+        text:'Resumen interno, sin carácter oficial.',
+        authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}
+      });
     }});
-  assert.equal(count,2);
-  assert.equal(response.available,true);
-  assert.equal(response.reason,'CANONICAL_RACE_SUMMARY');
+  assert.equal(calls,2);
+  assert.deepEqual(seen[0],seen[1],'a lost response may only retry an identical read-only request');
+  assert.equal(seen[0].redirect,'manual');
+  assert.equal(seen[0].method,'POST');
+  const envelope=JSON.parse(seen[1].body);
+  assert.equal(envelope.externalMessageId,base.messageId);
+  assert.equal(envelope.groupId,base.labGroupId);
+  assert.equal(envelope.channelRole,'lab');
+  assert.equal(envelope.shadowMode,true);
+  assert.equal(envelope.purpose,'summary');
+  assert.deepEqual(envelope.race,race);
+  assert.equal(result.available,true);
+  assert.equal(result.reason,'CANONICAL_RACE_SUMMARY');
+  assert.equal(result.text,'Resumen interno, sin carácter oficial.');
 });

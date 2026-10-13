@@ -266,3 +266,70 @@ consultas a los 4, 8, 9:59 y 10 minutos, incluida la eliminación exacta
 del registro vencido y la continuidad del segundo. La función efectiva
 `snapshot()` se ejecutó con entradas temporales controladas; no reemplaza
 QA de Node en Windows ni las verificaciones de integración del PR.
+
+## Cierre de handoff y de ventana ACK/contexto (2026-10-13)
+
+Cuando el operador humano toma control durante el precheck, la consulta canónica,
+la revalidación o justo antes de pulsar Enter, el Bridge persiste el identificador
+como atendido, descarta la consulta cifrada pendiente y no la reanuda aunque
+más adelante el operador libere el control. Si ya se marcó el envío como
+sending, antes de Enter vuelve el journal a prepared. No hay autorización
+de nuevo mensaje a WhatsApp. En cambio, ante un fallo transitorio de backend,
+la consulta cifrada puede permanecer pendiente, bajo su TTL original.
+
+Después de confirmar el ACK durable de una respuesta, el orden seguro es:
+ACK → guardar contexto conversacional → finalizar pista HMAC →
+retirar la entrada cifrada original. Si falla el guardado de memoria o de la
+pista HMAC, se conserva temporalmente la entrada cifrada original para
+reintentar solamente la persistencia auxiliar: jamás se repite Enter.
+
+Tanto la recuperación visible como la recuperación fuera del DOM se basan
+únicamente en la entrada cifrada original (remitente, propósito y carrera),
+no en texto visible mutable. El TTL máximo de diez minutos continúa vigente.
+
+Regresiones incorporadas: cuatro escenarios de handoff con descarte de inbox,
+tres casos de finalización posterior al ACK, y comprobación del orden de
+persistencia. Se ejecutó la función real en V8 con dependencias controladas.
+La suite Node completa, PostgreSQL real y Chromium/Windows siguen pendientes
+de validación; SOURCE conserva su política de solo lectura.
+
+## Contrato de resúmenes canónicos y lenguaje financiero plural (2026-10-13)
+
+El clasificador del Bridge y la ruta read-only del backend autorizan los
+mismos siete propósitos LAB: status, result, participants, summary, next,
+active y schedule. El inbox AES-256-GCM admite ahora también summary;
+antes lo rechazaba pese a ser válido en el transporte y el servidor.
+
+Una solicitud de resumen de carrera puede persistir y recuperarse solamente
+cuando pasa la clasificación no monetaria y la validación de identidad,
+mensaje original, alcance explícito o cita verificada, límite temporal y
+recepción canónica. Una pregunta sin fecha o pista completas no crea una
+carrera ficticia y no hereda autoridad de la memoria conversacional.
+
+Tanto el Bridge como el backend rechazan términos financieros singulares y
+plurales: apuestas, saldos, pagos, premios, jugadas, transferencias, ganancias,
+liquidaciones y operaciones similares. Este filtro se aplica aunque un
+clasificador genérico devuelva conversación segura. Resumir la conversación
+o estados financieros no autoriza lecturas operativas ni envíos autónomos.
+
+Regresiones añadidas al inbox cifrado, adaptador de consultas y guardia del
+backend. Comprobación aislada de funciones reales (V8): nueve mensajes
+positivos/negativos y cinco validaciones del inbox con resultados esperados.
+Node tests completos, PostgreSQL y Windows todavía no tienen evidencia verde
+del SHA final. No se activó SOURCE ni ninguna autoridad monetaria.
+
+## Reconciliación de conflictos PR #930 vs. #932 (2026-10-13)
+
+La integración conversacional + inbox cifrado de PR #932 llegó primero a
+`main`. Para resolver la divergencia de PR #930 sin revertir el código
+fusionado, se eligió la versión canónica de `main` en todos los conflictos
+que ya estaban cubiertos por #932: el flujo con tres gates de handoff,
+WAL, recuperación por ACK saliente, antigüedad real de las consultas,
+resúmenes de carrera, privacidad y memoria conversacional tras reinicio.
+No se sustituyó el Bridge integrado por el `index.mjs` antiguo del PR #930.
+
+Se conserva además una regresión específica para garantizar que, si se pierde
+la respuesta HTTP a un resumen de carrera, el segundo intento conserva el
+mismo identificador, canal LAB, alcance y propósito read-only. Esta
+reconciliación de Git no es por sí sola evidencia de suite Node, CI o pruebas
+Windows/WhatsApp ejecutadas. SOURCE continúa sin autoridad de escritura.

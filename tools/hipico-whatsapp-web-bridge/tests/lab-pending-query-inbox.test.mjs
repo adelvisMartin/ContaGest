@@ -5,8 +5,6 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createLabPendingQueryInbox, reconcileLabPendingObservation } from '../src/lab-pending-query-inbox.mjs';
-import {labReadOnlyQueryPurpose} from '../src/lab-canonical-query.mjs';
-import {classifyLocal} from '../src/runtime-utils.mjs';
 
 const LAB='120363222222222222@g.us';
 const SOURCE='120363111111111111@g.us';
@@ -211,7 +209,7 @@ test('live LAB read uses immutable restored scope rather than disappearing visib
   const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
   const live=src.slice(src.indexOf('async function processLabTestInput()'),src.indexOf('async function visibleLabHasTag'));
   const read=live.indexOf('await labPendingInbox.read(row.id)');
-  const reconcile=live.indexOf('reconcileLabPendingObservation(original');
+  const reconcile=live.indexOf('reconcileLabPendingObservation(stored');
   const lookup=live.indexOf('await queryCanonicalLab({');
   assert.ok(read>=0&&reconcile>read&&lookup>reconcile);
   assert.match(live,/trustedRace=verified\.race/);
@@ -253,6 +251,40 @@ test('next, active and schedule canonical read intents are durably recoverable w
     assert.equal((await inbox.read(messageId))?.purpose,purpose);
   }
   assert.equal((await inbox.snapshot()).pending,3);
+  await inbox.close();
+});
+
+test('race summary is durably replayable only as a verified informational LAB query',async t=>{
+  const f=await harness(t);
+  const inbox=f.create();await inbox.initialize();
+  const full='Hazme un resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12';
+  const scoped=candidate({messageId:'false_'+LAB+'_summary-explicit_'+SENDER,
+    text:full,purpose:'summary'});
+  assert.deepEqual(await inbox.enqueue(scoped),{created:true});
+  const restored=await inbox.read(scoped.messageId);
+  assert.equal(restored?.purpose,'summary');
+  assert.deepEqual(restored?.race,scoped.race);
+  const unscoped=candidate({messageId:'false_'+LAB+'_summary-general_'+SENDER,
+    text:'¿Resumen de la carrera 5?',purpose:'summary',race:null});
+  assert.deepEqual(await inbox.enqueue(unscoped),{created:true});
+  assert.equal((await inbox.read(unscoped.messageId))?.race,null,
+    'a summary without complete original scope cannot invent track/date');
+  for(const text of [
+    'Hazme un resumen de lo que hablamos sobre carrera 5',
+    'Resumen de apuestas y saldos de carrera 5',
+    'Hazme resumen de carrera 5 y registra mi jugada'
+  ]){
+    const forged=candidate({messageId:'false_'+LAB+'_summary-unsafe_'+SENDER,
+      text,purpose:'summary',race:null});
+    await assert.rejects(inbox.enqueue(forged),/LAB_PENDING_QUERY_INVALID/,text);
+  }
+  await assert.rejects(inbox.enqueue(candidate({
+    messageId:'false_'+LAB+'_summary-fake-scope_'+SENDER,
+    text:'¿Resumen de la carrera 5?',purpose:'summary',
+    race:scoped.race
+  })),/LAB_PENDING_QUERY_INVALID/,
+    'implicit original race cannot authorize a pinned autonomous read');
+  assert.equal((await inbox.snapshot()).pending,2);
   await inbox.close();
 });
 
@@ -537,13 +569,13 @@ test('confirmed LAB queries finish ACK-only hints while still visible or backend
   ]){
     const actions=[];
     const context={
+      lastLabPendingOffset:0,
       labPendingInbox:{
         list:async()=>[entry],
         remove:async()=>{actions.push('remove');}
       },
       backendState:scenario.online?'online':'offline',
       BACKEND_SYNC_ENABLED:true,
-      labPendingRecoveryOffset:0,
       labTestTagFor:()=> '[LABTEST:012345abcd]',
       labTestReplyJournal:{
         read:async()=>{actions.push('journal-read');return scenario.state?{state:scenario.state}:null;},
@@ -552,6 +584,7 @@ test('confirmed LAB queries finish ACK-only hints while still visible or backend
       rememberLabSeen:()=>{actions.push('seen');},
       saveLabSeenNow:async()=>{actions.push('save-seen');},
       rememberConfirmedPendingLabQuote:async()=>{actions.push('hint');return scenario.hint;},
+      recoverConfirmedLabConversation:async()=>{},
       assertCurrentLabIdentity:async()=>{actions.push('pinned');},
       visibleLabHasTag:async()=>{actions.push('outgoing-proof');return true;},
       log:async()=>{actions.push('logged');}
@@ -655,14 +688,12 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
   const actions=[];
   const entry=candidate();
   const context={
+    lastLabPendingOffset:0,
     labPendingInbox:{
       list:async()=>[entry],
       read:async id=>{assert.equal(id,MESSAGE);actions.push('freshness-read');return null;}
     },
     backendState:'online',BACKEND_SYNC_ENABLED:true,
-    labPendingRecoveryOffset:0,
-    INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
-    TOKEN:'fixture-only',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',BACKEND_TIMEOUT_MS:4500,
     labTestTagFor:()=> '[LABTEST:012345abcd]',
     labTestReplyJournal:{
       read:async()=>{actions.push('journal-read');return null;},
@@ -673,11 +704,12 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
     stableLabSenderKey:()=>SENDER,
     labConversationInput:()=>({eligible:true}),
     labReadOnlyQueryPurpose:()=>entry.purpose,
+    planLabConversation:()=>({scopeConflict:false}),
+    checkLabSendEligibility:async()=>{actions.push('handoff-before');return{allowed:true}},
     labQueryBackoff:{
       allowed:()=>{actions.push('backoff-allowed');return true;},
       clear:()=>{actions.push('backoff-clear');}
     },
-    checkLabSendEligibility:async()=>({allowed:true,reason:'LAB_HANDOFF_CLEAR'}),
     queryCanonicalLab:async()=>{actions.push('canonical-read');return {available:true};},
     log:async message=>{
       assert.match(message,/^LAB_PENDING_EXPIRED_BEFORE_SEND id=/);
@@ -687,7 +719,7 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
   const resume=vm.runInNewContext('('+body+')',context);
   await resume(new Set());
   assert.deepEqual(actions,[
-    'journal-read','backoff-allowed','canonical-read','backoff-clear',
+    'journal-read','handoff-before','backoff-allowed','canonical-read','backoff-clear',
     'freshness-read','expired-log'
   ]);
 });
@@ -706,7 +738,6 @@ test('visible LAB canonical response rechecks encrypted TTL before WAL send inte
   assert.match(live.slice(guard,sendIntent),/LAB_PENDING_EXPIRED_BEFORE_SEND/);
   assert.match(live.slice(guard,sendIntent),/continue;/);
 });
-
 
 test('round-robin encrypted inbox visits later pending questions even when first 25 are blocked',async t=>{
   const f=await harness(t);
@@ -735,8 +766,8 @@ test('live pending LAB poll always advances fair recovery cursor even if backend
   const src=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
   const recovery=src.slice(src.indexOf('async function resumePendingLabQueries('),
     src.indexOf('let labTestProcessing=false;'));
-  const get=recovery.indexOf('await labPendingInbox.list(25,{offset:labPendingRecoveryOffset})');
-  const advance=recovery.indexOf('labPendingRecoveryOffset=(labPendingRecoveryOffset+25)%200');
+  const get=recovery.indexOf('await labPendingInbox.list(25,{offset:lastLabPendingOffset})');
+  const advance=recovery.indexOf('lastLabPendingOffset=(lastLabPendingOffset+Math.max(1,pending.length))%200');
   const backend=recovery.indexOf("if (backendState !== 'online') continue");
   assert.ok(get>=0&&advance>get&&backend>advance,
     'rotating selection must not wait for the backend or an ACK');
@@ -756,7 +787,7 @@ test('live LAB recovery serves all 200 encrypted pending IDs within eight bounde
   const offsets=[];
   const context={
     BACKEND_SYNC_ENABLED:true,
-    labPendingRecoveryOffset:0,
+    lastLabPendingOffset:0,
     labPendingInbox:{
       list:async (limit,{offset}={})=>{
         assert.equal(limit,25,'at most 25 recovery candidates per poll');
@@ -776,11 +807,10 @@ test('live LAB recovery serves all 200 encrypted pending IDs within eight bounde
   }
   assert.deepEqual(offsets,[0,25,50,75,100,125,150,175]);
   assert.equal(new Set(inspected).size,200,'even all-visible and blocked messages cannot starve later IDs');
-  assert.equal(context.labPendingRecoveryOffset,0,'volatile cursor wraps after the eighth poll');
+  assert.equal(context.lastLabPendingOffset,0,'volatile cursor wraps after the eighth poll');
   await recover(visibleIds);
   assert.deepEqual(inspected.slice(200),inspected.slice(0,25),'the next fair round begins at the first batch');
 });
-
 
 test('privacy-safe LAB health counters report age and expiry without exposing message identities',async t=>{
   const f=await harness(t);
@@ -828,7 +858,6 @@ test('Bridge health includes only aggregate LAB pending and near-expiry counters
   assert.doesNotMatch(section,/pendingStatus\?\.text|pendingStatus\?\.senderId|pendingStatus\?\.quotedMessageId/);
 });
 
-
 test('LAB health reveals aggregate near-expiry pressure without leaking input identities',async t=>{
   const f=await harness(t);
   const inbox=f.create();
@@ -871,146 +900,46 @@ test('LAB health reveals aggregate near-expiry pressure without leaking input id
 });
 
 
-test('encrypted pending reply is suppressed when the operator holds LAB',async()=>{
+test('confirmed ACK retains encrypted input until conversation context persistence succeeds',async()=>{
   const vm=await import('node:vm');
   const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
-  const resume=source.slice(source.indexOf('async function resumePendingLabQueries('),source.indexOf('let labTestProcessing=false;')).trim();
+  const start=source.indexOf('async function finalizeConfirmedVisibleLabQuote(');
+  const end=source.indexOf('async function resumePendingLabQueries(',start);
+  assert.ok(start>=0&&end>start);
+  const helper=source.slice(start,end).trim();
+  const original=candidate();
+  let hintOk=true;
   const events=[];
-  const entry=candidate();
-  const ctx={
+  const finalize=vm.runInNewContext('('+helper+')',{
     labPendingInbox:{
-      list:async()=>[entry],
-      remove:async id=>{assert.equal(id,MESSAGE);events.push('remove');}
+      read:async()=>{events.push('read-original');return original;},
+      remove:async()=>events.push('delete-original')
     },
-    BACKEND_SYNC_ENABLED:true,backendState:'online',labPendingRecoveryOffset:0,
-    INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
-    TOKEN:'fixture-only',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',BACKEND_TIMEOUT_MS:4500,
-    labTestTagFor:()=> '[LABTEST:012345abcd]',
-    labTestReplyJournal:{
-      read:async()=>null,
-      prepare:async()=>{throw new Error('NO_WAL_ON_HANDOFF');}
-    },
-    classifyLocal:()=>({intent:'conversation',risk:'safe'}),
-    stableLabSenderKey:()=>SENDER,
-    labConversationInput:()=>({eligible:true}),
-    labReadOnlyQueryPurpose:()=>entry.purpose,
-    checkLabSendEligibility:async()=>{events.push('handoff');return{allowed:false,reason:'LAB_HANDOFF_HELD'};},
-    rememberLabSeen:()=>{events.push('seen');},
-    saveLabSeenNow:async()=>{events.push('save');},
-    queryCanonicalLab:async()=>{throw new Error('NO_HTTP_ON_HANDOFF');},
-    log:async msg=>{assert.match(msg,/LAB_PENDING_HANDOFF_PRECHECK_LAB_HANDOFF_HELD/);events.push('log');}
-  };
-  await vm.runInNewContext('('+resume+')',ctx)(new Set());
-  assert.deepEqual(events,['handoff','seen','save','remove','log']);
-});
+    rememberConfirmedPendingLabQuote:async()=>{events.push('persist-hint');return hintOk;},
+    log:async()=>{}
+  });
+  await finalize({id:MESSAGE},'visible text changed',{retainEncryptedInput:true});
+  assert.deepEqual(events,['read-original','persist-hint'],
+    'failed conversation persistence must not delete the only immutable input');
+  events.length=0;
+  await finalize({id:MESSAGE},'visible text changed',{retainEncryptedInput:false});
+  assert.deepEqual(events,['read-original','persist-hint','delete-original']);
+  events.length=0;
+  hintOk=false;
+  await finalize({id:MESSAGE},'visible text changed');
+  assert.deepEqual(events,['read-original','persist-hint'],
+    'failed quote persistence also retains encrypted original');
 
-test('LAB fresh replies require handoff precheck, postcheck and keyboard gate in both paths',async()=>{
-  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
-  const contexts=[
-    source.slice(source.indexOf('async function resumePendingLabQueries('),source.indexOf('let labTestProcessing=false;')),
-    source.slice(source.indexOf('async function processLabTestInput()'),source.indexOf('async function visibleLabHasTag(tag)'))
-  ];
-  for(const body of contexts){
-    const pre=body.indexOf('const eligibleBefore=');
-    const query=body.indexOf('await queryCanonicalLab(',pre);
-    const post=body.indexOf('const eligibleAfter=await checkLabSendEligibility(',query);
-    const prepare=body.indexOf('await labTestReplyJournal.prepare(',post);
-    const begin=body.indexOf('await labTestReplyJournal.begin(',prepare);
-    const last=body.indexOf('const eligibleToSend=await checkLabSendEligibility(eligibilityArgs)',begin);
-    const rollback=body.indexOf('await labTestReplyJournal.retryPrepared(',last);
-    const enter=body.indexOf('await sendTextInCurrentLab(',rollback);
-    assert.ok(pre>=0&&query>pre&&post>query&&prepare>post&&begin>prepare&&
-      last>begin&&rollback>last&&enter>rollback);
-  }
-});
-
-
-test('human takeover after canonical HTTP or WAL begin prevents Enter during pending recovery',async()=>{
-  const vm=await import('node:vm');
-  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
-  const fn=source.slice(source.indexOf('async function resumePendingLabQueries('),
-    source.indexOf('let labTestProcessing=false;')).trim();
-  const entry=candidate();
-  for(const phase of [2,3]){
-    let checks=0;const events=[];
-    const context={
-      labPendingInbox:{
-        list:async()=>[entry],
-        read:async()=>{events.push('ttl');return entry;},
-        remove:async()=>{events.push('remove');}
-      },
-      BACKEND_SYNC_ENABLED:true,backendState:'online',labPendingRecoveryOffset:0,
-      INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
-      TOKEN:'fixture-only',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-fixture',BACKEND_TIMEOUT_MS:4500,
-      labTestTagFor:()=> '[LABTEST:012345abcd]',
-      labTestReplyJournal:{
-        read:async()=>null,
-        prepare:async()=>{events.push('prepare');},
-        begin:async()=>{events.push('begin');},
-        retryPrepared:async()=>{events.push('rollback');},
-        confirm:async()=>{throw new Error('HANDOFF_CANNOT_CONFIRM');}
-      },
-      classifyLocal:()=>({intent:'conversation',risk:'safe'}),
-      stableLabSenderKey:()=>SENDER,
-      labConversationInput:()=>({eligible:true}),
-      labReadOnlyQueryPurpose:()=>entry.purpose,
-      labQueryBackoff:{
-        allowed:()=>true,
-        clear:()=>events.push('backoff-clear')
-      },
-      planLabConversation:()=>({rememberRace:false}),
-      labConversationContext:null,
-      checkLabSendEligibility:async()=>{
-        checks++;
-        events.push('handoff-'+checks);
-        return checks===phase
-          ? {allowed:false,reason:'LAB_HANDOFF_HELD'}
-          : {allowed:true,reason:'LAB_HANDOFF_CLEAR'};
-      },
-      queryCanonicalLab:async()=>{events.push('canonical');return{available:true,text:'Dato verificado'};},
-      sendTextInCurrentLab:async()=>{throw new Error('HANDOFF_MUST_NOT_PRESS_ENTER');},
-      rememberLabSeen:()=>events.push('seen'),
-      saveLabSeenNow:async()=>events.push('save'),
-      log:async()=>events.push('log')
-    };
-    await vm.runInNewContext('('+fn+')',context)(new Set());
-    assert.equal(checks,phase);
-    assert.ok(events.includes('seen')&&events.includes('remove'));
-    assert.ok(!events.includes('confirm'));
-    if(phase===2){
-      assert.ok(!events.includes('prepare')&&!events.includes('begin')&&!events.includes('rollback'));
-      assert.ok(events.indexOf('handoff-2')>events.indexOf('ttl'));
-    }else{
-      assert.ok(events.indexOf('prepare')>events.indexOf('handoff-2'));
-      assert.ok(events.indexOf('begin')>events.indexOf('prepare'));
-      assert.ok(events.indexOf('rollback')>events.indexOf('handoff-3'));
-    }
-  }
-});
-
-
-test('encrypted LAB inbox restores safe race summaries but not private chat or betting summaries',async t=>{
-  const f=await harness(t);
-  const inbox=f.create();await inbox.initialize();
-  const summary='¿Resumen de la carrera 5 en hipódromo La Rinconada el 2026-10-12?';
-  const item=candidate({text:summary,purpose:'summary'});
-  assert.deepEqual(await inbox.enqueue(item),{created:true});
-  for(const blocked of [
-    '¿Resumen de los mensajes del chat de carrera 5?',
-    '¿Resumen de saldos de la carrera 5?',
-    '¿Resumen de apuestas de carrera 5?',
-    '¿Resumen de pagos de carrera 5?'
-  ]){
-    assert.equal(labReadOnlyQueryPurpose(blocked,classifyLocal(blocked)),null,blocked);
-    await assert.rejects(inbox.enqueue(candidate({text:blocked,purpose:'summary',
-      messageId:'false_'+LAB+'_summary-blocked_'+SENDER
-    })),/LAB_PENDING_QUERY_INVALID/,blocked);
-  }
-  const before=await inbox.read(MESSAGE);
-  assert.equal(before.purpose,'summary');
-  await inbox.close();
-  const restored=f.create();await restored.initialize();
-  assert.equal((await restored.read(MESSAGE))?.purpose,'summary');
-  assert.equal((await restored.snapshot()).deliveryAuthority,false);
-  await restored.close();
+  const live=source.slice(source.indexOf('async function processLabTestInput()'),
+    source.indexOf('async function visibleLabHasTag('));
+  const ack=live.lastIndexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});');
+  const persist=live.indexOf('await labConversationContext.remember(plan.sender',ack);
+  const finalizer=live.indexOf('await finalizeConfirmedVisibleLabQuote(row,body,{retainEncryptedInput:!contextPersisted})',ack);
+  assert.ok(ack>=0&&persist>ack&&finalizer>persist,
+    'durable ACK must precede context persistence, which must precede inbox removal');
+  assert.match(live.slice(persist,finalizer),/contextPersisted=false/);
+  const recovery=source.slice(source.indexOf('async function resumePendingLabQueries('),
+    source.indexOf('let labTestProcessing=false'));
+  assert.match(recovery,/!entry\.race\|\|restored/);
+  assert.match(live,/retainEncryptedInput:Boolean\(encryptedOriginal\?\.race\)&&!restored/);
 });

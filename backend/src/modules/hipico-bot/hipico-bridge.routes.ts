@@ -5,6 +5,7 @@ import type { IntentResult } from './hipico-operational-classifier.js';
 import { decideConversation } from './hipico-conversation-engine.js';
 import { readCanonicalLabRace } from './hipico-lab-canonical-read.js';
 import { readScopedLabSchedule } from './hipico-lab-schedule-read.js';
+import { checkLabHandoff } from './hipico-lab-handoff-gate.js';
 import { isLabInformationRequest } from './hipico-lab-readonly-query.js';
 import { configuredCanonicalOwnerId } from './hipico-canonical.routes.js';
 import { bridgeParticipantRateLimiter, classifyUntrustedConversation, safePublicAbuseMetadata } from './hipico-conversation-appsec.js';
@@ -37,7 +38,7 @@ const labCanonicalQuerySchema=z.object({
   senderId:z.string().trim().min(1).max(220),
   timestamp:z.string().datetime({offset:true}),
   text:z.string().trim().min(1).max(1200),
-  purpose:z.enum(['status','result','participants','next','active','schedule']).default('status'),
+  purpose:z.enum(['status','result','participants','summary','next','active','schedule']).default('status'),
   quotedExternalMessageId:z.string().trim().min(1).max(320).nullable().default(null),
   race:z.object({
     raceNumber:z.number().int().min(1).max(999),
@@ -45,6 +46,10 @@ const labCanonicalQuerySchema=z.object({
     raceDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
   }).strict().nullable().default(null)
 }).strict();
+const labHandoffCheckSchema=labCanonicalQuerySchema.pick({
+  externalMessageId:true,groupId:true,channelRole:true,channelKey:true,
+  labChannelKey:true,shadowMode:true,senderId:true,race:true
+});
 const handoffCommandSchema=z.object({groupKey:z.string().trim().min(3).max(120),participantId:z.string().trim().min(1).max(220),raceId:z.string().trim().max(120).nullable().default(null),command:z.enum(['pause','resume','escalate','resolve','reject']),operatorId:z.string().trim().min(1).max(220).optional(),reason:z.string().trim().max(500).optional(),ttlMs:z.number().int().min(0).max(24*60*60*1000).optional()});
 const sourceReplyReceiptSchema=z.object({status:z.enum(['sent','ambiguous']),providerMessageId:z.string().trim().max(320).nullable().optional(),error:z.string().trim().max(500).nullable().optional()}).strict();
 
@@ -130,6 +135,29 @@ router.post('/bridge/replies/:id/receipt',async(req,res)=>{
     return res.status(503).json({ok:false,retryable:true,error:'SOURCE_REPLY_RECEIPT_FAILED'});
   }
 });
+router.post('/bridge/lab/eligibility',async(req,res)=>{
+  if(!bridgeTokenValid(req.header('x-hipico-bridge-token')||undefined)){
+    return res.status(401).json({ok:false,error:'LAB_HANDOFF_UNAUTHORIZED'});
+  }
+  const parsed=labHandoffCheckSchema.safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({ok:false,error:'LAB_HANDOFF_INVALID'});
+  const input=parsed.data;
+  if(validateBridgeGroupIdentity(input)){
+    return res.status(403).json({ok:false,error:'LAB_HANDOFF_GROUP_FORBIDDEN'});
+  }
+  const sender=normalizeBridgeSender(input.senderId);
+  if(!sender)return res.status(400).json({ok:false,error:'LAB_HANDOFF_SENDER_INVALID'});
+  try{
+    const gate=await checkLabHandoff({
+      sender,sourceGroupKey:OFFICIAL_SOURCE_CHANNEL_KEY,
+      labGroupKey:input.labChannelKey,race:input.race
+    });
+    return res.json({ok:true,mode:'shadow',allowed:gate.allowed,status:gate.reason,
+      authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}});
+  }catch{
+    return res.status(503).json({ok:false,error:'LAB_HANDOFF_STATE_UNAVAILABLE'});
+  }
+});
 // LAB-only, bridge-token-authenticated read projection. No operator token,
 // raw event list, financial records, state changes, or SOURCE send commands.
 router.post('/bridge/lab/query',async(req,res)=>{
@@ -167,6 +195,13 @@ router.post('/bridge/lab/query',async(req,res)=>{
   const ownerId=configuredCanonicalOwnerId();
   if(!ownerId)return res.status(503).json({ok:false,error:'LAB_QUERY_OWNER_UNAVAILABLE'});
   try{
+    // Human ownership is authoritative even for read-only LAB responses.
+    const gate=await checkLabHandoff({
+      sender,sourceGroupKey:OFFICIAL_SOURCE_CHANNEL_KEY,
+      labGroupKey:input.labChannelKey,race:input.race
+    });
+    if(!gate.allowed)return res.json({ok:true,mode:'shadow',status:'LAB_HANDOFF_HELD',
+      text:'',authority,decision:{intent:result.intent,reason:gate.reason}});
     // Always read SOURCE-owned canonical aggregates; a LAB caller cannot select
     // a tenant, arbitrary group key, or a different read authority.
     const canonical=['next','active','schedule'].includes(input.purpose)
@@ -177,14 +212,14 @@ router.post('/bridge/lab/query',async(req,res)=>{
         })
       : await readCanonicalLabRace({
           ownerId,groupKey:OFFICIAL_SOURCE_CHANNEL_KEY,race:input.race,
-          purpose:input.purpose as 'status'|'result'|'participants'
+          purpose:input.purpose as 'status'|'result'|'participants'|'summary'
         });
     // Read-only canonical race responses are committed as immutable hashes in
     // the existing response receipt authority before the HTTP response leaves.
     // The duplicate request must observe the SAME canonical revision/text;
     // never resurrect a result after a later operator correction.
     let receiptProjection:Awaited<ReturnType<typeof reconcileCanonicalLabReceipt>>|null=null;
-    if(['status','result','next','active','schedule'].includes(input.purpose)&&canonical.available){
+    if(['status','result','summary','next','active','schedule'].includes(input.purpose)&&canonical.available){
       const readiness=await responseSafetyReadiness();
       if(!readiness.ready)return res.status(503).json({ok:false,error:'LAB_QUERY_RECEIPT_STORE_UNAVAILABLE'});
       const raceKey=input.race?operationalRaceContextKey(input.race):null;
@@ -196,12 +231,20 @@ router.post('/bridge/lab/query',async(req,res)=>{
         ownerId,sourceGroupKey:OFFICIAL_SOURCE_CHANNEL_KEY,
         labGroupId:input.groupId,labChannelKey:input.channelKey,
         senderId:sender,externalMessageId:input.externalMessageId,
-        purpose:input.purpose as 'status'|'result'|'next'|'active'|'schedule',canonical,
+        purpose:input.purpose as 'status'|'result'|'summary'|'next'|'active'|'schedule',canonical,
         timestamp:input.timestamp,nowMs:Date.now(),
         humanOwned:labGlobalHandoff.ownership==='human'||labRaceHandoff?.ownership==='human'
       });
     }
     const verified=receiptProjection||canonical;
+    // Preserve the immutable canonical receipt; prevent publishing if takeover
+    // happened while the read/receipt reconciliation was in progress.
+    const recheck=await checkLabHandoff({
+      sender,sourceGroupKey:OFFICIAL_SOURCE_CHANNEL_KEY,
+      labGroupKey:input.labChannelKey,race:input.race
+    });
+    if(!recheck.allowed)return res.json({ok:true,mode:'shadow',status:'LAB_HANDOFF_HELD',
+      text:'',authority,decision:{intent:result.intent,reason:recheck.reason}});
     return res.json({ok:true,mode:'shadow',status:verified.reason,
       text:verified.text,canonical:{
         available:verified.available,

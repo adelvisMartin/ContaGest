@@ -1,4 +1,5 @@
-import {stableLabSenderKey} from './lab-conversation-context.mjs';
+import {stableLabSenderKey,planLabConversation} from './lab-conversation-context.mjs';
+import {classifyLocal} from './runtime-utils.mjs';
 // Query-only LAB transport: exactly the existing bridge origin and service credential.
 // Never used for SOURCE writes; it cannot create an outbox or accept arbitrary URLs.
 export function labCanonicalQueryUrl(ingestUrl){
@@ -60,8 +61,7 @@ const TOPIC={
   status:/\b(?:estado|estatus|situacion|abierta|cerrada|como\s+va)\b/,
   summary:/\b(?:resumen|resumeme|sintesis|recapitulacion)\b/
 };
-// Monetary words including plurals must not masquerade as informational race questions.
-const MONEY=/\b(?:apuestas?|apostar|juega|jugadas?|consigue|pagar|pagos?|cobrar|saldos?|depositar|retirar|abonar|liquidar|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|premios?|dinero|bs|usdt)\b|\$/;
+const MONEY=/\b(?:apostar|apuestas?|jugadas?|juega|consigue|pagos?|pagar|cobros?|cobrar|depositar|depositos?|retirar|retiros?|saldos?|abonar|liquidacion(?:es)?|liquidar|ganancias?|deudas?|transferencias?|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|dineros?|premios?|bolivares?|balances?|bs|usdt)\b|\$/;
 const normalizeQuery=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 export function labReadOnlyQueryPurpose(text,classification){
   const value=normalizeQuery(text);
@@ -87,8 +87,19 @@ export function resolveQuotedLabRaceScope(row,visibleRows){
   if(!prior||prior.fromMe||prior.hasMedia||stableLabSenderKey(prior.id)!==sender)return null;
   const scope=explicitLabRaceScope(prior.text);
   if(!scope)return null;
-  const currentRace=normalizeQuery(row.text).match(/\bcarrera\s*(?:numero|nro)?\.?\s*(\d{1,3})\b/);
-  if(currentRace&&Number(currentRace[1])!==scope.raceNumber)return null;
+  // Visible quoted messages bypass the confirmed-ACK hint journal. Subject
+  // them to the same single-race and safety restrictions; otherwise a
+  // message naming both race 5 and 6 can silently become a scoped quote.
+  const safety=classifyLocal(prior.text);
+  if(safety.risk!=='safe'||MONEY.test(normalizeQuery(prior.text)))return null;
+  const quotedPlan=planLabConversation(prior,safety,null,scope);
+  if(quotedPlan.scopeConflict||!quotedPlan.raceScope||
+     quotedPlan.raceScope.raceNumber!==scope.raceNumber)return null;
+  // A follow-up may name a different race via "carrera 6", "6ta",
+  // "la sexta", or multiple references. Never let quoting race 5 override it.
+  const followup=planLabConversation(row,classifyLocal(row.text),null,scope);
+  if(followup.scopeConflict||!followup.raceScope||
+     followup.raceScope.raceNumber!==scope.raceNumber)return null;
   return scope;
 }
 
@@ -123,8 +134,7 @@ export async function queryCanonicalLab({
     }
     // 503 is an explicit overload/unavailable signal; do not amplify it.
     if([502,504].includes(response.status)&&attempt===0)continue;
-    // Only the actual media type is authority. A substring inside parameters,
-    // a JSONP suffix or a combined content-type cannot authorize a LAB reply.
+    // Reject JSONP, mixed MIME types or misleading substrings in HTTP metadata.
     const mediaType=response.headers.get('content-type')?.split(';',1)[0]?.trim().toLowerCase();
     if(response.status!==200||mediaType!=='application/json'){
       return{available:false,reason:'LAB_CANONICAL_UNAVAILABLE'};

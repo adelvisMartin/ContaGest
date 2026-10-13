@@ -246,3 +246,78 @@ test('missing snapshot or mismatched LAB purpose cannot create an immutable rece
     assert.equal(store.rows.length,0);
   }
 });
+
+test('race summary shares immutable LAB receipt recovery and rejects corrected result on same message',async()=>{
+  const store=mockStore();
+  const raceSummary={
+    ...canonical,reason:'CANONICAL_RACE_SUMMARY',
+    text:'Resumen interno de carrera 5: abierta. Sin llegada confirmada.',
+    state:'OPEN',version:3
+  };
+  const input={...defaults,purpose:'summary' as const,canonical:raceSummary};
+  const initial=await reconcileCanonicalLabReceipt(input,store.store);
+  assert.equal(initial.available,true);
+  assert.equal(initial.reason,'CANONICAL_RACE_SUMMARY');
+  assert.equal(store.rows.length,1);
+  assert.equal(store.getReceipt()?.responseHash,
+    crypto.createHash('sha256').update(raceSummary.text).digest('hex'));
+  assert.doesNotMatch(JSON.stringify(store.getReceipt()),/Resumen interno/);
+
+  const recovered=await reconcileCanonicalLabReceipt(input,store.store);
+  assert.equal(recovered.available,true);
+  assert.equal(recovered.reason,'LAB_CANONICAL_RECOVERED');
+  assert.equal(recovered.text,raceSummary.text);
+  assert.equal((recovered as any).recovery.recovered,true);
+  assert.equal(store.rows.length,1);
+
+  for(const changed of [
+    {...raceSummary,text:'Resumen interno de carrera 5: cerrada. Resultado corregido.'},
+    {...raceSummary,state:'CLOSED',version:4},
+    {...raceSummary,updatedAt:'2026-10-12T18:59:00.000Z'},
+    {...raceSummary,text:'Llegada corregida a 1 - 3 - 7.',version:5}
+  ]){
+    const result=await reconcileCanonicalLabReceipt({...input,canonical:changed},store.store);
+    assert.equal(result.available,false);
+    assert.equal(result.reason,'LAB_CANONICAL_REVISION_CHANGED');
+    assert.equal(store.rows.length,1);
+  }
+});
+
+test('summary receipts are strictly purpose-bound, time-bound and operator-ownership protected',async()=>{
+  const canonicalSummary={...canonical,reason:'CANONICAL_RACE_SUMMARY',text:'Resumen interno confirmado.'};
+  const valid={...defaults,purpose:'summary' as const,canonical:canonicalSummary};
+  for(const altered of [
+    {...valid,canonical:{...canonicalSummary,reason:'CANONICAL_STATE_FOUND'}},
+    {...valid,canonical:{...canonicalSummary,available:false}},
+    {...valid,canonical:{...canonicalSummary,version:0}},
+    {...valid,canonical:{...canonicalSummary,updatedAt:'not-a-date'}},
+    {...valid,canonical:{...canonicalSummary,text:''}},
+    {...valid,humanOwned:true},
+    {...valid,timestamp:new Date(now-LAB_CANONICAL_RECOVERY_WINDOW_MS-1).toISOString()}
+  ]){
+    const m=mockStore();
+    const result=await reconcileCanonicalLabReceipt(altered,m.store);
+    assert.equal(result.available,false);
+    assert.equal(m.rows.length,0);
+  }
+  const store=mockStore();
+  await reconcileCanonicalLabReceipt(defaults,store.store);
+  const cross=await reconcileCanonicalLabReceipt(valid,store.store);
+  assert.equal(cross.available,false);
+  assert.equal(cross.reason,'LAB_CANONICAL_REVISION_CHANGED');
+  assert.equal(store.rows.length,1);
+});
+
+test('summary purpose uses immutable receipt endpoint before HTTP reply and supports lost response replay',()=>{
+  const source=readFileSync(new URL('./hipico-bridge.routes.ts',import.meta.url),'utf8');
+  const from=source.indexOf("router.post('/bridge/lab/query'");
+  const to=source.indexOf("router.post('/bridge/events'",from);
+  const block=source.slice(from,to);
+  assert.match(block,/\['status','result','summary','next','active','schedule'\]\.includes\(input\.purpose\)/);
+  assert.match(block,/purpose:input\.purpose as 'status'\|'result'\|'summary'\|'next'\|'active'\|'schedule'/);
+  const receipt=block.indexOf('await reconcileCanonicalLabReceipt(');
+  const recheck=block.indexOf('const recheck=await checkLabHandoff(');
+  const send=block.indexOf('return res.json({ok:true,mode:',recheck);
+  assert.ok(receipt>=0&&recheck>receipt&&send>recheck);
+  assert.doesNotMatch(block,/sourceWriteAllowed:true|financialAuthority:true/);
+});
