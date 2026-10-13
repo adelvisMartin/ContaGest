@@ -61,7 +61,7 @@ const TOPIC={
   status:/\b(?:estado|estatus|situacion|abierta|cerrada|como\s+va)\b/,
   summary:/\b(?:resumen|resumeme|sintesis|recapitulacion)\b/
 };
-const MONEY=/\b(?:apuesta|apostar|juega|jugada|consigue|pagar|cobrar|saldo|liquidar|cerrar|abrir|registrar|premio|dinero|bs|usdt)\b|\$/;
+const MONEY=/\b(?:apostar|apuestas?|jugadas?|juega|consigue|pagos?|pagar|cobros?|cobrar|depositar|depositos?|retirar|retiros?|saldos?|abonar|liquidaciones?|liquidar|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|dineros?|premios?|bolivares?|balances?|bs|usdt)\b|\$/;
 const normalizeQuery=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 export function labReadOnlyQueryPurpose(text,classification){
   const value=normalizeQuery(text);
