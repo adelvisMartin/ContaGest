@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createLabPendingQueryInbox, reconcileLabPendingObservation } from '../src/lab-pending-query-inbox.mjs';
+import {queryCanonicalLab} from '../src/lab-canonical-query.mjs';
 
 const LAB='120363222222222222@g.us';
 const SOURCE='120363111111111111@g.us';
@@ -995,5 +996,72 @@ test('canonical handoff during out-of-DOM LAB read cancels encrypted replay perm
   await recover(new Set());
   assert.deepEqual(events,[
     'precheck-clear','canonical-held','seen','seen-saved','removed','logged'
+  ]);
+});
+
+
+test('real canonical transport propagates backend empty-text takeover to encrypted recovery',async()=>{
+  const vm=await import('node:vm');
+  const source=await fs.readFile(new URL('../src/index.mjs',import.meta.url),'utf8');
+  const begin=source.indexOf('async function resumePendingLabQueries(');
+  const end=source.indexOf('let labTestProcessing=false;',begin);
+  assert.ok(begin>=0&&end>begin);
+  const recover=source.slice(begin,end).trim();
+  const original=candidate();
+  const events=[];
+  const context={
+    BACKEND_SYNC_ENABLED:true,backendState:'online',lastLabPendingOffset:0,
+    INGEST_URL:'https://example.org/api/v1/hipico-bot/bridge/events',
+    TOKEN:'test-token',LAB_GROUP_ID:LAB,LAB_CHANNEL_KEY:'lab-integration',
+    BACKEND_TIMEOUT_MS:4500,
+    labPendingInbox:{
+      list:async()=>[original],
+      remove:async id=>{assert.equal(id,MESSAGE);events.push('removed');}
+    },
+    labTestTagFor:()=> '[LABTEST:012345abcd]',
+    labTestReplyJournal:{
+      read:async()=>null,
+      prepare:async()=>{throw new Error('WAL_MUST_NOT_PREPARE');},
+      begin:async()=>{throw new Error('ENTER_MUST_NOT_START');}
+    },
+    classifyLocal:()=>({intent:'conversation',risk:'safe'}),
+    stableLabSenderKey:()=>SENDER,
+    labConversationInput:()=>({eligible:true}),
+    labReadOnlyQueryPurpose:()=>original.purpose,
+    planLabConversation:()=>({scopeConflict:false}),
+    checkLabSendEligibility:async()=>{
+      events.push('eligibility-clear');
+      return{allowed:true,reason:'LAB_HANDOFF_CLEAR'};
+    },
+    labQueryBackoff:{
+      allowed:()=>true,
+      fail:()=>{throw new Error('HANDOFF_MUST_NOT_BACKOFF');},
+      clear:()=>{throw new Error('HANDOFF_MUST_NOT_CLEAR_BACKOFF');}
+    },
+    queryCanonicalLab:async args=>queryCanonicalLab({...args,fetchImpl:async(_url,options)=>{
+      const request=JSON.parse(options.body);
+      assert.equal(request.externalMessageId,MESSAGE);
+      assert.equal(request.channelRole,'lab');
+      assert.equal(request.shadowMode,true);
+      assert.equal(request.senderId,SENDER);
+      events.push('backend-handoff');
+      return {
+        status:200,headers:new Headers({'content-type':'application/json'}),
+        text:async()=>JSON.stringify({
+          ok:true,mode:'shadow',status:'LAB_HANDOFF_HELD',text:'',
+          authority:{sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false}
+        })
+      };
+    }}),
+    rememberLabSeen:id=>{assert.equal(id,MESSAGE);events.push('seen');},
+    saveLabSeenNow:async()=>{events.push('saved');},
+    log:async message=>{
+      assert.match(message,/^LAB_PENDING_QUERY_HANDED_OFF id=/);
+      events.push('logged');
+    }
+  };
+  await vm.runInNewContext('('+recover+')',context)(new Set());
+  assert.deepEqual(events,[
+    'eligibility-clear','backend-handoff','seen','saved','removed','logged'
   ]);
 });
