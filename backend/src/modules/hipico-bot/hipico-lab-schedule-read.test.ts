@@ -13,7 +13,7 @@ const scoped=(races:any[],meetings:any[]=[meeting])=>{
       calls.push({ownerId:owner,groupKey:group});
       return meetings;
     },
-    async listRaces(owner:string,group:string,meetingId?:string|null){
+    async listRacesForLabSnapshot(owner:string,group:string,meetingId?:string|null){
       calls.push({ownerId:owner,groupKey:group,meetingId});
       return races.filter(race=>!meetingId||race.meetingId===meetingId).map((race)=>({
         stateVersion:race.stateVersion??2,updatedAt:race.updatedAt??new Date('2026-10-12T12:00:00Z'),...race
