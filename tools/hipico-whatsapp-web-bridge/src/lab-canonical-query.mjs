@@ -14,6 +14,35 @@ export function labCanonicalQueryUrl(ingestUrl){
   }catch{return null;}
 }
 
+// Never turn an arbitrary syntactically valid backend status into permission
+// to send a WhatsApp LAB answer. This is the closed catalog emitted by the
+// canonical race/schedule readers and immutable receipt reconciliation.
+const SAFE_LAB_INFORMATION_STATUSES=new Set([
+  'CANONICAL_RESULT_NOT_CONFIRMED',
+  'CANONICAL_RESULT_EVIDENCE_MISSING',
+  'CANONICAL_RESULT_EVIDENCE_INVALID',
+  'CANONICAL_RESULT_CONFIRMED_INTERNAL',
+  'EXPLICIT_RACE_CONTEXT_REQUIRED',
+  'INVALID_RACE_CONTEXT',
+  'CANONICAL_RACE_NOT_FOUND',
+  'CANONICAL_RACE_UNVERIFIED',
+  'CANONICAL_ENTRIES_UNAVAILABLE',
+  'CANONICAL_RACE_SUMMARY',
+  'CANONICAL_STATE_FOUND',
+  'CANONICAL_MEETING_SELECTOR_INVALID',
+  'CANONICAL_MEETING_AMBIGUOUS',
+  'CANONICAL_MEETING_NOT_FOUND',
+  'CANONICAL_SCHEDULE_NOT_FOUND',
+  'CANONICAL_SCHEDULE_REVISION_UNAVAILABLE',
+  'CANONICAL_RACE_CONTEXT_REQUIRED',
+  'CANONICAL_SCHEDULE_STALE',
+  'CANONICAL_NEXT_RACE',
+  'CANONICAL_ACTIVE_RACE',
+  'CANONICAL_SCHEDULE_FOUND',
+  'LAB_CANONICAL_RECOVERED',
+  'LAB_CANONICAL_REVISION_CHANGED'
+]);
+
 const MAX_LAB_CANONICAL_BYTES=16_384;
 // Bound decompressed UTF-8 bytes as they arrive, before allocating a full body.
 // Native fetch exposes body.getReader(); streamless test adapters use text().
@@ -177,7 +206,15 @@ export async function queryCanonicalLab({
         ? {available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'}
         : {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
-    if(typeof body.text!=='string'||!body.text.trim()||body.text.length>1500){
+    // Receipt refusal or stale/cancelled authority must never become an
+    // automatic message. A persisted review decision is terminal in both
+    // visible and off-DOM paths, just like the explicit REVIEW_REQUIRED state.
+    if(['LAB_CANONICAL_HUMAN_HANDOFF','LAB_CANONICAL_REQUEST_STALE',
+        'LAB_CANONICAL_RECEIPT_NOT_VERIFIABLE'].includes(body.status)){
+      return{available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'};
+    }
+    if(!SAFE_LAB_INFORMATION_STATUSES.has(body.status)||
+       typeof body.text!=='string'||!body.text.trim()||body.text.length>1500){
       return{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
     return{available:true,reason:String(body.status),text:body.text};
