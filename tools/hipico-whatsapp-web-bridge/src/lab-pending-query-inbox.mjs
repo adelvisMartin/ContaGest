@@ -240,7 +240,7 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
   }
   async function scan(){
     const names=(await fs.readdir(root)).filter(n=>n.endsWith('.json'));
-    const rows=[];let expired=0;
+    const rows=[];let expiredCount=0;
     for(const filename of names.sort()){
       if(!/^[a-f0-9]{64}\.json$/.test(filename))throw new Error('LAB_PENDING_FILE_INVALID');
       const hash=filename.slice(0,-5);
@@ -248,12 +248,12 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
       try{item=await openFile(hash);}catch(e){throw e;}
       if(item){
         if(expired(item)){
-          await fs.rm(fileFor(hash));expired++;
+          await fs.rm(fileFor(hash));expiredCount++;
         }else rows.push(item);
       }
     }
     if(rows.length>maxEntries)throw new Error('LAB_PENDING_CAPACITY_EXCEEDED');
-    return {rows,expired};
+    return {rows,expired:expiredCount};
   }
   return Object.freeze({
     async initialize(){
