@@ -1384,15 +1384,19 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
         continue;
       }
       await sendTextInCurrentLab(localLabTestReply(row,classification,plan,canonical),tag);
-      await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
+      const confirmed=await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
       rememberLabSeen(entry.messageId);
       await saveLabSeenNow();
-      if(await rememberConfirmedPendingLabQuote(entry)){
+      // Once an ACK is durable, only its immutable encrypted request can
+      // restore context; never extend its TTL with a new "remember" timestamp.
+      const restored=confirmed?.state==='confirmed'
+        ? await recoverConfirmedLabConversation(entry,confirmed.updatedAt)
+        : false;
+      const hintSaved=await rememberConfirmedPendingLabQuote(entry);
+      // Even after a successful send, a failed auxiliary write must not
+      // destroy the only source needed for ACK-only crash recovery.
+      if(hintSaved && (!entry.race||restored)){
         await labPendingInbox.remove(entry.messageId);
-      }
-      if(plan.rememberRace&&labConversationContext){
-        try {await labConversationContext.remember(plan.sender,plan.raceNumber,plan.raceScope,{raceTrack:plan.raceTrack,raceDate:plan.raceDate});}
-        catch {await log('LAB_CONTEXT_PERSIST_FAILED');}
       }
       await log('LAB_PENDING_RECOVERED id='+tag);
     } catch(error) {
