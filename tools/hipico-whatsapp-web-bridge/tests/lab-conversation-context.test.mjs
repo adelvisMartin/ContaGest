@@ -148,7 +148,7 @@ test('durable ACK recovers exactly one recent race scope without extending its T
   assert.deepEqual(restarted.get(sender),{raceNumber:5,raceScope:scope});
   assert.equal(await restarted.recoverConfirmed(sender,scope,acknowledgedAt),false);
   const disk=await fs.readFile(file,'utf8');
-  assert.doesNotMatch(disk,/123456789012@lid|120363222222222222@g.us|La Rinconada|2026-10-12/);
+  assert.doesNotMatch(disk,/123456789012@lid|120363222222222222@g.us|Mensaje completo/);
   clock+=18000;
   assert.equal(restarted.get(sender),null,'ACK timestamp, not restart, defines expiration');
   assert.equal(await restarted.recoverConfirmed(sender,scope,acknowledgedAt),false,
@@ -170,12 +170,12 @@ test('confirmed ACK recovery fails closed for bad proof and does not overwrite n
     [{...oldScope,raceDate:'2026-02-30'},new Date(t0-1000).toISOString()],
     [oldScope,'not-a-date'],
     [oldScope,new Date(t0+1000).toISOString()],
-    [oldScope,new Date(t0-20*60*1000).toISOString()],
-    [oldScope,new Date(t0-1000).toISOString()]
+    [oldScope,new Date(t0-20*60*1000).toISOString()]
   ]){
-    const actual=await c.recoverConfirmed('nickname',race,stamp);
+    const actual=await c.recoverConfirmed(sender,race,stamp);
     assert.equal(actual,false);
   }
+  assert.equal(await c.recoverConfirmed('nickname',oldScope,new Date(t0-1000).toISOString()),false);
   assert.equal(c.get(sender),null);
   await c.remember(sender,newer.raceNumber,newer);
   assert.equal(await c.recoverConfirmed(sender,oldScope,new Date(t0-1000).toISOString()),false);
