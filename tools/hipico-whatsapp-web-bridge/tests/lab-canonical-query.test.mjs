@@ -552,3 +552,25 @@ test('canonical ordinary empty responses still fail closed and do not impersonat
     assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},status);
   }
 });
+
+
+test('canonical REVIEW_REQUIRED is terminal and cannot authorize a WhatsApp LAB reply',async()=>{
+  const authority={sourceWriteAllowed:false,financialAuthority:false,domainEffectsAllowed:false};
+  const review={
+    ok:true,mode:'shadow',status:'REVIEW_REQUIRED',
+    text:'La consulta requiere revisión humana. No se realizó ninguna operación.',
+    authority
+  };
+  const result=await queryCanonicalLab({...base,fetchImpl:async()=>json(review)});
+  assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'});
+  const malformed=await queryCanonicalLab({...base,fetchImpl:async()=>json({...review,text:''})});
+  assert.deepEqual(malformed,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
+  const revoked=await queryCanonicalLab({...base,fetchImpl:async()=>json({
+    ...review,authority:{...authority,financialAuthority:true}
+  })});
+  assert.deepEqual(revoked,{available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'});
+  const canonical=await queryCanonicalLab({...base,fetchImpl:async()=>json({
+    ...review,status:'CANONICAL_RACE_NOT_FOUND',text:'No hay datos oficiales de esa carrera.'
+  })});
+  assert.equal(canonical.available,true,'verified informational absence remains allowed');
+});

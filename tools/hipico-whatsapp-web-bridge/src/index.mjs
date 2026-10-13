@@ -1365,6 +1365,13 @@ async function resumePendingLabQueries(visibleIds = new Set(), alreadySeenIds = 
       await log('LAB_PENDING_QUERY_HANDED_OFF id='+tag);
       continue;
     }
+    if(canonical.reason==='LAB_CANONICAL_REVIEW_REQUIRED'){
+      rememberLabSeen(entry.messageId);
+      await saveLabSeenNow();
+      await labPendingInbox.remove(entry.messageId);
+      await log('LAB_PENDING_QUERY_REVIEW_REQUIRED id='+tag);
+      continue;
+    }
     if (canonical.available!==true) {
       const delay=labQueryBackoff.fail(entry.messageId);
       await log('LAB_PENDING_QUERY_RETRY id='+tag+' reason='+canonical.reason+' retryMs='+delay);
@@ -1622,6 +1629,13 @@ async function processLabTestInput() {
       await saveLabSeenNow();
       await labPendingInbox?.remove(row.id);
       await log('LAB_HANDOFF_QUERY_HELD id='+tag);
+      continue;
+    }
+    if(canonical.reason==='LAB_CANONICAL_REVIEW_REQUIRED'){
+      rememberLabSeen(row.id);
+      await saveLabSeenNow();
+      await labPendingInbox?.remove(row.id);
+      await log('LAB_CANONICAL_REVIEW_REQUIRED id='+tag);
       continue;
     }
     if(inquiryPurpose && canonical.available!==true){
