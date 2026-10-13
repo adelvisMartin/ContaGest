@@ -47,3 +47,25 @@ npm run qa
 `npm run qa` cubre la recuperación read-only, la orden de consulta
 anterior al send intent y el bloqueo de errores de seguridad. No sustituye
 pruebas de WhatsApp real ni soak.
+
+## Revisión humana como respuesta canónica terminal
+
+El backend `/bridge/lab/query` puede responder HTTP 200 con `status:
+REVIEW_REQUIRED` cuando la política conversacional detecta que la consulta
+requiere intervención humana, aunque un clasificador local haya permitido
+la petición inicial. Ese estado **no es** un hecho canónico y no autoriza
+enviar una respuesta automática al WhatsApp LAB.
+
+El Bridge convierte `REVIEW_REQUIRED` válido en
+`{available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'}`. Tanto la
+ruta visible como la recuperación cifrada fuera del DOM hacen handoff terminal:
+guardan la marca de atendido/revisión, eliminan el trabajo cifrado pendiente y
+no ejecutan `prepare`, `Enter` ni backoff automático. La respuesta de
+revisión es visible solo en el backend/auditoría autorizada; los mensajes de
+WhatsApp no se envían en nombre de un operador.
+
+Una respuesta `REVIEW_REQUIRED` sin texto, con autoridad monetaria o con
+formato inválido sigue tratándose como error de contrato. Las respuestas
+informativas verificadas como `CANONICAL_RACE_NOT_FOUND` conservan su
+comportamiento de ausencia explícita de datos. Esta es una mejora de seguridad
+de LAB, **no** habilita SOURCE ni omite #119/#120/#839.
