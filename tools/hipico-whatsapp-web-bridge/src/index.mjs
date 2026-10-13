@@ -1197,6 +1197,29 @@ async function sendTextInCurrentLab(textValue, tag) {
 // This operation runs only while the correct LAB group is open and pinned.
 // A durable LAB response ACK can outlive the journal hint persistence.
 // Rebuild only informational same-sender, explicit race context after ACK.
+// Only the immutable encrypted pre-query record can restore sender memory
+// after an ACK. Mutable DOM text has no post-crash authority.
+async function recoverConfirmedLabConversation(entry,confirmedAt) {
+  if(!entry||!labConversationContext)return false;
+  const sender=stableLabSenderKey(entry.messageId);
+  if(!sender||sender!==entry.senderId||!entry.race)return false;
+  const classification=classifyLocal(entry.text);
+  const verifiedPurpose=labReadOnlyQueryPurpose(entry.text,classification);
+  if(!verifiedPurpose||verifiedPurpose!==entry.purpose)return false;
+  const plan=planLabConversation(
+    {id:entry.messageId,text:entry.text,fromMe:false,hasMedia:false},
+    classification,null,entry.race
+  );
+  if(plan.scopeConflict||!plan.raceScope)return false;
+  try {
+    await labConversationContext.recoverConfirmed(sender,plan.raceScope,confirmedAt);
+    return true;
+  }catch{
+    await log('LAB_CONTEXT_ACK_RECOVERY_FAILED');
+    return false;
+  }
+}
+
 async function rememberConfirmedPendingLabQuote(entry) {
   if(!labQuotedRaceJournal)return true;
   const sender=stableLabSenderKey(entry.messageId);
@@ -1243,6 +1266,7 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
     // the row is still visible or the canonical backend is offline. No Enter.
     if (visibleIds.has(entry.messageId) && state?.state !== 'confirmed') continue;
     if (state?.state === 'confirmed') {
+      await recoverConfirmedLabConversation(entry,state.updatedAt);
       rememberLabSeen(entry.messageId);
       await saveLabSeenNow();
       if(await rememberConfirmedPendingLabQuote(entry)){
@@ -1254,6 +1278,10 @@ async function resumePendingLabQueries(visibleIds = new Set()) {
       await assertCurrentLabIdentity();
       if (await visibleLabHasTag(tag)) {
         await labTestReplyJournal.confirm(entry.messageId,{visibleTag:true});
+        const confirmed=await labTestReplyJournal.read(entry.messageId);
+        if(confirmed?.state==='confirmed'){
+          await recoverConfirmedLabConversation(entry,confirmed.updatedAt);
+        }
         rememberLabSeen(entry.messageId);
         await saveLabSeenNow();
         if(await rememberConfirmedPendingLabQuote(entry)){
@@ -1419,33 +1447,14 @@ async function processLabTestInput() {
     // A confirmed ack survives restart even if the legacy seen-file did not.
     const journalRecord = await labTestReplyJournal.read(row.id);
     if (journalRecord?.state === 'confirmed') {
-      // Crash after confirmed ACK but before hint persistence: safe to backfill.
-      const verifiedSender=stableLabSenderKey(row.id);
-      const verifiedPurpose=labReadOnlyQueryPurpose(body,classifyLocal(body));
-      // Re-evaluate ambiguity after crash instead of trusting the first
-      // explicit race captured by a permissive regex.
-      const verifiedRace=confirmedLabQuoteHint(row,classifyLocal(body));
-      if(verifiedSender&&verifiedRace&&labQuotedRaceJournal){
-        try{await labQuotedRaceJournal.remember({
-          messageId:row.id,senderId:verifiedSender,race:verifiedRace,confirmed:true
-        });}catch{await log('LAB_QUOTE_HINT_PERSIST_FAILED');}
-      }
-      // A crash may occur after durable outgoing confirmation and before
-      // conversation hint persistence. Backfill only a fully explicit, safe,
-      // original-ACK-fresh scope without replacing any newer sender hint.
-      if(verifiedSender&&verifiedRace&&verifiedPurpose&&labConversationContext){
-        const safePlan=planLabConversation(row,classifyLocal(body),null,verifiedRace);
-        if(safePlan.raceScope&&!safePlan.scopeConflict){
-          try{
-            await labConversationContext.recoverConfirmed(
-              verifiedSender,safePlan.raceScope,journalRecord.updatedAt
-            );
-          }catch{await log('LAB_CONTEXT_ACK_RECOVERY_FAILED');}
-        }
+      // Never grant quote/memory authority to mutable DOM text after an ACK.
+      const encryptedOriginal=await labPendingInbox?.read(row.id);
+      if(encryptedOriginal){
+        await recoverConfirmedLabConversation(encryptedOriginal,journalRecord.updatedAt);
       }
       rememberLabSeen(row.id);
       await saveLabSeenNow();
-      await finalizeConfirmedVisibleLabQuote(row,body);
+      await finalizeConfirmedVisibleLabQuote(row,body); // HMAC hint only from encrypted input
       continue;
     }
     if (journalRecord?.state === 'ambiguous' || journalRecord?.state === 'sending') {
