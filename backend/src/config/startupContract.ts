@@ -7,15 +7,23 @@ const NODE_ENVS=new Set(['development','test','production']);
 const VERCEL_ENVS=new Set(['development','preview','production']);
 const STARTUP_ERROR='BACKEND_STARTUP_CONFIG_INVALID';
 
+// Share one production predicate across startup and runtime security gates.
+// A hosting preview label must never downgrade NODE_ENV=production.
+export function isProductionBackendRuntime(config: BackendStartupInput): boolean {
+  return config.NODE_ENV === 'production' || config.VERCEL_ENV === 'production';
+}
+
 export function checkBackendStartupConfig(config: BackendStartupInput) {
   const failures: string[]=[];
-  const nodeEnv=config.NODE_ENV || 'development';
+  // Only a missing NODE_ENV selects the local default. An explicitly blank
+  // label is a configuration error, never an implicit development fallback.
+  const nodeEnv=config.NODE_ENV === undefined ? 'development' : config.NODE_ENV;
   const vercelEnv=config.VERCEL_ENV || '';
   if(!NODE_ENVS.has(nodeEnv))failures.push('NODE_ENV_UNRECOGNIZED');
   if(vercelEnv&&!VERCEL_ENVS.has(vercelEnv))failures.push('VERCEL_ENV_UNRECOGNIZED');
   // Either runtime declaring production must keep hard fail-closed boundaries.
   // A preview/development Vercel label cannot downgrade NODE_ENV=production.
-  const production=vercelEnv==='production'||nodeEnv==='production';
+  const production=isProductionBackendRuntime(config);
   if(config.PORT!==undefined){
     // Coercing with Number alone allows empty strings and fractional ports.
     const candidate=String(config.PORT).trim();
