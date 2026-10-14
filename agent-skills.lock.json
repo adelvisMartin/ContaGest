@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-05",
+  "generatedAt": "2026-10-14",
   "policy": {
     "updateMode": "pinned-only",
     "executeUpstreamScripts": false,
@@ -219,6 +219,54 @@
         "skills/apple-design-motion/references/microinteractions-feedback.md",
         "skills/apple-design-tactics/SKILL.md",
         "skills/apple-design-tactics/references/accessibility-inclusive.md"
+      ]
+    },
+    {
+      "id": "ponytail",
+      "kind": "github-skill",
+      "repo": "DietrichGebert/ponytail",
+      "commit": "2961b52fc1fe6a5a87c7a959a79512e5c2f3ffe5",
+      "license": "MIT",
+      "trustLevel": "reviewed-inert-engineering-advisory",
+      "namespace": "ponytail",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/ponytail/SKILL.md"
+      ]
+    },
+    {
+      "id": "omniroute",
+      "kind": "github-skill",
+      "repo": "diegosouzapw/OmniRoute",
+      "commit": "fc5e2bccd4f70fecf5aab94dfb8136c74ab5a21b",
+      "license": "MIT",
+      "trustLevel": "read-only-evaluation-reference",
+      "namespace": "omniroute",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/omni-auth/SKILL.md",
+        "skills/omni-combos-routing/SKILL.md",
+        "skills/omni-resilience/SKILL.md"
+      ]
+    },
+    {
+      "id": "addy-agent-skills",
+      "kind": "github-skill",
+      "repo": "addyosmani/agent-skills",
+      "commit": "aeac41d4d005999432bb7312f7ff06383a91d59d",
+      "license": "MIT",
+      "trustLevel": "reviewed-inert-engineering-advisory",
+      "namespace": "addy",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/using-agent-skills/SKILL.md",
+        "skills/planning-and-task-breakdown/SKILL.md",
+        "skills/incremental-implementation/SKILL.md",
+        "skills/test-driven-development/SKILL.md",
+        "skills/code-review-and-quality/SKILL.md",
+        "skills/git-workflow-and-versioning/SKILL.md",
+        "skills/ci-cd-and-automation/SKILL.md",
+        "references/definition-of-done.md"
       ]
     }
   ]
