@@ -8,8 +8,9 @@ import {confirmedLabQuoteHint} from '../src/lab-confirmed-quote-hint.mjs';
 
 const bridge=readFileSync(new URL('../src/index.mjs',import.meta.url),'utf8');
 const start=bridge.indexOf('async function rememberConfirmedPendingLabQuote(');
-const end=bridge.indexOf('async function finalizeConfirmedVisibleLabQuote(',start);
-assert.ok(start>=0&&end>start,'post-ACK hint authority helper must exist');
+// Extract precisely the function being VM-tested, not the later crash-recovery helpers.
+const end=bridge.indexOf('\n}\n',start)+2;
+assert.ok(start>=0&&end>start&&bridge.slice(start,end).trimEnd().endsWith('}'),'post-ACK hint authority helper must exist');
 const originalHelper=bridge.slice(start,end).trim();
 const senderId='123456789012@lid';
 const id='false_120363222222222222@g.us_incoming-1_'+senderId;
