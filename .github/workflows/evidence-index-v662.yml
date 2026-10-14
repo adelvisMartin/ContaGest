@@ -1,0 +1,45 @@
+name: Evidence Index v662
+on:
+  pull_request:
+    paths:
+      - 'scripts/evidence-index-v662.mjs'
+      - 'tests/evidence_index_issue_662.test.mjs'
+      - 'config/evidence-index-v662-inventory.json'
+      - 'docs/qa/evidence-index-v662.md'
+      - '.github/workflows/evidence-index-v662.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  evidence-index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install lockfile
+        run: npm ci --no-audit --no-fund
+      - name: Run index regressions
+        run: node --test tests/evidence_index_issue_662.test.mjs
+      - name: Generate and inspect candidate-bound manifest
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          OUT="artifacts/qa/evidence-index/$SHA/index.json"
+          node scripts/evidence-index-v662.mjs generate config/evidence-index-v662-inventory.json "$SHA" "$OUT"
+          node scripts/evidence-index-v662.mjs validate "$OUT" "$SHA" config/evidence-index-v662-inventory.json
+          node scripts/evidence-index-v662.mjs rc-input "$OUT" "$SHA" config/evidence-index-v662-inventory.json > "artifacts/qa/evidence-index/$SHA/rc-input.json"
+      - name: Store index evidence (NOT a release approval)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-index-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/qa/evidence-index/
+          if-no-files-found: warn
+          retention-days: 21
