@@ -2,7 +2,7 @@
 
 Autoridad: `AGENTS.md`, #623, #624, #630 y #647. Es un registro de referencias: no ejecuta pruebas ni autoriza despliegues.
 
-El inventario versionado `config/evidence-index-v662-inventory.json` parte de una consulta de issues abiertos en GitHub (14 de octubre de 2026) y de referencias del META #624. Una referencia de META no equivale necesariamente a un issue dependiente: se conserva en `unresolvedParentReferences` hasta verificarla. El inventario envejece cuando cambia GitHub; hay que actualizarlo contra el estado live antes de certificar completitud.
+El inventario versionado `config/evidence-index-v662-inventory.json` parte de una consulta de issues abiertos en GitHub (14 de octubre de 2026) y de todas las referencias encontradas en el texto del META #624, sin asumir que una referencia a PR equivale a un issue dependiente. Una referencia de META no equivale necesariamente a un issue dependiente: se conserva en `unresolvedParentReferences` hasta verificarla; también recibe una entrada explícita UNKNOWN/NOT_EXECUTED con razón. El inventario envejece cuando cambia GitHub; hay que actualizarlo contra el estado live antes de certificar completitud.
 
 ## Ejecución local
 

@@ -77,7 +77,10 @@ export function validateIndex(index, {sha,inventory}={}) {
     if (!['PASS','NOT_APPLICABLE'].includes(entry.status) && String(entry.reason||'').length < 12) add('INDEX_REASON_MISSING:'+entry.issue);
     if (entry.pr !== null && (!Number.isInteger(entry.pr) || entry.pr < 1)) add('INDEX_BAD_PR:'+entry.issue);
     if (entry.mergeSha !== null && !SHA.test(entry.mergeSha || '')) add('INDEX_BAD_MERGE_SHA:'+entry.issue);
+    const seenDimensions=new Set();
     for (const proof of entry.evidence) {
+      if (seenDimensions.has(proof?.dimension)) add('INDEX_DUPLICATE_DIMENSION:'+entry.issue+':'+proof.dimension);
+      seenDimensions.add(proof?.dimension);
       if (!DIMENSIONS.includes(proof?.dimension) || !STATUSES.includes(proof?.status)) {
         add('INDEX_BAD_EVIDENCE:'+entry.issue);continue;
       }
@@ -89,6 +92,7 @@ export function validateIndex(index, {sha,inventory}={}) {
       if (proof.status === 'BLOCKED' && (!String(proof.blockerKind||'').trim() ||
           !String(proof.reason||'').trim())) add('INDEX_BLOCKER_CAUSE_MISSING:'+entry.issue);
     }
+    if (entry.status === 'PASS' && entry.evidence.some((proof)=>proof.status!=='PASS' && proof.status!=='NOT_APPLICABLE')) add('INDEX_PASS_WITH_UNRESOLVED_GATE:'+entry.issue);
     if (entry.status === 'PASS' && (entry.issueState !== 'CLOSED' ||
         entry.acceptanceComplete !== true || !Number.isInteger(entry.pr) ||
         !SHA.test(entry.mergeSha||'') || !entry.evidence.some((p)=>p.status==='PASS'))) {

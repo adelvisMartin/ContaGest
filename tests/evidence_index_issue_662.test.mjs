@@ -49,6 +49,16 @@ test('#662 provider BLOCKED remains separate from PASS and requires cause',()=>{
   delete e.evidence[0].reason;
   assert.ok(validateIndex(reseal(i)).errors.includes('INDEX_BLOCKER_CAUSE_MISSING:662'));
 });
+test('#662 conflicting or duplicated gate evidence cannot certify PASS',()=>{
+  const i=generateIndex(input,a),e=i.entries[2];
+  e.status='PASS';e.reason='';e.issueState='CLOSED';e.acceptanceComplete=true;e.pr=123;e.mergeSha=b;
+  const proof={dimension:'LOCAL_UNIT',status:'PASS',sha:a,command:'node --test tests/x.test.mjs',
+    environment:'Node 22',artifacts:['artifacts/test-report.json']};
+  e.evidence=[proof,{...proof}];
+  assert.ok(validateIndex(reseal(i)).errors.some(s=>s.startsWith('INDEX_DUPLICATE_DIMENSION')));
+  e.evidence=[proof,{dimension:'REMOTE_CI',status:'BLOCKED',sha:a,reason:'Runner quota',blockerKind:'EXTERNAL_PROVIDER'}];
+  assert.ok(validateIndex(reseal(i)).errors.includes('INDEX_PASS_WITH_UNRESOLVED_GATE:667'));
+});
 test('#662 canonical dimensions, strict issue states and unique IDs',()=>{
   assert.equal(DIMENSIONS.length,10);
   assert.throws(()=>generateIndex({...input,issueIds:[624,624]},a),/INDEX_DUPLICATE_IDS/);
