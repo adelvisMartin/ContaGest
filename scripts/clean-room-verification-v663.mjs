@@ -14,7 +14,9 @@ function git(cwd, args) {
 
 export function assertCandidate({ cwd, expectedSha, gitCommand = git }) {
   if (!SHA.test(expectedSha || '')) throw new Error('CLEANROOM_EXPECTED_SHA_REQUIRED');
-  if (gitCommand(cwd, ['rev-parse', '--show-toplevel']) !== path.resolve(cwd)) throw new Error('CLEANROOM_ROOT_REQUIRED');
+  const gitRoot = path.resolve(gitCommand(cwd, ['rev-parse', '--show-toplevel']));
+  const requestedRoot = path.resolve(cwd);
+  if ((process.platform === 'win32' ? gitRoot.toLowerCase() : gitRoot) !== (process.platform === 'win32' ? requestedRoot.toLowerCase() : requestedRoot)) throw new Error('CLEANROOM_ROOT_REQUIRED');
   const actual = gitCommand(cwd, ['rev-parse', 'HEAD']);
   if (actual !== expectedSha) throw new Error('CLEANROOM_SHA_MISMATCH');
   if (gitCommand(cwd, ['status', '--porcelain', '--untracked-files=all'])) throw new Error('CLEANROOM_SOURCE_DIRTY');
@@ -49,8 +51,11 @@ export function buildCleanRoomPlan(expectedSha) {
 }
 
 function invokeStage(stage, { cwd, env }) {
-  const command = process.platform === 'win32' && stage.command === 'npm' ? 'npm.cmd' : stage.command;
-  const outcome = spawnSync(command, stage.args, { cwd, env, stdio: 'inherit', shell: false, windowsHide: true });
+  const isWindowsNpm = process.platform === 'win32' && stage.command === 'npm';
+  const command = isWindowsNpm ? (env.COMSPEC || 'cmd.exe') : stage.command;
+  // All CLI arguments are fixed by buildCleanRoomPlan or a validated 40-char hex SHA.
+  const args = isWindowsNpm ? ['/d', '/s', '/c', 'npm.cmd ' + stage.args.join(' ')] : stage.args;
+  const outcome = spawnSync(command, args, { cwd, env, stdio: 'inherit', shell: false, windowsHide: true });
   if (outcome.error) return { status: 'BLOCKED', exitCode: null, reason: 'MISSING_EXECUTABLE_OR_PREREQUISITE' };
   return { status: outcome.status === 0 ? 'PASS' : 'FAIL', exitCode: outcome.status ?? 1 };
 }
