@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -33,7 +34,20 @@ test('PWA install flow and service worker do not cache API data', () => {
   const manifest = JSON.parse(read('frontend/public/manifest.webmanifest'));
   assert.match(installer, /beforeinstallprompt/);
   assert.match(installer, /appinstalled/);
-  assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)/);
+  // Test the active scoped route guard; the inline check was refactored.
+  const scope = 'https://qa.example.test/';
+  const isSensitiveRequest = vm.runInNewContext(sw + '\nisSensitiveRequest;', {
+    URL,
+    self: { registration: { scope },
+      location: { origin: 'https://qa.example.test' },
+      addEventListener: () => {} }
+  });
+  for (const [pathname, expected] of [
+    ['/api/v1/users', true], ['/auth/session', true],
+    ['/licenses', true], ['/media/private', true], ['/admin/users', true],
+    ['/assets/app.js', false], ['/index.html', false]
+  ]) assert.equal(isSensitiveRequest(new URL(pathname,scope)),expected,pathname);
+  assert.match(sw, /isSensitiveRequest\(url\)\) return/);
   assert.match(sw, /cache:\s*'no-store'/);
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.scope, '/');
