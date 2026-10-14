@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {auditTestPyramid,discoverTests,inferredTestLevel,inferredTestOwner} from '../scripts/test-pyramid-audit-v655.mjs';
-import {buildProfilePlan} from '../scripts/local-verification-runner-v630.mjs';
+import {buildProfilePlan,changedPlan} from '../scripts/local-verification-runner-v630.mjs';
+import {execFileSync} from 'node:child_process';
 
 const CORE='qa/tenant-isolation-adversarial-v641.test.ts';
 const JOURNEY='qa/erp-system-campaign-v155.spec.mjs';
@@ -77,4 +78,22 @@ test('v630 full consumes inventory without altering backend canonical commands',
  assert.ok(full.includes('node --test tests/test_pyramid_issue_655.test.mjs'));
  assert.deepEqual(backend,['npm run typecheck','npm test','npm run build:backend']);
  assert.equal(new Set(full).size,full.length);
+});
+
+test('v630 changed profile appends lightweight ownership checks for a real QA diff',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'cg-pyramid-git-655-'));
+ const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
+ try{
+  git('init','-b','main');git('config','user.email','qa@example.invalid');git('config','user.name','QA Contract');
+  fs.writeFileSync(path.join(root,'README.md'),'baseline\n');git('add','.');git('commit','-m','baseline');
+  git('checkout','-b','feature');
+  fs.mkdirSync(path.join(root,'qa'),{recursive:true});
+  fs.writeFileSync(path.join(root,'qa','example.test.ts'),'test file\n');git('add','.');git('commit','-m','test change');
+  const plan=changedPlan({cwd:root,baseRef:'main'});
+  const commands=plan.plan.map(x=>x.command);
+  assert.ok(plan.files.includes('qa/example.test.ts'));
+  assert.ok(commands.includes('node scripts/test-pyramid-audit-v655.mjs'));
+  assert.ok(commands.includes('node --test tests/test_pyramid_issue_655.test.mjs'));
+  assert.equal(commands.length,new Set(commands).size);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
