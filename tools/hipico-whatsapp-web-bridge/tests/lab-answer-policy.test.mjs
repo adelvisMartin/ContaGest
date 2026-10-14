@@ -47,6 +47,8 @@ test('live Bridge passes selected canonical response text to its LAB-only transp
   assert.match(block,/selectLabAnswer\(/);
   assert.match(block,/composeLabAssistantReply\(/);
   assert.match(block,/selectLabAnswer\(/);
-  assert.doesNotMatch(block,/Lectura:|Fuente:|Propuesta:/);
+  assert.doesNotMatch(block,/Lectura:|Propuesta:/);
+  assert.match(block,/Fuente: /,'canonical reply must retain auditable source metadata for outgoing ACK evidence');
+  assert.match(block,/Respuesta: /);
   assert.match(s,/sendTextInCurrentLab\(localLabTestReply\(row, classification, plan, canonical\), tag\)/);
 });
