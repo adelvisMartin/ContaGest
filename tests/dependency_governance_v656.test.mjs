@@ -77,3 +77,10 @@ test('orphan catalog and unsupported workspace changes remain visible', () => {
   assert.ok(result.findings.some((x) => x.code === 'STALE_OWNER_RECORD'));
   assert.ok(result.findings.some((x) => x.code === 'WORKSPACE_SCOPE_DRIFT'));
 });
+
+test('LGPL requires independent license review and permissive SPDX does not', () => {
+  const restricted = fixture(); restricted.lock.packages['node_modules/server'].license = 'LGPL-3.0-only';
+  assert.ok(auditDependencyGovernance(restricted).findings.some((x) => x.code === 'LICENSE_REVIEW_REQUIRED'));
+  const permissive = fixture(); permissive.lock.packages['node_modules/server'].license = 'Apache-2.0';
+  assert.equal(auditDependencyGovernance(permissive).status, 'PASS');
+});
