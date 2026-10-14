@@ -21,7 +21,7 @@ function fixture(matches:Array<{id:string}>,ordinary:Array<{id:string}>=[selecte
       return matches.slice(0,2);
     },
     async listRacesForLabSnapshot(owner:string,group:string,meetingId?:string|null){
-      calls.push({method:'listRaces',ownerId:owner,groupKey:group,meetingId});
+      calls.push({method:'listRacesForLabSnapshot',ownerId:owner,groupKey:group,meetingId});
       if(meetingId!==selected.id)return [];
       return [{id:'r-1',meetingId:selected.id,number:1,state:'ANNOUNCED',
         stateVersion:2,updatedAt:new Date('2026-10-12T12:00:00Z'),

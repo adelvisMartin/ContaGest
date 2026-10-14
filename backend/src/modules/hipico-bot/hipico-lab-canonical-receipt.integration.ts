@@ -188,7 +188,8 @@ test('real PostgreSQL: editing a non-displayed race invalidates a previously com
   const initial=await readScopedLabSchedule(args,undefined,clock);
   assert.equal(initial.available,true);
   assert.equal(initial.reason,'CANONICAL_NEXT_RACE');
-  if(!('revisionToken' in initial))throw new Error('LAB_NEXT_REVISION_REQUIRED');
+  if(!('revisionToken' in initial)||typeof initial.revisionToken!=='string')
+    throw new Error('LAB_NEXT_REVISION_REQUIRED');
   assert.match(initial.text,/número 1/);
   assert.match(initial.revisionToken,/^[a-f0-9]{64}$/);
   const input={...base,externalMessageId:'pg-next-'+suffix,purpose:'next' as const,canonical:initial};
@@ -204,7 +205,8 @@ test('real PostgreSQL: editing a non-displayed race invalidates a previously com
   `,[second,base.ownerId,base.sourceGroupKey]);
   const changed=await readScopedLabSchedule(args,undefined,clock);
   assert.equal(changed.available,true);
-  if(!('revisionToken' in changed))throw new Error('LAB_NEXT_REVISION_REQUIRED');
+  if(!('revisionToken' in changed)||typeof changed.revisionToken!=='string')
+    throw new Error('LAB_NEXT_REVISION_REQUIRED');
   assert.equal(changed.text,initial.text);
   assert.notEqual(changed.revisionToken,initial.revisionToken);
   const blocked=await reconcileCanonicalLabReceipt({...input,canonical:changed});
