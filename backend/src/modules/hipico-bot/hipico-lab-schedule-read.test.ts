@@ -109,14 +109,20 @@ test('verified schedule returns a stable fingerprint even for a race not shown i
   ];
   const before=await readScopedLabSchedule({ownerId,groupKey,purpose:'next'},scoped(races).store,at);
   assert.equal(before.available,true);
-  if(!('revisionToken' in before))throw new Error('LAB_SCHEDULE_REVISION_REQUIRED');
+  // A property existing does not guarantee its runtime type: the read
+  // projection can be unavailable and evidence members are otherwise unknown.
+  if(!('revisionToken' in before)||typeof before.revisionToken!=='string'||
+     !('state' in before)||typeof before.state!=='string'||
+     !('version' in before)||typeof before.version!=='number')
+    throw new Error('LAB_SCHEDULE_REVISION_REQUIRED');
   assert.match(before.revisionToken,/^[a-f0-9]{64}$/);
   assert.equal(before.state,'NEXT_SNAPSHOT');
   assert.equal(before.version,2);
   races[1].stateVersion=2;
   const after=await readScopedLabSchedule({ownerId,groupKey,purpose:'next'},scoped(races).store,at);
   assert.equal(after.available,true);
-  if(!('revisionToken' in after))throw new Error('LAB_SCHEDULE_REVISION_REQUIRED');
+  if(!('revisionToken' in after)||typeof after.revisionToken!=='string')
+    throw new Error('LAB_SCHEDULE_REVISION_REQUIRED');
   assert.equal(after.text,before.text);
   assert.notEqual(after.revisionToken,before.revisionToken);
 });
