@@ -82,6 +82,8 @@ test('the local runner contains executable QA for all classifier profiles', () =
   }
   assert.deepEqual(buildProfilePlan('docs').map(({ command }) => command), [
     'node --test tests/change_risk_classifier_v667.test.mjs',
+    'npm run test:docs:integrity',
+    'npm run audit:docs:integrity',
   ]);
   assert.ok(buildProfilePlan('security').some(({ command }) => command.includes('test:auth-bootstrap:unit')));
   assert.ok(buildProfilePlan('infra').some(({ command }) => command === 'npm run build'));
