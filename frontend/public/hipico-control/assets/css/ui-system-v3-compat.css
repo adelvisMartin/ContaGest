@@ -1,40 +1,6 @@
-/* Control Hípico — canonical UI System v3. No legacy layers or versioned overrides. */
+/* Control Hípico — v3 compatibility CSS; platform-tokens-v1.css owns all token values. */
 :root {
   color-scheme: light;
-  --hc-bg: #f7f7f6;
-  --hc-surface: #ffffff;
-  --hc-surface-subtle: #f2f2f0;
-  --hc-surface-raised: #fafaf9;
-  --hc-border: #deded9;
-  --hc-border-strong: #c8c8c1;
-  --hc-text: #202221;
-  --hc-text-muted: #6b706d;
-  --hc-brand: #721522;
-  --hc-brand-foreground: #ffffff;
-  --hc-brand-hover: #5f111c;
-  --hc-brand-soft: #f7ecee;
-  --hc-accent: #8d7545;
-  --hc-success: #35705a;
-  --hc-success-soft: #edf6f1;
-  --hc-warning: #8a682f;
-  --hc-warning-soft: #fbf5e8;
-  --hc-danger: #9b4750;
-  --hc-danger-soft: #fbefef;
-  --hc-info: #526f86;
-  --hc-info-soft: #eef3f6;
-  --hc-focus: #b18b40;
-  --hc-group: #721522;
-  --hc-radius-xs: 6px;
-  --hc-radius-sm: 8px;
-  --hc-radius-md: 10px;
-  --hc-radius-lg: 12px;
-  --hc-radius-xl: 14px;
-  --hc-shadow-sm: 0 1px 2px rgba(20, 22, 21, .05);
-  --hc-shadow-md: 0 8px 24px rgba(20, 22, 21, .08);
-  --hc-safe-bottom: env(safe-area-inset-bottom, 0px);
-  --hc-nav-height: 72px;
-  --hc-header-height: 64px;
-  --hc-touch: 44px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -42,57 +8,11 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --hc-bg: #0f1012;
-  --hc-surface: #17181b;
-  --hc-surface-subtle: #1d1f23;
-  --hc-surface-raised: #1a1b1f;
-  --hc-border: #303238;
-  --hc-border-strong: #464951;
-  --hc-text: #f3f4f6;
-  --hc-text-muted: #a5a7ad;
-  --hc-brand: #c76474;
-  --hc-brand-foreground: #111214;
-  --hc-brand-hover: #d16f7e;
-  --hc-brand-soft: #2a181d;
-  --hc-accent: #c1a36a;
-  --hc-success: #76b899;
-  --hc-success-soft: #172720;
-  --hc-warning: #d0ad70;
-  --hc-warning-soft: #2b251b;
-  --hc-danger: #e08a94;
-  --hc-danger-soft: #301d22;
-  --hc-info: #91afc5;
-  --hc-info-soft: #1b252d;
-  --hc-focus: #d0ad70;
-  --hc-shadow-md: 0 12px 34px rgba(0, 0, 0, .32);
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-theme="system"] {
     color-scheme: dark;
-    --hc-bg: #0f1012;
-    --hc-surface: #17181b;
-    --hc-surface-subtle: #1d1f23;
-    --hc-surface-raised: #1a1b1f;
-    --hc-border: #303238;
-    --hc-border-strong: #464951;
-    --hc-text: #f3f4f6;
-    --hc-text-muted: #a5a7ad;
-    --hc-brand: #c76474;
-    --hc-brand-foreground: #111214;
-    --hc-brand-hover: #d16f7e;
-    --hc-brand-soft: #2a181d;
-    --hc-accent: #c1a36a;
-    --hc-success: #76b899;
-    --hc-success-soft: #172720;
-    --hc-warning: #d0ad70;
-    --hc-warning-soft: #2b251b;
-    --hc-danger: #e08a94;
-    --hc-danger-soft: #301d22;
-    --hc-info: #91afc5;
-    --hc-info-soft: #1b252d;
-    --hc-focus: #d0ad70;
-    --hc-shadow-md: 0 12px 34px rgba(0, 0, 0, .32);
   }
 }
 

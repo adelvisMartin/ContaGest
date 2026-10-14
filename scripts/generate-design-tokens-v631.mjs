@@ -41,6 +41,58 @@ function contaGestEntries(tokens, mode) {
   ];
 }
 
+
+/** Generated compatibility aliases: no CSS component stylesheet owns values. */
+function hipicoCompatibilityEntries(tokens) {
+  const hipico = tokens.products.hipico;
+  return [
+    ['--hc-v4-bg', hipico.light.background],
+    ['--hc-v4-surface', hipico.light.surface],
+    ['--hc-v4-surface-subtle', hipico.light.surfaceSubtle],
+    ['--hc-v4-surface-raised', hipico.light.surfaceRaised],
+    ['--hc-v4-border', hipico.light.border],
+    ['--hc-v4-border-strong', hipico.light.borderStrong],
+    ['--hc-v4-text', hipico.light.textPrimary],
+    ['--hc-v4-text-muted', hipico.light.textSecondary],
+    ['--hc-v4-brand', hipico.light.brand],
+    ['--hc-v4-brand-hover', hipico.light.brandHover],
+    ['--hc-v4-brand-soft', hipico.light.brandSoft],
+    ['--hc-v4-brass', hipico.light.accent],
+    ['--hc-v4-success', hipico.light.success],
+    ['--hc-v4-success-soft', hipico.light.successSoft],
+    ['--hc-v4-warning', hipico.light.warning],
+    ['--hc-v4-warning-soft', hipico.light.warningSoft],
+    ['--hc-v4-danger', hipico.light.danger],
+    ['--hc-v4-danger-soft', hipico.light.dangerSoft],
+    ['--hc-v4-info', hipico.light.info],
+    ['--hc-v4-info-soft', hipico.light.infoSoft],
+    ['--hc-v4-focus', hipico.light.focus],
+    ['--hc-v4-dark-bg', hipico.dark.background],
+    ['--hc-v4-font', 'var(--hc-font-sans)'],
+    ['--hc-v4-type-2xs', hipico.typography.metadata],
+    ['--hc-v4-type-xs', hipico.typography.label],
+    ['--hc-v4-type-sm', hipico.typography.body],
+    ['--hc-v4-type-md', hipico.typography.touch],
+    ['--hc-v4-type-lg', hipico.typography.heading],
+    ['--hc-v4-type-xl', hipico.typography.section],
+    ['--hc-v4-type-2xl', hipico.typography.page],
+    ['--hc-v4-control-sm', hipico.controls.small],
+    ['--hc-v4-control', hipico.controls.default],
+    ['--hc-v4-control-primary', hipico.controls.primary],
+    ['--hc-v4-touch', hipico.controls.touch],
+    ['--hc-v4-sidebar', hipico.shell.sidebar],
+    ['--hc-v4-sidebar-collapsed', hipico.shell.sidebarCollapsed],
+    ['--hc-v4-topbar', hipico.shell.topbar],
+    ['--hc-v4-radius-xs', hipico.radius.xs],
+    ['--hc-v4-radius-sm', hipico.radius.sm],
+    ['--hc-v4-radius-md', hipico.radius.md],
+    ['--hc-v4-radius-lg', hipico.radius.lg],
+    ['--hc-v4-radius-xl', hipico.radius.xl],
+    ['--hc-safe-bottom', hipico.shell.safeBottom],
+    ['--hc-nav-height', hipico.shell.navHeight],
+    ['--hc-header-height', 'var(--hc-v4-topbar)'],
+  ];
+}
 function hipicoEntries(tokens, mode) {
   const hipico = tokens.products.hipico;
   const color = hipico[mode];
@@ -54,7 +106,8 @@ function hipicoEntries(tokens, mode) {
     ['--hc-bg', color.background], ['--hc-surface', color.surface], ['--hc-surface-subtle', color.surfaceSubtle], ['--hc-surface-raised', color.surfaceRaised], ['--hc-border', color.border], ['--hc-border-strong', color.borderStrong], ['--hc-text', color.textPrimary], ['--hc-text-muted', color.textSecondary],
     ['--hc-brand', color.brand], ['--hc-brand-foreground', color.brandForeground], ['--hc-brand-hover', color.brandHover], ['--hc-brand-soft', color.brandSoft], ['--hc-accent', color.accent], ['--hc-success', color.success], ['--hc-success-soft', color.successSoft], ['--hc-warning', color.warning], ['--hc-warning-soft', color.warningSoft], ['--hc-danger', color.danger], ['--hc-danger-soft', color.dangerSoft], ['--hc-info', color.info], ['--hc-info-soft', color.infoSoft], ['--hc-focus', color.focus], ['--hc-group', color.group],
     ['--hc-radius-xs', r.xs], ['--hc-radius-sm', r.sm], ['--hc-radius-md', r.md], ['--hc-radius-lg', r.lg], ['--hc-radius-xl', r.xl], ['--hc-shadow-sm', color.shadowSmall], ['--hc-shadow-md', color.shadowMedium], ['--hc-duration-fast', tokens.motion.fast], ['--hc-duration', tokens.motion.standard], ['--hc-ease', tokens.motion.easing],
-    ['--hc-breakpoint-mobile', `${tokens.layout.breakpoints.mobile}px`], ['--hc-breakpoint-tablet', `${tokens.layout.breakpoints.tablet}px`], ['--hc-breakpoint-desktop', `${tokens.layout.breakpoints.desktop}px`]
+    ['--hc-breakpoint-mobile', `${tokens.layout.breakpoints.mobile}px`], ['--hc-breakpoint-tablet', `${tokens.layout.breakpoints.tablet}px`], ['--hc-breakpoint-desktop', `${tokens.layout.breakpoints.desktop}px`],
+    ...hipicoCompatibilityEntries(tokens)
   ];
 }
 
