@@ -19,7 +19,9 @@ const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex'
 
 function verifyArtifact(proof, candidateSha, root) {
   if (!proof || proof.status !== 'PASS') return false;
-  if (proof.candidateSha !== candidateSha || !proof.command || !proof.environment || !proof.artifactSha256) {
+  if (proof.candidateSha !== candidateSha || typeof proof.command !== 'string' || proof.command.trim().length < 5 ||
+      typeof proof.environment !== 'string' || !proof.environment.trim() ||
+      !/^[a-f0-9]{64}$/i.test(String(proof.artifactSha256 || ''))) {
     throw new Error('COVERAGE_PASS_PROVENANCE_MISSING');
   }
   const input = String(proof.artifact || '').replaceAll('\\', '/');
@@ -40,6 +42,7 @@ function verifyArtifact(proof, candidateSha, root) {
 
 function assertCatalogs(registry, visualCatalog, verificationCatalog) {
   const runtime = Object.keys(registry).sort();
+  if (!runtime.length) throw new Error('COVERAGE_EMPTY_CATALOG');
   const visual = visualCatalog.map((row) => row.route).sort();
   const verified = verificationCatalog.map((row) => row.route).sort();
   for (const [name, keys] of [['visual', visual], ['verification', verified]]) {
