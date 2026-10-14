@@ -1,33 +1,54 @@
 ---
 name: contagest-addy-engineering
 description: Project-owned adoption of Addy Osmani engineering phases for verified ticket-to-PR workflow.
-contractVersion: 3
+contractVersion: 2
 ---
 
-# ContaGest / Addy Osmani engineering lifecycle
+# ContaGest / Addy engineering lifecycle
 
 ## Trigger
-Ticket planning, phased implementation, targeted tests, code review, Git/PR coordination or CI feedback diagnosis.
+Ticket decomposition, incremental implementation, tests, code review, Git, CI and coordinated concurrent issue delivery.
 
-## Read first
-`AGENTS.md`, `.agents/TICKET_EXECUTION_POLICY.md`, project agents, exact HEAD and the ticket. Use pinned upstream docs from `.agents/vendor/addy-agent-skills/skills/` selectively; never bulk-load the whole catalog.
-
-## Phases and selective references
-- PLAN: `planning-and-task-breakdown` after checking issue dependencies and acceptance.
-- BUILD: `incremental-implementation`, preserving frontend → API → service → PostgreSQL behavior.
-- VERIFY: `test-driven-development` for new behavior, characterization for existing behavior, risk-sized local gates.
-- REVIEW: `code-review-and-quality` including tenant/authz, accounting, PWA, privacy and secrets.
-- SHIP: `git-workflow-and-versioning` plus `ci-cd-and-automation` only when relevant.
-- Meta skill `using-agent-skills` suggests phases but cannot supersede v3 routing or the project definition of done.
-
-## Four-window invariant
-Exactly one exclusive issue owner and branch per window; never pick a shared next issue without a coordinator claim. Parallelize implementation only, serialize merges to `main`. Re-read HEAD and required checks on every attempt; rebase/update PR as needed and rerun invalidated checks. Close an issue only after verified merge and acceptance completion. A GitHub provider quota is BLOCKED, never PASS.
-
-## Stop
-Duplicate claims, unverified dependencies, changed SHA after proof, missing P0/P1 gates, unverifiable destructive SQL, unapproved production side effects or credential disclosure.
-
-## Output
-Baseline/candidate SHA, issue, branch, changed files, evidence table, reviewers/gates, PR, merge SHA and issue closure/follow-up.
+## Non-trigger
+Do not load full vendor catalog on every ticket, replace specialist controls, or silently assign next tickets across windows.
 
 ## Authority
-Project-owned agent system and policy > pinned Addy workflow. Source: `agent-skills.lock.json` (`addy-agent-skills`).
+`AGENTS.md`, ticket acceptance, project specialist owners and `.agents/TICKET_EXECUTION_POLICY.md` override external phases.
+
+## Source of truth
+Live exact-SHA GitHub state, actual application code, contracts, tests and observed provider check outcomes.
+
+## Graphify probes
+Use navigation pointers cautiously; verify boundaries and ownership in source before planning changes.
+
+## Inputs
+Unique issue claim/window ID, baseline SHA, dependencies, affected paths, selected v3 skills and acceptance criteria.
+
+## Invariants
+- One exclusive owner/branch/PR per issue and one designated **serial merge coordinator** for `main`.
+- Parallel implementation only with isolated branches/worktrees; do not race shared schema, CI, agent config, lockfiles or main writes.
+- New SHA invalidates affected prior evidence; failures and quota blockers stay FAIL/BLOCKED.
+- Never call a third-party installer/hook or change permissions as a skill side effect.
+
+## Workflow
+1. PLAN: select pinned `planning-and-task-breakdown`, verify issue/claims/dependencies.
+2. BUILD: `incremental-implementation`, preserve UI → API → domain → PostgreSQL and errors.
+3. VERIFY: targeted `test-driven-development`, characterization and risk-proportional exact-SHA gates.
+4. REVIEW: `code-review-and-quality` for diff, finance, tenant/auth, QA and secrets.
+5. SHIP: `git-workflow-and-versioning`, `ci-cd-and-automation` when relevant; commit/push/PR.
+6. Coordinator checks current HEAD, serially merges only verified PRs, confirms merge SHA and closes only completed issues.
+
+## Negative tests
+Duplicate claims, overlap, stale PR head, failure reclassified as provider issue, unverified Postgres, unwanted API contract change.
+
+## Stop conditions
+Unresolved claim, changed SHA without rerun, material failed CI/test, unsafe SQL, credential disclosure or missing project acceptance.
+
+## Verification
+Run project-required v3 routing and meaningful unit/integration/DB/browser/security gates; validate PR run IDs reference current SHA.
+
+## Output schema
+Window/issue; baseline and candidate SHA; file list; executed test evidence; PR and CI; final merge/issue status and follow-ups.
+
+## References
+`AGENTS.md`, `.agents/TICKET_EXECUTION_POLICY.md`, `docs/FOUR_WINDOW_TICKET_PROTOCOL_2026-10-14.md`, `agent-skills.lock.json` source `addy-agent-skills`.
