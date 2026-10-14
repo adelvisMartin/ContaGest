@@ -60,8 +60,12 @@ function sampleMatchesDeclaredType(value,record,owner){
    const normalized=value.replace(/\[[A-Za-z0-9_-]+\]/g,'example');
    try{
      const url=new URL(normalized);
+     // HTTP endpoint credentials embedded in userinfo can leak via logs,
+     // redirects or diagnostic URLs. Database connection URL userinfo is
+     // intentional and remains subject to server-only secret handling.
      return Array.isArray(record.allowedSchemes)&&record.allowedSchemes.includes(url.protocol)&&
-       URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname);
+       URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname)&&
+       (!['http:','https:'].includes(url.protocol)||(!url.username&&!url.password));
    }catch{return false;}
   }
   default:return true;

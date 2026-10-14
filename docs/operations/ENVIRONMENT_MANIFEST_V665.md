@@ -82,3 +82,16 @@ comillas inconclusas, diagnósticos sin secretos, propietarios faltantes,
 catálogos vacíos y sustitución de rutas; los ejemplos actualmente versionados
 siguen aceptándose. Las comprobaciones aisladas en V8 no sustituyen el gate
 `npm run test:config:manifest` ni el CI exact-SHA.
+
+### Userinfo en URLs HTTP(S)
+
+Aunque el protocolo sea permitido, los ejemplos de endpoints web,
+marketing, backend o Bridge no pueden contener credenciales en la
+autoridad de la URL (`https://usuario:clave@host`). El checker devuelve
+únicamente `MANIFEST_SAMPLE_TYPE_INVALID` y el nombre de la variable,
+sin imprimir ni registrar usuario, contraseña o URL.
+
+La prohibición no se aplica a las URLs `postgres:`/`postgresql:`
+del servidor, cuyos datos de autenticación pueden formar parte de
+la conexión y deben permanecer fuera del frontend. Este control de
+plantillas no sustituye validaciones y secretos de runtime.

@@ -209,3 +209,32 @@ test('#665 undeclared surfaces/catalogs are rejected without reading their paths
  assert.match(loader,/Object\.entries\(EXPECTED_SURFACES\)/);
  assert.doesNotMatch(loader,/Object\.entries\(CONFIG_MANIFEST_V665\.surfaces\)/);
 });
+
+
+test('#665 HTTP service URL samples reject userinfo and never print embedded credentials',()=>{
+ for(const [owner,key,value] of [
+  ['frontend','VITE_API_BASE_URL','https://demo-user:private-key@api.example.test/v1'],
+  ['frontend','VITE_MARKETING_DEMO_URL','https://demo-user@web.example.test/landing'],
+  ['backend','APP_URL','https://demo-user:private-key@site.example.test'],
+  ['backend','SECURITY_ALERT_WEBHOOK_URL','https://demo-user:private-key@hooks.example.test/v1'],
+  ['bridge','HIPICO_INGEST_URL','https://demo-user:private-key@bridge.example.test/bridge/events'],
+  ['bridge','HIPICO_BRIDGE_HEALTH_URL','http://demo-user@127.0.0.1:3000/health']
+ ]){
+  const original=samples[owner];
+  const line=new RegExp('^'+key+'=.*$','m');
+  assert.match(original,line);
+  const report=check({[owner]:original.replace(line,key+'='+value)});
+  assert.ok(report.findings.some(f=>f.code==='MANIFEST_SAMPLE_TYPE_INVALID'&&f.owner===owner&&f.key===key),owner+'/'+key);
+  assert.equal(JSON.stringify(report).includes('private-key'),false);
+  assert.equal(JSON.stringify(report).includes('demo-user'),false);
+ }
+});
+
+test('#665 PostgreSQL userinfo remains valid in server-only database URL templates',()=>{
+ const modified=samples.backend.replace(/^DATABASE_RUNTIME_URL=.*$/m,
+  'DATABASE_RUNTIME_URL=postgresql://pg-user:local-fixture@db.example.test:5432/contagest');
+ const report=check({backend:modified});
+ assert.equal(report.status,'PASS',JSON.stringify(report.findings));
+ assert.equal(MANIFEST.variables.backend.DATABASE_RUNTIME_URL.visibility,'server');
+ assert.equal(MANIFEST.variables.backend.DATABASE_RUNTIME_URL.sensitive,true);
+});
