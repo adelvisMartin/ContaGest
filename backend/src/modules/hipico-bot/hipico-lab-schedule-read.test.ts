@@ -73,7 +73,10 @@ test('active result uses only internal state and no real-time officiality claims
   assert.equal(result.reason,'CANONICAL_ACTIVE_RACE');
   assert.match(result.text,/estado interno RUNNING/);
   assert.match(result.text,/no certifica/i);
-  assert.doesNotMatch(JSON.stringify(result),/SECRET|999|30|board|odds/);
+  // A revision SHA may legitimately contain digit pairs such as "30".
+  // Assert confidential fixture values/fields are absent from the answer, not from random digest bytes.
+  assert.doesNotMatch(result.text,/SECRET|999|board|odds|\b30\b/);
+  assert.doesNotMatch(JSON.stringify(result),/SECRET|\"resultData\"|\"odds\"|\"board\"|\"amount\"/);
 });
 
 test('future schedule is sorted, bounded and omits invalid, past or private entries',async()=>{
