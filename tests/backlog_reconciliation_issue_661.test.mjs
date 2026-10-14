@@ -21,6 +21,13 @@ test('PR without explicit issue is never auto-assigned',()=>{
  const x=make();x.prs.push({number:13,headSha:B,issueId:null});
  assert.deepEqual(reconcile(x).unownedPrs,[13]);
 });
+test('advisory PR without exclusive issue is allowed only with verifiable declaration',()=>{
+ const x=make();x.prs.push({number:15,headSha:B,issueId:null,claimMode:'advisory',
+   claimEvidenceUrl:'https://github.com/adelvisMartin/ContaGest/pull/15'});
+ const r=reconcile(x);assert.deepEqual(r.advisoryPrs,[15]);assert.deepEqual(r.unownedPrs,[]);
+ x.prs.at(-1).claimEvidenceUrl='https://example.com/unverified';
+ assert.deepEqual(reconcile(x).unownedPrs,[15]);
+});
 test('near-identical long titles are candidates only',()=>{
  const x=make();x.issues[0].title='[P1] Transactional scheduling and allocations with safe reconciliation';
  x.issues[1].title='[P2] Transactional scheduling and allocations with safe reconciliation';

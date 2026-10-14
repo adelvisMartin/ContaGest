@@ -33,7 +33,7 @@ export function reconcile(snapshot,{baselineSha}={}) {
       else titles.set(title,issue.id);
     }
   }
-  const prIds=new Set(),owned=new Map(),unownedPrs=[],collisions=[],assignments=[];
+  const prIds=new Set(),owned=new Map(),unownedPrs=[],advisoryPrs=[],collisions=[],assignments=[];
   for(const pr of prs) {
     if(!id(pr?.number)||!SHA.test(pr?.headSha||'')){
       fail('RECONCILE_PR_INVALID');continue;
@@ -41,8 +41,13 @@ export function reconcile(snapshot,{baselineSha}={}) {
     if(prIds.has(pr.number))fail('RECONCILE_DUPLICATE_PR:'+pr.number);
     prIds.add(pr.number);
     if(pr.issueId===null) {
-      unownedPrs.push(pr.number);
-      assignments.push({pr:pr.number,owner:'UNCONFIRMED',action:'LINK_EXISTING_ISSUE'});
+      if(pr.claimMode==='advisory'&&github(pr.claimEvidenceUrl)){
+        advisoryPrs.push(pr.number);
+        assignments.push({pr:pr.number,owner:'ADVISORY_NO_EXCLUSIVE_TICKET',action:'REVIEW_SCOPE_AND_MERGE_CONFLICTS'});
+      }else {
+        unownedPrs.push(pr.number);
+        assignments.push({pr:pr.number,owner:'UNCONFIRMED',action:'LINK_EXISTING_ISSUE'});
+      }
     }else if(!id(pr.issueId)||!issueIds.has(pr.issueId))fail('RECONCILE_OWNER_NOT_OPEN:'+pr.number);
     else {
       if(owned.has(pr.issueId))collisions.push({issue:pr.issueId,prs:[owned.get(pr.issueId),pr.number]});
@@ -78,9 +83,9 @@ export function reconcile(snapshot,{baselineSha}={}) {
     structuralValidation:errors.length?'FAIL':'PASS',
     allReconciled:errors.length===0&&!unclaimed.length&&!unownedPrs.length&&!collisions.length&&!duplicates.length&&!branches.length,
     counts:{openIssues:issues.length,openPrs:prs.length,completedWithEvidence:completed.length,
-      supersededReviewed:supersessions.length,unclaimed:unclaimed.length,unownedPrs:unownedPrs.length,
+      supersededReviewed:supersessions.length,unclaimed:unclaimed.length,unownedPrs:unownedPrs.length,advisoryPrs:advisoryPrs.length,
       duplicateCandidates:duplicates.length,claimConflicts:collisions.length,branchReviews:obsoleteBranches.length},
-    unclaimedIssues:unclaimed,unownedPrs,assignments,duplicateCandidates:duplicates,
+    unclaimedIssues:unclaimed,unownedPrs,advisoryPrs,assignments,duplicateCandidates:duplicates,
     claimConflicts:collisions,branchReviews:obsoleteBranches,
     completedEvidence:completed,reviewedSupersessions:supersessions,errors,
     action:'MANUAL_REVIEW_ONLY: no issue closure, PR merge, or branch deletion'};

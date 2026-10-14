@@ -568,7 +568,9 @@
     {
       "number": 976,
       "headSha": "609e6dce8f16c85472e2321d94d42fdca8d5f5ce",
-      "issueId": null
+      "issueId": null,
+      "claimMode": "advisory",
+      "claimEvidenceUrl": "https://github.com/adelvisMartin/ContaGest/pull/976"
     },
     {
       "number": 978,
@@ -610,7 +612,8 @@
       "duplicate": 642,
       "owner": 633,
       "status": "CLOSED",
-      "evidenceUrl": "https://github.com/adelvisMartin/ContaGest/issues/642"
+      "evidenceUrl": "https://github.com/adelvisMartin/ContaGest/issues/642",
+      "note": "Verified historical duplicate #642 → #633; both closed in GitHub"
     }
   ],
   "branches": [
