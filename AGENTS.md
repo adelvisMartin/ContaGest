@@ -244,8 +244,8 @@ npm run audit:functions
 npm run doctor:changed
 npm run doctor:design
 npm run test:visual
-npm run qa:ui
-npm run qa:ui:deep
+npm run qa:ui:58
+npm run qa:browser:routes:full
 npm run test:browser:functional
 npm run test:browser:58
 npm run build
