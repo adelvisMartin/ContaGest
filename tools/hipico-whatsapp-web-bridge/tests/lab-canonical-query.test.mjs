@@ -89,7 +89,7 @@ test('live Bridge queries only safe LAB input before journal send intent',async(
   assert.ok(query>=0&&prepare>query&&send>prepare);
   assert.match(body,/labReadOnlyQueryPurpose\(body,classification\)/);
   assert.match(body,/resolveQuotedLabRaceScope\(row,visible\)/);
-  assert.match(body,/labConversationInput\(row, classification\)/);
+  assert.match(body,/labConversationInput\(row, classification, prior\)/);
   assert.match(src,/sourceSendPossible: SOURCE_AUTO_REPLY_ACTIVE && backendState === 'online'/);
 });
 
