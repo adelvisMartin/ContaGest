@@ -8,17 +8,6 @@ const VALID_TYPES=new Set(['string','url','integer','number','boolean','enum','s
 const VALID_VISIBILITY=new Set(['public','server','build']);
 const VALID_REQUIRED=new Set(['optional','production','lab-send','supabase-enabled']);
 const VALID_SAMPLE=new Set(['required','optional','not-applicable']);
-// These repository-owned inputs are invariant. An editable manifest cannot
-// remove a whole owner, switch a sample path to a private file, or grant itself
-// a PASS by replacing a versioned template with null.
-const EXPECTED_SURFACES=Object.freeze({
- backend:'backend/.env.example',
- frontend:'frontend/.env.example',
- bridge:'tools/hipico-whatsapp-web-bridge/.env.example',
- build:null
-});
-
-
 
 // Inspect only versioned examples; no access to OS or provider secrets.
 export function parseTemplateInventory(source){
@@ -60,9 +49,8 @@ function sampleMatchesDeclaredType(value,record,owner){
    const normalized=value.replace(/\[[A-Za-z0-9_-]+\]/g,'example');
    try{
      const url=new URL(normalized);
-     // HTTP endpoint credentials embedded in userinfo can leak via logs,
-     // redirects or diagnostic URLs. Database connection URL userinfo is
-     // intentional and remains subject to server-only secret handling.
+     // Reject embedded HTTP service credentials; allow authenticated
+     // PostgreSQL URLs only in server-side database settings.
      return Array.isArray(record.allowedSchemes)&&record.allowedSchemes.includes(url.protocol)&&
        URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname)&&
        (!['http:','https:'].includes(url.protocol)||(!url.username&&!url.password));
@@ -72,28 +60,46 @@ function sampleMatchesDeclaredType(value,record,owner){
  }
 }
 
+// Mandatory owners and their versioned sample paths cannot be changed by
+// removing a registry entry or pointing it to an absent file. This is an
+// integrity check on inventory coverage, not a replacement runtime policy.
+const REQUIRED_SURFACES=Object.freeze({
+ backend:'backend/.env.example',
+ frontend:'frontend/.env.example',
+ bridge:'tools/hipico-whatsapp-web-bridge/.env.example',
+ build:null
+});
+
 export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
  const findings=[],add=(code,owner,key)=>findings.push({code,owner,key});
- // Audit missing metadata before traversing the editable registry; an absent
- // frontend/bridge is a FAIL, not an empty set of obligations.
- for(const [owner,examplePath] of Object.entries(EXPECTED_SURFACES)){
-  if(!Object.hasOwn(registry?.surfaces??{},owner)||
-     registry.surfaces[owner]?.examplePath!==examplePath)
-    add('MANIFEST_REQUIRED_SURFACE_INVALID',owner,owner);
-  if(!registry?.variables?.[owner]||
-     !Object.keys(registry.variables[owner]).length)
-    add('MANIFEST_OWNER_CATALOG_MISSING',owner,owner);
+ // Fail closed on a malformed manifest instead of throwing or treating a
+ // missing public surface as if there were no frontend keys to inspect.
+ if(!registry||typeof registry!=='object'||
+    !registry.surfaces||typeof registry.surfaces!=='object'||Array.isArray(registry.surfaces)||
+    !registry.variables||typeof registry.variables!=='object'||Array.isArray(registry.variables)){
+   add('MANIFEST_STRUCTURE_INVALID','registry','surfaces/variables');
+   return{status:'FAIL',findings};
  }
- for(const owner of Object.keys(registry?.surfaces??{})){
-  if(!Object.hasOwn(EXPECTED_SURFACES,owner))
-    add('MANIFEST_UNEXPECTED_SURFACE',owner,owner);
+ for(const [owner,path] of Object.entries(REQUIRED_SURFACES)){
+   const meta=Object.hasOwn(registry.surfaces,owner)?registry.surfaces[owner]:undefined;
+   if(!meta||typeof meta!=='object'||Array.isArray(meta)||meta.examplePath!==path)
+     add('MANIFEST_SURFACE_PATH_INVALID',owner,'examplePath');
+   const registered=Object.hasOwn(registry.variables,owner)?registry.variables[owner]:undefined;
+   if(!registered||typeof registered!=='object'||Array.isArray(registered)||
+      Object.keys(registered).length===0)
+     add('MANIFEST_SURFACE_CATALOG_MISSING',owner,'variables');
  }
- for(const owner of Object.keys(registry?.variables??{})){
-  if(!Object.hasOwn(EXPECTED_SURFACES,owner))
-    add('MANIFEST_UNEXPECTED_CATALOG',owner,owner);
- }
- for(const [owner,meta] of Object.entries(registry?.surfaces??{})){
-  const catalog=registry.variables[owner]||{};
+ for(const owner of Object.keys(registry.surfaces))
+   if(!Object.hasOwn(REQUIRED_SURFACES,owner))add('MANIFEST_UNKNOWN_SURFACE',owner,'surface');
+ for(const owner of Object.keys(registry.variables))
+   if(!Object.hasOwn(REQUIRED_SURFACES,owner))add('MANIFEST_UNKNOWN_SURFACE',owner,'variables');
+ for(const [owner,meta] of Object.entries(registry.surfaces)){
+  // Wrong-path surfaces are invalid regardless of the supplied sample text;
+  // do not try to read a forged owner or enumerate an undefined catalog.
+  if(!Object.hasOwn(REQUIRED_SURFACES,owner)||!meta||typeof meta!=='object'||Array.isArray(meta))
+    continue;
+  const catalog=registry.variables[owner];
+  if(!catalog||typeof catalog!=='object'||Array.isArray(catalog))continue;
   const parsed=meta.examplePath?parseTemplateInventory(samples[owner]??''):{entries:new Map(),duplicates:[],invalidLines:[]};
   // Only line numbers may enter diagnostics; never echo malformed lines or values.
   for(const line of parsed.invalidLines)add('MANIFEST_INVALID_SAMPLE_LINE',owner,'line '+line);
@@ -146,9 +152,9 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
 }
 
 export function loadVersionedSamples(){
- // Read pinned repository templates, never file paths supplied by a modified
- // manifest (which might otherwise point at private, untracked credentials).
- return Object.fromEntries(Object.entries(EXPECTED_SURFACES)
+ // Only pinned versioned templates are allowed; do not load a private file
+ // through altered manifest metadata.
+ return Object.fromEntries(Object.entries(REQUIRED_SURFACES)
   .filter(([,path])=>path)
   .map(([owner,path])=>[owner,readFileSync(resolve(repositoryRoot,path),'utf8')]));
 }

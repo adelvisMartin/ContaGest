@@ -61,7 +61,7 @@ El auditor también debe fallar cuando la sintaxis de un `.env.example` no
 corresponde a una asignación válida `NOMBRE=valor`, o cuando una cadena
 entrecomillada no está cerrada. La regla evita que una variable nueva
 malformada se omita silenciosamente y produzca `PASS`. El hallazgo
-`MANIFEST_MALFORMED_SAMPLE_LINE` registra únicamente un identificador
+`MANIFEST_INVALID_SAMPLE_LINE` registra únicamente un identificador
 acotado o un número de línea, **nunca el valor del ejemplo**.
 
 Las cuatro superficies son inmutables para esta fase:

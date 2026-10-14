@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
 import {CONFIG_MANIFEST_V665 as MANIFEST} from '../config/environment-manifest-v665.mjs';
 import {checkEnvironmentManifest,loadVersionedSamples} from '../scripts/check-environment-manifest-v665.mjs';
 
@@ -167,6 +166,37 @@ test('#665 missing, duplicate and cross-owner URL policies fail closed',()=>{
  }
 });
 
+
+test('#665 manifest missing frontend owner or altered sample paths fails closed',()=>{
+ const clone=()=>JSON.parse(JSON.stringify(MANIFEST));
+ const scenarios=[
+  {code:'MANIFEST_SURFACE_PATH_INVALID',owner:'frontend',change:m=>{delete m.surfaces.frontend;}},
+  {code:'MANIFEST_SURFACE_CATALOG_MISSING',owner:'frontend',change:m=>{delete m.variables.frontend;}},
+  {code:'MANIFEST_SURFACE_PATH_INVALID',owner:'backend',change:m=>{m.surfaces.backend.examplePath='frontend/.env.example';}},
+  {code:'MANIFEST_SURFACE_PATH_INVALID',owner:'frontend',change:m=>{m.surfaces.frontend.examplePath=null;}},
+  {code:'MANIFEST_SURFACE_PATH_INVALID',owner:'build',change:m=>{m.surfaces.build.examplePath='backend/.env.example';}},
+  {code:'MANIFEST_UNKNOWN_SURFACE',owner:'shadow',change:m=>{m.surfaces.shadow={examplePath:null};}},
+  {code:'MANIFEST_UNKNOWN_SURFACE',owner:'shadow',change:m=>{m.variables.shadow={};}}
+ ];
+ for(const {code,owner,change} of scenarios){
+   const altered=clone();
+   change(altered);
+   const report=checkEnvironmentManifest(samples,altered);
+   assert.equal(report.status,'FAIL',owner);
+   assert.ok(report.findings.some(f=>f.code===code&&f.owner===owner),owner+'/'+code);
+ }
+});
+
+test('#665 malformed top-level manifest returns safe codes, never a bypass or exception',()=>{
+ for(const bad of [null,{}, {surfaces:null,variables:{}},{surfaces:{},variables:null},{surfaces:[],variables:{}}]){
+   const result=checkEnvironmentManifest(samples,bad);
+   assert.equal(result.status,'FAIL');
+   assert.ok(result.findings.some(f=>f.code==='MANIFEST_STRUCTURE_INVALID'||
+       f.code==='MANIFEST_SURFACE_PATH_INVALID'));
+   assert.equal(JSON.stringify(result).includes('SUPABASE_SERVICE_ROLE_KEY='),false);
+ }
+});
+
 test('#665 deleting frontend or LAB Bridge owner can never produce a manifest PASS',()=>{
  for(const owner of ['backend','frontend','bridge','build']){
   const missing=JSON.parse(JSON.stringify(MANIFEST));
@@ -174,8 +204,8 @@ test('#665 deleting frontend or LAB Bridge owner can never produce a manifest PA
   delete missing.variables[owner];
   const result=checkEnvironmentManifest(samples,missing);
   assert.equal(result.status,'FAIL',owner);
-  assert.ok(result.findings.some(f=>f.code==='MANIFEST_REQUIRED_SURFACE_INVALID'&&f.owner===owner));
-  assert.ok(result.findings.some(f=>f.code==='MANIFEST_OWNER_CATALOG_MISSING'&&f.owner===owner));
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_SURFACE_PATH_INVALID'&&f.owner===owner));
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_SURFACE_CATALOG_MISSING'&&f.owner===owner));
  }
 });
 
@@ -184,13 +214,13 @@ test('#665 changing template paths or emptying a catalog fails closed',()=>{
   const different=JSON.parse(JSON.stringify(MANIFEST));
   different.surfaces[owner].examplePath='../../private/.env';
   assert.ok(checkEnvironmentManifest(samples,different).findings.some(f=>
-    f.code==='MANIFEST_REQUIRED_SURFACE_INVALID'&&f.owner===owner));
+    f.code==='MANIFEST_SURFACE_PATH_INVALID'&&f.owner===owner));
   const disabled=JSON.parse(JSON.stringify(MANIFEST));
   disabled.surfaces[owner].examplePath=null;
   disabled.variables[owner]={};
   const result=checkEnvironmentManifest(samples,disabled);
-  assert.ok(result.findings.some(f=>f.code==='MANIFEST_REQUIRED_SURFACE_INVALID'&&f.owner===owner));
-  assert.ok(result.findings.some(f=>f.code==='MANIFEST_OWNER_CATALOG_MISSING'&&f.owner===owner));
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_SURFACE_PATH_INVALID'&&f.owner===owner));
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_SURFACE_CATALOG_MISSING'&&f.owner===owner));
  }
 });
 
@@ -202,11 +232,11 @@ test('#665 undeclared surfaces/catalogs are rejected without reading their paths
  }};
  const result=checkEnvironmentManifest(samples,registry);
  assert.equal(result.status,'FAIL');
- assert.ok(result.findings.some(f=>f.code==='MANIFEST_UNEXPECTED_SURFACE'&&f.owner==='external'));
- assert.ok(result.findings.some(f=>f.code==='MANIFEST_UNEXPECTED_CATALOG'&&f.owner==='external'));
+ assert.ok(result.findings.some(f=>f.code==='MANIFEST_UNKNOWN_SURFACE'&&f.owner==='external'));
+ assert.ok(result.findings.some(f=>f.code==='MANIFEST_UNKNOWN_SURFACE'&&f.owner==='external'));
  const source=readFileSync(new URL('../scripts/check-environment-manifest-v665.mjs',import.meta.url),'utf8');
  const loader=source.slice(source.indexOf('export function loadVersionedSamples(){'));
- assert.match(loader,/Object\.entries\(EXPECTED_SURFACES\)/);
+ assert.match(loader,/Object\.entries\(REQUIRED_SURFACES\)/);
  assert.doesNotMatch(loader,/Object\.entries\(CONFIG_MANIFEST_V665\.surfaces\)/);
 });
 
