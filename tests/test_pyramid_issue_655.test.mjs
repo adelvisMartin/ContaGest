@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {auditTestPyramid,discoverTests,inferredTestLevel,inferredTestOwner} from '../scripts/test-pyramid-audit-v655.mjs';
+import {auditTestPyramid,discoverTests,inferredTestLevel,inferredTestOwner,inferredBoundedContext} from '../scripts/test-pyramid-audit-v655.mjs';
 import {buildProfilePlan,changedPlan} from '../scripts/local-verification-runner-v630.mjs';
 import {execFileSync} from 'node:child_process';
 
@@ -97,3 +97,23 @@ test('v630 changed profile appends lightweight ownership checks for a real QA di
   assert.equal(commands.length,new Set(commands).size);
  }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('context and runtime cost are explicitly inferred, never asserted as measured',()=>fixture(({root,manifest})=>{
+ const r=auditTestPyramid({root,manifest});
+ assert.equal(r.ok,true,JSON.stringify(r.errors));
+ assert.equal(inferredBoundedContext('qa/financial-reconciliation-v559.test.ts'),'financial');
+ assert.equal(inferredBoundedContext('tools/hipico-whatsapp-bridge/test/agent.test.mjs'),'hipico');
+ const row=r.tests.find(x=>x.file===CORE);
+ assert.equal(row.boundedContext,'platform-security');
+ assert.equal(row.runtimeCostEstimate,'HIGH_UNMEASURED');
+ assert.equal(row.durationMs,null);
+ assert.match(row.sourceSha256,/^[a-f0-9]{64}$/);
+ assert.ok(row.sourceBytes>0);
+}));
+test('exact duplicate source hashes are advisory, not sufficient for removal',()=>fixture(({root,manifest})=>{
+ const result=auditTestPyramid({root,manifest});
+ assert.equal(result.ok,true);
+ assert.equal(result.duplicateSourceCandidates.length,1);
+ assert.equal(result.duplicateSourceCandidates[0].files.length,4);
+ assert.equal(result.tests.every(x=>x.evidenceStatus==='NOT_EXECUTED'),true);
+}));
