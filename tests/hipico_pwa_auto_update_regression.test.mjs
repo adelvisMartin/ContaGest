@@ -59,11 +59,13 @@ test('Control Hípico publishes the automatic PWA update coordinator in the vers
     /<script type="module" src="\.\/assets\/js\/app\.js"><\/script>[\s\S]*<script type="module" src="\.\/assets\/js\/pwa-update\.js"><\/script>/,
     'the update coordinator must load after app.js so the canonical app registration remains authoritative'
   );
-  assert.match(
-    serviceWorker,
-    /shell-r29-auto-update-reload/,
-    'this release must rotate the shell cache so already-installed clients receive the update coordinator'
-  );
+  // Require the update-coordinator generation, not a frozen release tag.
+  const revision = /const SHELL_CACHE\s*=\s*`[^`]*-shell-r(\d+)-/.exec(serviceWorker);
+  assert.ok(revision && Number(revision[1]) >= 29,
+    'the update-coordinator shell must use revision r29 or later');
+  assert.match(serviceWorker,
+    /key !== SHELL_CACHE\)\.map\(\(key\) => caches\.delete\(key\)\)/,
+    'activation must evict prior application shell caches');
   assert.match(
     serviceWorker,
     /\.\/assets\/js\/pwa-update\.js/,
