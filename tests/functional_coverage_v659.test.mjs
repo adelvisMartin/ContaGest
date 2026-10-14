@@ -65,6 +65,7 @@ test('unexecuted proof never becomes VERIFIED because files or routes exist', ()
 
 test('registry, visual and verification catalog drift is rejected', () => createFixture((root) => {
   assert.throws(() => build(root, { verificationCatalog: [] }), /COVERAGE_ROUTE_DRIFT/);
+  assert.throws(() => build(root, { registry: {}, visualCatalog: [], verificationCatalog: [] }), /COVERAGE_EMPTY_CATALOG/);
   const fixture = cases();
   fixture.visualCatalog.push({ ...fixture.visualCatalog[0] });
   assert.throws(() => build(root, fixture), /COVERAGE_ROUTE_DRIFT/);
@@ -85,6 +86,8 @@ test('evidence candidate SHA, schema and invalid status fail closed', () => crea
 test('a PASS requires command, environment, SHA and artifact digest', () => createFixture((root) => {
   const evidence = { schemaVersion: 1, candidateSha: SHA, routes: { demo: { gates: { visual: { status: 'PASS' } } } } };
   assert.throws(() => build(root, { evidence }), /COVERAGE_PASS_PROVENANCE_MISSING/);
+  const stale = { ...pass(root), command: 'x', environment: {} };
+  assert.throws(() => build(root, { evidence: { schemaVersion: 1, candidateSha: SHA, routes: { demo: { gates: { visual: stale } } } } }), /COVERAGE_PASS_PROVENANCE_MISSING/);
 }));
 
 test('a PASS with missing, corrupted or escaped artifact is rejected', () => createFixture((root) => {
