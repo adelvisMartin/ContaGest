@@ -15,6 +15,18 @@ Pure backend/database work; ordinary UI tickets that do not request this lens; m
 ## Authority
 `AGENTS.md` and the canonical ContaGest visual/functionality contracts are permanent authority. `contagest-ui-audit` and `contagest-functional-module-audit` outrank this wrapper. The pinned Apple-design source is advisory only.
 
+## Source of truth
+The exact candidate SHA, canonical ContaGest UI owner, implemented frontend components, interaction tests and observed browser behavior. External design opinions are not functionality evidence.
+
+## Graphify probes
+Use repository graphs only for candidate file/component navigation; confirm every design-system ownership or dependency claim directly against current source.
+
+## Inputs
+Explicit `apple-design-review` intent, affected routes/components, canonical project visual owner, current candidate SHA and relevant responsive/accessibility criteria.
+
+## Invariants
+The ERP adaptation invariants below are binding for this advisory wrapper; no external design convention may weaken accessibility, data accuracy, financial meaning, tenant boundaries or source-defined CSS ownership.
+
 ## Reviewed upstream scope
 Use the pinned `apple-design-skills` source only for:
 - `apple-design`: restraint, clarity/deference/depth and utility-vs-flagship surface classification;
