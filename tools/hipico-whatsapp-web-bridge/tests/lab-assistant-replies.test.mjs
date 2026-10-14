@@ -83,7 +83,7 @@ test('monetary or stateful input never inherits scope or publishes an acceptance
   const plan = planLabConversation(unsafe, classification, { raceNumber: 5, raceScope: scope });
   assert.equal(plan.raceScope, null);
   assert.equal(plan.rememberRace, false);
-  assert.match(composeLabAssistantReply({ classification, plan }), /requiere revisión/);
+  assert.match(composeLabAssistantReply({ classification, plan }), /(?:requiere|necesita) revisión de un operador/);
   assert.doesNotMatch(composeLabAssistantReply({ classification, plan }), /registrado|aceptado|confirmado/i);
 });
 
