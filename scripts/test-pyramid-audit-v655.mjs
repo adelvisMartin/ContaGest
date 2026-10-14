@@ -8,6 +8,7 @@ const TEST_FILE=/(?:\.test|\.spec)\.[cm]?[jt]sx?$/;
 const SKIP=new Set(['.git','node_modules','dist','build','coverage','playwright-report','test-results','artifacts']);
 const LEVELS=new Set(['UNIT','CONTRACT','POSTGRES_INTEGRATION','BROWSER_E2E','PROVIDER_SPECIFIC']);
 const SAFE_FILE=/^(?:backend\/src|qa|tests|tools\/hipico-whatsapp-(?:web-)?bridge)\/[A-Za-z0-9_./-]+$/;
+const SAFE_SCOPE=/^(?:backend\/src|qa|tests|tools\/hipico-whatsapp-(?:web-)?bridge)$/;
 
 export function discoverTests(root,roots){
  const found=new Set();
@@ -22,7 +23,7 @@ export function discoverTests(root,roots){
   }
  }
  for(const scope of roots) {
-  if(!SAFE_FILE.test(scope) || scope.includes('..') || scope.split('/').includes('.'))throw new Error('PYRAMID_SCAN_SCOPE_UNSAFE:'+scope);
+  if(!SAFE_SCOPE.test(scope))throw new Error('PYRAMID_SCAN_SCOPE_UNSAFE:'+scope);
   visit(scope);
  }
  return [...found].sort();
