@@ -61,6 +61,9 @@ export const SEMANTIC_TOKENS_V1 = deepFreeze({
       sharedPrimitives: ['typography.family.sans', 'controls.touch', 'motion', 'layout.breakpoints'],
       typography: hipicoTypography,
       controls: hipicoControls,
+      // Historic v4 shell dimensions are owned by the shared semantic source.
+      shell: { sidebar: '224px', sidebarCollapsed: '66px', topbar: '56px',
+        navHeight: '72px', safeBottom: 'env(safe-area-inset-bottom, 0px)' },
       radius: { xs: '4px', sm: '6px', md: '8px', lg: '10px', xl: '12px' },
       light: hipicoLight,
       dark: hipicoDark

@@ -99,6 +99,14 @@ for(const file of walk('frontend/src').filter((name)=>/\.[cm]?[jt]sx?$/.test(nam
   if(/\bcreateTheme\s*\(/.test(read(file)))fail('competing MUI theme owner: '+file);
 }
 
+
+const legacyV4Refs=new Set(walk('frontend/public/hipico-control')
+  .filter(file=>file.endsWith('.css'))
+  .flatMap(file=>[...read(file).matchAll(/var\((--hc-v4-[a-z0-9-]+)/gi)]
+    .map(match=>match[1])));
+for(const token of legacyV4Refs)if(!hipicoCss.includes(token+':'))
+  fail('missing v4 compatibility token from generated adapter: '+token);
+
 const tokenRefs=[...compatibility.matchAll(/var\((--cg-v-[a-z0-9-]+)\)/gi)].map((match)=>match[1]);
 if(!tokenRefs.length)fail('compatibility facade must reference --cg-v-* variables');
 for(const token of new Set(tokenRefs))if(!mainCss.includes(token+':'))fail('compatibility variable missing from generated adapter: '+token);
