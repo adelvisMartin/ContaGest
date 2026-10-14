@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { assertCandidate, buildCleanRoomPlan, cleanRoomEnvironment, executeStages, parseCli, runCleanRoom } from '../scripts/clean-room-verification-v663.mjs';
@@ -76,3 +76,12 @@ test('#663 newly modified sources cause cleanup and no false PASS', () => fixtur
 test('#663 rejects fabricated PASS with nonzero exit', () => {
   assert.throws(() => executeStages(buildCleanRoomPlan('d'.repeat(40)), { run: () => ({ status: 'PASS', exitCode: 17 }) }), /INVALID_PASS_EXIT/);
 });
+
+test('#663 accepts only the verifier-owned untracked evidence path after a stage', () => fixture(({ dir, sha }) => {
+  mkdirSync(path.join(dir, 'artifacts', 'local-verification'), { recursive: true });
+  writeFileSync(path.join(dir, 'artifacts', 'local-verification', 'manifest.json'), '{}');
+  assert.throws(() => assertCandidate({ cwd: dir, expectedSha: sha }), /SOURCE_DIRTY/);
+  assert.equal(assertCandidate({ cwd: dir, expectedSha: sha, allowEvidenceArtifacts: true }), sha);
+  writeFileSync(path.join(dir, 'artifacts', 'suspicious.json'), '{}');
+  assert.throws(() => assertCandidate({ cwd: dir, expectedSha: sha, allowEvidenceArtifacts: true }), /SOURCE_DIRTY/);
+}));
