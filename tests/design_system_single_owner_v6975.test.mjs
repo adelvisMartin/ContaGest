@@ -26,17 +26,17 @@ test('#6975 generated adapters equal the shared canonical design source byte-for
 });
 
 test('#6975 v3/v4 CSS remain variable consumers, never competing token owners',()=>{
-  const property=/^\\s*--hc-[a-z0-9-]+\\s*:/gim;
+  const property=/^\s*--hc-[a-z0-9-]+\s*:/gim;
   for(const source of legacy){
     assert.doesNotMatch(source,property,
       'only the generated token adapter may declare --hc-* values');
-    assert.match(source,/var\\(--hc-/,'historical selectors keep semantic references');
+    assert.match(source,/var\(--hc-/,'historical selectors keep semantic references');
   }
 });
 
 test('#6975 all v4 compatibility variables used by the PWA are generated',()=>{
-  const source=[...legacy,read(cssRoot+'ui-system-v4-convergence.css')].join('\\n');
-  const refs=new Set([...source.matchAll(/var\\((--hc-v4-[a-z0-9-]+)/gi)]
+  const source=[...legacy,read(cssRoot+'ui-system-v4-convergence.css')].join('\n');
+  const refs=new Set([...source.matchAll(/var\((--hc-v4-[a-z0-9-]+)/gi)]
     .map(match=>match[1]));
   assert.ok(refs.size>=25,'must exercise substantive v4 compatibility surface');
   for(const alias of refs){
