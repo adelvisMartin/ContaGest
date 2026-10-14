@@ -1,6 +1,7 @@
 // LAB-only pure slot parser. Untrusted message -> bounded, non-authoritative hint.
+const EMBEDDED_DATE = /\b\d{4}-\d{2}-\d{2}\b/;
 const TRACK = /^[\p{L}][\p{L}\p{N} '-]{1,79}$/u;
-const RISK = /\b(?:carrera|apuesta|apostar|juega|jugada|consigue|monto|saldo|pagar|pago|cobrar|premio|dinero|resultado|llegada|cierre|cerrar|anula|cancelar|registrar|registra|ignora|instrucciones|sistema|admin|token|secret|otro|otra|hoy|ayer|manana|proxima|proximo|siguiente|anterior|misma|mismo|confirmar|confirma|ganador|cobro)\b/;
+const RISK = /\b(?:carrera|apuesta|apostar|juega|jugada|consigue|monto|saldo|pagar|paga|pagas|pagan|pago|cobrar|cobra|cobras|cobran|premio|dinero|resultado|llegada|cierre|cerrar|anula|cancelar|registrar|registra|ignora|instrucciones|sistema|admin|token|secret|otro|otra|hoy|ayer|manana|proxima|proximo|siguiente|anterior|misma|mismo|confirmar|confirma|ganador|cobro)\b/;
 const normalize = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
 export function validLabDate(value) {
@@ -14,7 +15,7 @@ export function validLabDate(value) {
 export function validLabTrack(value) {
   const name = String(value || '').trim().replace(/\s+/g, ' ');
   return name.length >= 2 && name.length <= 80 && TRACK.test(name) &&
-    !RISK.test(normalize(name)) ? name : null;
+    !EMBEDDED_DATE.test(name) && !RISK.test(normalize(name)) ? name : null;
 }
 
 /**
