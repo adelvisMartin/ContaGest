@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -38,6 +39,23 @@ export function inferredTestOwner(file){
  if(file.startsWith('tests/hipico_'))return 'hipico-reliability';
  return 'qa-release';
 }
+export function inferredBoundedContext(file){
+ const value=file.toLowerCase();
+ if(/hipico|whatsapp|race[-_]|bridge/.test(value))return 'hipico';
+ if(/fiscal|ledger|accounting|financial|bank|payable|posting|reconciliation|tax/.test(value))return 'financial';
+ if(/auth|tenant|rbac|iam|session|permission|license|security/.test(value))return 'platform-security';
+ if(/clinical|health|dent|vet|gym|fitness|nutrition|psychology/.test(value))return 'verticals';
+ if(/inventory|sales|purchase|commercial|pricing|catalog|import/.test(value))return 'commercial';
+ if(/migration|database|postgres|prisma|schema|rls/.test(value))return 'database';
+ if(/pwa|browser|ui|accessib|visual|mobile|contrast|frontend/.test(value))return 'frontend-ui';
+ return 'crosscutting';
+}
+const runtimeCostEstimate=(level)=>({
+ UNIT:'LOW_UNMEASURED',CONTRACT:'LOW_UNMEASURED',
+ POSTGRES_INTEGRATION:'HIGH_UNMEASURED',BROWSER_E2E:'HIGH_UNMEASURED',
+ PROVIDER_SPECIFIC:'EXTERNAL_UNMEASURED'
+})[level]||'UNKNOWN_UNMEASURED';
+
 export function inferredTestLevel(file){
  if(file.startsWith('qa/')&&file.endsWith('.spec.mjs'))return 'BROWSER_E2E';
  if(file.endsWith('.integration.test.ts'))return 'POSTGRES_INTEGRATION';
@@ -82,17 +100,27 @@ export function auditTestPyramid({root=ROOT,manifest=null}={}){
  }
  if(!critical.length)errors.push('PYRAMID_NO_CRITICAL_BEHAVIORS');
  const explicit=new Map(critical.map(c=>[c.file,c]));
+ const sourceHashes=new Map();
  const tests=files.map(file=>{
-  const assigned=explicit.get(file);
-  return {file,level:assigned?.level||inferredTestLevel(file),owner:assigned?.owner||inferredTestOwner(file),classification:assigned?'EXPLICIT':'INFERRED',evidenceStatus:'NOT_EXECUTED'};
+  const assigned=explicit.get(file),level=assigned?.level||inferredTestLevel(file);
+  const source=fs.readFileSync(path.join(root,file));
+  const hash=crypto.createHash('sha256').update(source).digest('hex');
+  if(!sourceHashes.has(hash))sourceHashes.set(hash,[]);
+  sourceHashes.get(hash).push(file);
+  return {file,boundedContext:inferredBoundedContext(file),behavior:assigned?.id||null,
+   level,owner:assigned?.owner||inferredTestOwner(file),classification:assigned?'EXPLICIT':'INFERRED',
+   runtimeCostEstimate:runtimeCostEstimate(level),durationMs:null,sourceBytes:source.byteLength,
+   sourceSha256:hash,evidenceStatus:'NOT_EXECUTED'};
  });
+ const duplicateSourceCandidates=[...sourceHashes.entries()].filter(([,paths])=>paths.length>1)
+  .map(([sha256,paths])=>({sha256,files:paths})).sort((a,b)=>a.sha256.localeCompare(b.sha256));
  if(files.length>manifest.baselineTestFiles)warnings.push('PYRAMID_NEW_TESTS_REVIEW_OWNERS:'+String(files.length-manifest.baselineTestFiles));
- return {ok:errors.length===0,baseline:manifest.baselineTestFiles,count:files.length,explicit:critical.length,inferred:tests.length-critical.length,errors:errors.sort(),warnings,critical,tests};
+ return {ok:errors.length===0,baseline:manifest.baselineTestFiles,count:files.length,explicit:critical.length,inferred:tests.length-critical.length,duplicateSourceCandidates,errors:errors.sort(),warnings,critical,tests};
 }
 
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const r=auditTestPyramid();
- const output=process.argv.includes('--json')?r:{ok:r.ok,baseline:r.baseline,count:r.count,explicit:r.explicit,inferred:r.inferred,errors:r.errors,warnings:r.warnings,critical:r.critical};
+ const output=process.argv.includes('--json')?r:{ok:r.ok,baseline:r.baseline,count:r.count,explicit:r.explicit,inferred:r.inferred,duplicateSourceCandidates:r.duplicateSourceCandidates,errors:r.errors,warnings:r.warnings,critical:r.critical};
  console.log(JSON.stringify(output,null,2));
  if(!r.ok)process.exitCode=1;
 }
