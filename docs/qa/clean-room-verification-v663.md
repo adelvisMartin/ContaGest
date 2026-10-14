@@ -27,14 +27,14 @@ node scripts/clean-room-verification-v663.mjs --expected-sha $sha
 4. Run `npm run test:verify:local` and `npm run lint` (root lint includes typecheck and contracts).
 5. Delegate PostgreSQL 17 selection, an ephemeral **per-run database**, migrations/tenant checks and backend/frontend production builds plus loopback health readiness to `node scripts/zero-cost-bootstrap-v668.mjs --smoke --expected-sha <SHA>`. Missing native PG17 / Docker / Podman fails closed.
 6. Run `npm run test:browser:functional`, which uses the repository Playwright Chromium project and its local frontend webServer. This is a frontend browser smoke; **it does not claim an authenticated end-to-end finance/database journey**, which belongs to #664.
-7. After each successful command, reject unexpected Git changes; on error, do not run later stages. Unexecuted gates remain `NOT_EXECUTED`.
+7. After each successful command, reject unexpected source changes while allowing only #630/#640-owned `artifacts/local-verification/` or `artifacts/browser-matrix/` evidence outputs; on error, do not run later stages. Unexecuted gates remain `NOT_EXECUTED`.
 8. Always remove **only the owned** worktree/temp directory, including after failure. Never run migrations against an external/provider URL or delete a pre-existing worktree.
 
 Only a loopback `LOCAL_VERIFY_DATABASE_ADMIN_URL` is admitted. The child execution environment is allowlisted; `DATABASE_URL`, `DIRECT_DATABASE_URL`, `GITHUB_TOKEN`, `QA_BASE_URL`, Supabase credentials and provider variables do not propagate. No provider/production fallback exists.
 
 ## Evidence and limitations
 
-Output: `artifacts/clean-room-v663/<SHA>/manifest.json` with stage commands, status, exit code, duration, exact SHA and remote CI/deploy both marked `NOT_EXECUTED`. A dry-run writes `NOT_EXECUTED` records, not PASS. Stage stdout/stderr stream to the invoking terminal but are not copied into artifacts, avoiding unintended credential persistence.
+Output: `artifacts/qa/clean-room-v663/<SHA>/manifest.json` with stage commands, status, exit code, duration, exact SHA and remote CI/deploy both marked `NOT_EXECUTED`. A dry-run writes `NOT_EXECUTED` records, not PASS. Stage stdout/stderr stream to the invoking terminal but are not copied into artifacts, avoiding unintended credential persistence.
 
 A full run must be executed on **the final exact SHA** with actual PostgreSQL and Chromium to satisfy this issue. Isolated regression tests verify orchestration, cleanup, SHA mismatch and refusal of remote DB URLs; they are not proof that the real application bootstrap, migrations or browser paths passed. For full authenticated runtime/post-start business smoke, use #664. RC promotion is still owned by #647.
 
