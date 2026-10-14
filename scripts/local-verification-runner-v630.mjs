@@ -227,7 +227,7 @@ function parseArgs(argv){
   return out;
 }
 
-function changedPlan({cwd,baseRef,addProfiles=[],removeProfiles=[],overrideReason=''}) {
+export function changedPlan({cwd,baseRef,addProfiles=[],removeProfiles=[],overrideReason=''}) {
   const files=git(cwd,['diff','--name-only',`${baseRef}...HEAD`]).split(/\r?\n/).filter(Boolean);
   const risk=classifyChangeRisk(files,{addProfiles,removeProfiles,reason:overrideReason});
   const profiles=risk.profiles;
