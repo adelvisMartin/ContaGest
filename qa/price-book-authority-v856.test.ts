@@ -135,7 +135,7 @@ test('#856 PostgreSQL authority preserves legacy compatibility, tenant isolation
 
 
 test('#856 PostgreSQL authority serializes overlapping entry races and optimistic book updates', { skip: !rawUrl }, async () => {
-  assert.ok(isEphemeralDatabase(rawUrl), `UNSAFE_PRODUCTION_COMMAND:${new URL(rawUrl).pathname.replace(/^\\//, '')}`);
+  assert.ok(isEphemeralDatabase(rawUrl), `UNSAFE_PRODUCTION_COMMAND:${new URL(rawUrl).pathname.replace(/^\//, '')}`);
 
   const setup = new Client({ connectionString: rawUrl });
   const writerA = new Client({ connectionString: rawUrl });

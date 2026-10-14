@@ -78,5 +78,8 @@ test('LAB SQL snapshot exposes revision metadata only and remains owner/group/me
   assert.match(sql,/state_version AS "stateVersion"/);
   assert.match(sql,/updated_at AS "updatedAt"/);
   assert.match(sql,/LIMIT 201/);
-  assert.doesNotMatch(sql,/result_data|resultData|participant|odds|amount|INSERT|UPDATE|DELETE/i);
+  // updated_at is a legitimate read-only column, not a SQL UPDATE statement.
+  assert.doesNotMatch(sql,/result_data|resultData|participant|odds|amount/i);
+  assert.doesNotMatch(sql,/\b(?:INSERT\s+INTO|UPDATE\s+public\.|DELETE\s+FROM|executeRaw)\b/i);
+  assert.match(sql,/\bSELECT\b[\s\S]*\bFROM public\.hipico_races\b/i);
 });
