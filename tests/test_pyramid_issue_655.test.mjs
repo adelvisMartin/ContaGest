@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {auditTestPyramid,discoverTests,inferredTestLevel,inferredTestOwner} from '../scripts/test-pyramid-audit-v655.mjs';
+import {buildProfilePlan} from '../scripts/local-verification-runner-v630.mjs';
 
 const CORE='qa/tenant-isolation-adversarial-v641.test.ts';
 const JOURNEY='qa/erp-system-campaign-v155.spec.mjs';
@@ -67,4 +68,13 @@ test('nested tools and backend tests infer owners without claiming runtime verif
  assert.equal(inferredTestLevel('qa/erp-ui.spec.mjs'),'BROWSER_E2E');
  assert.equal(inferredTestOwner('tools/hipico-whatsapp-bridge/test/agent.test.mjs'),'hipico-reliability');
  assert.equal(inferredTestOwner('backend/src/modules/accounting/ledger.test.ts'),'backend-api');
+});
+
+test('v630 full consumes inventory without altering backend canonical commands',()=>{
+ const full=buildProfilePlan('full').map(x=>x.command);
+ const backend=buildProfilePlan('backend').map(x=>x.command);
+ assert.ok(full.includes('node scripts/test-pyramid-audit-v655.mjs'));
+ assert.ok(full.includes('node --test tests/test_pyramid_issue_655.test.mjs'));
+ assert.deepEqual(backend,['npm run typecheck','npm test','npm run build:backend']);
+ assert.equal(new Set(full).size,full.length);
 });
