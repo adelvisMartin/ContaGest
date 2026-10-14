@@ -165,3 +165,34 @@ test('#665 missing, duplicate and cross-owner URL policies fail closed',()=>{
   assert.ok(report.findings.some(x=>x.code==='MANIFEST_URL_POLICY_INVALID'),JSON.stringify(report.findings));
  }
 });
+
+
+test('#665 manifest missing frontend owner or altered sample paths fails closed',()=>{
+ const clone=()=>JSON.parse(JSON.stringify(MANIFEST));
+ const scenarios=[
+  {code:'MANIFEST_SURFACE_PATH_INVALID',owner:'frontend',change:m=>{delete m.surfaces.frontend;}},
+  {code:'MANIFEST_SURFACE_CATALOG_MISSING',owner:'frontend',change:m=>{delete m.variables.frontend;}},
+  {code:'MANIFEST_SURFACE_PATH_INVALID',owner:'backend',change:m=>{m.surfaces.backend.examplePath='frontend/.env.example';}},
+  {code:'MANIFEST_SURFACE_PATH_INVALID',owner:'frontend',change:m=>{m.surfaces.frontend.examplePath=null;}},
+  {code:'MANIFEST_SURFACE_PATH_INVALID',owner:'build',change:m=>{m.surfaces.build.examplePath='backend/.env.example';}},
+  {code:'MANIFEST_UNKNOWN_SURFACE',owner:'shadow',change:m=>{m.surfaces.shadow={examplePath:null};}},
+  {code:'MANIFEST_UNKNOWN_SURFACE',owner:'shadow',change:m=>{m.variables.shadow={};}}
+ ];
+ for(const {code,owner,change} of scenarios){
+   const altered=clone();
+   change(altered);
+   const report=checkEnvironmentManifest(samples,altered);
+   assert.equal(report.status,'FAIL',owner);
+   assert.ok(report.findings.some(f=>f.code===code&&f.owner===owner),owner+'/'+code);
+ }
+});
+
+test('#665 malformed top-level manifest returns safe codes, never a bypass or exception',()=>{
+ for(const bad of [null,{}, {surfaces:null,variables:{}},{surfaces:{},variables:null},{surfaces:[],variables:{}}]){
+   const result=checkEnvironmentManifest(samples,bad);
+   assert.equal(result.status,'FAIL');
+   assert.ok(result.findings.some(f=>f.code==='MANIFEST_STRUCTURE_INVALID'||
+       f.code==='MANIFEST_SURFACE_PATH_INVALID'));
+   assert.equal(JSON.stringify(result).includes('SUPABASE_SERVICE_ROLE_KEY='),false);
+ }
+});
