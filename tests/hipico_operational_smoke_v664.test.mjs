@@ -177,3 +177,60 @@ test('#664 PWA smoke accepts a genuine app module script in either attribute ord
     });
   }
 });
+
+
+test('#664 oversized JSON status or HTML PWA fails closed even with valid leading data', async () => {
+  await withServer(respond({ body: { ...status, padding: 'x'.repeat(20_000) } }), async url => {
+    const result = await runHipicoSmoke(url);
+    assert.equal(result.status, 'FAIL');
+    assert.deepEqual(result.checks[0], { name: 'status', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+    assert.equal(result.checks[1].status, 'PASS');
+  });
+  const pwaHtml = '<title>Control Hípico</title><script type="module" src="./assets/js/app.js"></script>'
+    + 'x'.repeat(70_000);
+  await withServer(respond({ pwaHtml }), async url => {
+    const result = await runHipicoSmoke(url);
+    assert.equal(result.status, 'FAIL');
+    assert.deepEqual(result.checks[1], { name: 'pwa', status: 'FAIL', code: 'CONTRACT_MISMATCH' });
+    assert.equal(result.checks[0].status, 'PASS');
+  });
+});
+
+test('#664 oversized declared body is rejected before JSON or HTML consumption', async () => {
+  let jsonReads = 0, htmlReads = 0;
+  const request = async url => url.pathname === '/api/hipico/status' ? {
+    ok: true, headers: new Headers({
+      'content-type': 'application/json', 'cache-control': 'no-store', 'content-length': '20000'
+    }),
+    json: async () => { jsonReads++; throw new Error('DO_NOT_READ_JSON'); }
+  } : {
+    ok: true, headers: new Headers({ 'content-type': 'text/html', 'content-length': '70000' }),
+    text: async () => { htmlReads++; throw new Error('DO_NOT_READ_HTML'); }
+  };
+  const result = await runHipicoSmoke('http://127.0.0.1:8080/', request);
+  assert.equal(result.status, 'FAIL');
+  assert.deepEqual(result.checks.map(x => x.code), ['CONTRACT_MISMATCH', 'CONTRACT_MISMATCH']);
+  assert.equal(jsonReads, 0);
+  assert.equal(htmlReads, 0);
+});
+
+test('#664 native fetch-style streams enforce byte caps before JSON parsing', async () => {
+  const longStatus = JSON.stringify({ ...status, padding: 'x'.repeat(20_000) });
+  const request = async url => url.pathname === '/api/hipico/status'
+    ? new Response(longStatus, { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+    : new Response('<title>Control Hípico</title><script type="module" src="./assets/js/app.js"></script>',
+        { headers: { 'content-type': 'text/html' } });
+  const result = await runHipicoSmoke('http://127.0.0.1:8080/', request);
+  assert.equal(result.status, 'FAIL');
+  assert.deepEqual(result.checks.map(x => x.status), ['FAIL', 'PASS']);
+});
+
+test('#664 small status JSON and PWA Unicode responses remain valid', async () => {
+  await withServer(respond({
+    body: { ...status, note: 'Hipódromo La Rinconada 🐎' },
+    pwaHtml: '<title>Control Hípico</title><script type="module" src="./assets/js/app.js"></script>'
+      + '<p>Información de la jornada: 🐎</p>'
+  }), async url => {
+    assert.equal((await runHipicoSmoke(url)).status, 'PASS');
+  });
+});
