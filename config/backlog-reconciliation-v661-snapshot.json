@@ -1,0 +1,625 @@
+{
+  "schemaVersion": 661,
+  "observedAt": "2026-10-14T17:21:03Z",
+  "mainSha": "d9b3d9d9f44a5be84d44fdd23740882cbb3c368b",
+  "issues": [
+    {
+      "id": 119,
+      "title": "[HIPICO][P0] Physical QA: Android/PWA/WhatsApp real con dos sesiones, permisos, lifecycle y evidencia",
+      "state": "OPEN"
+    },
+    {
+      "id": 120,
+      "title": "[HIPICO][P0] Capacity & Soak: jornada prolongada, alto volumen de mensajes, spool y memoria 24–72h",
+      "state": "OPEN"
+    },
+    {
+      "id": 267,
+      "title": "[HIPICO][P1] Auth UX — recuperación de contraseña Supabase end-to-end",
+      "state": "OPEN"
+    },
+    {
+      "id": 624,
+      "title": "[META][BACKLOG][P0] ContaGest 100% · Database/Architecture/QA hardening 2026-09-29",
+      "state": "OPEN"
+    },
+    {
+      "id": 637,
+      "title": "[P1][FINANCE][13/N] Financial Domain Services Authority — sacar invariantes de routes/CRUD y unificar transacciones",
+      "state": "OPEN"
+    },
+    {
+      "id": 638,
+      "title": "[P1][BACKEND][14/N] CRUD Factory Hardening — type safety, allowlist y mass-assignment protection",
+      "state": "OPEN"
+    },
+    {
+      "id": 646,
+      "title": "[P2][BCP/DR][20/N] Backup/Restore DR Drill — restore verificable, RPO/RTO y runbook exact-SHA",
+      "state": "OPEN"
+    },
+    {
+      "id": 647,
+      "title": "[P2][RELEASE][21/N] Exact-SHA Production Readiness RC — local evidence first, provider evidence separada",
+      "state": "OPEN"
+    },
+    {
+      "id": 648,
+      "title": "[P1][INFRA][22/N] Production Container & Edge Hardening — runtime deps, rootless, headers, SBOM y supply-chain",
+      "state": "OPEN"
+    },
+    {
+      "id": 651,
+      "title": "[P1][SECURITY][24/N] Open Security Findings Closure — media BOLA, health disclosure y backlog de hardening vigente",
+      "state": "OPEN"
+    },
+    {
+      "id": 653,
+      "title": "[P1][DOCS/ARCH][26/N] Architecture Decision Records & Ownership Map — bounded contexts, authorities y deprecations",
+      "state": "OPEN"
+    },
+    {
+      "id": 654,
+      "title": "[P2][MAINTENANCE][27/N] Workflow Consolidation — retirar gates temporales/superseded y reutilizar runners locales",
+      "state": "OPEN"
+    },
+    {
+      "id": 655,
+      "title": "[P1][QA/UNIT][28/N] Test Pyramid & Suite Ownership — unit/integration/E2E sin duplicidad ni falsos gates",
+      "state": "OPEN"
+    },
+    {
+      "id": 656,
+      "title": "[P2][DEPENDENCIES][29/N] Dependency & License Governance — upgrades, provenance, advisories y minimal runtime",
+      "state": "OPEN"
+    },
+    {
+      "id": 657,
+      "title": "[P2][QUALITY][30/N] Dead Code & Deprecation Finalization — retirar adapters sólo con consumer proof",
+      "state": "OPEN"
+    },
+    {
+      "id": 658,
+      "title": "[P2][DATA][31/N] Data Lifecycle Verification — retention, purge, export y audit preservation por tenant",
+      "state": "OPEN"
+    },
+    {
+      "id": 659,
+      "title": "[P2][FINAL][32/N] Functional Coverage Gap Audit — detectar capacidades incompletas antes de declarar 100%",
+      "state": "OPEN"
+    },
+    {
+      "id": 660,
+      "title": "[P2][RELEASE][33/N] Release Notes & Operator Handoff — cambios, riesgos, runbooks y evidencia consumible",
+      "state": "OPEN"
+    },
+    {
+      "id": 661,
+      "title": "[P2][FINAL][34/N] Backlog Reconciliation & Closure — cerrar duplicados/superseded y dejar una sola autoridad por gap",
+      "state": "OPEN"
+    },
+    {
+      "id": 663,
+      "title": "[P2][FINAL][36/N] Final Clean Room Verification — fresh install, fresh DB, build y browser desde cero",
+      "state": "OPEN"
+    },
+    {
+      "id": 664,
+      "title": "[P2][FINAL][37/N] Operational Smoke Pack — login, tenant, CRUD, finance, vertical y Hípico post-start",
+      "state": "OPEN"
+    },
+    {
+      "id": 665,
+      "title": "[P2][FINAL][38/N] Environment Configuration Contract — env vars, defaults, validation y fail-closed startup",
+      "state": "OPEN"
+    },
+    {
+      "id": 666,
+      "title": "[P2][FINAL][39/N] Documentation Integrity Gate — comandos, paths, tickets y runbooks sin referencias obsoletas",
+      "state": "OPEN"
+    },
+    {
+      "id": 669,
+      "title": "[P0][RELEASE][FINAL] ContaGest Final Go/No-Go — exact-SHA, código verificable local-first y estado de proveedores separado",
+      "state": "OPEN"
+    },
+    {
+      "id": 688,
+      "title": "[P1][RELEASE/VERCEL][9.4/N] Production Build Spawn 103 — aislar causa y restaurar deploy",
+      "state": "OPEN"
+    },
+    {
+      "id": 707,
+      "title": "[META][OSS][P1] Competitive Intelligence — feature parity OSS sin deuda de licencia",
+      "state": "OPEN"
+    },
+    {
+      "id": 708,
+      "title": "[P1][OSS][ERP] Benchmark parity — ERPNext/Dolibarr/Akaunting/Tryton para núcleo comercial-contable",
+      "state": "OPEN"
+    },
+    {
+      "id": 709,
+      "title": "[P1][OSS][GYM] Gym vertical vNext — rutinas, progreso, PWA, membresías y operación multi-sede",
+      "state": "OPEN"
+    },
+    {
+      "id": 710,
+      "title": "[P1][OSS][DENTAL] Odontología vNext — agenda multi-sillón, odontograma, planes, ledger y laboratorio",
+      "state": "OPEN"
+    },
+    {
+      "id": 711,
+      "title": "[P1][OSS][VET] Veterinaria vNext — PIMS clínico, vacunas, hospitalización, laboratorio e interoperabilidad",
+      "state": "OPEN"
+    },
+    {
+      "id": 712,
+      "title": "[P1][OSS][CARE] Medicina/Clínica vNext — EMR, agenda, laboratorio, farmacia, hospitalización y billing",
+      "state": "OPEN"
+    },
+    {
+      "id": 717,
+      "title": "[P0][VE-LOCALIZATION] Venezuela Accounting & Tax Pack — reglas versionadas, retenciones, parafiscales, libros y declaraciones",
+      "state": "OPEN"
+    },
+    {
+      "id": 720,
+      "title": "[P1][DB/OPS][12/N] #635 Production Security Convergence — roles + policy sidecars exact-SHA",
+      "state": "OPEN"
+    },
+    {
+      "id": 743,
+      "title": "[P1][ERP/BANKING][4/6] Conciliación bancaria — statement import, matching, reconciliation y reversos auditables",
+      "state": "OPEN"
+    },
+    {
+      "id": 744,
+      "title": "[P1][ERP/AR-AP][5/6] Subledger de cuentas por cobrar/pagar — allocations, ageing, statements y dunning",
+      "state": "OPEN"
+    },
+    {
+      "id": 745,
+      "title": "[P1][ERP/COLLAB][6/6] Client ↔ Accountant Collaboration Hub — documentos, solicitudes, tareas, chat y pagos",
+      "state": "OPEN"
+    },
+    {
+      "id": 746,
+      "title": "[P1][GYM][1/N] Membership + Check-in transactional lifecycle — idempotencia, concurrencia y billing authority",
+      "state": "OPEN"
+    },
+    {
+      "id": 747,
+      "title": "[P1][DENTAL][1/N] Odontograma/periodontograma longitudinal — authority normalizada, versionado y reversibilidad clínica",
+      "state": "OPEN"
+    },
+    {
+      "id": 748,
+      "title": "[P1][VET][1/N] Vacunas y preventivos — lote/expiry, certificates, reminders e inventory linkage",
+      "state": "OPEN"
+    },
+    {
+      "id": 750,
+      "title": "[P1][CARE][1/N] Lab + Pharmacy lifecycle — order/result, prescription/dispense, lot/expiry y audit clínico",
+      "state": "OPEN"
+    },
+    {
+      "id": 751,
+      "title": "[P0][VE-TAX][1/N] Rule Provenance Foundation — LegalSource, vigencia, supersession y snapshots históricos",
+      "state": "OPEN"
+    },
+    {
+      "id": 753,
+      "title": "[P1][ERP/SALES][2/N] Quote → Sales Order authority — estados, snapshots, numeración e idempotencia",
+      "state": "OPEN"
+    },
+    {
+      "id": 754,
+      "title": "[P1][ERP/FULFILLMENT][3/N] Delivery/Pick lifecycle — allocations, partial fulfillment y consumo de reservas",
+      "state": "OPEN"
+    },
+    {
+      "id": 755,
+      "title": "[P1][ERP/INVENTORY][4/N] Warehouse/Location + Lot/Batch Allocation — FEFO, vencimientos y trazabilidad",
+      "state": "OPEN"
+    },
+    {
+      "id": 756,
+      "title": "[P1][ERP/INVENTORY][5/N] Reorder Planning + Stock Ageing — demanda, cobertura y excepciones operativas",
+      "state": "OPEN"
+    },
+    {
+      "id": 757,
+      "title": "[P1][ERP/PURCHASE][6/N] Purchase Request/Order → Reception → Supplier Invoice/AP authority",
+      "state": "OPEN"
+    },
+    {
+      "id": 759,
+      "title": "[P1][ERP/ASSETS][8/N] Fixed Asset Lifecycle — adquisición, depreciación, transferencia y disposal",
+      "state": "OPEN"
+    },
+    {
+      "id": 760,
+      "title": "[P2][ERP/CRM][9/N] CRM Pipeline — lead/opportunity/quote sin duplicar Client",
+      "state": "OPEN"
+    },
+    {
+      "id": 761,
+      "title": "[P2][ERP/PROJECTS][10/N] Projects + Time Tracking + Cost-to-Invoice authority",
+      "state": "OPEN"
+    },
+    {
+      "id": 764,
+      "title": "[P1][OSS/CI][1/N] Benchmark Venezuela + OSS — Profit Plus, Valery, Gálac, Ecologic, Odoo, SAC, Bodega y Finpartner",
+      "state": "OPEN"
+    },
+    {
+      "id": 765,
+      "title": "[P1][ERP/RETAIL] POS + Bodega vNext — caja, turnos, precios, promociones, devoluciones y stock en tiempo real",
+      "state": "OPEN"
+    },
+    {
+      "id": 769,
+      "title": "[P1][ERP/DOCUMENTS] Posted Document Lifecycle — snapshots, notas, cancelaciones y reversos sobre #762",
+      "state": "OPEN"
+    },
+    {
+      "id": 770,
+      "title": "[P1][ERP/DATA] Import/Export + Portability — CSV/XLSX/JSON, dry-run, mapping y rollback seguro",
+      "state": "OPEN"
+    },
+    {
+      "id": 771,
+      "title": "[P1][ERP/BI] Operational Dashboards — drill-down, KPIs reconciliables y métricas no decorativas",
+      "state": "OPEN"
+    },
+    {
+      "id": 772,
+      "title": "[P1][INTEGRATIONS/API] Provider-Neutral Integration Catalog — APIs, webhooks, adapters y self-host/free-first",
+      "state": "OPEN"
+    },
+    {
+      "id": 773,
+      "title": "[P1][UX/UI] Competitive Visual Benchmark + Design Convergence — Dribbble, Figma, Stitch y ERP modernos sobre Cg*",
+      "state": "OPEN"
+    },
+    {
+      "id": 774,
+      "title": "[P0][VE-TAX][2/N] Tenant Taxpayer Profile — RIF, condición tributaria, jurisdicción, actividades y calendarios",
+      "state": "OPEN"
+    },
+    {
+      "id": 775,
+      "title": "[P0][VE-TAX][3/N] IVA + Retención de IVA — reglas vigentes, certificados, notas y posting",
+      "state": "OPEN"
+    },
+    {
+      "id": 776,
+      "title": "[P0][VE-TAX][4/N] Retenciones ISLR — conceptos, beneficiarios, bases, mínimos y certificados versionados",
+      "state": "OPEN"
+    },
+    {
+      "id": 778,
+      "title": "[P0][VE-TAX][5/N] IGTF — moneda/medio/operación, vigencia, evidencia y posting versionado",
+      "state": "OPEN"
+    },
+    {
+      "id": 780,
+      "title": "[P0][VE-TAX][6/N] Municipal Tax Engine — jurisdicción, actividad, retenciones y reglas configurables",
+      "state": "OPEN"
+    },
+    {
+      "id": 781,
+      "title": "[P0][VE-TAX][7/N] Parafiscales Payroll — FAOV, IVSS, INCES y obligaciones versionadas",
+      "state": "OPEN"
+    },
+    {
+      "id": 782,
+      "title": "[P0][VE-TAX][8/N] Libros de Compras y Ventas — generación determinista, cierre y trazabilidad documental",
+      "state": "OPEN"
+    },
+    {
+      "id": 783,
+      "title": "[P0][VE-TAX][9/N] Compliance Workspace — obligaciones, declaraciones, pagos y conciliación por período",
+      "state": "OPEN"
+    },
+    {
+      "id": 785,
+      "title": "[P0][VE-ACCOUNTING][10/N] Semantic Account Roles + Plan de Cuentas — naturaleza, posting y validación Debe=Haber",
+      "state": "OPEN"
+    },
+    {
+      "id": 787,
+      "title": "[P1][GYM][2/N] Classes + Booking + Waitlist — capacidad, no-show y agenda multi-sede",
+      "state": "OPEN"
+    },
+    {
+      "id": 789,
+      "title": "[P1][GYM][3/N] Exercise Library + Program Versioning — objetivos, fases, variantes y seguridad de configuración",
+      "state": "OPEN"
+    },
+    {
+      "id": 792,
+      "title": "[P1][GYM][4/N] Guided Workout + Progression Engine — sets, RPE/RIR, supersets, cardio y periodización",
+      "state": "OPEN"
+    },
+    {
+      "id": 793,
+      "title": "[P1][GYM][5/N] Performance Metrics + Body Progress — PRs, 1RM, volumen, frecuencia y tendencias",
+      "state": "OPEN"
+    },
+    {
+      "id": 794,
+      "title": "[P1][GYM][6/N] Member PWA Surface — membership, classes, routines y progress sobre offline authority #797",
+      "state": "OPEN"
+    },
+    {
+      "id": 795,
+      "title": "[P1][GYM][6/N] Nutrition Planning — comidas, macros, calorías, preferencias y sustituciones no clínicas",
+      "state": "OPEN"
+    },
+    {
+      "id": 797,
+      "title": "[P1][GYM][7/N] Member PWA Offline Workout Queue — sync, retry, conflicts y tenant-safe cache",
+      "state": "OPEN"
+    },
+    {
+      "id": 799,
+      "title": "[P1][GYM][8/N] Equipment + Operations — mantenimiento, incidentes, disponibilidad, revenue y cohortes",
+      "state": "OPEN"
+    },
+    {
+      "id": 800,
+      "title": "[P1][DENTAL][3/N] Structured Anamnesis + Clinical Alerts — alergias, medicamentos, riesgos y timeline longitudinal",
+      "state": "OPEN"
+    },
+    {
+      "id": 801,
+      "title": "[P1][DENTAL][2/N] Multi-Operatory Scheduling — agenda, sillones, profesionales, waitlist y conflictos",
+      "state": "OPEN"
+    },
+    {
+      "id": 803,
+      "title": "[P1][DENTAL][3/N] Treatment Plan + Consent + Billing Bridge — presupuesto, firma y plan→invoice sin doble authority",
+      "state": "OPEN"
+    },
+    {
+      "id": 804,
+      "title": "[P1][DENTAL][5/N] Prosthetic/Lab Fulfillment — proveedor, rework, recepción y entrega sobre lab-order authority #805",
+      "state": "OPEN"
+    },
+    {
+      "id": 805,
+      "title": "[P1][DENTAL][4/N] Signed Clinical Notes + Prescriptions + Dental Lab Orders — evidencia inmutable y lifecycle",
+      "state": "OPEN"
+    },
+    {
+      "id": 807,
+      "title": "[P1][DENTAL][5/N] Patient Ledger + AR — pagos parciales, créditos, refunds, ageing y statements",
+      "state": "OPEN"
+    },
+    {
+      "id": 809,
+      "title": "[P1][DENTAL][6/N] Patient Portal + Intake + RBAC/Audit — acceso mínimo, formularios, comunicaciones y export",
+      "state": "OPEN"
+    },
+    {
+      "id": 810,
+      "title": "[P1][VET][2/N] Guardian + Animal Master + Longitudinal Record — identidad, problemas, vitals y timeline",
+      "state": "OPEN"
+    },
+    {
+      "id": 812,
+      "title": "[P1][VET][3/N] Clinic-Day Workflow — appointment, triage, check-in, encounter y discharge",
+      "state": "OPEN"
+    },
+    {
+      "id": 814,
+      "title": "[P1][VET][4/N] Diagnostics + Surgery — lab/imaging lifecycle, anesthesia y checklists",
+      "state": "OPEN"
+    },
+    {
+      "id": 816,
+      "title": "[P1][VET][5/N] Hospitalization + Kennel — admisión, observaciones, medicación y discharge",
+      "state": "OPEN"
+    },
+    {
+      "id": 818,
+      "title": "[P1][VET][6/N] Pharmacy + Treatment Financial Bridge — dispense, lot/expiry, estimates, consent e invoice",
+      "state": "OPEN"
+    },
+    {
+      "id": 820,
+      "title": "[P1][VET][7/N] Integrations + Guardian Portal — signed webhooks, import/export, interoperability y bounded AI",
+      "state": "OPEN"
+    },
+    {
+      "id": 822,
+      "title": "[P1][CARE][2/N] Patient Longitudinal Record — problemas, alergias, meds, vitals, diagnósticos y timeline",
+      "state": "OPEN"
+    },
+    {
+      "id": 824,
+      "title": "[P1][CARE][3/N] Ambulatory Flow — agenda, queue, check-in, encounter y discharge",
+      "state": "OPEN"
+    },
+    {
+      "id": 826,
+      "title": "[P1][CARE][4/N] Inpatient Hospitalization — admission, bed, observations, medication administration y discharge",
+      "state": "OPEN"
+    },
+    {
+      "id": 828,
+      "title": "[P1][CARE][5/N] Imaging Lifecycle — request, result, attachments, review y corrections",
+      "state": "OPEN"
+    },
+    {
+      "id": 830,
+      "title": "[P1][CARE][6/N] Clinical Billing Bridge — estimates, invoice, payments, refunds y financial reconciliation",
+      "state": "OPEN"
+    },
+    {
+      "id": 832,
+      "title": "[P1][CARE][7/N] Clinical RBAC + Audit + Portal + Portability — privacy, access trail, retention e interoperability",
+      "state": "OPEN"
+    },
+    {
+      "id": 835,
+      "title": "[META][EXPANSION][P0] ContaGest 100% — OSS parity + ERP + Venezuela + Gym/Dental/Vet/Care",
+      "state": "OPEN"
+    },
+    {
+      "id": 836,
+      "title": "[P1][EXPANSION/GATE] Clean Code + Architecture + Security + QA + Agents — acceptance transversal de #835",
+      "state": "OPEN"
+    },
+    {
+      "id": 837,
+      "title": "[META][HIPICO][P0] Control Hípico 100% — bot autónomo LAB, PWA/APK, WhatsApp, DB/DR y Production Readiness",
+      "state": "OPEN"
+    },
+    {
+      "id": 839,
+      "title": "[HIPICO][P0][FINAL] Final Go/No-Go — bot LAB autónomo, Physical QA, soak 24–72h, DR y exact-SHA",
+      "state": "OPEN"
+    },
+    {
+      "id": 840,
+      "title": "[P0][RELEASE/PRODUCTION] Production Deployment Authority — exact-SHA, free-first, migrations, served identity, smoke y rollback",
+      "state": "OPEN"
+    },
+    {
+      "id": 841,
+      "title": "[META][P0][FINAL-100] ContaGest + Control Hípico — cierre total, cero gaps P0/P1 y Production Verification",
+      "state": "OPEN"
+    },
+    {
+      "id": 842,
+      "title": "[HIPICO][P0][DR/OPS] Live Backup Role Activation + Restore Drill — hipico_backup real, 25/25 scope y recovery evidence",
+      "state": "OPEN"
+    },
+    {
+      "id": 848,
+      "title": "[P1][CORE/SCHEDULING] Shared Scheduling + Resource Allocation Authority — disponibilidad, conflictos, capacidad y waitlist multi-sede",
+      "state": "OPEN"
+    },
+    {
+      "id": 849,
+      "title": "[P1][CORE/CATALOG] Service Catalog Authority — categorías, servicios multi-step, staff/location y bridge a Product/pricing",
+      "state": "OPEN"
+    },
+    {
+      "id": 852,
+      "title": "[P1][CORE/ENTITLEMENTS] Benefit + Entitlement Ledger Authority — membresías, bonos, créditos, payer/beneficiary y consumo transaccional",
+      "state": "OPEN"
+    },
+    {
+      "id": 853,
+      "title": "[P1][CORE/ASYNC] Transactional Jobs + Outbox Worker Authority — scheduling, retry/backoff, leases, DLQ y reconciliation",
+      "state": "OPEN"
+    },
+    {
+      "id": 854,
+      "title": "[P1][CORE/NOTIFICATIONS] Notification Delivery Authority — templates, preferences, quiet hours, channels y delivery evidence",
+      "state": "OPEN"
+    },
+    {
+      "id": 892,
+      "title": "[HIPICO][P1][BOT] Integrar entrada LAB interactiva con Conversation Engine y datos canónicos",
+      "state": "OPEN"
+    },
+    {
+      "id": 907,
+      "title": "[HIPICO][P1][LAB] Inbox durable de consultas pendientes fuera del DOM y recuperación tras reinicio",
+      "state": "OPEN"
+    },
+    {
+      "id": 974,
+      "title": "[P2][AGENTS/AUDIT] Ponytail + OmniRoute + Addy skills, protocolo 4 ventanas y FODA basada en evidencia",
+      "state": "OPEN"
+    },
+    {
+      "id": 977,
+      "title": "[P2][CI/QA] Reconciliar contrato 58x5 con catálogo canónico de 60 rutas",
+      "state": "OPEN"
+    },
+    {
+      "id": 979,
+      "title": "[P1][CI/SECURITY] Reconciliar regresiones #650 con redacción y Problem Details v2 sin degradar protección",
+      "state": "OPEN"
+    },
+    {
+      "id": 984,
+      "title": "[P1][CI/PWA] Corregir contrato de scope relativo en manifest sin ampliar caché sensible",
+      "state": "OPEN"
+    },
+    {
+      "id": 985,
+      "title": "[P1][CI/DB] Alinear workflow OPS #566 con guard de base de datos efímera",
+      "state": "OPEN"
+    }
+  ],
+  "prs": [
+    {
+      "number": 975,
+      "headSha": "650d92a72236f7daffd95703b73fb639a6d1e805",
+      "issueId": 974
+    },
+    {
+      "number": 976,
+      "headSha": "609e6dce8f16c85472e2321d94d42fdca8d5f5ce",
+      "issueId": null
+    },
+    {
+      "number": 978,
+      "headSha": "4697dfc0319126ebeee8ebc0bd61ae53c70d760b",
+      "issueId": 977
+    },
+    {
+      "number": 980,
+      "headSha": "aa832863aaadcedd03fc3770e09da84504eb67b3",
+      "issueId": 979
+    },
+    {
+      "number": 981,
+      "headSha": "58c959e4588d36d0e75b6d989e95c23e6221f696",
+      "issueId": 666
+    },
+    {
+      "number": 983,
+      "headSha": "840205ee25315d91728bbda64f5616664568a0c2",
+      "issueId": 653
+    }
+  ],
+  "completions": [
+    {
+      "issue": 662,
+      "sha": "d9b3d9d9f44a5be84d44fdd23740882cbb3c368b",
+      "pr": 982,
+      "evidenceUrl": "https://github.com/adelvisMartin/ContaGest/actions/runs/38593242718"
+    },
+    {
+      "issue": 667,
+      "sha": "56e62ca44973830b6392a4a0ae0fab65020668d8",
+      "pr": null,
+      "evidenceUrl": "https://github.com/adelvisMartin/ContaGest/issues/667"
+    }
+  ],
+  "supersessions": [
+    {
+      "duplicate": 642,
+      "owner": 633,
+      "status": "CLOSED",
+      "evidenceUrl": "https://github.com/adelvisMartin/ContaGest/issues/642"
+    }
+  ],
+  "branches": [
+    {
+      "name": "feat/667-change-risk-classifier",
+      "ahead": 0,
+      "behind": 418,
+      "openPrCount": 0,
+      "comparedSha": "83b62082677f41777b7c586e75b1ae7d95c9d7a0"
+    }
+  ]
+}
