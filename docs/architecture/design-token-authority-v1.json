@@ -47,6 +47,26 @@
       "reason": "MUI must consume semantic roles instead of maintaining equivalent physical values.",
       "reviewBy": "2026-09-29",
       "removalCriteria": "Satisfied by #631: muiRuntime delegates theme construction and contains no palette literals."
+    },
+    {
+      "legacyOwner": "frontend/public/hipico-control/assets/css/ui-system-v3-compat.css",
+      "canonical": "frontend/src/design-system/semanticTokens.v1.js::products.hipico",
+      "adapter": "frontend/public/hipico-control/assets/css/platform-tokens-v1.css",
+      "status": "deprecated-fallback",
+      "owner": "hipico-platform",
+      "reason": "app.css imports V3 within the legacy cascade layer to preserve old PWA selectors; platform token adapter is loaded after app.css and remains authoritative.",
+      "reviewBy": "2026-12-31",
+      "removalCriteria": "All V3 selectors and CSS variable consumers have migrated and Windows/PWA visual rollback QA permits removal."
+    },
+    {
+      "legacyOwner": "frontend/public/hipico-control/assets/css/ui-system-v4.css",
+      "canonical": "frontend/src/design-system/semanticTokens.v1.js::products.hipico",
+      "adapter": "frontend/public/hipico-control/assets/css/platform-tokens-v1.css",
+      "status": "active-compatibility",
+      "owner": "hipico-platform",
+      "reason": "app.css imports versioned V4 visual primitives before convergence; the generated platform token adapter is loaded later and retains semantic token authority.",
+      "reviewBy": "2026-12-31",
+      "removalCriteria": "All V4-specific selectors and variable consumers migrated; static PWA screenshot/rollback QA confirms safe removal."
     }
   ]
 }
