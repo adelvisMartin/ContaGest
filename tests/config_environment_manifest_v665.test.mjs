@@ -196,3 +196,75 @@ test('#665 malformed top-level manifest returns safe codes, never a bypass or ex
    assert.equal(JSON.stringify(result).includes('SUPABASE_SERVICE_ROLE_KEY='),false);
  }
 });
+
+test('#665 deleting frontend or LAB Bridge owner can never produce a manifest PASS',()=>{
+ for(const owner of ['backend','frontend','bridge','build']){
+  const missing=JSON.parse(JSON.stringify(MANIFEST));
+  delete missing.surfaces[owner];
+  delete missing.variables[owner];
+  const result=checkEnvironmentManifest(samples,missing);
+  assert.equal(result.status,'FAIL',owner);
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_SURFACE_PATH_INVALID'&&f.owner===owner));
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_SURFACE_CATALOG_MISSING'&&f.owner===owner));
+ }
+});
+
+test('#665 changing template paths or emptying a catalog fails closed',()=>{
+ for(const owner of ['backend','frontend','bridge']){
+  const different=JSON.parse(JSON.stringify(MANIFEST));
+  different.surfaces[owner].examplePath='../../private/.env';
+  assert.ok(checkEnvironmentManifest(samples,different).findings.some(f=>
+    f.code==='MANIFEST_SURFACE_PATH_INVALID'&&f.owner===owner));
+  const disabled=JSON.parse(JSON.stringify(MANIFEST));
+  disabled.surfaces[owner].examplePath=null;
+  disabled.variables[owner]={};
+  const result=checkEnvironmentManifest(samples,disabled);
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_SURFACE_PATH_INVALID'&&f.owner===owner));
+  assert.ok(result.findings.some(f=>f.code==='MANIFEST_SURFACE_CATALOG_MISSING'&&f.owner===owner));
+ }
+});
+
+test('#665 undeclared surfaces/catalogs are rejected without reading their paths',()=>{
+ const registry=JSON.parse(JSON.stringify(MANIFEST));
+ registry.surfaces.external={examplePath:'../../private/.env'};
+ registry.variables.external={PRIVATE_TOKEN:{
+  type:'secret',visibility:'server',sensitive:true,requiredWhen:'optional',sample:'required'
+ }};
+ const result=checkEnvironmentManifest(samples,registry);
+ assert.equal(result.status,'FAIL');
+ assert.ok(result.findings.some(f=>f.code==='MANIFEST_UNKNOWN_SURFACE'&&f.owner==='external'));
+ assert.ok(result.findings.some(f=>f.code==='MANIFEST_UNKNOWN_SURFACE'&&f.owner==='external'));
+ const source=readFileSync(new URL('../scripts/check-environment-manifest-v665.mjs',import.meta.url),'utf8');
+ const loader=source.slice(source.indexOf('export function loadVersionedSamples(){'));
+ assert.match(loader,/Object\.entries\(REQUIRED_SURFACES\)/);
+ assert.doesNotMatch(loader,/Object\.entries\(CONFIG_MANIFEST_V665\.surfaces\)/);
+});
+
+
+test('#665 HTTP service URL samples reject userinfo and never print embedded credentials',()=>{
+ for(const [owner,key,value] of [
+  ['frontend','VITE_API_BASE_URL','https://demo-user:private-key@api.example.test/v1'],
+  ['frontend','VITE_MARKETING_DEMO_URL','https://demo-user@web.example.test/landing'],
+  ['backend','APP_URL','https://demo-user:private-key@site.example.test'],
+  ['backend','SECURITY_ALERT_WEBHOOK_URL','https://demo-user:private-key@hooks.example.test/v1'],
+  ['bridge','HIPICO_INGEST_URL','https://demo-user:private-key@bridge.example.test/bridge/events'],
+  ['bridge','HIPICO_BRIDGE_HEALTH_URL','http://demo-user@127.0.0.1:3000/health']
+ ]){
+  const original=samples[owner];
+  const line=new RegExp('^'+key+'=.*$','m');
+  assert.match(original,line);
+  const report=check({[owner]:original.replace(line,key+'='+value)});
+  assert.ok(report.findings.some(f=>f.code==='MANIFEST_SAMPLE_TYPE_INVALID'&&f.owner===owner&&f.key===key),owner+'/'+key);
+  assert.equal(JSON.stringify(report).includes('private-key'),false);
+  assert.equal(JSON.stringify(report).includes('demo-user'),false);
+ }
+});
+
+test('#665 PostgreSQL userinfo remains valid in server-only database URL templates',()=>{
+ const modified=samples.backend.replace(/^DATABASE_RUNTIME_URL=.*$/m,
+  'DATABASE_RUNTIME_URL=postgresql://pg-user:local-fixture@db.example.test:5432/contagest');
+ const report=check({backend:modified});
+ assert.equal(report.status,'PASS',JSON.stringify(report.findings));
+ assert.equal(MANIFEST.variables.backend.DATABASE_RUNTIME_URL.visibility,'server');
+ assert.equal(MANIFEST.variables.backend.DATABASE_RUNTIME_URL.sensitive,true);
+});

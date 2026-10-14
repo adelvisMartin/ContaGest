@@ -49,8 +49,11 @@ function sampleMatchesDeclaredType(value,record,owner){
    const normalized=value.replace(/\[[A-Za-z0-9_-]+\]/g,'example');
    try{
      const url=new URL(normalized);
+     // Reject embedded HTTP service credentials; allow authenticated
+     // PostgreSQL URLs only in server-side database settings.
      return Array.isArray(record.allowedSchemes)&&record.allowedSchemes.includes(url.protocol)&&
-       URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname);
+       URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname)&&
+       (!['http:','https:'].includes(url.protocol)||(!url.username&&!url.password));
    }catch{return false;}
   }
   default:return true;
@@ -82,7 +85,8 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
    if(!meta||typeof meta!=='object'||Array.isArray(meta)||meta.examplePath!==path)
      add('MANIFEST_SURFACE_PATH_INVALID',owner,'examplePath');
    const registered=Object.hasOwn(registry.variables,owner)?registry.variables[owner]:undefined;
-   if(!registered||typeof registered!=='object'||Array.isArray(registered))
+   if(!registered||typeof registered!=='object'||Array.isArray(registered)||
+      Object.keys(registered).length===0)
      add('MANIFEST_SURFACE_CATALOG_MISSING',owner,'variables');
  }
  for(const owner of Object.keys(registry.surfaces))
@@ -148,9 +152,11 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
 }
 
 export function loadVersionedSamples(){
- return Object.fromEntries(Object.entries(CONFIG_MANIFEST_V665.surfaces)
-  .filter(([,meta])=>meta.examplePath)
-  .map(([owner,meta])=>[owner,readFileSync(resolve(repositoryRoot,meta.examplePath),'utf8')]));
+ // Only pinned versioned templates are allowed; do not load a private file
+ // through altered manifest metadata.
+ return Object.fromEntries(Object.entries(REQUIRED_SURFACES)
+  .filter(([,path])=>path)
+  .map(([owner,path])=>[owner,readFileSync(resolve(repositoryRoot,path),'utf8')]));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const report=checkEnvironmentManifest(loadVersionedSamples());

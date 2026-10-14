@@ -54,3 +54,44 @@ relativa del frontend, mediante `allowRelative:true`.
 Este control evita confundir una URL de base de datos con un endpoint público
 o aceptar `/api` como URL absoluta de Supabase. No lee credenciales reales,
 no migrará PostgreSQL y no sustituye el auditor de secretos del frontend.
+
+## Fail-closed de plantillas y superficies
+
+El auditor también debe fallar cuando la sintaxis de un `.env.example` no
+corresponde a una asignación válida `NOMBRE=valor`, o cuando una cadena
+entrecomillada no está cerrada. La regla evita que una variable nueva
+malformada se omita silenciosamente y produzca `PASS`. El hallazgo
+`MANIFEST_INVALID_SAMPLE_LINE` registra únicamente un identificador
+acotado o un número de línea, **nunca el valor del ejemplo**.
+
+Las cuatro superficies son inmutables para esta fase:
+
+- `backend → backend/.env.example`
+- `frontend → frontend/.env.example`
+- `bridge → tools/hipico-whatsapp-web-bridge/.env.example`
+- `build → sin plantilla`
+
+Eliminar una superficie o su catálogo, intercambiar un archivo por otro
+(o por una ruta privada) o agregar una superficie nueva sin autoridad genera
+`FAIL`. El lector de ejemplos utiliza rutas fijadas por el código,
+independientes de la metadata modificable del manifiesto. Esta lectura no
+accede a `.env` privados ni credenciales de proveedores.
+
+Las pruebas de regresión incluyen líneas sin `=`, asignaciones malformadas,
+comillas inconclusas, diagnósticos sin secretos, propietarios faltantes,
+catálogos vacíos y sustitución de rutas; los ejemplos actualmente versionados
+siguen aceptándose. Las comprobaciones aisladas en V8 no sustituyen el gate
+`npm run test:config:manifest` ni el CI exact-SHA.
+
+### Userinfo en URLs HTTP(S)
+
+Aunque el protocolo sea permitido, los ejemplos de endpoints web,
+marketing, backend o Bridge no pueden contener credenciales en la
+autoridad de la URL (`https://usuario:clave@host`). El checker devuelve
+únicamente `MANIFEST_SAMPLE_TYPE_INVALID` y el nombre de la variable,
+sin imprimir ni registrar usuario, contraseña o URL.
+
+La prohibición no se aplica a las URLs `postgres:`/`postgresql:`
+del servidor, cuyos datos de autenticación pueden formar parte de
+la conexión y deben permanecer fuera del frontend. Este control de
+plantillas no sustituye validaciones y secretos de runtime.
