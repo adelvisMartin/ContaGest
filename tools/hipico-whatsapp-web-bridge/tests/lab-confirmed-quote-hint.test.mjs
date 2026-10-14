@@ -51,13 +51,14 @@ test('confirmed ACK never creates a secondary DOM-derived race hint',()=>{
   const lab=src.slice(begin,end);
   const confirmed=lab.slice(lab.indexOf("if (journalRecord?.state === 'confirmed')"),
     lab.indexOf("if (journalRecord?.state === 'ambiguous'"));
-  assert.match(confirmed,/await finalizeConfirmedVisibleLabQuote\(row,body\)/);
+  assert.match(confirmed,/await finalizeConfirmedVisibleLabQuote\(row,body,\{/);
   assert.match(confirmed,/labPendingInbox\?\.read\(row\.id\)/);
   assert.doesNotMatch(confirmed,/confirmedLabQuoteHint|labQuotedRaceJournal\.remember/);
 
   const normal=lab.slice(lab.indexOf('await sendTextInCurrentLab('));
   const ack=normal.indexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});');
-  const finalizer=normal.indexOf('await finalizeConfirmedVisibleLabQuote(row,body)');
+  const finalizer=normal.indexOf('await finalizeConfirmedVisibleLabQuote(row,body,{');
+  assert.match(normal.slice(finalizer),/retainEncryptedInput:Boolean\(encryptedOriginal\?\.race\)&&!restored/);
   assert.ok(ack>=0&&finalizer>ack);
   assert.doesNotMatch(normal,/confirmedLabQuoteHint\(|labQuotedRaceJournal\.remember\(/,
     'the normal send path must not independently trust mutable DOM after ACK');
