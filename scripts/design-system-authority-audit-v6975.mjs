@@ -60,6 +60,36 @@ for(const file of walk('frontend').filter((name)=>name.endsWith('.css'))){
   if(/--cg-v-[a-z0-9-]+\s*:/i.test(source)&&!allowedCgOwners.has(path.normalize(file)))fail('competing --cg-v-* owner: '+file);
 }
 const allowedHipicoOwners=new Set([path.normalize(files.hipicoCss),path.normalize(files.hipicoLegacyCss)]);
+// Static PWA imports two versioned compatibility styles before the
+// generated platform adapter. They are not independent semantic authorities.
+// An additional CSS owner still fails closed, as does any change to import
+// ordering or to the owners' time-bounded deprecation ledger.
+const transitionalHipicoOwners=[
+  {file:'frontend/public/hipico-control/assets/css/ui-system-v3-compat.css',
+   importRule:'@import url("./ui-system-v3-compat.css") layer(legacy);',
+   status:'deprecated-fallback'},
+  {file:'frontend/public/hipico-control/assets/css/ui-system-v4.css',
+   importRule:'@import url("./ui-system-v4.css");',
+   status:'active-compatibility'}
+];
+const hipicoEntryCss=read(files.hipicoLegacyCss);
+let lastImport=-1;
+for(const item of transitionalHipicoOwners){
+  const position=hipicoEntryCss.indexOf(item.importRule);
+  if(position<0||position<=lastImport)fail('Hípico compatibility import order invalid: '+item.file);
+  lastImport=position;
+  const mapping=(ledger.mappings||[]).find(row=>row.legacyOwner===item.file);
+  if(!mapping||mapping.status!==item.status||
+     mapping.canonical!==files.canonical+'::products.hipico'||
+     mapping.owner!=='hipico-platform'||!mapping.reason||!mapping.removalCriteria||
+     !/^\d{4}-\d{2}-\d{2}$/.test(mapping.reviewBy||'')){
+    fail('Hípico compatibility owner lacks migration ledger: '+item.file);
+    continue;
+  }
+  allowedHipicoOwners.add(path.normalize(item.file));
+}
+if(hipicoEntryCss.indexOf('@import url("./ui-system-v4-convergence.css");')<=lastImport)
+  fail('Hípico convergence import must follow versioned V4');
 for(const file of walk('frontend/public/hipico-control').filter((name)=>name.endsWith('.css'))){
   const source=read(file);
   if(/--hc-[a-z0-9-]+\s*:/i.test(source)&&!allowedHipicoOwners.has(path.normalize(file)))fail('competing --hc-* owner: '+file);
