@@ -12,14 +12,16 @@ function git(cwd, args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-export function assertCandidate({ cwd, expectedSha, gitCommand = git }) {
+export function assertCandidate({ cwd, expectedSha, gitCommand = git, allowEvidenceArtifacts = false }) {
   if (!SHA.test(expectedSha || '')) throw new Error('CLEANROOM_EXPECTED_SHA_REQUIRED');
   const gitRoot = path.resolve(gitCommand(cwd, ['rev-parse', '--show-toplevel']));
   const requestedRoot = path.resolve(cwd);
   if ((process.platform === 'win32' ? gitRoot.toLowerCase() : gitRoot) !== (process.platform === 'win32' ? requestedRoot.toLowerCase() : requestedRoot)) throw new Error('CLEANROOM_ROOT_REQUIRED');
   const actual = gitCommand(cwd, ['rev-parse', 'HEAD']);
   if (actual !== expectedSha) throw new Error('CLEANROOM_SHA_MISMATCH');
-  if (gitCommand(cwd, ['status', '--porcelain', '--untracked-files=all'])) throw new Error('CLEANROOM_SOURCE_DIRTY');
+  const changes = gitCommand(cwd, ['status', '--porcelain', '--untracked-files=all']).split(/\r?\n/).filter(Boolean);
+  const allow = /^\?\? artifacts\/(?:local-verification|browser-matrix)\//;
+  if (changes.some((change) => !allowEvidenceArtifacts || !allow.test(change))) throw new Error('CLEANROOM_SOURCE_DIRTY');
   return actual;
 }
 
@@ -97,7 +99,7 @@ export function runCleanRoom({ cwd = process.cwd(), expectedSha, env = process.e
     assertCandidate({ cwd: checkout, expectedSha });
     const result = executeStages(buildCleanRoomPlan(expectedSha), {
       run, cwd: checkout, env: isolatedEnv,
-      afterStage: () => assertCandidate({ cwd: checkout, expectedSha }),
+      afterStage: () => assertCandidate({ cwd: checkout, expectedSha, allowEvidenceArtifacts: true }),
     });
     return { schemaVersion: 663, candidateSha: expectedSha, status: result.status, checkout: 'TEMPORARY_REMOVED', gates: result.gates, remote: { ci: 'NOT_EXECUTED', deploy: 'NOT_EXECUTED' } };
   } finally {
@@ -125,7 +127,7 @@ function main() {
   const report = opts.dryRun
     ? { schemaVersion: 663, candidateSha: opts.expectedSha, status: 'NOT_EXECUTED', gates: buildCleanRoomPlan(opts.expectedSha).map((gate) => ({ ...gate, status: 'NOT_EXECUTED' })), remote: { ci: 'NOT_EXECUTED', deploy: 'NOT_EXECUTED' } }
     : runCleanRoom({ expectedSha: opts.expectedSha });
-  const target = path.join(process.cwd(), 'artifacts', 'clean-room-v663', opts.expectedSha, 'manifest.json');
+  const target = path.join(process.cwd(), 'artifacts', 'qa', 'clean-room-v663', opts.expectedSha, 'manifest.json');
   mkdirSync(path.dirname(target), { recursive: true });
   writeFileSync(target, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
   console.log(JSON.stringify({ status: report.status, candidateSha: opts.expectedSha, manifest: path.relative(process.cwd(), target) }));
