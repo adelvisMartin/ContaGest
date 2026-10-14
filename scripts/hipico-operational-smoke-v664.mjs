@@ -14,6 +14,43 @@ export function checkedBaseUrl(value) {
   return url;
 }
 
+// Bounded diagnostics: never allocate untrusted remote JSON/HTML bodies without a cap.
+// Native fetch responses are streamed; tiny streamless QA doubles stay supported.
+const MAX_STATUS_BYTES = 16_384;
+const MAX_PWA_BYTES = 65_536;
+async function boundedSmokeText(response, maxBytes, allowJsonDouble = false) {
+  const declared = response.headers?.get?.('content-length');
+  if (declared !== null && declared !== undefined) {
+    const value = declared.trim();
+    if (!/^[0-9]+$/.test(value) || Number(value) > maxBytes) return null;
+  }
+  if (typeof response.body?.getReader === 'function') {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    let bytes = 0, text = '';
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return text + decoder.decode();
+        if (!(value instanceof Uint8Array)) return null;
+        bytes += value.byteLength;
+        if (bytes > maxBytes) {
+          await reader.cancel();
+          return null;
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+    } finally { reader.releaseLock(); }
+  }
+  // In-memory test adapters do not expose the native streaming body.
+  const text = typeof response.text === 'function'
+    ? await response.text()
+    : allowJsonDouble && typeof response.json === 'function'
+      ? JSON.stringify(await response.json()) : null;
+  return typeof text === 'string' && new TextEncoder().encode(text).byteLength <= maxBytes
+    ? text : null;
+}
+
 export async function runHipicoSmoke(baseUrl, request = fetch) {
   const root = checkedBaseUrl(baseUrl);
   const checks = [];
@@ -46,7 +83,11 @@ export async function runHipicoSmoke(baseUrl, request = fetch) {
     // such as "no-store=false" or "x-no-store" is NOT the no-store directive.
     const directives = response.headers.get('cache-control')?.split(',').map(value => value.trim().toLowerCase());
     if (!directives?.includes('no-store')) return false;
-    const body = await response.json();
+    const raw = await boundedSmokeText(response, MAX_STATUS_BYTES, true);
+    if (!raw) return false;
+    let body;
+    try { body = JSON.parse(raw); }
+    catch { return false; }
     return body?.ok === true
       && body?.service === 'hipico-control-operations'
       && MODES.has(body?.mode)
@@ -58,7 +99,8 @@ export async function runHipicoSmoke(baseUrl, request = fetch) {
   await check('pwa', '/hipico-control/', 'text/html', async (response) => {
     const mediaType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
     if (mediaType !== 'text/html') return false;
-    const html = await response.text();
+    const html = await boundedSmokeText(response, MAX_PWA_BYTES);
+    if (!html) return false;
     // A splash/error document can mention the expected strings in comments or
     // prose without loading the application. Require the real HTML entrypoint.
     const markup = html.replace(/<!--[\s\S]*?-->/g, '');
