@@ -6,6 +6,8 @@ Baseline: `main@d9b3d9d9f44a5be84d44fdd23740882cbb3c368b`. Source-tree inventory
 
 `config/test-pyramid-v655.json` is the machine-readable critical behavior ownership/level/command registry. `scripts/test-pyramid-audit-v655.mjs` automatically discovers the repository tests from **five bounded roots**, assigns a provisional level and owner to all discovered tests, and maps 13 explicitly protected behaviors. `--json` emits all inventory rows. Only the 13 critical entries carry manually assigned owners/levels. All other rows are tagged `INFERRED`, not certified.
 
+The inventory also records a filename-derived **bounded context**, a non-executed **runtime cost estimate** (e.g. `HIGH_UNMEASURED` for PostgreSQL/browser, not timing), source byte counts and SHA-256 fingerprints. Identical-source hashes produce advisory `duplicateSourceCandidates`; identical source code alone does **not** prove interchangeable behavior or authorize deletion. `behavior` is null for heuristically classified files until human/runtime mapping is reviewed. All measured durations remain `null` until executed evidence is captured.
+
 The levels are `UNIT`, `CONTRACT`, `POSTGRES_INTEGRATION`, `BROWSER_E2E` and `PROVIDER_SPECIFIC`. A `.test.ts` in backend/src is heuristically unit, a `.spec.mjs` under QA is heuristically browser, and `.integration.test.ts` heuristically persistence; names **never prove** execution, fixtures, absence of mocks or equivalent coverage. Manually assigned critical paths still require actual runtime evidence.
 
 ## Commands and local profile #630
