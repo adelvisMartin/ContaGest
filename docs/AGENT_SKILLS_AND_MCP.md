@@ -35,3 +35,6 @@ At the time this integration was prepared, the current ChatGPT connector environ
 
 ## Browser QA rule
 A compile, HTTP 200 or `READY` deployment is not a user-flow test. For interactive defects, Playwright must execute the actual interaction (click/focus/type/persist/submit) and relevant desktop/mobile viewports before a change is called verified.
+
+## Codex/ChatGPT context helpers (2026-10-14)
+Three pinned and inert advisory sources are also registered: `richenyu/codex-smart-project-memory` (MIT), `romangalaxys10-spec/headroom-skill` (Apache-2.0), `rebelytics/one-skill-to-rule-them-all` (CC BY 4.0). Their local project adapters are `codex-project-memory`, `headroom` and `task-observer` respectively. These **do not** install Claude-Mem, run hooks, monitor users, or alter the v3 2–4 skill limit. See `docs/AGENT_CONTEXT_TOOLING_REVIEW_2026-10-14.md` for usage, source pins, licensing and safety boundaries.
