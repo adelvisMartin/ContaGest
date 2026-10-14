@@ -7,9 +7,8 @@ import { pathToFileURL } from 'node:url';
 const WORKSPACE_PATHS = Object.freeze(['', 'backend', 'frontend']);
 const CATEGORIES = Object.freeze(['dependencies', 'devDependencies', 'optionalDependencies']);
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/;
-const RESTRICTED_LICENSE = /(?:^|[\s(])(?:AGPL|GPL|SSPL|BUSL)(?:-[\d.]+|-only|-or-later|\b)/i;
+const RESTRICTED_LICENSE = /(?:^|[\s(])(?:AGPL|GPL|LGPL|SSPL|BUSL|BSL|EUPL)(?:-[\d.]+|-only|-or-later|\b)/i;
 const clean = (value) => typeof value === 'string' ? value.trim() : '';
-const own = (object, key) => Object.prototype.hasOwnProperty.call(object ?? {}, key);
 const toKey = (scope, name) => `${scope || 'root'}:${name}`;
 const sortBy = (a, b) => a.localeCompare(b, 'en');
 
