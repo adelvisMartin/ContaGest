@@ -16,6 +16,8 @@ const gate=(id,command,{required=true}={})=>Object.freeze({id,command,required})
 export const PROFILE_GATES = Object.freeze({
   docs:Object.freeze([
     gate('docs-risk-contract','node --test tests/change_risk_classifier_v667.test.mjs'),
+    gate('docs-integrity-unit','npm run test:docs:integrity'),
+    gate('docs-integrity-audit','npm run audit:docs:integrity'),
   ]),
   agent:Object.freeze([
     gate('agent-system-contract','npm run agent:system:verify'),
