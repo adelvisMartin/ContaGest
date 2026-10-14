@@ -28,7 +28,9 @@
       "owner": "appsec-iam",
       "environment": "postgresql17-isolated",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/tenant-isolation-adversarial-v641.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "ledger-posting",
@@ -37,7 +39,9 @@
       "owner": "accounting",
       "environment": "postgresql17-isolated",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/ledger-posting-real-v91.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "financial-reconciliation",
@@ -46,7 +50,9 @@
       "owner": "accounting",
       "environment": "postgresql17-isolated",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/financial-reconciliation-v559.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "financial-fx",
@@ -55,7 +61,9 @@
       "owner": "accounting",
       "environment": "postgresql17-isolated",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/financial-fx-v560.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "financial-idempotency",
@@ -64,7 +72,9 @@
       "owner": "accounting",
       "environment": "postgresql17-isolated",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/financial-idempotency-v92.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "fiscal-authority",
@@ -73,7 +83,9 @@
       "owner": "accounting",
       "environment": "postgresql17-isolated",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/fiscal-authority-v561.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "payables-persistence",
@@ -82,7 +94,9 @@
       "owner": "accounting",
       "environment": "postgresql17-isolated",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/payables-v235.integration.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "auth-boundary",
@@ -91,7 +105,9 @@
       "owner": "appsec-iam",
       "environment": "node22",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test src/modules/auth/auth.boundary.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "hipico-autonomy",
@@ -100,7 +116,9 @@
       "owner": "hipico-reliability",
       "environment": "node22",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test src/modules/hipico-bot/hipico-autonomous-runtime.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "migration-chain",
@@ -109,7 +127,9 @@
       "owner": "dbre",
       "environment": "node22",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "node --test tests/migration_chain_v626_contract.test.mjs",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "erp-main-journey",
@@ -118,7 +138,9 @@
       "owner": "qa-release",
       "environment": "chromium-postgres-isolated",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npx playwright test qa/erp-system-campaign-v155.spec.mjs --project=chromium",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "a11y-browser",
@@ -127,7 +149,9 @@
       "owner": "frontend-pwa-ux",
       "environment": "chromium",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "npx playwright test qa/accessibility-wcag22-v99.spec.mjs --project=chromium",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     },
     {
       "id": "physical-handoff",
@@ -136,7 +160,9 @@
       "owner": "hipico-reliability",
       "environment": "node22",
       "evidenceStatus": "NOT_EXECUTED",
-      "supersededBy": null
+      "supersededBy": null,
+      "command": "node --test tests/hipico_physical_qa_issue_119.test.mjs",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
     }
   ]
 }
