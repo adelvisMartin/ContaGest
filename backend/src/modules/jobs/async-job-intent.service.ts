@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import { prepareAsyncJobIntent, planAsyncJobFailure } from './job-intent-policy.js';
+import { prepareAsyncJobIntent, planAsyncJobFailure, assertAsyncJobTenantId } from './job-intent-policy.js';
 
 // Caller MUST already be inside its business transaction and authenticated tenant context.
 // No implicit second transaction and no network/provider work before business COMMIT.
@@ -35,7 +35,7 @@ export async function claimDueAsyncJobs(tx: Prisma.TransactionClient, input: {
   tenantId: string; workerId: string; now: Date; leaseSeconds: number; limit: number;
 }) {
   const { tenantId, workerId, now, leaseSeconds, limit } = input;
-  if (!/^[0-9a-f-]{36}$/i.test(tenantId)) throw new Error('JOB_TENANT_INVALID');
+  assertAsyncJobTenantId(tenantId);
   if (!/^[a-zA-Z0-9:_-]{1,120}$/.test(workerId)) throw new Error('JOB_WORKER_INVALID');
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new Error('JOB_CLOCK_INVALID');
   if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 15 || leaseSeconds > 900) throw new Error('JOB_LEASE_INVALID');
@@ -54,7 +54,7 @@ export async function claimDueAsyncJobs(tx: Prisma.TransactionClient, input: {
     )
     UPDATE public."AsyncJobIntent" AS j
     SET "status"='running', "leaseOwner"=${workerId} || ':' || gen_random_uuid()::text, "leaseUntil"=clock_timestamp() + (${leaseSeconds} * INTERVAL '1 second'),
-        "attempts"=j."attempts"+1, "updatedAt"=${now}
+        "attempts"=j."attempts"+1, "updatedAt"=clock_timestamp()
     FROM due WHERE j."id"=due."id" AND j."tenantId"=${tenantId}
     RETURNING j."id", j."handlerKey", j."payload", j."attempts", j."maxAttempts", j."leaseOwner"
   `);
@@ -64,10 +64,11 @@ export async function completeClaimedAsyncJob(tx: Prisma.TransactionClient, inpu
   tenantId: string; id: string; leaseToken: string; now: Date;
 }) {
   const { tenantId, id, leaseToken, now } = input;
+  assertAsyncJobTenantId(tenantId);
   if (!/^[a-zA-Z0-9:_-]{1,120}:[0-9a-f-]{36}$/.test(leaseToken)) throw new Error('JOB_LEASE_TOKEN_INVALID');
   const rows = await tx.$queryRaw<Array<{id: string}>>(Prisma.sql`
     UPDATE public."AsyncJobIntent"
-    SET "status"='completed', "leaseOwner"=NULL, "leaseUntil"=NULL, "updatedAt"=${now}
+    SET "status"='completed', "leaseOwner"=NULL, "leaseUntil"=NULL, "updatedAt"=clock_timestamp()
     WHERE "tenantId" = ${tenantId} AND "id" = ${id}
       AND "status"='running' AND "leaseOwner" = ${leaseToken} AND "leaseUntil" > clock_timestamp()
     RETURNING "id"
@@ -81,13 +82,20 @@ export async function failClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
   attempts: number; maxAttempts: number; retryable: boolean; safeErrorCode: string;
 }) {
   const { tenantId, id, leaseToken, now, attempts, maxAttempts, retryable, safeErrorCode } = input;
+  assertAsyncJobTenantId(tenantId);
   if (!/^[a-zA-Z0-9:_-]{1,120}:[0-9a-f-]{36}$/.test(leaseToken)) throw new Error('JOB_LEASE_TOKEN_INVALID');
   if (!/^[A-Z0-9_]{1,100}$/.test(safeErrorCode)) throw new Error('JOB_ERROR_CODE_INVALID');
   const decision = planAsyncJobFailure({attempts,maxAttempts,retryable,now});
+  // Compute only the bounded delay from the policy; the actual retry instant is
+  // owned by PostgreSQL, never by the worker's potentially skewed wall clock.
+  const retryDelaySeconds = decision.runAt === null ? null : Math.round((decision.runAt.getTime() - now.getTime()) / 1000);
   const rows = await tx.$queryRaw<Array<{id: string; status: string}>>(Prisma.sql`
     UPDATE public."AsyncJobIntent"
-    SET "status"=${decision.status}, "runAt"=COALESCE(${decision.runAt}, "runAt"),
-        "leaseOwner"=NULL, "leaseUntil"=NULL, "lastErrorCode"=${safeErrorCode}, "updatedAt"=${now}
+    SET "status"=${decision.status},
+        "runAt"=CASE WHEN ${decision.status} = 'retry'
+          THEN clock_timestamp() + (${retryDelaySeconds}::integer * INTERVAL '1 second')
+          ELSE "runAt" END,
+        "leaseOwner"=NULL, "leaseUntil"=NULL, "lastErrorCode"=${safeErrorCode}, "updatedAt"=clock_timestamp()
     WHERE "tenantId"=${tenantId} AND "id"=${id}
       AND "status"='running' AND "leaseOwner"=${leaseToken} AND "leaseUntil">clock_timestamp()
       AND "attempts"=${attempts} AND "maxAttempts"=${maxAttempts}
@@ -103,7 +111,7 @@ export async function quarantineExhaustedAsyncJobLeases(tx: Prisma.TransactionCl
   tenantId: string; now: Date; limit: number;
 }) {
   const { tenantId, now, limit } = input;
-  if (!/^[0-9a-f-]{36}$/i.test(tenantId)) throw new Error('JOB_TENANT_INVALID');
+  assertAsyncJobTenantId(tenantId);
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new Error('JOB_CLOCK_INVALID');
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 25) throw new Error('JOB_BATCH_INVALID');
   return tx.$queryRaw<Array<{id: string}>>(Prisma.sql`
@@ -116,7 +124,7 @@ export async function quarantineExhaustedAsyncJobLeases(tx: Prisma.TransactionCl
     )
     UPDATE public."AsyncJobIntent" AS j
     SET "status"='dead', "leaseOwner"=NULL, "leaseUntil"=NULL,
-        "lastErrorCode"='JOB_LEASE_EXHAUSTED', "updatedAt"=${now}
+        "lastErrorCode"='JOB_LEASE_EXHAUSTED', "updatedAt"=clock_timestamp()
     FROM exhausted WHERE j."id"=exhausted."id" AND j."tenantId"=${tenantId}
     RETURNING j."id"
   `);
