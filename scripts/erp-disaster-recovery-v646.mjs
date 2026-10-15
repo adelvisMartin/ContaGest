@@ -17,7 +17,7 @@ const STAGES=Object.freeze(['prerequisites','migrate-source','seed-source','rls-
 export function stagePlan(){return [...STAGES];}
 
 export function checkAdmin(env={}){
-  if (String(env.NODE_ENV||'').toLowerCase()==='production' || env.VERCEL_ENV || env.CI_PRODUCTION==='true')
+  if (['production','preview'].includes(String(env.NODE_ENV||'').toLowerCase()) || env.VERCEL_ENV || env.CI_PRODUCTION==='true')
     throw new Error('DR646_PRODUCTION_DENIED');
   if(!env.LOCAL_VERIFY_DATABASE_ADMIN_URL)throw new Error('DR646_LOCAL_ADMIN_REQUIRED');
   let u;try{u=new URL(env.LOCAL_VERIFY_DATABASE_ADMIN_URL);}catch{throw new Error('DR646_BAD_URL');}
