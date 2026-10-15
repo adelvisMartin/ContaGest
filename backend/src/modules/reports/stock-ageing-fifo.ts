@@ -55,6 +55,7 @@ export function calculateStockAgeing(input: {
   let physicalLedger = 0n;
   let latestTime = -Infinity;
   let latestId = '';
+  let fifoHead = 0;
   for (const movement of input.movements) {
     if (!movement.id || !(movement.createdAt instanceof Date)) {
       throw new StockAgeingError('AGEING_INVALID', 'Movement identity or timestamp invalid.');
@@ -79,12 +80,12 @@ export function calculateStockAgeing(input: {
       continue;
     }
     let remaining = -effect;
-    for (const cohort of cohorts) {
-      if (remaining === 0n) break;
-      if (cohort.quantity === 0n) continue;
+    while (remaining > 0n && fifoHead < cohorts.length) {
+      const cohort = cohorts[fifoHead];
       const allocated = remaining < cohort.quantity ? remaining : cohort.quantity;
       cohort.quantity -= allocated;
       remaining -= allocated;
+      if (cohort.quantity === 0n) fifoHead += 1;
     }
     if (remaining !== 0n) {
       throw new StockAgeingError('AGEING_INCOMPLETE_HISTORY', 'An outgoing movement predates available inbound history.');
