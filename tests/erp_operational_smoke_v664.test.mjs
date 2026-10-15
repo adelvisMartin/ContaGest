@@ -43,7 +43,9 @@ test('#664 child environment uses only disposable DB and removes remote provider
     DATABASE_RUNTIME_URL: 'postgresql://user:real@production.invalid/production',
     POSTGRES_PRISMA_URL: 'postgresql://user:real@production.invalid/production',
     SUPABASE_SERVICE_ROLE_KEY: 'SECRET', OPENAI_API_KEY: 'SECRET',
-    WHATSAPP_CLOUD_TOKEN: 'SECRET', ALLOW_DEV_TENANT_HEADER: 'true'
+    WHATSAPP_CLOUD_TOKEN: 'SECRET', ALLOW_DEV_TENANT_HEADER: 'true',
+    LOCAL_VERIFY_DATABASE_ADMIN_URL: 'postgresql://postgres:super_secret@127.0.0.1:5432/postgres',
+    BACKUP_AGE_IDENTITY_B64: 'SECRET', RCLONE_CONFIG_B64: 'SECRET', DATABASE_BACKUP_URL: 'SECRET'
   };
   const isolated = 'postgresql://test:local@127.0.0.1:5432/contagest_smoke_abc_e2e';
   const child = isolatedSmokeEnvironment(original, isolated);
@@ -53,7 +55,8 @@ test('#664 child environment uses only disposable DB and removes remote provider
   assert.equal(child.NODE_ENV, 'test');
   assert.equal(child.VERCEL_ENV, '');
   assert.equal(child.ALLOW_DEV_TENANT_HEADER, 'false');
-  for (const key of ['SUPABASE_SERVICE_ROLE_KEY', 'OPENAI_API_KEY', 'WHATSAPP_CLOUD_TOKEN', 'POSTGRES_PRISMA_URL']) {
+  for (const key of ['SUPABASE_SERVICE_ROLE_KEY', 'OPENAI_API_KEY', 'WHATSAPP_CLOUD_TOKEN', 'POSTGRES_PRISMA_URL',
+    'LOCAL_VERIFY_DATABASE_ADMIN_URL', 'BACKUP_AGE_IDENTITY_B64', 'RCLONE_CONFIG_B64', 'DATABASE_BACKUP_URL']) {
     assert.equal(child[key], undefined, key);
   }
   assert.match(child.JWT_SECRET, /^[0-9a-f]{64}$/);
