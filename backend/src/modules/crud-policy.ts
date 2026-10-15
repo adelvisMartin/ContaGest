@@ -10,11 +10,11 @@
 const MUTABLE_FIELDS = {
   client: {
     create: ['rif', 'name', 'contact', 'email', 'phone', 'address', 'fiscalType', 'active'],
-    update: ['rif', 'name', 'contact', 'email', 'phone', 'address', 'fiscalType', 'active']
+    update: ['name', 'contact', 'email', 'phone', 'address', 'fiscalType', 'active']
   },
   supplier: {
     create: ['rif', 'name', 'contact', 'email', 'phone', 'address', 'retentionProfile', 'active'],
-    update: ['rif', 'name', 'contact', 'email', 'phone', 'address', 'retentionProfile', 'active']
+    update: ['name', 'contact', 'email', 'phone', 'address', 'retentionProfile', 'active']
   },
   product: {
     create: ['sku', 'name', 'description', 'unit', 'cost', 'price', 'minStock', 'taxRate', 'active'],
@@ -22,7 +22,7 @@ const MUTABLE_FIELDS = {
   },
   bankAccount: {
     create: ['bankName', 'accountNo', 'currency', 'active'],
-    update: ['bankName', 'accountNo', 'currency', 'active']
+    update: ['bankName', 'active']
   },
   taxPeriod: {
     create: ['period'],
