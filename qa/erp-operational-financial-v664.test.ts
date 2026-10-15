@@ -15,7 +15,7 @@ test('#664 ERP health, tenant/auth, finance read and rejected synthetic posting'
     const result = await response.json();
     assert.equal(result.status, status, path);
     assert.equal(result.ok, true, path);
-    assert.equal(typeof result.buildCommit, 'string');
+    assert.equal(result.buildCommit, process.env.GIT_COMMIT_SHA, 'runtime identity must match candidate SHA');
     if (path.endsWith('ready')) {
       assert.equal(result.checks?.configuration, 'ok');
       assert.equal(result.checks?.database, 'ok');
