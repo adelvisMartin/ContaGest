@@ -5,6 +5,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { createCrmLead, listCrmLeads, CrmLeadReplayError } from './crm-lead-store.mjs';
+import { transitionCrmLeadStage, CrmLeadConflictError, CrmLeadNotFoundError, CrmLeadStageError } from './crm-lead-stage.mjs';
 
 const router = Router();
 router.use(requireTenant);
@@ -55,6 +56,35 @@ router.post('/',requirePermission('sales.manage'),validateBody(leadDraftSchema),
   }
   res.setHeader('Cache-Control','private, no-store');
   ok(res,lead,201);
+}));
+
+const stageBodySchema = z.object({
+  nextStage:z.enum(['qualified','lost']),
+  expectedUpdatedAt:z.string().datetime({offset:false,local:false})
+}).strict();
+
+router.patch('/:id/stage',requirePermission('sales.manage'),validateBody(stageBodySchema),asyncHandler(async(req,res)=>{
+  const ctx = (req as any).context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
+  if (!ctx.userId) throw new HttpError(403,'Se requiere identidad de usuario verificada.');
+  let changed;
+  try {
+    changed = await transitionCrmLeadStage({
+      db:prisma,tenantId:ctx.tenantId,actorId:ctx.userId,leadId:req.params.id,
+      nextStage:req.body.nextStage,expectedUpdatedAt:req.body.expectedUpdatedAt,
+      ipAddress:ctx.ip,userAgent:ctx.userAgent
+    });
+  } catch(error) {
+    if (error instanceof CrmLeadNotFoundError) throw new HttpError(404,'Prospecto no encontrado.');
+    if (error instanceof CrmLeadConflictError) throw new HttpError(409,'El prospecto cambió desde la última consulta. Actualiza el listado.');
+    if (error instanceof CrmLeadStageError) throw new HttpError(409,'Transición de etapa CRM no permitida.');
+    if (error instanceof TypeError &&
+        ['CRM_LEAD_ID_INVALID','CRM_LEAD_REVISION_REQUIRED'].includes(error.message)) {
+      throw new HttpError(400,'Identificador o revisión de prospecto inválido.');
+    }
+    throw error;
+  }
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,changed);
 }));
 
 export default router;
