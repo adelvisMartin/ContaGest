@@ -48,7 +48,7 @@ test('integrated FIFO algorithm appends custom bands without changing fixed bins
  const row=calculateStockAgeing({movements:moves,stockExact:'6.000',asOf,bucketCutoffs:[7,30,90]});
  assert.equal(row.stockExact,'6.000');
  assert.deepEqual(row.customBuckets.ranges.map(x=>x.quantityExact),['1.000','2.000','2.000','1.000']);
- assert.equal(row.buckets.day31to90Exact,'3.000');
+ assert.equal(row.buckets.day31to90Exact,'2.000');
 });
 test('custom bands never override reconciliation guard',()=>{
  assert.throws(()=>calculateStockAgeing({movements:[movement('a',7)],stockExact:'2.000',asOf,bucketCutoffs:[7,30,90]}),e=>e.code==='AGEING_LEDGER_MISMATCH');
