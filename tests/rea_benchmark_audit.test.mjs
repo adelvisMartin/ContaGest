@@ -1,6 +1,6 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
@@ -10,6 +10,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const script = path.join(root, 'scripts/rea-benchmark-audit.mjs');
 const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+const temporaryDirectories = new Set();
+after(async () => {
+  await Promise.all([...temporaryDirectories].map((dir) => rm(dir, { recursive: true, force: true })));
+});
 
 function run(...args) {
   return spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: 'utf8' });
@@ -17,6 +21,7 @@ function run(...args) {
 
 async function fixture() {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'rea-audit-contract-'));
+  temporaryDirectories.add(dir);
   const capture = '{"tool":"inspect_web_page","synthetic":true}\n';
   await writeFile(path.join(dir, 'rea.json'), capture);
   const manifest = {
@@ -100,8 +105,7 @@ test('report refuses capture traversal or symlink escaping private folder', asyn
   await writeFile(fx.input, JSON.stringify(fx.manifest));
   assert.notEqual(run('report', '--input', fx.input, '--out', fx.output).status, 0);
   await mkdir(path.join(fx.dir, 'captures'));
-  const real = path.join(os.tmpdir(), 'rea-external-fixture-' + process.pid + '.json');
-  await writeFile(real, '{"synthetic":true}');
+  const real = path.join(root, 'package.json');
   await symlink(real, path.join(fx.dir, 'captures', 'link.json'));
   fx.manifest.captureFile = 'captures/link.json';
   await writeFile(fx.input, JSON.stringify(fx.manifest));
