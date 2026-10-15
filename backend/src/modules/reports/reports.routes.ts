@@ -1,11 +1,14 @@
 import { Router } from 'express';
+import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
-import { asyncHandler, ok } from '../../shared/http.js';
+import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import {
   buildInventoryStockHealth,
   summarizeInventoryStockHealth
 } from '../../shared/services/inventory-stock-health.service.js';
+import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRows } from './sales-kpi.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('reports.view'));
@@ -30,6 +33,62 @@ router.get('/', (_req, res) => {
     ]
   });
 });
+
+const salesKpiQuery = z.object({
+  period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  currency: z.string().trim().regex(/^[A-Z][A-Z0-9]{2,7}$/).optional(),
+  take: z.coerce.number().int().min(1).max(100).default(25),
+  skip: z.coerce.number().int().min(0).max(1_000_000).default(0)
+}).strict();
+
+// Dedicated versioned analytics read: no fabricated report totals, no
+// cross-currency arithmetic and no separately persisted aggregates.
+// Each summary and drill-down page shares one repeatable-read PG snapshot.
+router.get('/operational/sales', asyncHandler(async (req, res) => {
+  const query = salesKpiQuery.safeParse(req.query);
+  if (!query.success) throw new HttpError(400, 'Filtros de KPI de ventas inválidos.', { code: 'SALES_KPI_QUERY_INVALID' });
+  const ctx = context(req);
+  const { period, currency, take, skip } = query.data;
+  const where = {
+    tenantId: ctx.tenantId,
+    fiscalPeriod: period,
+    status: { in: [...SALES_KPI_STATUSES] },
+    ...(currency ? { currency } : {})
+  };
+  const [groups, documents] = await prisma.$transaction(async (tx) => Promise.all([
+    tx.salesInvoice.groupBy({
+      by: ['currency', 'status'],
+      where,
+      _sum: { subtotal: true, iva: true, total: true },
+      _count: { _all: true },
+      orderBy: [{ currency: 'asc' }, { status: 'asc' }]
+    }),
+    tx.salesInvoice.findMany({
+      where,
+      select: { id:true, number:true, issueDate:true, fiscalPeriod:true, currency:true, status:true, subtotal:true, iva:true, total:true },
+      orderBy: [{ issueDate:'desc' }, { id:'desc' }],
+      take: take + 1,
+      skip
+    })
+  ]), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  const hasMore = documents.length > take;
+  ok(res, {
+    version: SALES_KPI_VERSION,
+    sourceAuthority: 'SalesInvoice',
+    definition: {
+      statuses: SALES_KPI_STATUSES,
+      period: 'fiscalPeriod',
+      monetaryUnit: 'original-currency',
+      fxConversion: 'NONE',
+      excludeDraftAndCancelled: true,
+      isolation: 'repeatable-read'
+    },
+    filters: { period, currency: currency ?? null, take, skip },
+    summary: salesKpiRows(groups),
+    rows: salesKpiDocumentRows(documents.slice(0, take)),
+    pagination: { hasMore, nextSkip: hasMore ? skip + take : null }
+  });
+}));
 
 router.get('/sales', (_req, res) => {
   res.json({
