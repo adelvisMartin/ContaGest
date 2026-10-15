@@ -147,3 +147,68 @@ test('#658 protected entities and purge adapters cannot drift from retention mat
     !row.deleteSemantics.includes('immutable') || row.purgeable === false),
     'immutable retention class can never authorize generic purge');
 });
+
+test('#658 policy edits, legal holds and purge share tenant serialization; stale errors cannot overwrite a newer batch', () => {
+  const policyWrite = service.slice(
+    service.indexOf('export async function createRetentionPolicyVersion'),
+    service.indexOf('export async function listRetentionPolicies')
+  );
+  const legalHoldWrite = service.slice(
+    service.indexOf('export async function createLegalHold'),
+    service.indexOf('export async function listLegalHolds')
+  );
+  const purge = service.slice(
+    service.indexOf('export async function executePurgeBatch'),
+    service.indexOf('export async function registerStorageObject')
+  );
+  const tenantLock = /pg_advisory_xact_lock\(hashtextextended\(\$\{input\.tenantId\}, 562\)\)/;
+  for (const [name, scope] of [
+    ['retention policy version', policyWrite],
+    ['legal hold', legalHoldWrite],
+    ['purge batch', purge]
+  ]) {
+    assert.match(scope, tenantLock, `${name} must acquire the tenant advisory lock`);
+  }
+  assert.match(purge, /FOR UPDATE/, 'purge must also serialize concurrent jobs');
+  assert.match(purge, /"attempts" = \$\{observedAttempts\}/,
+    'failed older jobs cannot overwrite a newer successful job status');
+  assert.match(purge, /persistLifecycleEvidence\(tx,/, 'audit evidence must use the same transaction');
+  assert.match(purge, /deletePurgeableRows\(tx,/, 'DELETE must use the same transaction');
+  assert.match(purge, /"lastError" = \$\{blocked \? 'LEGAL_HOLD_ACTIVE' : 'PURGE_BATCH_FAILED'\}/,
+    'DB/provider messages cannot be persisted verbatim');
+});
+
+test('#658 purge batch size validation is shared before any SQL or job creation', () => {
+  const validator = service.slice(service.indexOf('function normalizePurgeBatchSize'), service.indexOf('function canonicalize'));
+  assert.match(validator, /Number\.isSafeInteger\(value\)/);
+  assert.match(validator, /value < 1/);
+  assert.match(validator, /PURGE_BATCH_SIZE_INVALID/);
+  assert.match(validator, /Math\.min\(value, 1000\)/);
+  const request = service.slice(service.indexOf('export async function requestPurgeJob'), service.indexOf('async function deletePurgeableRows'));
+  const execution = service.slice(service.indexOf('export async function executePurgeBatch'), service.indexOf('export async function registerStorageObject'));
+  assert.match(request, /normalizePurgeBatchSize\(input\.batchSize\)/);
+  assert.match(execution, /normalizePurgeBatchSize\(input\.batchSize\)/);
+});
+
+test('#658 pg advisory lock results never return PostgreSQL void to Prisma', () => {
+  // pg_advisory_xact_lock returns type void. Prisma raw selects must project
+  // a supported integer instead, without changing transaction lock semantics.
+  assert.doesNotMatch(service, /SELECT\s+pg_advisory_xact_lock\(/i);
+  const safeLocks = [...service.matchAll(/SELECT\s+1::integer\s+AS\s+"lockAcquired"\s+FROM\s+pg_advisory_xact_lock\(/g)];
+  assert.equal(safeLocks.length, 4, 'tenant x3 and policy entity x1 locks must all project an integer');
+  const policyWrite = service.slice(
+    service.indexOf('export async function createRetentionPolicyVersion'),
+    service.indexOf('export async function listRetentionPolicies')
+  );
+  const legalHold = service.slice(
+    service.indexOf('export async function createLegalHold'),
+    service.indexOf('export async function listLegalHolds')
+  );
+  const purge = service.slice(
+    service.indexOf('export async function executePurgeBatch'),
+    service.indexOf('export async function registerStorageObject')
+  );
+  for (const scope of [policyWrite, legalHold, purge]) {
+    assert.match(scope, /1::integer\s+AS\s+"lockAcquired"\s+FROM\s+pg_advisory_xact_lock/);
+  }
+});
