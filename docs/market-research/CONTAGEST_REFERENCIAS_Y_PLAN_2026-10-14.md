@@ -10,7 +10,7 @@ El repositorio ya define un ERP con frontend Vite, API Node/TypeScript, Prisma/P
 
 **Identidad observada:** GitHub `main` estaba en `5523608b3ca7f98727d043902ae7d47dd09880c5` durante esta revisión. La carpeta local compartida no tiene `HEAD` propio y todo su contenido aparece sin seguimiento; por ello la inspección local es contexto, no evidencia exacta del `main` publicado. El [PR #997 de REA](https://github.com/adelvisMartin/ContaGest/pull/997) está **abierto** en `f4655d9ab97aa87962290fb27b304e2eca72cd40`: prepara `rea-agents@6.5.0`, matrices y un instalador local optativo, pero no demuestra que la CLI esté instalada en este equipo ni que se haya ejecutado una captura REA.
 
-**Actualización de estado (15-10-2026):** la auditoría anterior conserva su SHA como corte histórico. En esta continuación el clon Git verificable tiene `origin/main` en `0d93a03ad43dfb81036900b6948a3c5328bdf32c`; PR #997 sigue abierto y su resolución/conflictos deben revalidarse con el head vigente. La documentación de benchmark de esta carpeta se prepara como guía; no declara que REA haya auditado toda la web ni que sus capturas se hayan ejecutado.
+**Actualización de estado (15-10-2026):** la auditoría anterior conserva su SHA como corte histórico. La base Git incorporada a esta revisión de documentos es `1d0d97d2175eb09deba0a40c4b5555add75793b3`; el estado de PR #997 y cualquier cambio posterior de `main` deben volver a consultarse antes de implementar. La documentación de benchmark de esta carpeta es una guía dirigida; no declara que REA haya auditado toda la web ni que sus capturas se hayan ejecutado.
 
 ## 2. Evidencia externa y alcance
 

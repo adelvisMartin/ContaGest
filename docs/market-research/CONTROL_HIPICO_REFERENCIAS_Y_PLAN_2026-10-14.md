@@ -33,7 +33,7 @@ Los valores de `?t=` son **credenciales de enlace** y por eso no se copian en es
 
 - En la observación original (14-10-2026), GitHub `main` estaba en `5523608b3ca7f98727d043902ae7d47dd09880c5`; ese SHA es evidencia histórica del corte, no el estado actual.
 - [PR #997 — REA](https://github.com/adelvisMartin/ContaGest/pull/997) sigue abierto: CLI y matrices preparadas, sin captura REA real demostrada. Esta auditoría sí utilizó observación directa del navegador, **no REA**.
-- Estado consultado el 15-10-2026: `origin/main` estaba en `0d93a03ad43dfb81036900b6948a3c5328bdf32c`; #999 (informes) y #1000 (enlaces compartibles) ya están fusionados. Su integración no prueba por sí sola paridad, aislamiento ni seguridad de cada flujo.
+- Base Git incorporada a esta revisión documental el 15-10-2026: `1d0d97d2175eb09deba0a40c4b5555add75793b3`. PR #999 (informes) y #1000 (enlaces compartibles) constan fusionados; su integración no prueba por sí sola paridad, aislamiento ni seguridad de cada flujo. Consultar de nuevo el estado de `main` antes de implementar.
 - La [issue #1018](https://github.com/adelvisMartin/ContaGest/issues/1018) mantiene el gate P0 de activación de reportes compartibles: verificar RLS PostgreSQL 17, redacción de URL y conciliación con ledger en el SHA actual.
 - [#837](https://github.com/adelvisMartin/ContaGest/issues/837) conserva la autoridad de producto Hípico. #892 (Conversation Engine), #907 (inbox durable), #1010 (subasta opcional) y #1011 (canal Messenger) son tickets abiertos para trabajos distintos; no reconstruir los motores existentes.
 

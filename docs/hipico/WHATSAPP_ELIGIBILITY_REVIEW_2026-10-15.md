@@ -1,6 +1,6 @@
 # Control Hípico — elegibilidad para chatbot en WhatsApp Messenger (#1011)
 
-**Corte:** 2026-10-15 · **Issue:** [#1011](https://github.com/adelvisMartin/ContaGest/issues/1011) · **BASE_SHA:** `9ced7fa1` (main al iniciar esta consolidación; reemplazar por SHA final al publicar evidencia)
+**Corte:** 2026-10-15 · **Issue:** [#1011](https://github.com/adelvisMartin/ContaGest/issues/1011) · **BASE_SHA:** `1d0d97d2175eb09deba0a40c4b5555add75793b3` (base Git incorporada a esta revisión documental; no constituye evidencia de release)
 **Canal elegido:** WhatsApp Messenger normal. **Alcance del grupo:** privado, amigos, recreativo, sin dinero real ni efecto económico. **WhatsApp Business:** excluido. **Decisión de envío automático SOURCE:** `NO_GO` mientras no haya autorización expresa verificable para Messenger.
 
 Esta revisión fija la premisa del propietario. No preguntar nuevamente si se usa dinero real. La clasificación del grupo no altera otros módulos contables o financieros de Control Hípico/ContaGest.
