@@ -51,8 +51,7 @@ responsable o inactivo; 404: proyecto ausente; 409: revisión obsoleta o
 transición prohibida; 503: funcionalidad no habilitada. Nunca se acepta el
 tenant o un supuesto `managerId` del cuerpo de la petición.
 
-`node --experimental-strip-types --test
-tests/project_status_transition_v761.test.mjs` añade regresiones
+`npx tsx --test ../tests/project_status_transition_v761.test.mjs` (desde `backend/`) añade regresiones
 deterministas con DB simulada: CAS ganador/perdedor, audit fallido,
 falsificación de identidad, referencias de otra empresa, transición terminal,
 revisión inválida y prohibición de efectos monetarios. Los tests mock no
