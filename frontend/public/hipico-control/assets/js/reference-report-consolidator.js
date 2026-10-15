@@ -55,8 +55,14 @@ function amountParts(row, col) {
   return [row[col]];
 }
 function score(row, col) {
+  if(CURRENCY_COLUMNS.has(col)){
+    if(row[col]===null)return null;
+    // Comparable sums require ONE currency, never add USD to VES.
+    const entries=Object.entries(row[col]||{}).sort((a,b)=>a[0].localeCompare(b[0]));
+    return {currency:entries.map(([name])=>name).join('+'),amount:entries.length===1?entries[0][1]:0};
+  }
   const parts=amountParts(row,col);
-  return parts.length ? sumMinor(parts) : null;
+  return parts.length ? parts[0] : null;
 }
 export function consolidateFilterDefaults() {
   return { search:'', signColumn:'available', sign:'all', hideInactive:true,
@@ -212,7 +218,11 @@ export function projectConsolidatedBalances(workspace,options={}) {
     const aScore=score(a,sortColumn),bScore=score(b,sortColumn);
     let diff=sortColumn==='participant'
       ? (a.code+' '+a.name).localeCompare(b.code+' '+b.name,'es')
-      :aScore===null && bScore===null?0:aScore===null?1:bScore===null?-1:aScore-bScore;
+      :aScore===null && bScore===null?0:aScore===null?1:bScore===null?-1
+        :CURRENCY_COLUMNS.has(sortColumn)
+          ? aScore.currency.localeCompare(bScore.currency,'es') ||
+            (aScore.currency && !aScore.currency.includes('+')?aScore.amount-bScore.amount:0)
+          :aScore-bScore;
     if(diff===0)diff=a.id.localeCompare(b.id);
     return sortDirection==='desc'?-diff:diff;
   });
