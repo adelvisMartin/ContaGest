@@ -11,7 +11,7 @@ import {
 import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRows } from './sales-kpi.js';
 import { summarizeInvoicedUnitActivity } from './invoiced-unit-activity.js';
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
-import { deriveReorderCandidates } from './replenishment-candidates.js';
+import { deriveReorderCandidates, inspectReorderStockRows } from './replenishment-candidates.js';
 import { previewReorderPolicy } from './reorder-policy-preview.js';
 import { parseReorderScanQuery, reorderScanPageMeta } from './reorder-scan-page.js';
 import { parseReorderSalesOptions, projectReorderSalesEvidence } from './reorder-sales-evidence.js';
@@ -518,8 +518,19 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 
   const rows = products.map(buildInventoryStockHealth);
+  let stockReview;
+  try {
+    stockReview = inspectReorderStockRows(rows);
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    throw new HttpError(409, 'El cálculo de disponibilidad no concuerda con los datos canónicos.', {
+      code: 'REORDER_STOCK_PROJECTION_CONFLICT'
+    });
+  }
+  // Invalid balances remain in the original rows/summary, but never become
+  // normal replenishment candidates or implicit commercial sales evidence.
   const filteredRows = onlyNeedsReorder ? rows.filter(row => row.needsReorder) : rows;
-  const reorderCandidates = deriveReorderCandidates(rows);
+  const reorderCandidates = deriveReorderCandidates(stockReview.eligibleRows);
   const pagination = reorderScanPageMeta({
     skip, take, scannedProducts: products.length, activeProducts,
     matchesInPage: rows.filter(row => row.needsReorder).length
@@ -562,6 +573,9 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
       autoPurchaseEnabled: false,
       noLocationForecastUntil: '#755',
       reorderCandidates,
+      stockExceptions: stockReview.stockExceptions,
+      stockExceptionCount: stockReview.stockExceptions.length,
+      exceptionsScope: 'SCANNED_CATALOG_PAGE_ONLY',
       ...(salesEvidence ? {
         salesEvidence: {
           ...salesEvidence,
