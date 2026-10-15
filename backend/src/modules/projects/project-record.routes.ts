@@ -8,6 +8,14 @@ import { createProjectRecord, listProjectRecords, ProjectOwnerNotFound, ProjectR
 
 const router=Router();
 router.use(requireTenant);
+// This first persistence cut remains closed until tenant-negative PostgreSQL,
+// auth/RBAC and HTTP smoke pass on the deployment's exact SHA.
+router.use((_req,_res,next)=>{
+  if(process.env.CONTAGEST_PROJECTS_V761_ENABLE!=='true'){
+    return next(new HttpError(503,'El módulo de proyectos está pendiente de habilitación verificada.'));
+  }
+  next();
+});
 
 const draftSchema=z.object({
   name:z.string().trim().min(3).max(160),
