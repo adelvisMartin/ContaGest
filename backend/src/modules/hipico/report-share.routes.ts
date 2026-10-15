@@ -3,10 +3,10 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { operatorTokenValid } from '../hipico-bot/hipico-operator-security.js';
 import {
-  createShareSchema, reportDate, validateReportToken
+  createShareSchema, reportDate, reportGroupKey, validateReportToken
 } from './report-share-policy.js';
 import {
-  issueHipicoReportLink, readHipicoReportLink, revokeHipicoReportLink
+  issueHipicoReportLink, listHipicoReportLinks, readHipicoReportLink, revokeHipicoReportLink
 } from './report-share.store.js';
 
 const uuid = z.string().uuid();
@@ -17,6 +17,7 @@ export type ReportShareStore = {
   issue: typeof issueHipicoReportLink;
   read: typeof readHipicoReportLink;
   revoke: typeof revokeHipicoReportLink;
+  list: typeof listHipicoReportLinks;
 };
 type RouterOptions = { ownerId?: () => string; validateOperator?: (value: string | undefined) => boolean; store?: ReportShareStore; now?: () => Date };
 function ownerFromEnvironment() {
@@ -36,7 +37,7 @@ export function readableMinor(amount: string) {
   const grouped = major.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return sign + grouped + ',' + digits.slice(-2);
 }
-function htmlReport(data: any, nonce: string) {
+function htmlReport(data: any, nonce: string, token: string) {
   const balances = data.balances.map((b: any) => `<tr><td>${escapeHtml(b.participantCode)}</td><td>${escapeHtml(b.currency)}</td><td class="num">${escapeHtml(readableMinor(b.amountMinor))}</td></tr>`).join('');
   const entries = data.entries.map((e: any) => `<tr><td>${escapeHtml(String(e.createdAt).slice(0, 19).replace('T', ' '))}</td><td>${escapeHtml(e.participantCode)}</td><td>${escapeHtml(e.entryType)}</td><td>${escapeHtml(e.currency)}</td><td class="num">${escapeHtml(readableMinor(e.amountMinor))}</td></tr>`).join('');
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -56,7 +57,12 @@ function htmlReport(data: any, nonce: string) {
     <p>Fecha: ${escapeHtml(data.date)} · Grupo: ${escapeHtml(data.groupKey)} · Alcance: ${data.scope === 'participant' ? 'Participante' : 'Grupo completo'}</p>
     ${data.participantCode ? '<p>Cuenta: '+escapeHtml(data.participantCode)+'</p>' : ''}
     <small>Datos verificados del ledger · Lectura exclusiva · Vigente hasta ${escapeHtml(data.expiresAt)}</small>
-    </header><section><h2>Saldos al corte</h2><div class="table"><table><thead><tr><th>Participante</th><th>Moneda</th><th>Saldo</th></tr></thead><tbody>
+    </header><section><form method="get" action="${reportPath}">
+    <input type="hidden" name="t" value="${escapeHtml(token)}">
+    <label for="day">Fecha de consulta</label>
+    <input id="day" type="date" name="date" value="${escapeHtml(data.date)}" required>
+    <button type="submit">Consultar</button></form></section>
+    <section><h2>Saldos al corte</h2><div class="table"><table><thead><tr><th>Participante</th><th>Moneda</th><th>Saldo</th></tr></thead><tbody>
     ${balances || '<tr><td colspan="3">Sin registros de ledger para este corte.</td></tr>'}</tbody></table></div></section>
     <section><h2>Movimientos del día</h2><div class="table"><table><thead><tr><th>Hora UTC</th><th>Participante</th><th>Tipo</th><th>Moneda</th><th>Monto</th></tr></thead><tbody>
     ${entries || '<tr><td colspan="5">Sin movimientos registrados.</td></tr>'}</tbody></table></div></section>
@@ -70,7 +76,7 @@ function setPrivateHeaders(res: Response) {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
   res.setHeader('Vary', 'Accept');
-  res.setHeader('Content-Security-Policy', "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
 }
 function publicFailure(res: Response, code = 404) {
   // Do not reveal whether a valid, expired or revoked capability ever existed.
@@ -80,8 +86,10 @@ function publicFailure(res: Response, code = 404) {
 export function createHipicoReportShareRouter(options: RouterOptions = {}) {
   const router = Router();
   const ownerId = options.ownerId || ownerFromEnvironment;
+  const caracasToday = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now());
   const store: ReportShareStore = options.store || {
-    issue: issueHipicoReportLink, read: readHipicoReportLink, revoke: revokeHipicoReportLink
+    issue: issueHipicoReportLink, read: readHipicoReportLink, revoke: revokeHipicoReportLink,
+    list: listHipicoReportLinks
   };
   const operatorAuthorized = options.validateOperator || operatorTokenValid;
   const now = options.now || (() => new Date());
@@ -89,15 +97,15 @@ export function createHipicoReportShareRouter(options: RouterOptions = {}) {
 
   router.get('/public', async (req: Request, res: Response) => {
     const token = validateReportToken(req.query.t);
-    const dateParsed = reportDate.safeParse(req.query.date);
+    const dateParsed = reportDate.safeParse(req.query.date || caracasToday());
     if (!token || !dateParsed.success) return publicFailure(res);
     try {
       const data = await store.read(ownerId(), token, dateParsed.data, now());
       if (!data) return publicFailure(res);
-      if (req.accepts('html') && !req.accepts('json')) {
+      if (req.accepts(['html', 'json']) === 'html') {
         const nonce = crypto.randomBytes(16).toString('base64');
         res.setHeader('Content-Security-Policy', `default-src 'none'; style-src 'nonce-${nonce}'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
-        return res.status(200).type('html').send(htmlReport(data, nonce));
+        return res.status(200).type('html').send(htmlReport(data, nonce, token));
       }
       return res.status(200).json({ ok: true, data });
     } catch { return publicFailure(res, 503); }
@@ -109,6 +117,14 @@ export function createHipicoReportShareRouter(options: RouterOptions = {}) {
     }
     next();
   });
+  router.get('/', async (req, res) => {
+    const group = reportGroupKey.safeParse(req.query.groupKey);
+    if (!group.success) return res.status(400).json({ ok: false, code: 'HIPICO_REPORT_GROUP_REQUIRED' });
+    try {
+      return res.status(200).json({ ok: true, data: await store.list(ownerId(), group.data) });
+    } catch { return res.status(503).json({ ok: false, code: 'HIPICO_REPORT_LINKS_UNAVAILABLE' }); }
+  });
+
   router.post('/', async (req, res) => {
     const parsed = createShareSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ ok: false, code: 'HIPICO_REPORT_ISSUE_INVALID' });
@@ -117,7 +133,7 @@ export function createHipicoReportShareRouter(options: RouterOptions = {}) {
       // Only this authorized response exposes the raw secret, once.
       return res.status(201).json({
         ok: true, data: { id: result.id, expiresAt: result.expiresAt,
-          relativeUrl: `${reportPath}?t=${result.token}&date=${new Date().toISOString().slice(0, 10)}`
+          relativeUrl: `${reportPath}?t=${result.token}`
         }
       });
     } catch { return res.status(503).json({ ok: false, code: 'HIPICO_REPORT_ISSUE_UNAVAILABLE' }); }
