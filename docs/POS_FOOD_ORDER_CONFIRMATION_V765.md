@@ -23,7 +23,7 @@ npm --workspace frontend run test:pos:order
 npm test
 ```
 
-La primera suite cuenta ocho casos positivos/negativos (red, respuesta sin ID, doble clic y fallo del estado local); `npm test` incluye la suite a través del script frontend. Ejecutada la suite unitaria Node22: 8/8 PASS; `node --check` y `tsc --allowJs --checkJs --noEmit --strict` sobre el helper: PASS. Ejecutados adicionalmente cuatro escenarios de montaje del manejador real sobre la versión exacta de GitHub: 4/4 PASS con DOM simulado y servicio fake. No se atribuye éxito a `npm test` monorepo, build Vite, PG17, Chromium o E2E real, que siguen NOT_EXECUTED.
+La suite incluye ocho casos dinámicos y dos guardas de contrato de página (diez en total) (red, respuesta sin ID, doble clic y fallo del estado local); `npm test` incluye la suite a través del script frontend. Ejecutada la suite unitaria Node22: 10/10 PASS; `node --check` y `tsc --allowJs --checkJs --noEmit --strict` sobre el helper: PASS. Ejecutados adicionalmente cuatro escenarios de montaje del manejador real sobre la versión exacta de GitHub: 4/4 PASS con DOM simulado y servicio fake. No se atribuye éxito a `npm test` monorepo, build Vite, PG17, Chromium o E2E real, que siguen NOT_EXECUTED.
 
 ## Autoridad, límites y rollback
 
