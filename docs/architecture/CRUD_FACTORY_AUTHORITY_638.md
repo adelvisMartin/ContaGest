@@ -15,13 +15,13 @@ Eso permitía dependencias implícitas de una frontera de autorización sin tipo
 
 | Modelo delegado | Escritura genérica permitida | No permitido desde CRUD |
 |---|---|---|
-| `client` | RIF, nombre, contacto, email, teléfono, dirección, fiscalType, active | id, tenantId, timestamps, relaciones/roles |
-| `supplier` | RIF, nombre, contacto, email, teléfono, dirección, retentionProfile, active | id, tenantId, timestamps, relaciones |
+| `client` | RIF sólo en creación; en actualización nombre, contacto, email, teléfono, dirección, fiscalType y active | id, tenantId, timestamps, relaciones/roles |
+| `supplier` | RIF sólo en creación; en actualización nombre, contacto, email, teléfono, dirección, retentionProfile y active | id, tenantId, timestamps, relaciones |
 | `product` | sku, nombre, descripción, unidad, cost, price, minStock, taxRate, active | stock, reserved, tenant, movimientos, QR/sistema |
-| `bankAccount` | bankName, accountNo, currency, active | balance, movimientos, delete genérico |
+| `bankAccount` | bankName, accountNo y currency sólo al crear; en actualización bankName y active | balance, movimientos, delete genérico |
 | `taxPeriod` | create con `period` | status, ivaDebit, ivaCredit, igtfPaid, update y delete genéricos |
 
-La política de campos reside en `crud-policy.ts` y los esquemas Zod en `schemas.ts`. Ambas puertas deben cumplirse. Los cambios monetarios, fiscalidad, cierre/reapertura, saldo y stock requieren comandos especializados con permisos, idempotencia y auditable transaction en sus owners (#637 / #629 / #628). El status 405 para las operaciones fiscales/banqueras no significa que el producto haya dejado de necesitarlas: significa que no pueden escribirse por un endpoint genérico.
+RIF de cliente/proveedor, número de cuenta y moneda bancaria son identificadores estables: su corrección requiere flujo de dominio auditado, no PUT genérico.\n\nLa política de campos reside en `crud-policy.ts` y los esquemas Zod en `schemas.ts`. Ambas puertas deben cumplirse. Los cambios monetarios, fiscalidad, cierre/reapertura, saldo y stock requieren comandos especializados con permisos, idempotencia y auditable transaction en sus owners (#637 / #629 / #628). El status 405 para las operaciones fiscales/banqueras no significa que el producto haya dejado de necesitarlas: significa que no pueden escribirse por un endpoint genérico.
 
 ## Invariantes de la implementación
 
@@ -44,7 +44,7 @@ El pre-read de PUT/DELETE más la escritura tenant-scoped protege el alcance ant
 - **LOCAL_POLICY / TypeScript:** `node --test tests/crud_factory_hardening_issue_638.test.mjs` + typecheck real; test usa Node 22 `--experimental-strip-types` para ejecutar directamente `crud-policy.ts` sin reimplementarla.
 - **CI:** el runner `scripts/run-authoritative-contracts.mjs` incluye explícitamente este test dentro de `npm run test:contracts:current`; `ci.yml` llama a `npm test`, `npm run typecheck`, `npm run build:backend`.
 - **API/PG17 (obligatorio antes del cierre):** dos tenants aislados; CREATE con id/tenantId falseados → 422; valid create cliente/proveedor/producto → 200; PUT ID de tenant B → 404, sin cambio; DELETE ID de tenant B → 404, sin cambio; buscar no filtra otros tenants; replays/backoff; Prisma `update` con predicado compuesto.
-- **E2E Playwright:** con credenciales sintéticas y PG17 efímero, verificar que formularios legítimos de los cinco módulos continúan funcionando, y que búsqueda/paginación/fiscalidad/banco usan las nuevas restricciones correctamente. Nunca pruebas destructivas contra producción.
+- **E2E Playwright:** `qa/crud-factory-security-v638.spec.mjs` ejercita HTTP real, tenant A/B, falsificación de id/tenant, escritura legítima, update/reload y cleanup; exige `CG_CRUD_E2E_ISOLATED=true`, backend `CG_CRUD_E2E_API_BASE_URL` sólo loopback, `CG_CRUD_E2E_TOKEN_A/B` sintéticos y `QA_BASE_URL` local para que Playwright no arranque frontend innecesariamente. Además hay que verificar formularios de los cinco modelos en browser con PG17 efímero. Nunca pruebas destructivas contra producción.
 - **REMOTE_CI/DEPLOY:** sólo `PASS` si corre en candidato SHA y sus logs lo prueban. `MERGED` no es prueba.
 - **PHYSICAL_EXTERNAL:** QA manual del propietario diferido; conservar `NOT_EXECUTED`.
 
