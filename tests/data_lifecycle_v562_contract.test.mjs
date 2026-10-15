@@ -93,6 +93,19 @@ test('#658 protected entities and purge adapters cannot drift from retention mat
 
   const protectedEntities = sourceSet('PROTECTED_ENTITIES');
   const purgeAdapters = sourceSet('PURGE_ADAPTER_ENTITIES');
+  // Immutable fiscal/accounting/audit authorities cannot vanish from both
+  // catalogs simultaneously and still produce a false-positive PASS.
+  const mandatoryProtected = new Map([
+    ['AuditLog', 'immutable'],
+    ['LedgerEntry', 'immutable'],
+    ['FiscalDocument', 'immutable'],
+    ['FiscalCloseEvidence', 'immutable'],
+    ['ClinicalMediaObject', 'immutable'],
+    ['CarePatient', 'soft_delete']
+  ]);
+  for (const entity of mandatoryProtected.keys()) {
+    assert.ok(protectedEntities.has(entity), `mandatory protected runtime owner removed: ${entity}`);
+  }
   const matrixEntities = new Map();
 
   for (const row of parsedMatrix.entities) {
@@ -100,6 +113,10 @@ test('#658 protected entities and purge adapters cannot drift from retention mat
     assert.ok(row.entity.length > 0, 'unidentified entity in retention authority');
     assert.equal(matrixEntities.has(row.entity), false, `duplicate retention entity: ${row.entity}`);
     matrixEntities.set(row.entity, row);
+    if (mandatoryProtected.has(row.entity)) {
+      assert.equal(row.deleteSemantics, mandatoryProtected.get(row.entity),
+        `protected lifecycle semantics changed: ${row.entity}`);
+    }
     assert.ok(row.retentionDays === null ||
       (Number.isSafeInteger(row.retentionDays) && row.retentionDays >= 0),
       `invalid retentionDays: ${row.entity}`);
