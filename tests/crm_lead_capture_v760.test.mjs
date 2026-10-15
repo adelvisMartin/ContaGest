@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   CRM_LEAD_MODULE, CRM_LEAD_MAX_PAGE, validateCrmLeadDraft,
-  createCrmLead, listCrmLeads, serializeCrmLead
+  createCrmLead, listCrmLeads, serializeCrmLead, deterministicLeadId, CrmLeadReplayError
 } from '../backend/src/modules/crm/crm-lead-store.mjs';
 
+const idempotencyKey='4a9d94bd-3ef9-49a1-bf1a-09c48e2bf1cc';
 const sample = {name:'Comercial Acme',rif:'J-12345678-9',email:'VENTAS@EXAMPLE.COM',nextActionAt:'2026-10-20T18:00:00.000Z'};
 const row = (data={}) => ({
   id:'lead-1',tenantId:'tenant-a',moduleSlug:CRM_LEAD_MODULE,title:'Comercial Acme',
@@ -58,12 +59,13 @@ test('rejects malformed dates and input overflow',()=>{
 });
 test('atomic create inserts the lead and minimal audit in the same callback',async()=>{
   const {db,writes}=transactionalDb();
-  const result=await createCrmLead({db,tenantId:'tenant-a',actorId:'actor-1',draft:{...sample,tenantId:'spoof',ownerId:'spoof'},ipAddress:'127.0.0.1'});
+  const result=await createCrmLead({db,tenantId:'tenant-a',actorId:'actor-1',idempotencyKey,draft:{...sample,tenantId:'spoof',ownerId:'spoof'},ipAddress:'127.0.0.1'});
   assert.equal(result.id,'lead-1');
   assert.equal(result.name,'Comercial Acme');
   assert.equal(writes.length,2);
   assert.equal(writes[0][0],'lead');
   assert.equal(writes[0][1].data.tenantId,'tenant-a');
+  assert.equal(writes[0][1].data.id,deterministicLeadId('tenant-a',idempotencyKey));
   assert.equal(writes[0][1].data.payload.ownerId,'actor-1');
   assert.equal(writes[0][1].data.moduleSlug,CRM_LEAD_MODULE);
   assert.equal(writes[1][0],'audit');
@@ -73,13 +75,13 @@ test('atomic create inserts the lead and minimal audit in the same callback',asy
 });
 test('audit insert failing aborts the transaction rather than allowing untracked lead',async()=>{
   const {db,writes}=transactionalDb({failAudit:true});
-  await assert.rejects(createCrmLead({db,tenantId:'tenant-a',actorId:'actor-1',draft:sample}),/AUDIT_WRITE_FAILED/);
+  await assert.rejects(createCrmLead({db,tenantId:'tenant-a',actorId:'actor-1',idempotencyKey,draft:sample}),/AUDIT_WRITE_FAILED/);
   assert.equal(writes.length,0);
 });
 test('tenant and authenticated actor required before writing',async()=>{
   const {db,writes}=transactionalDb();
-  await assert.rejects(createCrmLead({db,tenantId:'',actorId:'actor-1',draft:sample}),/CRM_TENANT_REQUIRED/);
-  await assert.rejects(createCrmLead({db,tenantId:'tenant-a',actorId:'',draft:sample}),/CRM_ACTOR_REQUIRED/);
+  await assert.rejects(createCrmLead({db,tenantId:'',actorId:'actor-1',idempotencyKey,draft:sample}),/CRM_TENANT_REQUIRED/);
+  await assert.rejects(createCrmLead({db,tenantId:'tenant-a',actorId:'',idempotencyKey,draft:sample}),/CRM_ACTOR_REQUIRED/);
   assert.equal(writes.length,0);
 });
 test('lead list always scopes tenant+slug and bounds pagination',async()=>{
@@ -115,6 +117,8 @@ test('real route enforces tenant, sales permissions and server-owned actor',()=>
   assert.match(route,/router\.post\('\/',requirePermission\('sales\.manage'\)/);
   assert.match(route,/if \(!ctx\.userId\) throw new HttpError\(403/);
   assert.match(route,/actorId:ctx\.userId/);
+  assert.match(route,/req\.header\('Idempotency-Key'\)/);
+  assert.match(route,/error instanceof CrmLeadReplayError/);
   assert.match(route,/validateBody\(leadDraftSchema\)/);
   assert.match(route,/\.strict\(\)/);
   assert.doesNotMatch(route,/prisma\.client\.(?:create|update|upsert)/);
@@ -137,4 +141,32 @@ test('CRM lead storage namespace cannot be reached through generic Stitch record
   assert.equal(registry.some(item=>item.slug===CRM_LEAD_MODULE),false);
   const source=readFileSync(new URL('../backend/src/modules/modules/modules.routes.ts',import.meta.url),'utf8');
   assert.match(source,/if \(!allowed\.has\(req\.params\.slug\)\)/);
+});
+
+
+test('tenant-keyed idempotency UUID is deterministic and canonical',()=>{
+ const first=deterministicLeadId('tenant-a',idempotencyKey);
+ assert.match(first,/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+ assert.equal(first,deterministicLeadId('tenant-a',idempotencyKey.toUpperCase()));
+ assert.notEqual(first,deterministicLeadId('tenant-b',idempotencyKey));
+});
+test('invalid attempt keys cannot write CRM lead',async()=>{
+ const {db,writes}=transactionalDb();
+ for(const key of ['', 'not-a-uuid','00000000-0000-0000-0000-000000000000']){
+  await assert.rejects(createCrmLead({db,tenantId:'tenant-a',actorId:'actor-1',idempotencyKey:key,draft:sample}),/CRM_IDEMPOTENCY_KEY_REQUIRED/);
+ }
+ assert.equal(writes.length,0);
+});
+test('unique PK conflict maps to CRM replay error instead of inserting again',async()=>{
+ let calls=0;
+ const db={$transaction:async run=>run({
+  moduleRecord:{create:async()=>{calls++;throw Object.assign(new Error('unique'),{code:'P2002'});}},
+  auditLog:{create:async()=>{throw Error('AUDIT_SHOULD_NOT_RUN');}}
+ })};
+ await assert.rejects(createCrmLead({db,tenantId:'tenant-a',actorId:'actor-1',idempotencyKey,draft:sample}),CrmLeadReplayError);
+ assert.equal(calls,1);
+});
+test('non-uniqueness transaction errors preserve error semantics',async()=>{
+ const db={$transaction:async()=>{throw Error('DB_UNAVAILABLE')}};
+ await assert.rejects(createCrmLead({db,tenantId:'tenant-a',actorId:'actor-1',idempotencyKey,draft:sample}),/DB_UNAVAILABLE/);
 });
