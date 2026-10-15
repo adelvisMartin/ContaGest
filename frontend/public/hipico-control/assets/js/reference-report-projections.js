@@ -62,8 +62,13 @@ function scopedParticipants(workspace, groupId) {
 function racesOn(workspace, groupId, date) {
   return scopeItems(workspace, workspace.races, groupId)
     .filter((race) => race.date === date)
-    .sort((a, b) => String(a.racetrack).localeCompare(String(b.racetrack), 'es') ||
-      Number(a.number || 0) - Number(b.number || 0));
+    // Latest real recorded activity appears first, as in the screenshot feed.
+    // Use a stable, explicit fallback when activity timestamps are unavailable.
+    .sort((a, b) =>
+      String(b.settledAt || b.updatedAt || b.createdAt || '').localeCompare(
+        String(a.settledAt || a.updatedAt || a.createdAt || '')
+      ) || Number(b.number || 0) - Number(a.number || 0) ||
+      String(a.racetrack).localeCompare(String(b.racetrack), 'es'));
 }
 
 function participantDetails(member) {
@@ -204,6 +209,8 @@ export function projectParticipantAccount(workspace, { groupId, date, participan
   return {
     ...cx, participant: participantDetails(participant),
     opening: participantBalanceAt(workspace, participant.id, previousDay(cx.date)),
+    closing: participantBalanceAt(workspace, participant.id, cx.date),
+    settledRaceTotal: sumAmounts(races.map((race) => race.net)),
     available: statement.available,
     dayResult: statement.dayTotal, weekResult: statement.weekTotal, aval: statement.aval,
     weekly: statement.dailyRows.map((r) => ({ date: r.date, amount: r.amount })),

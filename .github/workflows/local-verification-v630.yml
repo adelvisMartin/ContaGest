@@ -35,6 +35,11 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
+      - name: Test Pyramid #655 inventory and negative contracts
+        run: |
+          node scripts/test-pyramid-audit-v655.mjs
+          node --test tests/test_pyramid_issue_655.test.mjs
+
       - name: Runner contract
         run: npm run test:verify:local
       - name: Backend dry-run cannot claim PASS

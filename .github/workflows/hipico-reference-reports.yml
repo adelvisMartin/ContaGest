@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'frontend/public/hipico-control/assets/js/reference-report-*.js'
+      - 'tests/hipico_reference_report_operations.test.mjs'
+      - 'tests/hipico_reference_report_consolidator.test.mjs'
       - 'frontend/public/hipico-control/assets/js/app.js'
       - 'frontend/public/hipico-control/sw.js'
       - 'android/hipico-control-v1130/scripts/sync-web.mjs'
@@ -36,5 +38,9 @@ jobs:
           node --check frontend/public/hipico-control/assets/js/app.js
           node --check frontend/public/hipico-control/assets/js/reference-report-projections.js
           node --check frontend/public/hipico-control/assets/js/reference-report-ui.js
+          node --check frontend/public/hipico-control/assets/js/reference-report-operations.js
+          node --check frontend/public/hipico-control/assets/js/reference-report-consolidator.js
+          node --check frontend/public/hipico-control/assets/js/reference-report-consolidator-ui.js
+          node --check frontend/public/hipico-control/assets/js/reference-report-consolidator-image.js
       - name: Read-only reports — isolation and math contracts
-        run: node --test tests/hipico_reference_report_projections.test.mjs
+        run: node --test tests/hipico_reference_report_projections.test.mjs tests/hipico_reference_report_operations.test.mjs tests/hipico_reference_report_consolidator.test.mjs

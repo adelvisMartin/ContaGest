@@ -2,10 +2,14 @@ import { BET_OPTIONS, calculateJugarDisponible, calculatePolla, calculateRaceSum
 import { csvEscape, generateBalancesWhatsappText, generateBetReceiptText, generateDailySummaryText, generateWhatsappText, money, number, shortDate } from "./format.js";
 import { createBlankWorkspace } from "./seed.js";
 import { backupFilename, deliverJsonBackup, serializeWorkspaceBackup } from "./backup.js";
-import { clearLocalWorkspace, createSnapshot, downloadFile, enqueueOutbox, flushWorkspaceWrites, getAppMode, initializeStorage, listOutbox, listSnapshots, loadLocalWorkspace, queueWorkspaceSave, removeOutbox, requestPersistentStorage, restoreSnapshot, saveLocalWorkspace, setAppMode, storageDiagnostics } from "./store.js";
+import { clearLocalWorkspace, createSnapshot, downloadBlob, downloadFile, enqueueOutbox, flushWorkspaceWrites, getAppMode, initializeStorage, listOutbox, listSnapshots, loadLocalWorkspace, queueWorkspaceSave, removeOutbox, requestPersistentStorage, restoreSnapshot, saveLocalWorkspace, setAppMode, storageDiagnostics } from "./store.js";
 import { downloadPdf, downloadXlsx, fixedWidthTable } from "./reports.js";
 import { assertReportDate } from "./reference-report-projections.js";
 import { renderReferenceReport, referenceReportLines } from "./reference-report-ui.js";
+import { projectConsolidatedBalances, consolidateFilterDefaults, moveConsolidatorColumn } from "./reference-report-consolidator.js";
+import { renderConsolidator, consolidatedVisibleText, consolidatedVisibleMatrix, consolidatedVisiblePdfLines } from "./reference-report-consolidator-ui.js";
+import { consolidatedPngBlob } from "./reference-report-consolidator-image.js";
+import { caracasToday, raceCopyText } from "./reference-report-operations.js";
 import { mergeWorkspaces, shouldMergeCloud } from "./sync.js";
 import { appendCloudAudit, currentSession, currentUserSummary, fetchCloudAccess, fetchCloudProfile, fetchCloudWorkspace, fetchRecentShadowEvaluations, initializeCloudSession, isTransientCloudError, isVersionConflict, saveCloudWorkspace, signIn, signOut, signUp } from "./supabase.js";
 import { APP_VERSION, CLOUD_CONFIG } from "./config.js";
@@ -19,8 +23,10 @@ let workspace = null;
 let view = new URLSearchParams(location.search).get("view") || "dashboard";
 let raceTab = new URLSearchParams(location.search).get("tab") || "capture";
 let reportTab = "daily";
-let referenceReportDate = today();
+let referenceReportDate = caracasToday();
 let referenceReportParticipantId = "";
+let consolidatedFilters = consolidateFilterDefaults();
+let referenceReportRefresh = { busy: false, checkedAt: null, status: "Datos del espacio de trabajo local (no sincronización en vivo)." };
 let modal = null;
 let cloudWorkspaceId = null;
 let cloudProfile = null;
@@ -617,7 +623,7 @@ function renderParticipants() { const rows = currentBalanceRows(); return `<sect
 function historyRows() { const rows = []; for (const race of groupItems(workspace.races)) for (const b of race.bets || []) { const base = { id: b.id, group: activeCompany(), date: race.date, racetrack: race.racetrack, race: race.number, description: `${b.play} (${String(b.horse).replace(/\*/g, "x")}) con ${number(b.amount)}`, type: b.source === "advanced" ? "Adelantada" : "Carrera", play: b.play, status: b.status }; if (b.playerId) rows.push({ ...base, role: "Juega", participantId: b.playerId, balanceBs: b.settlement?.playerAmount ?? 0, auxiliary: b.settlement?.code ?? "", rate: race.exchangeRate || workspaceRateForDate(race.date), balanceUsd: toUsd(b.settlement?.playerAmount ?? 0, race.date) }); if (b.receiverId) rows.push({ ...base, role: "Consigue", participantId: b.receiverId, balanceBs: b.settlement?.receiverAmount ?? 0, auxiliary: b.settlement?.code ?? "", rate: race.exchangeRate || workspaceRateForDate(race.date), balanceUsd: toUsd(b.settlement?.receiverAmount ?? 0, race.date) }); } return rows; }
 function filteredHistory() { return historyRows().filter((r) => (!historyFilter.from || r.date >= historyFilter.from) && (!historyFilter.to || r.date <= historyFilter.to) && (!historyFilter.track || r.racetrack.toLowerCase().includes(historyFilter.track.toLowerCase())) && (!historyFilter.participant || r.participantId === historyFilter.participant) && (!historyFilter.type || r.play === historyFilter.type) && (!historyFilter.status || r.status === historyFilter.status)); }
 function renderHistory() { const rows = filteredHistory(); return `<section class="page-head"><div><h2>Historial de jugadas</h2><p>${escapeHtml(activeGroup().name)} · filtros y cortes sin tablas cortadas en móvil.</p></div><div class="page-actions"><button class="button" data-action="history-this-week">Esta semana</button><button class="button" data-action="export-history">Exportar CSV</button></div></section><details class="card filter-card" open><summary>Filtros</summary><form id="history-filter-form"><div class="card__body filter-grid">${dateField("from", historyFilter.from || today(), "Desde")}${dateField("to", historyFilter.to || today(), "Hasta")}<input class="input" name="track" placeholder="Hipódromo" value="${escapeHtml(historyFilter.track)}"><select class="select" name="participant"><option value="">Todos los tercios</option>${participantOptions(historyFilter.participant)}</select><select class="select" name="type"><option value="">Todas las jugadas</option>${BET_OPTIONS.map((x) => `<option ${historyFilter.type === x ? "selected" : ""}>${x}</option>`).join("")}</select><select class="select" name="status"><option value="">Todos los estados</option><option value="pending" ${historyFilter.status === "pending" ? "selected" : ""}>Pendiente</option><option value="settled" ${historyFilter.status === "settled" ? "selected" : ""}>Liquidada</option><option value="cancelled" ${historyFilter.status === "cancelled" ? "selected" : ""}>Anulada</option></select><button class="button button--primary">Aplicar</button></div></form></details><section class="card section-gap"><div class="card__head"><h3>${rows.length} movimientos</h3><span class="badge">${escapeHtml(activeCurrency())} + conversión</span></div><div class="card__body"><div class="history-mobile-list">${rows.map((r) => `<article class="history-card"><header><strong>${escapeHtml(pCode(r.participantId))}</strong><span class="badge">${escapeHtml(r.role)}</span></header><h4>${escapeHtml(r.description)}</h4><p>${escapeHtml(r.racetrack)} · ${r.race}ª · ${escapeHtml(r.date)}</p><div><span>Saldo</span><b>${money(r.balanceBs, activeCurrency(), true)}</b></div><div><span>USD</span><b>${number(r.balanceUsd)}</b></div></article>`).join("") || empty("Sin movimientos", "Ajusta los filtros o registra apuestas.")}</div><div class="table-wrap history-desktop-table"><table class="summary-table history-table"><thead><tr><th>Fecha</th><th>Hipódromo</th><th>Carr.</th><th>Descripción</th><th>Tipo</th><th>Tercio</th><th>Saldo</th><th>Dólar</th><th>USD</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${r.date}</td><td>${escapeHtml(r.racetrack)}</td><td>${r.race}</td><td>${escapeHtml(r.description)}</td><td>${escapeHtml(r.role)}</td><td>${escapeHtml(pCode(r.participantId))}</td><td>${number(r.balanceBs)}</td><td>${number(r.rate)}</td><td>${number(r.balanceUsd)}</td></tr>`).join("")}</tbody></table></div></div></section>`; }
-function renderReports() { const tabs = [["daily", "Cierre diario"], ["personal", "Estado personal"], ["daily-movements", "Movimientos del día"], ["race-history", "Carreras y resultados"], ["week", "Semana anterior"], ["balances", "Disponibles"], ["movements", "Movimientos"], ["audit", "Auditoría"]]; return `<section class="more-dashboard"><button data-view="advanced">${icon("plus")}<span>Adelantadas</span></button><button data-view="history">${icon("report")}<span>Historial</span></button><button data-view="polla">${icon("check")}<span>POLLA</span></button><button data-view="settings">${icon("settings")}<span>Configuración</span></button><button data-action="toggle-theme">${icon(workspace.config.theme === "dark" ? "sun" : "moon")}<span>Modo ${workspace.config.theme === "dark" ? "claro" : "oscuro"}</span></button><button class="is-danger" data-action="logout">${icon("logout")}<span>Cerrar sesión</span></button></section><section class="page-head"><div><h2>Cierres y saldos</h2><p>${escapeHtml(activeCompany())} · control diario y semanal.</p></div><div class="page-actions"><button class="button" data-action="new-movement">Movimiento</button><button class="button button--primary" data-action="close-day">Cerrar jornada</button></div></section><div class="tabs tabs--scroll">${tabs.map(([id, l]) => `<button class="tab ${reportTab === id ? "is-active" : ""}" data-report-tab="${id}">${l}</button>`).join("")}</div><div class="section-gap">${reportTab === "week" ? renderWeek() : reportTab === "balances" ? renderBalances() : reportTab === "movements" ? renderMovements() : reportTab === "audit" ? renderAudit() : ["personal", "daily-movements", "race-history"].includes(reportTab) ? renderInternalReferenceReport() : renderDaily()}</div>`; }
+function renderReports() { const tabs = [["daily", "Cierre diario"], ["personal", "Estado personal"], ["consolidator", "Consolidador"], ["daily-movements", "Movimientos del día"], ["race-history", "Carreras y resultados"], ["week", "Semana anterior"], ["balances", "Disponibles"], ["movements", "Movimientos"], ["audit", "Auditoría"]]; return `<section class="more-dashboard"><button data-view="advanced">${icon("plus")}<span>Adelantadas</span></button><button data-view="history">${icon("report")}<span>Historial</span></button><button data-view="polla">${icon("check")}<span>POLLA</span></button><button data-view="settings">${icon("settings")}<span>Configuración</span></button><button data-action="toggle-theme">${icon(workspace.config.theme === "dark" ? "sun" : "moon")}<span>Modo ${workspace.config.theme === "dark" ? "claro" : "oscuro"}</span></button><button class="is-danger" data-action="logout">${icon("logout")}<span>Cerrar sesión</span></button></section><section class="page-head"><div><h2>Cierres y saldos</h2><p>${escapeHtml(activeCompany())} · control diario y semanal.</p></div><div class="page-actions"><button class="button" data-action="new-movement">Movimiento</button><button class="button button--primary" data-action="close-day">Cerrar jornada</button></div></section><div class="tabs tabs--scroll">${tabs.map(([id, l]) => `<button class="tab ${reportTab === id ? "is-active" : ""}" data-report-tab="${id}">${l}</button>`).join("")}</div><div class="section-gap">${reportTab === "week" ? renderWeek() : reportTab === "balances" ? renderBalances() : reportTab === "movements" ? renderMovements() : reportTab === "audit" ? renderAudit() : reportTab === "consolidator" ? renderInternalConsolidator() : ["personal", "daily-movements", "race-history"].includes(reportTab) ? renderInternalReferenceReport() : renderDaily()}</div>`; }
 function referenceReportFilter() {
   // Source is the operator's already-unlocked workspace, never a URL token.
   const groupId = activeGroupId();
@@ -628,12 +634,23 @@ function referenceReportFilter() {
   const member = members.find((p) => p.id === referenceReportParticipantId) || members[0];
   return { type: reportTab, date: referenceReportDate, groupId, participantId: member?.id || "" };
 }
+function currentConsolidator() {
+  return projectConsolidatedBalances(workspace, {
+    ...consolidatedFilters,
+    groupId: activeGroupId(),
+    date: referenceReportDate
+  });
+}
+function renderInternalConsolidator() {
+  try { return renderConsolidator(currentConsolidator(), referenceReportRefresh); }
+  catch (error) { return '<section class="notice" role="alert">No se puede calcular el consolidador: ' + escapeHtml(error.message) + '</section>'; }
+}
 function renderInternalReferenceReport() {
   const filter = referenceReportFilter();
   if (filter.type === "personal" && !filter.participantId) {
     return '<section class="card"><div class="card__body">No hay participantes en este grupo. Agrégalos desde Participantes para consultar su estado personal.</div></section>';
   }
-  try { return renderReferenceReport(workspace, filter); }
+  try { return renderReferenceReport(workspace, filter, referenceReportRefresh); }
   catch (error) { return `<section class="notice" role="alert">El informe no puede mostrarse: ${escapeHtml(error.message)}</section>`; }
 }
 function renderDaily() { const day = activeDay(), stats = dayStats(day); return `<div class="grid grid--two"><section class="card"><div class="card__head"><h3>Resumen de ${shortDate(day.date)}</h3></div><div class="card__body"><div class="control-stack"><div><span>Carreras</span><strong>${stats.races}</strong></div><div><span>Apuestas</span><strong>${stats.bets}</strong></div><div><span>Volumen</span><strong>${money(stats.volume, activeCurrency())}</strong></div><div><span>Comisión</span><strong>${money(stats.commission, activeCurrency())}</strong></div><div><span>Pendientes</span><strong>${stats.pending}</strong></div><div><span>Diferencia</span><strong>${money(stats.controlDifference, activeCurrency(), true)}</strong></div></div><div class="capture-actions section-gap"><button class="button" data-action="copy-daily">Copiar cierre</button><button class="button" data-action="export-daily-pdf">PDF diario</button><button class="button" data-action="export-daily-xlsx">Excel diario</button><button class="button" data-action="export-balances">CSV saldos</button></div></div></section><section class="card"><div class="card__head"><h3>Validaciones</h3></div><div class="card__body"><div class="check-list"><div class="${stats.pending ? "is-bad" : "is-good"}">${stats.pending ? "✕" : "✓"} Apuestas pendientes: ${stats.pending}</div><div class="${stats.openRaces.length ? "is-bad" : "is-good"}">${stats.openRaces.length ? "✕" : "✓"} Carreras sin finalizar: ${stats.openRaces.length}</div><div class="${Math.abs(stats.controlDifference) > .01 ? "is-bad" : "is-good"}">${Math.abs(stats.controlDifference) > .01 ? "✕" : "✓"} Diferencia: ${number(stats.controlDifference)}</div></div></div></section></div>`; }
@@ -681,6 +698,132 @@ root.addEventListener("click", async (event) => {
             return;
         }
         const action = el.dataset.action;
+        if (action === "reference-report-today") {
+            referenceReportDate = caracasToday();
+            referenceReportRefresh.checkedAt = null;
+            referenceReportRefresh.status = "Vista de hoy en el dispositivo (no implica sincronización).";
+            render();
+            return;
+        }
+        if (action === "reference-report-switch") {
+            const target = String(el.dataset.target || "");
+            if (!["race-history", "daily-movements"].includes(target)) throw new Error("Vista de informe no permitida.");
+            const input = root.querySelector("#reference-report-date");
+            if (input?.value && input.value !== referenceReportDate) {
+                referenceReportDate = assertReportDate(input.value);
+                referenceReportRefresh.checkedAt = null;
+            }
+            reportTab = target;
+            render();
+            return;
+        }
+        if (action === "reference-report-copy-race") {
+            const filter = referenceReportFilter();
+            const copied = raceCopyText(workspace, { ...filter, raceId: String(el.dataset.id || ""),
+                participantId: filter.type === "personal" ? filter.participantId : null });
+            await copyText(copied, "Jugadas y resultados de la carrera copiados.");
+            return;
+        }
+        if (action === "reference-report-refresh") {
+            if (referenceReportRefresh.busy) return;
+            const input = root.querySelector("#reference-report-date, #hc-cons-date");
+            if (input?.value) referenceReportDate = assertReportDate(input.value);
+            referenceReportRefresh.busy = true;
+            referenceReportRefresh.status = "Consultando los datos disponibles…";
+            render();
+            try {
+                if (isSyncing) throw new Error("Hay una sincronización en curso. Intenta de nuevo.");
+                await flushWorkspaceWrites();
+                if (mode === "cloud" && currentSession() && navigator.onLine) {
+                    if (workspace.syncQueue?.length || (await listOutbox()).length) {
+                        referenceReportRefresh.status = "Hay cambios pendientes de sincronizar. Se muestran los datos locales; no se reemplazaron.";
+                    } else {
+                        const remote = await fetchCloudWorkspace();
+                        if (remote?.state) {
+                            workspace = normalizeWorkspaceShape(mergeWorkspaces(workspace, remote.state));
+                            cloudWorkspaceId = remote.id || cloudWorkspaceId;
+                            workspace.syncMeta.lastSyncedVersion = Number(remote.version || workspace.syncMeta.lastSyncedVersion || 0);
+                            workspace.syncMeta.lastSyncedAt = now();
+                            await saveLocalWorkspace(workspace);
+                            referenceReportRefresh.status = "Datos revisados con el espacio remoto y el dispositivo.";
+                        } else {
+                            referenceReportRefresh.status = "No existe aún una versión remota; se muestran los datos locales.";
+                        }
+                    }
+                } else {
+                    // No pretend that pressing Refresh downloads new records offline.
+                    referenceReportRefresh.status = navigator.onLine && mode === "local"
+                        ? "Datos de este dispositivo consultados; sin sesión de nube."
+                        : "Sin conexión: se muestran datos disponibles en este dispositivo.";
+                }
+                referenceReportRefresh.checkedAt = new Date().toLocaleString("es-VE", { timeZone: "America/Caracas" });
+            } catch (error) {
+                referenceReportRefresh.status = "No se pudo actualizar desde la nube; se conservan los datos del dispositivo.";
+                toast(error.message || "No se pudo actualizar el informe.", "error");
+            } finally {
+                referenceReportRefresh.busy = false;
+                render();
+            }
+            return;
+        }
+        if (action === "consolidator-personal") {
+            const id = String(el.dataset.id || "");
+            const fallback = groupList()[0]?.id || "group-1";
+            const person = (workspace.participants || []).find(p => p.id === id &&
+                String(p.groupId || fallback) === String(activeGroupId()));
+            if (!person) throw new Error("Esta cuenta no pertenece al grupo activo.");
+            referenceReportParticipantId = id;
+            reportTab = "personal";
+            render();
+            return;
+        }
+        if (action === "consolidator-back") {
+            reportTab = "consolidator";
+            render();
+            return;
+        }
+        if (action === "consolidator-today") {
+            referenceReportDate = caracasToday();
+            consolidatedFilters.page = 1;
+            referenceReportRefresh.checkedAt = null;
+            render();
+            return;
+        }
+        if (action === "consolidator-clear") {
+            consolidatedFilters = consolidateFilterDefaults();
+            referenceReportRefresh.checkedAt = null;
+            render();
+            return;
+        }
+        if (action === "consolidator-page") {
+            const page = Number(el.dataset.page);
+            if (!Number.isSafeInteger(page) || page < 1 || page > currentConsolidator().pages) return;
+            consolidatedFilters.page = page;
+            render();
+            return;
+        }
+        if (action === "consolidator-move-column") {
+            const step = Number(el.dataset.step);
+            consolidatedFilters.columnOrder = moveConsolidatorColumn(
+                consolidatedFilters.columnOrder, String(el.dataset.id || ""), step);
+            render();
+            return;
+        }
+        if (["consolidator-copy","consolidator-xlsx","consolidator-pdf","consolidator-png"].includes(action)) {
+            const model = currentConsolidator();
+            const safeName = String(model.groupId).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 70);
+            const stem = "hipico-consolidado-" + safeName + "-" + model.date + "-p" + model.page;
+            if (action === "consolidator-copy") {
+                await copyText(consolidatedVisibleText(model), "Página del consolidador copiada para Excel.");
+            } else if (action === "consolidator-xlsx") {
+                downloadXlsx(stem + ".xlsx", [{name:"Consolidado",rows:consolidatedVisibleMatrix(model)}]);
+            } else if (action === "consolidator-pdf") {
+                downloadPdf(stem + ".pdf", "Control Hípico · Consolidador", consolidatedVisiblePdfLines(model));
+            } else {
+                downloadBlob(stem + ".png", await consolidatedPngBlob(model));
+            }
+            return;
+        }
         if (action === "copy-reference-report") {
             await copyText(referenceReportLines(workspace, referenceReportFilter()).join("\n"), "Resumen copiado.");
             return;
@@ -717,6 +860,10 @@ root.addEventListener("click", async (event) => {
         if (action === "select-group") {
             const id = el.dataset.id; const y = scrollTopValue(); if (!groupList().some((group) => group.id === id)) return;
             workspace.config.activeGroupId = id; workspace.config.activeWhatsappGroupId = id; workspace.activeRaceId = workspace.config.activeRaceByGroup?.[id] || null;
+            referenceReportParticipantId = "";
+            consolidatedFilters = consolidateFilterDefaults();
+            referenceReportRefresh.checkedAt = null;
+            referenceReportRefresh.status = "Grupo cambiado: datos locales del nuevo grupo sin consultar nuevamente la nube.";
             workspace.config.captureGroupIds = [...new Set([id, ...(workspace.config.captureGroupIds || []).filter((groupId) => groupId !== id)])];
             persist(); render(); restoreScroll(y); toast(`Grupo activo: ${activeGroup().name}`, "success"); return;
         }
@@ -1108,8 +1255,27 @@ root.addEventListener("submit", async (event) => {
     const formId = form.getAttribute("id");
     const data = new FormData(form);
     try {
+        if (formId === "consolidator-filter-form") {
+            const nextDate = assertReportDate(String(data.get("date") || ""));
+            if (nextDate !== referenceReportDate) referenceReportRefresh.checkedAt = null;
+            referenceReportDate = nextDate;
+            consolidatedFilters = {
+                ...consolidatedFilters,
+                search: String(data.get("search") || ""),
+                signColumn: String(data.get("signColumn") || "available"),
+                sign: String(data.get("sign") || "all"),
+                sortColumn: String(data.get("sortColumn") || "participant"),
+                sortDirection: String(data.get("sortDirection") || "asc"),
+                hideInactive: data.has("hideInactive"),
+                page: 1
+            };
+            render();
+            return;
+        }
         if (formId === "reference-report-filter-form") {
-            referenceReportDate = assertReportDate(String(data.get("date") || ""));
+            const selectedReportDate = assertReportDate(String(data.get("date") || ""));
+            if (selectedReportDate !== referenceReportDate) referenceReportRefresh.checkedAt = null;
+            referenceReportDate = selectedReportDate;
             if (reportTab === "personal") {
                 const selected = String(data.get("participantId") || "");
                 const members = (workspace.participants || []).filter((p) =>

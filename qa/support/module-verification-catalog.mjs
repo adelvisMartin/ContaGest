@@ -26,6 +26,8 @@ const SPEC = Object.freeze({
   compras:{persistence:'workflow',domain:'purchases'},
   auditoria:{persistence:'read',domain:'audit'},
   configuracion:{persistence:'settings',domain:'admin'},
+  sedes:{persistence:'crud',domain:'locations'},
+  'listas-precio':{persistence:'crud',domain:'pricing'},
   ayuda:{persistence:'none',domain:'support'},
   tasks:{persistence:'crud',domain:'tasks'},
   profile:{persistence:'settings',domain:'identity'},

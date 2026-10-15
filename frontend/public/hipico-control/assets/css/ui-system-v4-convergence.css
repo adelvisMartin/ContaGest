@@ -242,3 +242,85 @@ body:has(.ops-root[data-ops-authorized="true"]) .hc-help-trigger {
   .reference-report__filters .field, .reference-report__filters .button { flex-basis: 100%; }
   .reference-report__filters :is(.input, .select, .button) { min-height: var(--hc-v4-touch); }
 }
+
+
+/* Screenshot-informed Hípico daily operations desk, owned by the canonical v4 sheet. */
+.reference-report__filters .reference-report__actions {
+  display: flex; flex: 2 1 320px; gap: 8px; align-items: end;
+  flex-wrap: wrap; min-width: 0;
+}
+.reference-report__actions .button { white-space: nowrap; }
+.reference-report__sync-status { margin: 0; color: var(--hc-text-muted); font-size: var(--hc-v4-type-xs); }
+.reference-report__movement-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+.reference-report__desk { display: grid; gap: 12px; min-width: 0; }
+.reference-report__desk-columns {
+  display: grid; grid-template-columns: minmax(280px, .42fr) minmax(0, 1fr);
+  gap: 16px; align-items: start; min-width: 0;
+}
+.reference-report__ledger { position: sticky; top: 12px; min-width: 0; }
+.reference-report__ledger .table-wrap { max-height: 76vh; overflow: auto; }
+.reference-report__ledger th { position: sticky; top: 0; background: var(--hc-surface-raised); z-index: 1; }
+.reference-report__desk-races { min-width: 0; }
+.reference-report__race-count { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 12px; }
+.reference-report__race-count h3 { margin: 0; }
+.reference-report__race-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.reference-report__race-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(125px, .27fr); gap: 12px; min-width: 0; }
+.reference-report__race-split > * { min-width: 0; }
+.reference-report__race-split h4 { font-size: var(--hc-v4-type-xs); text-transform: uppercase; letter-spacing: .03em; color: var(--hc-text-muted); margin: 0 0 8px; }
+.reference-report__race-split .table-wrap { max-width: 100%; overflow-x: auto; }
+.reference-report__results { display: grid; gap: 6px; }
+.reference-report__results [role="listitem"] { display: flex; justify-content: space-between; gap: 8px; font-size: var(--hc-v4-type-xs); border-bottom: 1px solid var(--hc-border); padding: 4px 0; font-variant-numeric: tabular-nums; }
+.reference-report__results [role="listitem"] strong { overflow-wrap: anywhere; }
+.reference-report__ledger td:last-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.reference-report__desk-races .reference-report__race .card__head { background: var(--hc-surface-raised); }
+.reference-report__desk-races .reference-report__race .card__head h3 { font-size: var(--hc-v4-type-sm); }
+@media (max-width: 1050px) {
+  .reference-report__desk-columns { grid-template-columns: minmax(0, 1fr); }
+  .reference-report__ledger { position: static; }
+  .reference-report__ledger .table-wrap { max-height: 400px; }
+}
+@media (max-width: 700px) {
+  .reference-report__race-split { grid-template-columns: 1fr; }
+  .reference-report__race-split aside { border-top: 1px solid var(--hc-border); padding-top: 10px; }
+  .reference-report__actions { flex-basis: 100%; }
+  .reference-report__actions .button { flex: 1 1 auto; min-height: var(--hc-v4-touch); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reference-report__ledger .table-wrap { scroll-behavior: auto; }
+}
+
+
+/* Nine-column Hípico consolidator. Same visual v4 ownership as other Hípico reports. */
+.reference-consolidator { display:grid; gap:14px; min-width:0; }
+.reference-consolidator__filters .card__body {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:end; gap:12px;
+}
+.reference-consolidator__filters .field { min-width:0; }
+.reference-consolidator__filters :is(.input,.select,.button) { min-height:var(--hc-v4-control); }
+.reference-consolidator__toggle { display:flex; align-items:center; gap:8px; font-size:var(--hc-v4-type-sm); padding:8px; }
+.reference-consolidator__filters .reference-report__actions { display:flex; flex-wrap:wrap; gap:8px; }
+.reference-consolidator__counts { display:flex; flex-wrap:wrap; align-items:center; gap:12px; font-variant-numeric:tabular-nums; }
+.reference-consolidator__totals { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; min-width:0; }
+.reference-consolidator__totals >div { min-width:0; border:1px solid var(--hc-border); border-radius:var(--hc-v4-radius-md); padding:10px; }
+.reference-consolidator__totals small { display:block; color:var(--hc-text-muted); font-size:var(--hc-v4-type-xs); }
+.reference-consolidator__totals strong { display:block; font-size:var(--hc-v4-type-sm); overflow-wrap:anywhere; margin-top:5px; font-variant-numeric:tabular-nums; }
+.reference-consolidator__table-wrap { max-width:100%; overflow-x:auto; }
+.reference-consolidator__table { min-width:1200px; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+.reference-consolidator__table th { min-width:115px; text-align:start; vertical-align:top; }
+.reference-consolidator__table th:first-child { min-width:170px; }
+.reference-consolidator__table td { white-space:nowrap; }
+.reference-consolidator__th { display:flex; flex-direction:column; gap:5px; }
+.reference-consolidator__reorder { display:flex; gap:4px; }
+.reference-consolidator__reorder button { min-height:30px; min-width:38px; }
+.reference-consolidator__pages { display:flex; gap:12px; justify-content:flex-end; align-items:center; margin-top:14px; }
+.reference-consolidator__pages span { font-size:var(--hc-v4-type-sm); }
+@media (max-width:900px) {
+  .reference-consolidator__filters .card__body { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .reference-consolidator__totals { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:600px) {
+  .reference-consolidator__filters .card__body { grid-template-columns:minmax(0,1fr); }
+  .reference-consolidator__filters :is(.input,.select,.button) { min-height:var(--hc-v4-touch); }
+  .reference-consolidator__totals { grid-template-columns:minmax(0,1fr); }
+  .reference-consolidator__pages { justify-content:space-between; }
+}

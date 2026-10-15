@@ -72,9 +72,15 @@ function visit(node,trail=[]){
 for(const file of graph.keys())visit(file,[]);
 for(const cycle of [...cycles].sort())findings.push(finding('CYCLIC_DEPENDENCY',cycle.split(' -> ')[0],cycle,'P1',true));
 
-const legacyCandidates=['frontend/src/components/enterprise.js'];
-for(const file of legacyCandidates){
-  if(sourceByFile.has(file)&&incoming.get(file)===0) findings.push(finding('LEGACY_ADAPTER_ORPHAN',file,'zero static source consumers; deletion still requires characterization contract','P2',true));
+// #657: use the canonical deprecation ledger; no static imports is not deletion proof.
+const legacyCandidates=policy.firstRefactorBatch?.candidate?[policy.firstRefactorBatch]:[];
+for(const candidate of legacyCandidates){
+  const file=candidate.candidate;
+  if(candidate.status==='RETIRED'&&sourceByFile.has(file)){
+    findings.push(finding('LEGACY_ADAPTER_ORPHAN',file,'retired adapter reappeared; consumer-proof gate blocks this','P1',false));
+  }else if(candidate.status!=='RETIRED'&&sourceByFile.has(file)&&incoming.get(file)===0){
+    findings.push(finding('LEGACY_ADAPTER_ORPHAN',file,'zero static imports; dynamic/runtime references require review','P2',false));
+  }
 }
 
 findings.sort((a,b)=>policy.severityOrder.indexOf(a.severity)-policy.severityOrder.indexOf(b.severity)||a.type.localeCompare(b.type)||a.file.localeCompare(b.file));
