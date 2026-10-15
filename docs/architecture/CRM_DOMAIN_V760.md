@@ -33,3 +33,25 @@ From repo root: `node --check backend/src/modules/crm/crm-domain.mjs` and `node 
 **Persistence requirements before activation:** introduce a dedicated tenant-scoped `Opportunity` and append-only activity/event table, or another explicitly approved CRM persistence authority. The eventual handler must check `sales.manage` (or approved CRM permission), use a tenant-scoped `UPDATE ... WHERE version = expectedVersion` compare-and-swap, enforce a unique tenant/opportunity/event ID constraint, and write the resulting activity **in the same database transaction**. Unique keys in PostgreSQL, not `seenEventIds` in an API request, are authoritative for replay/idempotency. A version mismatch should return a conflict without side effects; never let browser-provided timestamps or actor IDs become authoritative. Plan-only results are **not** proof of a completed event.
 
 Tests now exercise valid transitions, immutable and privacy-minimal receipts, stale revisions, cross-tenant input, terminal-state rewrites, malformed IDs/timestamps and case-insensitive replay. No persisted activities, quote binding, API writes, row locks or app UI are claimed in this increment. The existing rollback guidance for initial groundwork remains historical; revert the specific stage-planning change to undo this increment.
+
+## 2026-10-15 · Legal-identity mismatch on email matches
+
+Client identity is legally grounded in **tenant + RIF**, not email address. An email
+is contact metadata that may be shared by several tax entities. A prospect with
+valid RIF `J...` must **not** be reconciled into a Client with a different valid
+RIF `V...` merely because the emails match. This applies even if there is only
+one same-email candidate and also when another Client has an exact RIF match.
+
+The pure `assessClientConversion()` verdict now returns
+`{status:'BLOCKED',reason:'CONFLICTING_RIF_EMAIL',candidates:[opaque IDs]}`
+for same-tenant, active cross-RIF email collisions. It avoids leaking email/RIF
+values in the verdict. Same-RIF Client records with changed email still return
+`REVIEW_EXISTING` for authorized human reconciliation. Inactive or other-tenant
+records are never included in a prospect's decision.
+
+**Important:** these are advisory pre-conversion rules. No automatic Client
+creation, merged fiscal identity, mutation, import, quote or data migration was
+implemented. Final authority remains the canonical `Client` table, server
+tenant context, RBAC and database uniqueness/atomic transaction. A later
+transactional converter must re-run and enforce this conflict rule against
+fresh tenant-scoped data, never trust a stale or client-supplied candidate list.
