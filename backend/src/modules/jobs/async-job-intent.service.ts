@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { prepareAsyncJobIntent, planAsyncJobFailure, assertAsyncJobTenantId, assertAsyncJobId, assertAsyncJobLeaseToken } from './job-intent-policy.js';
+import { assertApprovedAsyncJobHandler, type AsyncJobHandlerRegistry } from './async-handler-registry.js';
 
 // Caller MUST already be inside its business transaction and authenticated tenant context.
 // No implicit second transaction and no network/provider work before business COMMIT.
@@ -11,8 +12,11 @@ export async function enqueueAsyncJobIntent(tx: Prisma.TransactionClient, input:
   payload: Record<string, unknown>;
   runAt: Date;
   maxAttempts: number;
-}) {
+}, handlerRegistry: AsyncJobHandlerRegistry) {
   const request = prepareAsyncJobIntent(input);
+  // Validate against an immutable canonical snapshot before any SQL insertion.
+  // A forged/missing registry or unreviewed handler fails closed.
+  assertApprovedAsyncJobHandler(handlerRegistry, request.handlerKey, JSON.parse(request.payloadJson));
   const rows = await tx.$queryRaw<Array<{id: string; requestHash: string; status: string}>>(Prisma.sql`
     INSERT INTO public."AsyncJobIntent" (
       "id", "tenantId", "handlerKey", "effectKey", "requestHash", "payload", "runAt", "maxAttempts"
