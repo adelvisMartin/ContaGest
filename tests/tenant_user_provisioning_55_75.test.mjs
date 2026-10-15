@@ -5,23 +5,34 @@ import fs from 'node:fs';
 const read=(path)=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 
 const auth=read('backend/src/modules/auth/auth.routes.ts');
+const bootstrap=read('backend/src/database/auth-bootstrap.ts');
 const licenses=read('backend/src/modules/licenses/licenses.routes.ts');
 const membership=read('backend/src/shared/identity/accountMembership.ts');
 
-test('55/75 tenant registration is create-only and cannot mutate an existing RIF',()=>{
-  assert.doesNotMatch(auth,/tenant\.upsert\(\{where:\{rif:body\.tenantRif\}/);
-  assert.match(auth,/existingTenant=.*tenant\.findFirst/s);
-  assert.match(auth,/Ya existe una empresa registrada con ese RIF/);
-  assert.match(auth,/tenant\.create\(\{data:\{rif:tenantRif/);
-  assert.match(auth,/error\?\.code==='P2002'/);
+test('55/75 registration is gated, create-only and rejects existing identities through canonical bootstrap',()=>{
+  const register=auth.slice(auth.indexOf("router.post('/register'"),auth.indexOf("router.post('/login'"));
+  assert.ok(register.length>300,'must characterize an existing registration route');
+  assert.match(register,/if\(!publicAllowed&&!keyAllowed\)throw new HttpError\(403/);
+  assert.match(register,/provisioned=await registerTenantBootstrap\(\{/);
+  assert.match(register,/isBootstrapRegistrationConflict\(error\)/);
+  assert.match(register,/HttpError\(409,/);
+  assert.doesNotMatch(register,/\.tenant\.(?:upsert|update)\(/,'registration must not mutate pre-existing tenants');
+  assert.match(bootstrap,/FROM private\.contagest_bootstrap_register_tenant\(/);
+  assert.match(bootstrap,/CONTAGEST_BOOTSTRAP_REGISTRATION_EMPTY/);
 });
 
-test('55/75 tenant admin provisioning is one Prisma transaction',()=>{
-  assert.match(auth,/provisioned=await prisma\.\$transaction\(async\(tx\)=>/);
-  assert.match(auth,/tx\.tenant\.create/);
-  assert.match(auth,/tx\.userProfile\.create/);
-  assert.match(auth,/ensureAdminRole\(tx,tenant\.id,user\.id\)/);
-  assert.match(auth,/ensureAccountMembership\([^]*,tx\);/);
+test('55/75 registration delegates one atomic PostgreSQL bootstrap command, not a fragmented route transaction',()=>{
+  const register=auth.slice(auth.indexOf("router.post('/register'"),auth.indexOf("router.post('/login'"));
+  assert.match(register,/registerTenantBootstrap\(\{/);
+  assert.doesNotMatch(register,/prisma\.\$transaction|prisma\.tenant\.(?:create|upsert)/,
+    'router must not implement a competing provisioning authority');
+  assert.match(bootstrap,/export async function registerTenantBootstrap\(/);
+  assert.match(bootstrap,/const rows = await db\.\$queryRaw<IdentityBootstrapRow\[\]>/);
+  assert.match(bootstrap,/SELECT "tenant_id", "user_profile_id"/);
+  for(const field of ['tenantRif','tenantName','plan','email','fullName','passwordHash']){
+    assert.ok(bootstrap.includes('${input.'+field+'}'),field+' must be bound as a SQL parameter');
+  }
+  assert.match(bootstrap,/CONTAGEST_BOOTSTRAP_REGISTRATION_EMPTY/);
 });
 
 test('55/75 account identity and membership support the caller transaction client',()=>{
