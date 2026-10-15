@@ -1620,10 +1620,10 @@ test('AES key FD identity prevents substitution after pathname validation',async
     isFile:()=>true,isSymbolicLink:()=>false,size:32,
     ino:101,dev:7,mode:0o100600
   };
-  async function run({platform='linux',after={},readSize=32,eloop=false}={}){
+  async function run({platform='linux',initialMode=0o100600,after={},readSize=32,eloop=false}={}){
     let fdRead=0,closed=0,rawRead=0,openedFlags=null;
     const mockedFs={
-      lstat:async()=>before,
+      lstat:async()=>({...before,mode:initialMode}),
       readFile:async()=>{rawRead++;throw new Error('PATH_READ_UNSAFE');},
       open:async(_file,flags)=>{
         openedFlags=flags;
@@ -1657,6 +1657,9 @@ test('AES key FD identity prevents substitution after pathname validation',async
     assert.equal(fail.closed,1,'invalid opened key must close descriptor');
     assert.equal(fail.rawRead,0);
   }
+  const initiallyPublic=await run({initialMode:0o100644,after:{mode:0o100600}});
+  assert.equal(initiallyPublic.error,'LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
+  assert.equal(initiallyPublic.openedFlags,null,'reject exposed key even if a racing chmod repairs it');
   const publicKey=await run({after:{mode:0o100644}});
   assert.equal(publicKey.error,'LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
   assert.equal(publicKey.fdRead,0);
