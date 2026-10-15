@@ -109,4 +109,4 @@ node --test tests/hipico_report_share_cli_contract.test.mjs
 ```
 El workflow del PR corre estas pruebas sobre el SHA candidato. HTTP usa store falso: **no equivale a un test PostgreSQL/RLS ejecutado**. Antes de dar un enlace real se exige migración revisada en staging, RLS con rol `contagest_runtime`, validación de `FOR SHARE` y `RepeatableRead`, carga de 42+ cuentas y redacción de query strings del ingress/CDN. No poner token de clientes en issues o mensajes públicos.
 
-**Dependencia:** el PR #1000 fue creado sobre una revisión anterior del #999. Reconciliar ambos y `main` antes del merge; este cambio solo extiende #1000, no modifica la PWA ni recrea su base financiera.
+**Integración de ramas (verificada):** PR #999 ya fusionado a `main` (15/10/2026). El PR #1000 fue reconciliado mediante merge commit `a96d260bcf770d88ba47e45ce5fa5f98194b1af9` con dos padres para preservar íntegros el consolidador/PWA r38 y las novedades de release v660. Su PR tiene base `main` y una comparación de solo 12 archivos propios. No hay migración aplicada ni habilitación de enlaces reales. Nuevas validaciones de RLS, HTTP, PostgreSQL y CI siguen pendientes antes del merge.
