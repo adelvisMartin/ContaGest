@@ -114,3 +114,31 @@ router-wide limiter, and continued `no-store`. Source contract coverage
 is not a real HTTP burst test: full app + security/session + PostgreSQL 17
 + distributed rate-limit behavior need integration acceptance before a
 production-complete CRM verdict. No new packages, workflows or env secrets.
+
+## 2026-10-15 · Clientes UX connection to canonical preflight
+
+The existing `clientes` page now calls `BackendApi.post('/clients/preflight',
+{rif,email})` **before** `SupabaseSyncService.createClient` can be invoked.
+`BackendApi` remains the single session/cookie/CSRF and API-base authority.
+The page shows a live `role=status`/`aria-live=polite` review message; decision
+copy uses fixed local reason-code mapping and never renders candidate Client
+IDs, RIFs, emails or backend exception internals.
+
+Only the exact `REVIEW_NEW/NO_EXISTING_CLIENT_MATCH` advisory verdict with
+`reviewOnly:true`, `conversionAuthorized:false` and an empty candidates
+array allows a subsequent **independent** canonical Client create API call.
+`REVIEW_EXISTING`, fiscal-conflict, candidate overflow, unknown response,
+network/auth/429/503 and server errors block the create attempt. The
+existing local-only offline Client fallback was removed specifically from
+the Clients form, because creating an unsynchronized customer record after
+a failed canonical server write can produce duplicate identities on retry.
+The UI is not a replacement for server transaction uniqueness or RBAC.
+
+Acceptance command from repo root:
+`node --test tests/client_preflight_ui_v760.test.mjs`.
+This is a source contract and isolated verdict-policy suite, not browser
+E2E or live PostgreSQL. Before certifying production CRM, test signed
+cookies/CSRF, permissions and cross-tenant responses in a real HTTP stack
+with an isolated DB and verify race/duplicate behavior under concurrent
+creates. No DB migrations, new UI route, secondary customer master,
+local data sync or automatic quote generation were introduced.
