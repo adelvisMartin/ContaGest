@@ -1,5 +1,6 @@
 import { money, number } from './format.js';
 import { escapeHtml } from './ui.js';
+import { projectOperationsDesk } from './reference-report-operations.js';
 import {
   assertReportDate, projectParticipantAccount, projectDailyMovements, projectRaceHistory
 } from './reference-report-projections.js';
@@ -24,7 +25,7 @@ function modelFor(workspace, { type, date, participantId, groupId }) {
   assertReportDate(date);
   if (type === 'personal') return projectParticipantAccount(workspace, { date, participantId, groupId });
   if (type === 'daily-movements') return projectDailyMovements(workspace, { date, groupId });
-  return projectRaceHistory(workspace, { date, groupId });
+  return projectOperationsDesk(workspace, { date, groupId });
 }
 
 function warning(model) {
@@ -45,7 +46,12 @@ function controls(workspace, model, type, participantId) {
         <input class="input" id="reference-report-date" name="date" type="date" value="${label(model.date)}" required></div>
       ${type === 'personal' ? `<div class="field"><label for="reference-report-participant">Participante</label>
         <select class="select" id="reference-report-participant" name="participantId" required>${options}</select></div>` : ''}
-      <button class="button button--primary" type="submit">Ver informe</button>
+      <div class="reference-report__actions">
+        <button class="button button--primary" type="submit">Ver</button>
+        <button class="button" type="button" data-action="reference-report-today" aria-label="Mostrar jornada de hoy (Venezuela)">Hoy</button>
+        <button class="button" type="button" data-action="reference-report-refresh" aria-label="Volver a consultar los datos disponibles">Actualizar</button>
+        ${type === "race-history" ? `<button class="button" type="button" data-action="reference-report-switch" data-target="daily-movements">Movimientos</button>` : type === "daily-movements" ? `<button class="button" type="button" data-action="reference-report-switch" data-target="race-history">Carreras</button>` : ""}
+      </div>
     </div>
   </form>`;
 }
@@ -74,7 +80,8 @@ function raceCard(race, currency, personalId) {
   return `<section class="card reference-report__race">
     <div class="card__head"><div><h3>${label(race.racetrack)} · Carrera ${count(race.number)}</h3>
       <small>Pizarra: ${label(race.board || 'No registrada')} · ${count(race.settled)} liquidada(s), ${count(race.pending)} pendiente(s), ${count(race.cancelled)} anulada(s)</small></div>
-      <span class="badge">${count(race.bets.length)} jugadas</span></div>
+      <div class="reference-report__race-actions"><span class="badge">${count(race.bets.length)} jugadas</span>
+      <button class="button button--small" type="button" data-action="reference-report-copy-race" data-id="${label(race.id)}" aria-label="Copiar jugadas y resultados de ${label(race.racetrack)}, carrera ${count(race.number)}">Copiar</button></div></div>
     <div class="card__body">${raceRows(race, currency, personalId)}</div></section>`;
 }
 
@@ -121,6 +128,78 @@ function renderMovements(model) {
     <p class="muted">Las transferencias entre participantes se cuentan una vez y no representan un depósito externo. Monedas distintas no se suman.</p>`;
 }
 
+
+function participantOutcome(model, race) {
+  const currency = model.group.currency;
+  if (!race.participantResults.length) return '<p class="muted">Sin resultados liquidados para esta carrera.</p>';
+  return \`<div class="reference-report__results" role="list">\${race.participantResults.map(row =>
+    \`<div role="listitem"><strong>\${label(row.code)}</strong>
+      <span class="\${row.amount < 0 ? 'amount-negative' : 'amount-positive'}">\${quoteMoney(row.amount, currency)}</span></div>\`
+  ).join('')}</div>\`;
+}
+function movementBadges(model) {
+  return \`<div class="reference-report__movement-badges" aria-label="Resumen de operaciones">\${model.totals
+    .filter(row => ['deposit','withdrawal','transfer'].includes(row.type))
+    .map(row => \`<span class="badge">\${label(movementTypes[row.type])}: \${count(row.count)} · \${label(row.currency)} \${label(number(row.amount))}</span>\`).join('')}
+    <span class="badge">Operaciones: \${count(model.movementCount)}</span>
+    <span class="badge">Carreras: \${count(model.raceCount)}</span></div>\`;
+}
+function renderDeskTransactions(model) {
+  const rows = model.entryRows.map(row => {
+    const when = String(row.time || '').slice(11,19) || '—';
+    const isCancelled = row.status === 'cancelled';
+    const sign = row.amount < 0 ? 'amount-negative' : 'amount-positive';
+    const kind = row.type === 'transfer'
+      ? row.side === 'sender' ? 'TRF · Envía' : 'TRF · Recibe'
+      : movementTypes[row.type] || row.type;
+    return \`<tr class="\${isCancelled ? 'reference-report__cancelled' : ''}">
+      <td>\${label(when)}</td>
+      <td>\${label(kind)}\${isCancelled ? ' · Anulada' : ''}</td>
+      <td>\${label(row.participant.code)}\${row.counterparty ? ' ↔ ' + label(row.counterparty.code) : ''}</td>
+      <td class="\${isCancelled ? '' : sign}">\${isCancelled ? 'Anulada · ' : ''}\${label(row.currency)} \${label(number(row.amount))}</td>
+    </tr>\`;
+  }).join('');
+  return \`<section class="card reference-report__ledger">
+    <div class="card__head"><div><h3>Historial de transacciones</h3>
+    <small>\${count(model.movementCount)} operaciones · \${count(model.entryCount)} filas visibles · \${count(model.cancelledCount)} anuladas</small></div></div>
+    <div class="card__body">
+      <div class="table-wrap"><table class="summary-table"><thead><tr>
+        <th>Hora</th><th>Tipo</th><th>Participante</th><th>Monto</th>
+      </tr></thead><tbody>\${rows || '<tr><td colspan="4">Sin movimientos en esta jornada.</td></tr>'}</tbody></table></div>
+      <p class="muted">Las transferencias muestran emisor y receptor, pero cuentan como una operación.
+        Las anulaciones no se suman; los ajustes no se presentan como depósitos o avales sin una clasificación de origen verificable.</p>
+    </div></section>\`;
+}
+function renderOperationsDesk(model) {
+  return \`<section class="reference-report__desk" aria-label="Historial y carreras de la jornada">
+    \${movementBadges(model)}
+    <div class="reference-report__desk-columns">
+      \${renderDeskTransactions(model)}
+      <section aria-label="Carreras registradas"><div class="reference-report__race-count">
+        <h3>Carreras registradas · \${count(model.raceCount)}</h3>
+        <span class="badge">\${count(model.betCount)} jugadas</span></div>
+      <div class="reference-report__desk-races">\${model.races.map(race =>
+        \`<section class="card reference-report__race">
+          <div class="card__head"><div><h3>\${label(race.racetrack)} · \${count(race.number)}ª carrera</h3>
+            <small>Pizarra: \${label(race.board || 'Sin pizarra')} · \${count(race.bets.length)} líneas ·
+            \${count(race.pending)} pendientes · \${count(race.cancelled)} anuladas</small></div>
+            <div class="reference-report__race-actions">
+              <span class="badge \${race.participantTotal < 0 ? 'badge--warning' : 'badge--success'}"
+                title="Suma de resultados liquidados de participantes, no beneficio del club">\${quoteMoney(race.participantTotal,model.group.currency)}</span>
+              <button class="button button--small" type="button" data-action="reference-report-copy-race"
+                data-id="\${label(race.id)}" aria-label="Copiar jugadas de \${label(race.racetrack)}, carrera \${count(race.number)}">Copiar</button>
+            </div></div>
+          <div class="card__body reference-report__race-split">
+            <div><h4>Jugadas</h4>\${raceRows(race,model.group.currency)}</div>
+            <aside><h4>Resultados liquidados</h4>\${participantOutcome(model,race)}</aside>
+          </div>
+        </section>\`
+      ).join('') || '<p class="muted">No hay carreras para la fecha seleccionada.</p>'}</div>
+      <p class="muted">El indicador por carrera suma resultados liquidados de participantes. No es la ganancia del club.</p>
+      </section>
+    </div></section>\`;
+}
+
 function renderRaces(model) {
   return `<div class="grid grid--two"><article class="card kpi"><small>Carreras registradas</small>
       <strong>${count(model.raceCount)}</strong></article><article class="card kpi"><small>Jugadas visibles</small>
@@ -129,7 +208,7 @@ function renderRaces(model) {
      '<section class="card"><div class="card__body">No hay carreras registradas para la fecha indicada.</div></section>'}</div>`;
 }
 
-export function renderReferenceReport(workspace, filter) {
+export function renderReferenceReport(workspace, filter, presentation = {}) {
   const model=modelFor(workspace, filter);
   const type=filter.type;
   return `<section class="reference-report" aria-label="${label(typeNames[type])}">
@@ -140,8 +219,9 @@ export function renderReferenceReport(workspace, filter) {
     </div>
     ${controls(workspace,model,type,filter.participantId)}
     ${warning(model)}
+    <p role="status" class="reference-report__sync-status">${label(presentation.status || "Datos del espacio de trabajo local.")}${presentation.checkedAt ? ` · Consulta ${label(presentation.checkedAt)}` : ""}</p>
     <div class="reference-report__content section-gap">
-      ${type === 'personal' ? renderAccount(model) : type === 'daily-movements' ? renderMovements(model) : renderRaces(model)}
+      ${type === 'personal' ? renderAccount(model) : type === 'daily-movements' ? renderMovements(model) : renderOperationsDesk(model)}
     </div></section>`;
 }
 
