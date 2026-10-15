@@ -54,6 +54,7 @@ const required59=[
   'tests/generated_api_contract_v850.test.mjs',
   'tests/business_location_issue_857.test.mjs',
   'tests/price_book_authority_issue_856.test.mjs',
+  'tests/crud_factory_hardening_issue_638.test.mjs',
   'tests/composite_tenant_integrity_v634.test.mjs',
   'tests/tenant_isolation_adversarial_issue_641.test.mjs',
   'tests/db_security_hardening_v635.test.mjs',
