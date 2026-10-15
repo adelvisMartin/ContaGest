@@ -29,6 +29,7 @@ test('#664 plan is short and delegates to actual repository owners; no skipped t
   ]);
   const serialized = JSON.stringify(steps);
   assert.match(serialized, /erp-operational-financial-v664\.test\.ts/);
+  assert.match(serialized, /migration:test:from-zero/);
   assert.match(serialized, /erp-real-browser-postgres-v5875\.mjs/);
   assert.doesNotMatch(serialized, /--force|--skip|waitForTimeout|--project=webkit/);
 });
