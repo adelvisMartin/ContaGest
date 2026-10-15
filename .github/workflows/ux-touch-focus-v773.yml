@@ -1,0 +1,65 @@
+name: UX #773 touch and forced-colors
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'frontend/public/design-system/contagest-ux-contract-v1.css'
+      - 'tests/ux_touch_focus_issue_773.test.mjs'
+      - 'qa/ux-touch-focus-v773.spec.mjs'
+      - 'docs/design-system/COMPETITIVE_VISUAL_DELTA_773_2026-10-15.md'
+      - '.github/workflows/ux-touch-focus-v773.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ux-773-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: Node 22 / CSS authority contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Static shared CSS contracts
+        run: node --test tests/ux_touch_focus_issue_773.test.mjs
+
+  chromium:
+    name: Playwright Chromium / coarse pointer + forced colors
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Locked install
+        run: npm ci --no-audit --no-fund
+      - name: Browser runtime
+        run: npx playwright install --with-deps chromium
+      - name: Run exact-SHA targeted UX browser contract
+        run: npx playwright test qa/ux-touch-focus-v773.spec.mjs --project=chromium --workers=1 --reporter=list
+      - name: Upload failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-773-chromium-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore

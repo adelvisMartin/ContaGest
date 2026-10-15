@@ -37,6 +37,11 @@ jobs:
       - name: Install
         run: npm ci --no-audit --no-fund
 
+      - name: Workflow inventory and local regression #654
+        run: |
+          node scripts/workflow-inventory-v654.mjs > /tmp/contagest-workflow-inventory-v654.json
+          node --test tests/workflow_inventory_issue_654.test.mjs
+
       - name: Prisma schema
         run: npm --workspace backend run db:validate
 

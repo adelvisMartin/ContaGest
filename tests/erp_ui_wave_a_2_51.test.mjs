@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import { ERP_UI_WAVE_A_2_51 } from '../qa/support/erp-ui-wave-a-v251.mjs';
+import { MODULE_VISUAL_CATALOG, MODULE_VISUAL_ROUTES } from '../qa/support/module-visual-catalog.mjs';
 
 const read=(p)=>fs.readFileSync(p,'utf8');
 
@@ -66,7 +67,7 @@ test('Fitness productivity stays declarative after 3/51 and query enhancer never
 });
 
 
-test('58x5 browser coverage is sharded outside Vercel without reducing the route matrix',()=>{
+test('58x5 browser coverage is sharded outside Vercel without reducing the 60-route matrix',()=>{
   const root=JSON.parse(read('package.json'));
   const vercel=read('scripts/vercel-browser-preqa-v16.mjs');
   const runner=read('scripts/erp-browser-58x5-v251.mjs');
@@ -74,7 +75,15 @@ test('58x5 browser coverage is sharded outside Vercel without reducing the route
   assert.equal(root.scripts['test:browser:58:core'],'node scripts/erp-browser-58x5-v251.mjs core');
   assert.equal(root.scripts['test:browser:58:shard'],'node scripts/erp-browser-58x5-v251.mjs shard');
   assert.equal(root.scripts['test:browser:58'],'node scripts/erp-browser-58x5-v251.mjs full');
-  assert.match(runner,/MODULE_VISUAL_CATALOG\.length!==58/);
+  // The historical 58x5 script alias must still test the entire current 60-route catalog.
+  assert.equal(MODULE_VISUAL_CATALOG.length,60,'the visual catalog must cover 60 canonical routes');
+  assert.equal(MODULE_VISUAL_ROUTES.length,60,'route list and catalog must retain full coverage');
+  assert.equal(new Set(MODULE_VISUAL_ROUTES).size,60,'route IDs must be unique');
+  assert.deepEqual(MODULE_VISUAL_ROUTES,MODULE_VISUAL_CATALOG.map(({route})=>route));
+  assert.ok(MODULE_VISUAL_ROUTES.includes('sedes'),'sedes must remain represented');
+  assert.ok(MODULE_VISUAL_ROUTES.includes('mensajes'),'mensajes must remain represented');
+  assert.match(runner,/const BATCH_SIZE=6;/);
+  assert.match(runner,/MODULE_VISUAL_CATALOG\.length!==60/);
   assert.match(runner,/fine-composition-v166\.spec\.mjs/);
   assert.match(runner,/exhaustive-route-v164\.spec\.mjs/);
   assert.match(runner,/mobile-navigation-v163\.spec\.mjs/);

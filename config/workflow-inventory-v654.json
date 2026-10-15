@@ -1,0 +1,581 @@
+{
+  "schemaVersion": 1,
+  "issue": 654,
+  "policy": "inventory only; retirement requires consumer proof and branch protection review",
+  "workflows": [
+    {
+      "file": ".github/workflows/accessibility-wcag22-v99.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/actions-recovery-v134.yml",
+      "classification": "SCHEDULED",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Scheduled or automated operator responsibility requires preserved trigger semantics"
+    },
+    {
+      "file": ".github/workflows/agent-system-v2.yml",
+      "classification": "ADAPTER",
+      "owner": "agents",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/api-contract-v565.yml",
+      "classification": "ADAPTER",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/approvals-v236.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/auth-throttle-v89.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/bank-reconciliation-v237.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/banking-auditable-v93.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/benchmark-evidence-v589.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/benchmark-runtime-v588.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/benchmark-verticals-v590.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/capacity-baseline-v564.yml",
+      "classification": "ADAPTER",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/ci-runner-probe-v134.yml",
+      "classification": "PROVIDER_SPECIFIC",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Provider or hosted runner-specific workflow must retain its dedicated behavior"
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "classification": "AUTHORITATIVE",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Canonical policy/gate owner whose check name must remain stable"
+    },
+    {
+      "file": ".github/workflows/clinical-privacy-v567.yml",
+      "classification": "ADAPTER",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/data-lifecycle-v562.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/db-security-operations.yml",
+      "classification": "AUTHORITATIVE",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Canonical policy/gate owner whose check name must remain stable"
+    },
+    {
+      "file": ".github/workflows/document-sequence-v762.yml",
+      "classification": "ADAPTER",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/e2e-commercial-v23.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/erp-cross-browser-v6375.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/erp-performance-capacity-v157.yml",
+      "classification": "ADAPTER",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/erp-system-auto-finalize-v155.yml",
+      "classification": "SCHEDULED",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Scheduled or automated operator responsibility requires preserved trigger semantics"
+    },
+    {
+      "file": ".github/workflows/erp-system-qa-campaign-v155.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/erp-ui-58x5-v251.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/erp-verticals-real-e2e-v4851.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/erp-verticals-visual-v4951.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/erp157-budget-lifecycle-contract.yml",
+      "classification": "ADAPTER",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/evidence-index-v662.yml",
+      "classification": "AUTHORITATIVE",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Canonical policy/gate owner whose check name must remain stable"
+    },
+    {
+      "file": ".github/workflows/financial-decimal-v90.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/financial-fx-v560.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/financial-reconciliation-v559.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/fiscal-authority-v561.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/fiscal-governance-v96.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/github-pages.yml",
+      "classification": "PROVIDER_SPECIFIC",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Provider or hosted runner-specific workflow must retain its dedicated behavior"
+    },
+    {
+      "file": ".github/workflows/graphify-skill.yml",
+      "classification": "ADAPTER",
+      "owner": "agents",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-agent-shadow.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-android-rc.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-audit-rpc-v26.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-auth-recovery-e2e-v28.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-autonomous-whatsapp-v16.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-backup-role-verify-v24.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-browser-matrix.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-build-runtime.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-core-refactor-v8.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-data-engines.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-golden-adversarial-v10.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-observability-v11.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-operations.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-outbox-v5.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-production-gates-v290.yml",
+      "classification": "AUTHORITATIVE",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Canonical policy/gate owner whose check name must remain stable"
+    },
+    {
+      "file": ".github/workflows/hipico-production-release-v12.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-provider-live-probe.yml",
+      "classification": "PROVIDER_SPECIFIC",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Provider or hosted runner-specific workflow must retain its dedicated behavior"
+    },
+    {
+      "file": ".github/workflows/hipico-qa-foundation-v103.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-risk-policy-v6.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-schema-backup-restore-v23.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-schema-change-control-v24.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-schema-postdeploy-v18.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/hipico-shadow-metrics-v7.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/iam-platform-isolation-v27.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/import-transactional-v95.yml",
+      "classification": "ADAPTER",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/inventory-derived-v94.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/issue-681-postgres17-exact-sha.yml",
+      "classification": "AUTHORITATIVE",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Canonical policy/gate owner whose check name must remain stable"
+    },
+    {
+      "file": ".github/workflows/ledger-posting-v91.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/legal-auto-finalize-v29.yml",
+      "classification": "SCHEDULED",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Scheduled or automated operator responsibility requires preserved trigger semantics"
+    },
+    {
+      "file": ".github/workflows/local-verification-v630.yml",
+      "classification": "AUTHORITATIVE",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Canonical policy/gate owner whose check name must remain stable"
+    },
+    {
+      "file": ".github/workflows/migration-chain-v626.yml",
+      "classification": "AUTHORITATIVE",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Canonical policy/gate owner whose check name must remain stable"
+    },
+    {
+      "file": ".github/workflows/payables-v235.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/postgres-tenant-rules-v28.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/pr-quality-gate-v1.yml",
+      "classification": "AUTHORITATIVE",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Canonical policy/gate owner whose check name must remain stable"
+    },
+    {
+      "file": ".github/workflows/production-ops-v566.yml",
+      "classification": "ADAPTER",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/pwa-offline-v563.yml",
+      "classification": "ADAPTER",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/qa-browser.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/qa-static.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/release-candidate-v5151.yml",
+      "classification": "ADAPTER",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/release-governance-auto-finalize-v97.yml",
+      "classification": "SCHEDULED",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Scheduled or automated operator responsibility requires preserved trigger semantics"
+    },
+    {
+      "file": ".github/workflows/release-governance-v97.yml",
+      "classification": "AUTHORITATIVE",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Canonical policy/gate owner whose check name must remain stable"
+    },
+    {
+      "file": ".github/workflows/runner-pool-probe-v134.yml",
+      "classification": "PROVIDER_SPECIFIC",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Provider or hosted runner-specific workflow must retain its dedicated behavior"
+    },
+    {
+      "file": ".github/workflows/runner-probe-v134.yml",
+      "classification": "PROVIDER_SPECIFIC",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Provider or hosted runner-specific workflow must retain its dedicated behavior"
+    },
+    {
+      "file": ".github/workflows/security-baseline.yml",
+      "classification": "AUTHORITATIVE",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Canonical policy/gate owner whose check name must remain stable"
+    },
+    {
+      "file": ".github/workflows/supply-chain-v550.yml",
+      "classification": "ADAPTER",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/temp-typecheck-repair.yml",
+      "classification": "TEMPORARY",
+      "owner": "release-ops",
+      "status": "REVIEW_REQUIRED",
+      "reason": "Single-purpose historical branch self-repair; do not delete until required-check and consumer review"
+    },
+    {
+      "file": ".github/workflows/toolchain-deps-v26.yml",
+      "classification": "ADAPTER",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    }
+  ]
+}

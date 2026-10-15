@@ -13,6 +13,7 @@ function requireFunction(source: any, name: string) {
 test('#650 exposes one authoritative observability contract', () => {
   assert.ok(contractModule, '#650 missing authoritative observability contract module');
   assert.equal(contractModule.OBSERVABILITY_CONTRACT?.version, 1);
+  assert.equal(contractModule.OBSERVABILITY_CONTRACT?.errorEnvelopeVersion, 2);
   assert.equal(contractModule.OBSERVABILITY_CONTRACT?.correlationHeader, 'x-correlation-id');
   assert.equal(contractModule.OBSERVABILITY_CONTRACT?.sensitivePayloadRetention, 'forbidden');
 });
@@ -83,8 +84,13 @@ test('#650 normalizes 4xx, dependency and unhandled errors into stable safe enve
     correlationId: 'corr-650-envelope',
     requestId: 'request-650-envelope'
   });
+  // The canonical envelope is Problem Details v2 with legacy safe aliases.
   assert.deepEqual(envelope, {
     ok: false,
+    type: 'urn:contagest:problem:internal_error',
+    title: 'Error interno del servidor',
+    status: 500,
+    detail: 'Error interno del servidor.',
     code: 'INTERNAL_ERROR',
     message: 'Error interno del servidor.',
     correlationId: 'corr-650-envelope',

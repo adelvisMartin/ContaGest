@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "issue": 1010,
+  "reviewDate": "2026-10-15",
+  "baselineSha": "5c1b4a940867aac1581dcf2c2deb7e4a4145431a",
+  "sourceReuse": "NONE",
+  "businessCase": "UNCONFIRMED",
+  "decision": "BLOCKED",
+  "approval": {
+    "status": "PENDING_OWNER",
+    "ownerReference": null,
+    "moneyAuthorityReference": null,
+    "fiscalLegalReference": null,
+    "rbacDesignReference": null,
+    "retentionPrivacyReference": null
+  },
+  "separation": {
+    "raceBetting": "EXCLUDED",
+    "realWhatsApp": "EXCLUDED",
+    "existingParticipantWallet": "EXCLUDED",
+    "existingHipicoLedger": "PRESERVE_AUTHORITY",
+    "realMoneyActions": "BLOCKED"
+  },
+  "roles": [
+    "organizer",
+    "consignor",
+    "auctioneer",
+    "cashier",
+    "approved_buyer",
+    "auditor"
+  ],
+  "workflows": [
+    {
+      "id": "auction-event",
+      "description": "Create and publish auction event with audit trail",
+      "status": "DESIGN_ONLY"
+    },
+    {
+      "id": "catalog-lot",
+      "description": "Owner-scoped lots and approved buyers",
+      "status": "DESIGN_ONLY"
+    },
+    {
+      "id": "bid-award",
+      "description": "Concurrently ordered bid/close/award with idempotency",
+      "status": "DESIGN_ONLY"
+    },
+    {
+      "id": "settlement",
+      "description": "Reconstructible money flow using canonical financial authority",
+      "status": "BLOCKED_ON_MONEY_AUTHORITY"
+    }
+  ],
+  "openDecisions": [
+    "sale_of_horses_vs_other_merchandise",
+    "verified_owner_and_legal_operator",
+    "accepted_buyer_age_consent_and_identity",
+    "currency_fx_and_exact_decimal_rounding",
+    "commission_tax_retention_and_withdrawal_rules",
+    "disputes_tie_breaks_and_auction_close_policy",
+    "canonical_payment_refund_and_accounting_authority",
+    "role_matrix_audit_and_tenant_scope",
+    "media_privacy_data_retention_and_export",
+    "jurisdiction_and_required_legal_approval"
+  ]
+}

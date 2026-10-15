@@ -31,6 +31,23 @@ test('#566 exact SHA is carried by artifacts, health and both smoke modes', () =
   assert.match(authSmoke, /tokenPersisted: false/);
 });
 
+test('#566 PostgreSQL bootstrap runs exclusively in a named disposable drill database', () => {
+  const bootstrap = fs.readFileSync('ops/database/prepare-supabase-ephemeral.sql', 'utf8');
+  const database = 'contagest_ops_v566_drill';
+  assert.match(bootstrap, /db_name !~ '.*_drill/,'the production safety guard must continue rejecting non-disposable databases');
+  assert.match(workflow, /image: postgres:17/);
+  assert.match(workflow, /POSTGRES_DB: contagest_ops_v566_drill/);
+  assert.match(workflow, /pg_isready -U postgres -d contagest_ops_v566_drill/);
+  assert.match(workflow, /Prepare disposable PostgreSQL/);
+  assert.match(workflow, /-f ops\/database\/prepare-supabase-ephemeral\.sql/);
+  assert.doesNotMatch(workflow, /contagest_ops_v566(?!_drill)/,'drill commands must never reference an unguarded DB name');
+  for (const variable of ['DATABASE_URL','DIRECT_DATABASE_URL']) {
+    assert.match(workflow, new RegExp(variable+': postgresql:\\/\\/postgres:[^\\n]+/'+database+'\\?schema=public'));
+  }
+  assert.match(workflow, /-d contagest_ops_v566_drill -Fc/);
+  assert.match(workflow, /-d contagest_ops_v566_drill -v ON_ERROR_STOP=1/);
+});
+
 test('#566 migration promotion is fail-closed and deployment workflow has isolated restore/app rollback drills', () => {
   assert.match(migration, /finished_at IS NULL/);
   assert.match(migration, /duplicates/);

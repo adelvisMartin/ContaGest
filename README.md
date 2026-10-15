@@ -1,5 +1,7 @@
 # ContaGest VE
 
+> **¿Nuevo chat, agente o colaborador? Empieza por [docs/PROJECT_START_HERE.md](docs/PROJECT_START_HERE.md).** Contiene el protocolo progresivo por ticket, la prioridad del chatbot LAB de Control Hípico, la coordinación entre ventanas y el enlace a la [auditoría Staff+/Principal completa del 15-10-2026](docs/audits/AUDITORIA_STAFF_CONTAGEST_CONTROL_HIPICO_2026-10-15.md). Para actuar, vuelve a consultar siempre el estado vivo de GitHub; [AGENTS.md](AGENTS.md) conserva la autoridad de ingeniería.
+
 ContaGest VE es una plataforma ERP/CRM empresarial con operación comercial, inventario, POS, fiscal, bancos, nómina, contabilidad, reportes y verticales especializadas. El monorepo incluye además **Control Hípico**, una plataforma operativa con dominio y API canónicos, mensajería desacoplada, procesamiento documental, lifecycle de carreras, outbox, automatización Agent/Shadow y superficies PWA/Android.
 
 > Estado de release: que una capacidad exista o esté merged no implica que esté verificada en producción. La promoción exige evidencia ligada al SHA candidato y los gates aplicables.

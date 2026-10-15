@@ -8,6 +8,8 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { buildClinicalExport } from '../clinical-privacy/clinical-privacy.service.js';
 import { buildXlsxWorkbook, XlsxLimitError } from './xlsx-writer.js';
+import { prisma } from '../../database/prisma.js';
+import { masterExportPayload, type MasterExportEntity, type MasterExportFormat } from './master-export.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -53,6 +55,68 @@ router.post('/clinical-record', requirePermission('health.manage'), validateBody
   res.setHeader('content-disposition', `attachment; filename="clinical-record-${safeDownloadBaseName(req.body.patientId, 'patient')}.json"`);
   res.send(JSON.stringify(data));
 }));
+
+
+// #770: unlike generic formatting endpoints, these exports derive every
+// record from the authenticated tenant on the server. No arbitrary table,
+// field, filter, tenant identifier or cost field can be supplied by the client.
+const masterExportQuerySchema = z.object({
+  format: z.enum(['csv', 'json']).default('json'),
+  take: z.coerce.number().int().min(1).max(500).default(100),
+  skip: z.coerce.number().int().min(0).max(1_000_000).default(0)
+}).strict();
+
+function masterExportHandler(entity: MasterExportEntity) {
+  return asyncHandler(async (req, res) => {
+    const parsed = masterExportQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw new HttpError(400, 'Parámetros de exportación inválidos.', {code:'EXPORT_QUERY_INVALID'});
+    const { format, take, skip } = parsed.data;
+    const ctx = (req as any).context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
+    if (!ctx?.tenantId || !ctx?.userId) throw new HttpError(401, 'El export requiere una sesión autenticada.', {code:'EXPORT_AUTH_REQUIRED'});
+    const exportedAt = new Date().toISOString();
+    const result = await prisma.$transaction(async (tx) => {
+      const pagination = {take: take + 1, skip};
+      const source = entity === 'clients'
+        ? await tx.client.findMany({
+            where: {tenantId:ctx.tenantId}, orderBy:[{rif:'asc'},{id:'asc'}], ...pagination,
+            select: {rif:true,name:true,contact:true,email:true,phone:true,address:true,fiscalType:true,active:true}
+          })
+        : entity === 'suppliers'
+          ? await tx.supplier.findMany({
+              where: {tenantId:ctx.tenantId}, orderBy:[{rif:'asc'},{id:'asc'}], ...pagination,
+              select: {rif:true,name:true,contact:true,email:true,phone:true,address:true,retentionProfile:true,active:true}
+            })
+          : await tx.product.findMany({
+              where: {tenantId:ctx.tenantId}, orderBy:[{sku:'asc'},{id:'asc'}], ...pagination,
+              select: {sku:true,name:true,description:true,unit:true,cost:true,price:true,minStock:true,taxRate:true,active:true}
+            });
+      const hasMore = source.length > take;
+      const payload = masterExportPayload(entity, format as MasterExportFormat, source.slice(0,take),
+        {skip,take,hasMore,exportedAt});
+      // Fail closed: no successful export without its audit record, which
+      // never stores the exported customer/product content.
+      await tx.auditLog.create({data:{
+        tenantId:ctx.tenantId,userId:ctx.userId,action:'data.export.master',
+        entity:'MasterDataExport',
+        after:{entity,format,skip,take,rowCount:payload.count,sha256:payload.sha256,exportedAt},
+        ipAddress:ctx.ip,userAgent:ctx.userAgent
+      }});
+      return payload;
+    });
+    res.setHeader('cache-control','no-store, max-age=0');
+    res.setHeader('x-content-type-options','nosniff');
+    res.setHeader('x-cg-export-sha256',result.sha256);
+    res.setHeader('x-cg-export-count',String(result.count));
+    if (result.nextSkip !== null) res.setHeader('x-cg-next-skip',String(result.nextSkip));
+    res.setHeader('content-type',format==='csv'?'text/csv; charset=utf-8':'application/json; charset=utf-8');
+    res.setHeader('content-disposition',`attachment; filename="contagest-${entity}-v1.${format}"`);
+    res.send(result.data);
+  });
+}
+
+router.get('/masters/clients', requirePermission('clients.manage'), masterExportHandler('clients'));
+router.get('/masters/suppliers', requirePermission('purchases.manage'), masterExportHandler('suppliers'));
+router.get('/masters/products', requirePermission('inventory.manage'), masterExportHandler('products'));
 
 router.post('/csv', validateBody(exportSchema), asyncHandler(async (req, res) => {
   const rows = req.body.rows as Record<string, unknown>[];

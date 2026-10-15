@@ -1,0 +1,58 @@
+name: Hípico report links — manual PostgreSQL + contracts
+
+# Cost-control: no pull_request/push event. Execute on demand in Actions only
+# after updating workflow on default branch, or run all commands locally.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy-http-and-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hipico_share_test_v1000
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hipico_share_test_v1000"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      HIPICO_SHARE_RLS_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/hipico_share_test_v1000
+      HIPICO_SHARE_RLS_CONSENT: ephemeral-local-postgres17-hipico-share-rls
+      CG_CANDIDATE_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck backend
+        run: npm --workspace backend run typecheck
+      - name: API security and authorization HTTP contracts
+        run: npx --no-install tsx --test backend/src/modules/hipico/report-share.routes.test.ts
+      - name: Static RLS and owner-scope contracts
+        run: node --test tests/hipico_report_share_schema_contract.test.mjs
+      - name: Canonical ledger account/journal reconciliation contract
+        run: npm run test:hipico:ledger:reconcile
+      - name: CLI network and secret safety contracts
+        run: node --test tests/hipico_report_share_cli_contract.test.mjs
+      - name: Isolated database URL and explicit-consent gates
+        run: node --test tests/hipico_report_share_rls_guard_v1000.test.mjs
+      - name: PostgreSQL 17 adversarial RLS real execution
+        run: node backend/scripts/hipico-report-share-rls-v1000.mjs
