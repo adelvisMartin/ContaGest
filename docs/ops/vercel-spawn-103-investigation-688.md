@@ -49,3 +49,20 @@ Provider deployment `dpl_3gABPS4RT9fGnQaDcvsiX3k9e8Ny` ran from exact `main@6b0e
 Proof of source authority: `backend/src/shared/contracts/access-manifest.json` has 59 **unique** routes; the validated `ACCESS_MANIFEST` drives `frontend/src/data/moduleCatalog.js` and `CANONICAL_LICENSE_MODULES` in `backend/src/modules/licenses/licenses.contracts.ts`. Test fix must compare the exact route sets and preserve validation of unknown routes. Do not hard-code either 57 or 59: module growth must require an authorized manifest change but must not break on an incidental constant in a source-only regression.
 
 This incremental PR updates **only the characterization test and this operational log**; it does not edit permissions, license issuance, RLS, tenant contexts, route definitions or manifest modules. The specific new invariant passed one V8 source-only evaluation with the current 59-route manifest and current license validator. **Not** a full Node test, Vercel READY or production deploy. Further failures in future exact-SHA Vercel builds require independent root-cause investigation. Do not close #688 until a completed READY deployment is observed.
+
+## Follow-up: Problem Details v2 validation source drift (2026-10-15)
+
+Verified Vercel deployment `dpl_D4Ay6vgHSz9oi58Fo2pcAr3Yy9RE`, exact `main@21c597dea8d2ee307181e2462d6a7944027b3a8c`, ended `ERROR` / `BUILD_UTILS_SPAWN_103` during `source-qa → contracts-current`. The failing `tests/api_validation_error_59_75.test.mjs` asserted the old inline middleware (`ZodError`, `HttpError`, `databaseMessage`, direct `payload.details = error.issues`). The current authoritative behavior is intentionally split: `backend/src/shared/middleware/error.ts` calls `normalizeOperationalError` and `buildErrorEnvelope`; `backend/src/shared/observability/contract.ts` maps Zod to 422, provider dependency to 503, explicit HttpError status otherwise, with `redactTelemetryValue` and Problem Details v2. `redaction.ts` applies recursive key/value masking.
+
+Change `tests/api_validation_error_59_75.test.mjs` to assert the **current authority and retained security rules**; never restore unsafe raw Zod issues or bypass `source-qa`. Add executable behavior regressions `qa/observability-validation-v688.test.ts` for 422/409/503/500 with redacted fake credentials. The source test callbacks ran against actual GitHub source and both passed (2/2); this is **not** an actual `node --test` or `tsx` run. No local checkout/dependencies or full Vercel READY proof available in that result.
+
+Reproduce locally with Node 22/npm lockfile:
+
+```sh
+node --test tests/api_validation_error_59_75.test.mjs
+npm --workspace backend exec -- tsx --test ../qa/observability-validation-v688.test.ts
+npm run test:contracts:current
+npm run build:frontend
+```
+
+After merging, inspect the **exact deployed main SHA** and follow each newly surfaced `source-qa` failure to its true owner. Do not close #688 before `READY` and post-deploy checks; the latest provider result in this section is an observed ERROR, not successful production recovery.

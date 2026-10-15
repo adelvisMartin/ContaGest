@@ -11,6 +11,7 @@ import {
 import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRows } from './sales-kpi.js';
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
 import { deriveReorderCandidates } from './replenishment-candidates.js';
+import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('reports.view'));
@@ -168,6 +169,42 @@ router.get('/inventory', (_req, res) => {
     }
   });
 });
+
+// Estimate only: FIFO cohorts are inferred from complete physical-movement
+// history and cannot be used as physical lot provenance or inventory valuation.
+const stockAgeingQuery = z.object({ productId: z.string().uuid() }).strict();
+router.get('/inventory/ageing', asyncHandler(async (req, res) => {
+  const query = stockAgeingQuery.safeParse(req.query);
+  if (!query.success) throw new HttpError(400, 'productId UUID es obligatorio.', { code: 'AGEING_QUERY_INVALID' });
+  const ctx = context(req);
+  const asOf = new Date();
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const product = await tx.product.findFirst({
+        where: { id: query.data.productId, tenantId: ctx.tenantId },
+        select: { id: true, sku: true, name: true, unit: true, stock: true }
+      });
+      if (!product) throw new HttpError(404, 'Producto no encontrado.', { code: 'AGEING_PRODUCT_NOT_FOUND' });
+      const movements = await tx.inventoryMovement.findMany({
+        where: { productId: product.id, tenantId: ctx.tenantId },
+        select: { id: true, type: true, quantity: true, createdAt: true },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: STOCK_AGEING_MAX_MOVEMENTS + 1
+      });
+      if (movements.length > STOCK_AGEING_MAX_MOVEMENTS)
+        throw new HttpError(409, 'Historial de movimientos supera el límite del cálculo.', { code: 'AGEING_HISTORY_LIMIT' });
+      return {
+        product: { id: product.id, sku: product.sku, name: product.name, unit: product.unit },
+        stockAgeing: calculateStockAgeing({ movements, stockExact: product.stock, asOf })
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    ok(res, result);
+  } catch (error) {
+    if (error instanceof StockAgeingError)
+      throw new HttpError(409, 'La antigüedad de stock no se puede reconciliar; se omitió la estimación.', { code: error.code });
+    throw error;
+  }
+}));
 
 router.get('/inventory/reorder', asyncHandler(async (req, res) => {
   const ctx = context(req);
