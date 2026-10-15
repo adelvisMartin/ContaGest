@@ -71,4 +71,6 @@ test('existing route performs tenant-scoped lookup and preserves explicit confli
   assert.match(src, /resolveLocalWallClock\(\{/);
   assert.match(src, /code: error\.code/);
   assert.match(src, /router\.use\(requireTenant\)/);
+  assert.match(src, /resolveTimeQuerySchema\.safeParse\(req\.query\)/);
+  assert.match(src, /SCHEDULING_RESOLVE_QUERY_INVALID/);
 });
