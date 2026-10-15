@@ -51,7 +51,7 @@ export function evaluateWhatsAppUseCase1011(useCase, context = {}) {
     ? REVIEW_CASES[key]
     : Object.freeze({ decision:'BLOCKED', reason:'UNKNOWN_USE_CASE' });
   const isLab = key === 'LAB_SYNTHETIC';
-  const labAuthorized = context.synthetic === true && context.labOwnerAuthorized === true;
+  const labAuthorized = context?.channel === 'LAB' && context?.synthetic === true && context?.labOwnerAuthorized === true;
   const decision = isLab && labAuthorized ? 'LAB_ONLY' : rule.decision;
   const reason = isLab && labAuthorized ? 'SYNTHETIC_LAB_SUBJECT_TO_RUNTIME_GATES' : rule.reason;
   return Object.freeze({
