@@ -4,6 +4,22 @@
  */
 export const CRM_LEADS_ENDPOINT = '/modules/crm/leads';
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LEAD_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LEAD_REVISION = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+export function validateLeadStageAction(lead,nextStage) {
+  const allowed=lead?.stage === 'new' ? ['qualified','lost'] :
+    lead?.stage === 'qualified' ? ['lost'] : [];
+  if (!lead || typeof lead.id !== 'string' || !LEAD_UUID.test(lead.id) ||
+      !allowed.includes(nextStage) ||
+      typeof lead.updatedAt !== 'string' || !LEAD_REVISION.test(lead.updatedAt) ||
+      !Number.isFinite(Date.parse(lead.updatedAt)) ||
+      new Date(lead.updatedAt).toISOString() !== lead.updatedAt) {
+    throw new TypeError('CRM_STAGE_ACTION_INVALID');
+  }
+  return Object.freeze({id:lead.id,nextStage,expectedUpdatedAt:lead.updatedAt});
+}
+
 
 const field = (value, max) => {
   if (value == null) return '';
@@ -34,6 +50,17 @@ export function createCrmLeadService({ api, uuidFactory = () => globalThis.crypt
   if (!api || typeof api.get !== 'function' || typeof api.request !== 'function') throw new TypeError('CRM_API_REQUIRED');
   let pending = null;
   return Object.freeze({
+    async changeStage(lead,nextStage) {
+      const {id,expectedUpdatedAt} = validateLeadStageAction(lead,nextStage);
+      const result = await api.request(`${CRM_LEADS_ENDPOINT}/${id}/stage`,{
+        method:'PATCH', body:{nextStage,expectedUpdatedAt}
+      });
+      if (!result || result.id !== id || result.stage !== nextStage ||
+          typeof result.updatedAt !== 'string') {
+        throw new TypeError('CRM_STAGE_RESPONSE_INVALID');
+      }
+      return result;
+    },
     async list() {
       const result = await api.get(`${CRM_LEADS_ENDPOINT}?take=50&skip=0`);
       if (!Array.isArray(result)) throw new TypeError('CRM_LEADS_INVALID_RESPONSE');
