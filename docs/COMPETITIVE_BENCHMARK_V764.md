@@ -28,6 +28,40 @@ For the complete machine-readable rows, read [config/competitive-benchmark-v764.
 
 Notes: S.A.C. is specifically the `Sistema de Asistencia Comercial` described by Sumeria, **not** the unrelated Dominican product SAC Enterprise. The category `Bodega/POS` is not a company, library or API. `Ecologic` remains unresolved; do not conflate it with unrelated ecological companies or create product-feature claims. Odoo Community vs Enterprise/modules have distinct licenses, so the LGPL evidence applies only to Community 19. Gálac's `SaC` commercial plan is **not** a separate SAC software product.
 
+## Feature-level claim provenance
+
+Every feature row has a `referenceEvidenceLevel` independent from ContaGest's own `assessmentLevel`:
+
+- `DOCUMENTED`: a specific, vendor-maintained URL directly illustrates the cited workflow (not proof of access to the software).
+- `PROVISIONAL`: no sufficiently precise official feature URL reviewed; the proposal remains a backlog research hypothesis, **not** a vendor capability claim.
+- `UNRESOLVED`: the vendor itself has not been identified, and no feature can be ascribed to it.
+
+The manifest validator rejects a forged `DOCUMENTED` flag without an official HTTPS feature reference and disallows fabricating evidence for provisional/unresolved rows. Ecologic remains unresolved after targeted search; do **not** interpret an unrelated environmental product as this specific vendor. Sumeria publishes the SAC product directly; its provenance is **OFFICIAL**, although its executable license terms are still unverified.
+
+| Feature ID | Vendor feature evidence | Classification |
+|---|---|---|
+| VEOSS-001 | [Official source](https://www.miprofit.com/productos/) | DOCUMENTED |
+| VEOSS-002 | [Official source](https://www.miprofit.com/) | DOCUMENTED |
+| VEOSS-003 | [Official source](https://www.valery.com/valery-pro.html) | DOCUMENTED |
+| VEOSS-004 | [Official source](https://www.valery.com/valery-pro.html) | DOCUMENTED |
+| VEOSS-005 | [Official source](https://galac.com/producto/administrativo-sac-emprendedor-persona-natural/) | DOCUMENTED |
+| VEOSS-006 | [Official source](https://galac.com/productos/administrativo/) | DOCUMENTED |
+| VEOSS-007 | [Official source](https://galac.com/productos/administrativo/) | DOCUMENTED |
+| VEOSS-008 | No feature-level source — not established | UNRESOLVED |
+| VEOSS-009 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-010 | [Official source](https://www.sumeria.org.ve/sac/) | DOCUMENTED |
+| VEOSS-011 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-012 | [Official source](https://www.finapartner.com/funcionalidades/programa-para-inventarios/) | DOCUMENTED |
+| VEOSS-013 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-014 | [Official source](https://docs.frappe.io/erpnext/assets/introduction) | DOCUMENTED |
+| VEOSS-015 | [Official source](https://docs.frappe.io/erpnext/selling) | DOCUMENTED |
+| VEOSS-016 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-017 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-018 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-019 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-020 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-021 | No feature-level source — not established | PROVISIONAL |
+
 ## Functional comparison
 
 ¹ **Statuses are provisional issue/backlog classification, not verified system behavior.** Assess code, API, permissions, PostgreSQL and browser before converting any entry into a PASS/complete implementation.
@@ -66,7 +100,7 @@ Notes: S.A.C. is specifically the `Sistema de Asistencia Comercial` described by
 
 ## Unresolved / follow-up
 
-**Ecologic** cannot be matched confidently to a Venezuelan administrative software vendor using the available reliable primary references. Its single row is `NOT_APPLICABLE` **to implementation at this time**, tracked by #764 for identity research; this does **not** prove the competitor itself is irrelevant. S.A.C. provenance is secondary; obtain owner-maintained documentation before interpreting licensing or API. The overall ticket should remain open until identity/provenance and actual ContaGest code/status audit are reconciled and the exact-SHA gate evidence is complete.
+**Ecologic** cannot be matched confidently to a Venezuelan administrative software vendor using the available reliable primary references. Its single row is `NOT_APPLICABLE` **to implementation at this time**, tracked by #764 for identity research; this does **not** prove the competitor itself is irrelevant. S.A.C. workflow provenance is vendor-maintained; its software license terms and API details remain unverified, so code reuse/integration remain prohibited. The overall ticket should remain open until identity/provenance and actual ContaGest code/status audit are reconciled and the exact-SHA gate evidence is complete.
 
 ## Evidence and safe reproduction
 
