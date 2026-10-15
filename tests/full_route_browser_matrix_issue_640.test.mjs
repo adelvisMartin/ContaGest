@@ -4,10 +4,10 @@ import fs from 'node:fs';
 
 const read=(file)=>fs.readFileSync(file,'utf8');
 
-test('#640 matrix derives all 58 routes from the existing canonical visual catalog',async()=>{
+test('#640 matrix derives all 60 routes from the existing canonical visual catalog',async()=>{
   const contract=await import('../qa/support/full-route-browser-contract-v640.mjs');
-  assert.equal(contract.FULL_ROUTE_BROWSER_CONTRACT.routes.length,58);
-  assert.equal(new Set(contract.FULL_ROUTE_BROWSER_CONTRACT.routes).size,58);
+  assert.equal(contract.FULL_ROUTE_BROWSER_CONTRACT.routes.length,60);
+  assert.equal(new Set(contract.FULL_ROUTE_BROWSER_CONTRACT.routes).size,60);
   assert.deepEqual(contract.FULL_ROUTE_BROWSER_CONTRACT.themes,['light','dark','system']);
   assert.deepEqual(contract.FULL_ROUTE_BROWSER_CONTRACT.motion,['normal','reduced']);
   for(const width of [360,390,430,768,1024,1366,1440,1920]){

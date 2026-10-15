@@ -37,7 +37,7 @@ env:
 
 jobs:
   compatibility:
-    name: ${{ matrix.project }} · ${{ github.event_name == 'schedule' && '58 routes nightly' || 'critical + vertical PR' }}
+    name: ${{ matrix.project }} · ${{ github.event_name == 'schedule' && '60 routes nightly' || 'critical + vertical PR' }}
     runs-on: ubuntu-latest
     timeout-minutes: 70
     strategy:
