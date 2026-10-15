@@ -177,3 +177,15 @@ test('#658 policy edits, legal holds and purge share tenant serialization; stale
   assert.match(purge, /"lastError" = \$\{blocked \? 'LEGAL_HOLD_ACTIVE' : 'PURGE_BATCH_FAILED'\}/,
     'DB/provider messages cannot be persisted verbatim');
 });
+
+test('#658 purge batch size validation is shared before any SQL or job creation', () => {
+  const validator = service.slice(service.indexOf('function normalizePurgeBatchSize'), service.indexOf('function canonicalize'));
+  assert.match(validator, /Number\.isSafeInteger\(value\)/);
+  assert.match(validator, /value < 1/);
+  assert.match(validator, /PURGE_BATCH_SIZE_INVALID/);
+  assert.match(validator, /Math\.min\(value, 1000\)/);
+  const request = service.slice(service.indexOf('export async function requestPurgeJob'), service.indexOf('async function deletePurgeableRows'));
+  const execution = service.slice(service.indexOf('export async function executePurgeBatch'), service.indexOf('export async function registerStorageObject'));
+  assert.match(request, /normalizePurgeBatchSize\(input\.batchSize\)/);
+  assert.match(execution, /normalizePurgeBatchSize\(input\.batchSize\)/);
+});

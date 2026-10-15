@@ -108,3 +108,10 @@ pertenecen a #654/#655 y a la configuración de la organización, **no** a
 cambiar en este PR los checks de todas las ventanas. Registrar
 `BLOCKED_PROVIDER` si no corren y conservar las pruebas locales pendientes
 en vez de fabricar checks verdes.
+
+### Entrada destructiva fail-closed
+`normalizePurgeBatchSize` rechaza antes de crear/ejecutar jobs los valores
+fraccionarios, negativos, cero, `NaN`, infinitos y enteros inseguros.
+Conserva el límite operativo de 1000 filas por lote y el default 250.
+La integración PG17 requiere error `PURGE_BATCH_SIZE_INVALID` sin alterar
+el estado o contador de intentos de un job.

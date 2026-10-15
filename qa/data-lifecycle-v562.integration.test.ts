@@ -354,3 +354,30 @@ test('future-dated analytics cannot be purged by a zero-day policy', async () =>
     );
   }
 });
+
+test('invalid purge batch sizes fail closed before job claim or mutation', async () => {
+  const badSizes = [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1];
+  const job = await requestPurgeJob({
+    tenantId: tenantA, entityType: 'AnalyticsEvent', idempotencyKey: `invalid-batch-v658-${randomUUID()}`,
+    authorizationRef: 'qa-invalid-batch-658', batchSize: 1
+  });
+  for (const batchSize of badSizes) {
+    await assert.rejects(
+      () => requestPurgeJob({
+        tenantId: tenantA, entityType: 'AnalyticsEvent', idempotencyKey: `invalid-${randomUUID()}`,
+        authorizationRef: 'qa-invalid-batch-658', batchSize
+      }),
+      (error: any) => error?.details?.code === 'PURGE_BATCH_SIZE_INVALID'
+    );
+    await assert.rejects(
+      () => executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize }),
+      (error: any) => error?.details?.code === 'PURGE_BATCH_SIZE_INVALID'
+    );
+  }
+  const unchanged = await prisma.$queryRawUnsafe<Array<{ status: string; attempts: number }>>(
+    'SELECT "status","attempts" FROM public."DataLifecycleJob" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
+    job.id, tenantA,
+  );
+  assert.equal(unchanged[0].status, 'pending');
+  assert.equal(unchanged[0].attempts, 0);
+});
