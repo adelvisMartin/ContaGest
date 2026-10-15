@@ -3,7 +3,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { operatorTokenValid } from '../hipico-bot/hipico-operator-security.js';
 import {
-  consolidatedQuerySchema, createShareSchema, reportDate, reportGroupKey, validateReportToken
+  consolidatedQuerySchema, createShareSchema, reportDate, reportGroupKey, reportSharingEnabled, validateReportToken
 } from './report-share-policy.js';
 import {
   issueHipicoReportLink, listHipicoReportLinks, readHipicoConsolidatedShare, readHipicoReportLink, revokeHipicoReportLink
@@ -164,7 +164,7 @@ export function createHipicoReportShareRouter(options: RouterOptions = {}) {
   };
   const operatorAuthorized = options.validateOperator || operatorTokenValid;
   const now = options.now || (() => new Date());
-  const isEnabled = options.enabled || (() => process.env.HIPICO_REPORT_SHARES_ENABLED === 'true');
+  const isEnabled = options.enabled || reportSharingEnabled;
   // The feature is off by default, even after migrations. No token read, write
   // or issuance until staging RLS/security checks and gateway redaction exist.
   router.use((_req, res, next) => {
