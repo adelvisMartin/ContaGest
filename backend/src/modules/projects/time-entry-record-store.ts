@@ -74,15 +74,20 @@ function parents(project: Ref|null, task: Ref|null, tenantId: string, projectId:
 export function serializeTimeEntry(row:any,tenantId:string,projectId:string,taskId:string,clientId:string) {
   const p=row?.payload;
   if (!row || row.tenantId!==tenantId || row.moduleSlug!==PROJECT_TIME_ENTRY_SLUG ||
-      row.status!=='draft' || !p || typeof p!=='object' || Array.isArray(p) ||
+      !['draft','submitted','rejected','approved'].includes(row.status) || !p || typeof p!=='object' || Array.isArray(p) ||
       p.schemaVersion!==1 || p.projectId!==projectId || p.taskId!==taskId ||
       p.clientId!==clientId || !UUID.test(p.memberId||'') ||
       p.source!=='manual' || !Number.isSafeInteger(p.durationMinutes) ||
       p.durationMinutes<1 || p.durationMinutes>1440 ||
       typeof p.startedAtUtc!=='string' || typeof p.endedAtUtc!=='string' ||
       !UTC.test(p.startedAtUtc) || !UTC.test(p.endedAtUtc) ||
-      p.revision!==1 || p.billable!==false || p.linkedInvoiceId!==null ||
-      p.approvedAt!==null || p.approvedBy!==null) {
+      (!Number.isSafeInteger(p.revision) || p.revision<1 || p.revision>=Number.MAX_SAFE_INTEGER) ||
+      p.billable!==false || p.linkedInvoiceId!==null ||
+      (row.status==='approved' ? (typeof p.approvedBy!=='string' || !UUID.test(p.approvedBy) ||
+        typeof p.approvedAt!=='string' || !UTC.test(p.approvedAt) ||
+        !Number.isFinite(Date.parse(p.approvedAt)) ||
+        new Date(p.approvedAt).toISOString()!==p.approvedAt) :
+        (p.approvedAt!==null || p.approvedBy!==null))) {
     throw new TypeError('PROJECT_TIME_ENTRY_STORED_SCOPE_INVALID');
   }
   // Stored timestamps and duration must still agree on every read.
@@ -94,7 +99,8 @@ export function serializeTimeEntry(row:any,tenantId:string,projectId:string,task
   }
   return Object.freeze({id:row.id,projectId,taskId,clientId,memberId:p.memberId,
     startedAtUtc:p.startedAtUtc,endedAtUtc:p.endedAtUtc,durationMinutes:p.durationMinutes,
-    source:p.source,status:'draft' as const,revision:1 as const,billable:false as const,
+    source:p.source,status:row.status as 'draft'|'submitted'|'rejected'|'approved',
+    revision:p.revision as number,billable:false as const,
     createdAt:row.createdAt,updatedAt:row.updatedAt});
 }
 
@@ -202,7 +208,7 @@ export async function listTimeEntryDrafts({db,tenantId,projectId,taskId,actorId,
     // Only the actual assignee can view personal timesheets; manager read is a later permission decision.
     if (actorId!==memberId) throw new ProjectTimeEntryForbidden();
     const rows=await tx.moduleRecord.findMany({where:{tenantId,moduleSlug:PROJECT_TIME_ENTRY_SLUG,
-      status:'draft',payload:{path:['taskId'],equals:taskId}},take:take+1,skip,
+      payload:{path:['taskId'],equals:taskId}},take:take+1,skip,
       orderBy:[{createdAt:'desc'},{id:'desc'}]});
     if (!Array.isArray(rows)||rows.length>take+1) throw new TypeError('PROJECT_TIME_ENTRY_PAGE_RESULT_INVALID');
     return Object.freeze({items:rows.slice(0,take).map((row:any)=>{
@@ -213,3 +219,6 @@ export async function listTimeEntryDrafts({db,tenantId,projectId,taskId,actorId,
       nextSkip:rows.length>take?skip+take:null})});
   },{isolationLevel:'Serializable'});
 }
+
+/** Read listing preserves submitted/rejected/approved review history. */
+export const listTimeEntries = listTimeEntryDrafts;
