@@ -80,3 +80,53 @@ test('#562 CI proves PostgreSQL isolation and a real filesystem storage sandbox'
   assert.match(workflow, /npm run typecheck/);
   assert.match(workflow, /npm run build:backend/);
 });
+
+test('#658 protected entities and purge adapters cannot drift from retention matrix', () => {
+  const sourceSet = (name) => {
+    const declaration = new RegExp('const '+name+' = new Set\\(\\[([\\s\\S]*?)\\]\\);').exec(service);
+    assert.ok(declaration, `missing runtime ${name} allowlist`);
+    const values = [...declaration[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    assert.ok(values.length > 0, `empty runtime ${name} allowlist`);
+    assert.equal(new Set(values).size, values.length, `duplicate runtime ${name}`);
+    return new Set(values);
+  };
+
+  const protectedEntities = sourceSet('PROTECTED_ENTITIES');
+  const purgeAdapters = sourceSet('PURGE_ADAPTER_ENTITIES');
+  const matrixEntities = new Map();
+
+  for (const row of parsedMatrix.entities) {
+    assert.equal(typeof row.entity, 'string');
+    assert.ok(row.entity.length > 0, 'unidentified entity in retention authority');
+    assert.equal(matrixEntities.has(row.entity), false, `duplicate retention entity: ${row.entity}`);
+    matrixEntities.set(row.entity, row);
+    assert.ok(row.retentionDays === null ||
+      (Number.isSafeInteger(row.retentionDays) && row.retentionDays >= 0),
+      `invalid retentionDays: ${row.entity}`);
+    assert.equal(typeof row.purgeable, 'boolean', `missing purgeable state: ${row.entity}`);
+  }
+
+  for (const entity of protectedEntities) {
+    const row = matrixEntities.get(entity);
+    assert.ok(row, `protected runtime entity absent from retention authority: ${entity}`);
+    assert.equal(row.purgeable, false, `protected entity marked purgeable: ${entity}`);
+    assert.notEqual(row.deleteSemantics, 'purge', `protected entity assigned purge semantics: ${entity}`);
+    assert.equal(purgeAdapters.has(entity), false, `protected entity installed as purge adapter: ${entity}`);
+  }
+
+  for (const entity of purgeAdapters) {
+    const row = matrixEntities.get(entity);
+    assert.ok(row, `purge adapter absent from retention authority: ${entity}`);
+    assert.equal(row.purgeable, true, `runtime purge adapter contradicts matrix: ${entity}`);
+    assert.ok(['purge','archive'].includes(row.deleteSemantics),
+      `runtime purge adapter has unsupported semantics: ${entity}`);
+  }
+
+  assert.equal(matrixEntities.get('MediaObject')?.deleteSemantics, 'purge');
+  assert.equal(matrixEntities.get('MediaObject')?.purgeable, true);
+  assert.equal(purgeAdapters.has('MediaObject'), false,
+    'media deletion requires its dedicated lifecycle/storage guard');
+  assert.ok([...matrixEntities.values()].every((row) =>
+    !row.deleteSemantics.includes('immutable') || row.purgeable === false),
+    'immutable retention class can never authorize generic purge');
+});
