@@ -145,6 +145,8 @@ type ConsolidatedCount = { participants: number };
  * Public consolidated view is intentionally LESS expressive than the internal
  * PWA view. A ledger entry is bet/settlement/adjustment/reversal only; source
  * does not encode deposit, withdrawal, aval, transfer or refund semantics.
+ * Reversals of settlements are included in period net, so cancelled
+ * settlements do not continue counting as confirmed winnings.
  *
  * Never fill a missing financial column with fabricated 0.
  * Only group audience tokens may access this aggregate.
@@ -198,13 +200,21 @@ export async function readHipicoConsolidatedShare(
       SELECT e.participant_code AS "participantCode",e.currency,
         SUM(e.amount_minor)::text AS "balanceMinor",
         COALESCE(SUM(e.amount_minor) FILTER (
-          WHERE e.entry_type='settlement' AND e.created_at >= ${from}
+          WHERE (e.entry_type='settlement' OR
+             (e.entry_type='reversal' AND original.entry_type='settlement'))
+            AND e.created_at >= ${from}
         ),0)::text AS "daySettlementMinor",
         COALESCE(SUM(e.amount_minor) FILTER (
-          WHERE e.entry_type='settlement' AND e.created_at >= ${weekFrom}
+          WHERE (e.entry_type='settlement' OR
+             (e.entry_type='reversal' AND original.entry_type='settlement'))
+            AND e.created_at >= ${weekFrom}
         ),0)::text AS "weekSettlementMinor"
       FROM public.hipico_money_ledger_entries e
       JOIN participant_page p ON p.participant_code=e.participant_code
+      LEFT JOIN public.hipico_money_ledger_entries original
+        ON original.id=e.original_entry_id AND original.owner_id=e.owner_id
+          AND original.group_key=e.group_key AND original.participant_code=e.participant_code
+          AND original.currency=e.currency
       WHERE e.owner_id=${ownerId}::uuid AND e.group_key=${groupKey}
         AND e.created_at < ${until}
       GROUP BY e.participant_code,e.currency
