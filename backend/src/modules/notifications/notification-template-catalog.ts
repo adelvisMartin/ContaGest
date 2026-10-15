@@ -128,3 +128,25 @@ export function evaluateNotificationQuietHours(input: {
     : localTime >= input.start || localTime < input.end;
   return Object.freeze({ deferred, localTime, timeZone: input.timeZone });
 }
+
+/** Public, immutable metadata for RBAC-protected catalog discovery.
+ * Contains no recipient data, template render payloads, or delivery credentials.
+ */
+export function listNotificationTemplateDescriptors(): ReadonlyArray<Readonly<{
+  key: NotificationTemplateKey;
+  version: number;
+  classification: 'optional' | 'transactional';
+  slots: readonly string[];
+  locales: readonly string[];
+}>> {
+  return Object.freeze(notificationTemplateKeys().map((key) => {
+    const template = CATALOG[key];
+    return Object.freeze({
+      key,
+      version: template.version,
+      classification: template.classification,
+      slots: Object.freeze([...template.slots]),
+      locales: Object.freeze(['es-VE', 'en-US'])
+    });
+  }));
+}

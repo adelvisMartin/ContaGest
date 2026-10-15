@@ -69,3 +69,20 @@ test('#854: safe template preview neither queues nor exposes unescaped HTML', as
   });
   expect(rejected.status()).toBe(422);
 });
+
+test('#854: catalog metadata requires authentication and never advertises a working queue', async ({ request }) => {
+  const { base, token } = target();
+  const unauthenticated = await request.get(base + '/api/v1/notifications/templates');
+  expect([401, 403]).toContain(unauthenticated.status());
+
+  const response = await request.get(base + '/api/v1/notifications/templates', {
+    headers: { Authorization: 'Bearer ' + token }
+  });
+  expect(response.status()).toBe(200);
+  const parsed = await response.json();
+  expect(parsed.ok).toBe(true);
+  expect(parsed.data.queueReady).toBe(false);
+  expect(parsed.data.templates.map((x) => x.key)).toEqual(['operational.notice', 'sales.order-status']);
+  expect(parsed.data.templates.every((x) => x.version >= 1)).toBe(true);
+  expect(parsed.data.templates.every((x) => !('recipient' in x || 'message' in x))).toBe(true);
+});
