@@ -151,3 +151,51 @@ test('UI binds only qualified opportunity buttons with server revision and refre
  assert.match(ui,/await refreshCrmOpportunities\(\)/);
  assert.doesNotMatch(ui,/Store\.update\(\(draft\).*crmOpportunityLossId/);
 });
+
+
+test('forecast service calls canonical read-only endpoint and returns complete per-currency totals',async()=>{
+ let called;
+ const response={policy:'crm-qualified-forecast-v1',evaluatedCount:3,excludedLostCount:1,
+  currencyTotals:[{currency:'USD',count:2,gross:'10.00',weighted:'3.50'}]};
+ const service=createCrmOpportunityService({api:fake({get:async(path)=>{called=path;return response;}})});
+ assert.deepEqual(await service.forecast(),response);
+ assert.equal(called,CRM_OPPORTUNITY_ENDPOINT+'/forecast');
+});
+test('forecast rejects truncated, wrong or duplicate currency outputs rather than render wrong totals',async()=>{
+ const good={policy:'crm-qualified-forecast-v1',evaluatedCount:2,excludedLostCount:0,
+  currencyTotals:[{currency:'USD',count:2,gross:'10.00',weighted:'7.50'}]};
+ const invalid=[
+  null,{}, {...good,policy:'other'}, {...good,evaluatedCount:1},
+  {...good,excludedLostCount:3}, {...good,currencyTotals:{}},
+  {...good,currencyTotals:[{currency:'usd',count:2,gross:'10.00',weighted:'7.50'}]},
+  {...good,currencyTotals:[{currency:'USD',count:2,gross:'10.00',weighted:'7.5'}]},
+  {...good,currencyTotals:[{currency:'USD',count:2,gross:'10.00',weighted:'7.50'},
+    {currency:'USD',count:1,gross:'2.00',weighted:'1.00'}]},
+  {...good,currencyTotals:[{currency:'USD',count:2,gross:'10.00',weighted:'7.50'},
+    {currency:'VES',count:1,gross:'1.00',weighted:'1.00'}]}
+ ];
+ for(const payload of invalid){
+  const service=createCrmOpportunityService({api:fake({get:async()=>payload})});
+  await assert.rejects(service.forecast(),/CRM_FORECAST_RESPONSE_INVALID/);
+ }
+});
+test('forecast supports empty pipeline including lost-only records without inventing income',async()=>{
+ for(const data of [
+  {policy:'crm-qualified-forecast-v1',evaluatedCount:0,excludedLostCount:0,currencyTotals:[]},
+  {policy:'crm-qualified-forecast-v1',evaluatedCount:4,excludedLostCount:4,currencyTotals:[]}
+ ]){
+  const svc=createCrmOpportunityService({api:fake({get:async()=>data})});
+  assert.deepEqual(await svc.forecast(),data);
+ }
+});
+test('Clientes UI renders per-currency read-only forecast with explicit error and refresh',()=>{
+ const ui=readFileSync(new URL('../frontend/src/pages/ClientsPage.js',import.meta.url),'utf8');
+ assert.match(ui,/id="crmForecastResults" role="region" aria-live="polite"/);
+ assert.match(ui,/id:'crmForecastRefresh'/);
+ assert.match(ui,/await crmOpportunities\.forecast\(\)/);
+ assert.match(ui,/rows:summary\.currencyTotals/);
+ assert.match(ui,/safe\(item\.currency\)/);
+ assert.match(ui,/safe\(item\.weighted\)/);
+ assert.match(ui,/No se muestran cifras parciales/);
+ assert.doesNotMatch(ui,/Store\.update\(\(draft\).*crmForecastResults/);
+});
