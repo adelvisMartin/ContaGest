@@ -9,8 +9,10 @@ import { transitionProjectStatus, ProjectStatusNotFound, ProjectStatusConflict,
   ProjectStatusForbidden, ProjectStatusTransitionRejected } from './project-status-transition.js';
 import { createProjectTask, listProjectTasks, transitionProjectTask, ProjectTaskNotFound, ProjectTaskForbidden,
   ProjectTaskConflict, ProjectTaskStaleRevision, ProjectTaskTransitionRejected } from './project-task-store.js';
-import { createTimeEntryDraft, listTimeEntryDrafts, ProjectTimeEntryNotFound,
+import { createTimeEntryDraft, listTimeEntries, ProjectTimeEntryNotFound,
   ProjectTimeEntryForbidden, ProjectTimeEntryConflict } from './time-entry-record-store.js';
+import { transitionTimeEntryReview, TimeReviewMissing, TimeReviewForbidden,
+  TimeReviewConflict, TimeReviewStateError } from './time-entry-review-store.js';
 
 const router=Router();
 router.use(requireTenant);
@@ -234,7 +236,7 @@ router.get('/:projectId/tasks/:taskId/time-entries',
     const ctx=(req as any).context as {tenantId:string;userId?:string};
     if(!ctx.userId)throw new HttpError(403,'Se requiere usuario autenticado.');
     try {
-      const result=await listTimeEntryDrafts({
+      const result=await listTimeEntries({
         db:prisma,tenantId:ctx.tenantId,actorId:ctx.userId,
         projectId:req.params.projectId,taskId:req.params.taskId,...page.data
       });
@@ -248,6 +250,44 @@ router.get('/:projectId/tasks/:taskId/time-entries',
         'PROJECT_TIME_ENTRY_TASK_INVALID','PROJECT_TIME_ENTRY_ACTOR_INVALID',
         'PROJECT_TIME_ENTRY_PAGE_INVALID'
       ].includes(error.message))throw new HttpError(400,'Identificador o paginación inválidos.');
+      throw error;
+    }
+  }));
+
+
+const timeReviewSchema=z.object({
+  action:z.enum(['submit','withdraw','revise','reject','approve']),
+  expectedRevision:z.number().int().min(1).max(Number.MAX_SAFE_INTEGER-1)
+}).strict();
+
+// Applies existing default-OFF feature flag and tenant/license/RBAC middleware.
+// Reviewer identity is resolved from active Project.managerId in transaction,
+// never a client-controlled canReviewTime field.
+router.patch('/:projectId/tasks/:taskId/time-entries/:entryId/review',
+  requirePermission('modules.manage'),validateBody(timeReviewSchema),
+  asyncHandler(async(req,res)=>{
+    const ctx=(req as any).context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
+    if(!ctx.userId)throw new HttpError(403,'Se requiere usuario autenticado.');
+    try {
+      const result=await transitionTimeEntryReview({
+        db:prisma,tenantId:ctx.tenantId,actorId:ctx.userId,
+        projectId:req.params.projectId,taskId:req.params.taskId,entryId:req.params.entryId,
+        action:req.body.action,expectedRevision:req.body.expectedRevision,
+        ipAddress:ctx.ip,userAgent:ctx.userAgent
+      });
+      res.setHeader('Cache-Control','private, no-store');
+      ok(res,result);
+    } catch(error) {
+      if(error instanceof TimeReviewForbidden)throw new HttpError(403,'No tienes autorización para revisar estas horas.');
+      if(error instanceof TimeReviewMissing)throw new HttpError(404,'Proyecto, tarea, cliente o registro no disponibles.');
+      if(error instanceof TimeReviewConflict || error instanceof TimeReviewStateError){
+        throw new HttpError(409,'El estado o la revisión del registro no permite esta operación.');
+      }
+      if(error instanceof TypeError&&[
+        'PROJECT_TIME_REVIEW_TENANT_INVALID','PROJECT_TIME_REVIEW_ACTOR_INVALID',
+        'PROJECT_TIME_REVIEW_PROJECT_INVALID','PROJECT_TIME_REVIEW_TASK_INVALID',
+        'PROJECT_TIME_REVIEW_ENTRY_INVALID','PROJECT_TIME_REVIEW_REVISION_INVALID'
+      ].includes(error.message))throw new HttpError(400,'Identificador o revisión inválidos.');
       throw error;
     }
   }));
