@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { prepareAsyncJobIntent, planAsyncJobFailure, assertAsyncJobTenantId, assertAsyncJobId, assertAsyncJobLeaseToken } from './job-intent-policy.js';
 import { assertApprovedAsyncJobHandler, type AsyncJobHandlerRegistry } from './async-handler-registry.js';
+import { classifyAsyncJobFailure } from './async-failure-policy.js';
 
 // Caller MUST already be inside its business transaction and authenticated tenant context.
 // No implicit second transaction and no network/provider work before business COMMIT.
@@ -84,14 +85,15 @@ export async function completeClaimedAsyncJob(tx: Prisma.TransactionClient, inpu
 
 export async function failClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
   tenantId: string; id: string; leaseToken: string; now: Date;
-  attempts: number; maxAttempts: number; retryable: boolean; safeErrorCode: string;
+  attempts: number; maxAttempts: number; failure: unknown; idempotentRetryVerified: boolean;
 }) {
-  const { tenantId, id, leaseToken, now, attempts, maxAttempts, retryable, safeErrorCode } = input;
+  const { tenantId, id, leaseToken, now, attempts, maxAttempts, failure, idempotentRetryVerified } = input;
   assertAsyncJobTenantId(tenantId);
   assertAsyncJobId(id);
   assertAsyncJobLeaseToken(leaseToken);
-  if (!/^[A-Z0-9_]{1,100}$/.test(safeErrorCode)) throw new Error('JOB_ERROR_CODE_INVALID');
-  const decision = planAsyncJobFailure({attempts,maxAttempts,retryable,now});
+  // Never use a provider exception's raw message/code to authorize retry or persist error details.
+  const failureDecision = classifyAsyncJobFailure(failure, { idempotentRetryVerified });
+  const decision = planAsyncJobFailure({attempts,maxAttempts,retryable:failureDecision.retryable,now});
   // Compute only the bounded delay from the policy; the actual retry instant is
   // owned by PostgreSQL, never by the worker's potentially skewed wall clock.
   const retryDelaySeconds = decision.runAt === null ? null : Math.round((decision.runAt.getTime() - now.getTime()) / 1000);
@@ -101,7 +103,7 @@ export async function failClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
         "runAt"=CASE WHEN ${decision.status} = 'retry'
           THEN clock_timestamp() + (${retryDelaySeconds}::integer * INTERVAL '1 second')
           ELSE "runAt" END,
-        "leaseOwner"=NULL, "leaseUntil"=NULL, "lastErrorCode"=${safeErrorCode}, "updatedAt"=clock_timestamp()
+        "leaseOwner"=NULL, "leaseUntil"=NULL, "lastErrorCode"=${failureDecision.safeErrorCode}, "updatedAt"=clock_timestamp()
     WHERE "tenantId"=${tenantId} AND "id"=${id}
       AND "status"='running' AND "leaseOwner"=${leaseToken} AND "leaseUntil">clock_timestamp()
       AND "attempts"=${attempts} AND "maxAttempts"=${maxAttempts}
