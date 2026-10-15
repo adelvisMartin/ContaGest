@@ -6,6 +6,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'scripts/erp-operational-smoke-v664.mjs'
+      - 'qa/erp-operational-crud-v664.test.ts'
       - 'qa/erp-operational-financial-v664.test.ts'
       - 'tests/erp_operational_smoke_v664.test.mjs'
       - 'docs/qa/erp-operational-smoke-v664.md'
