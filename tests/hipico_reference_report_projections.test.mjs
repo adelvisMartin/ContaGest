@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   assertReportDate, projectParticipantAccount, projectDailyMovements, projectRaceHistory
 } from '../frontend/public/hipico-control/assets/js/reference-report-projections.js';
@@ -123,4 +124,17 @@ test('movement and race read models remain empty for unpopulated calendar dates'
   assert.deepEqual(projectDailyMovements(fixture(),empty).movements,[]);
   assert.deepEqual(projectRaceHistory(fixture(),empty).races,[]);
   assert.equal(projectParticipantAccount(fixture(),{...empty,participantId:'p1'}).dayResult,0);
+});
+
+test('new report modules participate in the offline PWA and Android parity contract',()=>{
+  const sw=fs.readFileSync(new URL('../frontend/public/hipico-control/sw.js',import.meta.url),'utf8');
+  const android=fs.readFileSync(new URL('../android/hipico-control-v1130/scripts/sync-web.mjs',import.meta.url),'utf8');
+  const app=fs.readFileSync(new URL('../frontend/public/hipico-control/assets/js/app.js',import.meta.url),'utf8');
+  assert.match(sw,/shell-r36-reference-reports/);
+  for(const file of ['reference-report-projections.js','reference-report-ui.js']){
+    assert.ok(sw.includes("'./assets/js/"+file+"'"));
+    assert.ok(android.includes("'assets/js/"+file+"'"));
+    assert.ok(app.includes('"./'+file+'"'));
+  }
+  assert.ok(!sw.includes('websimproco'));
 });
