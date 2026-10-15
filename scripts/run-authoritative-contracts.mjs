@@ -45,6 +45,7 @@ const required59=[
   'tests/local_verification_runner_v630.test.mjs',
   'tests/change_risk_classifier_v667.test.mjs',
   'tests/documentation_integrity_v666.test.mjs',
+  'tests/crud_factory_hardening_issue_638.test.mjs',
   'tests/architecture_ownership_issue_653.test.mjs',
   'tests/production_convergence_v627.test.mjs',
   'tests/relational_normalization_audit_v633.test.mjs',
