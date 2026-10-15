@@ -166,6 +166,8 @@ test('#761 only dedicated route owns Project writes (not generic Stitch CRUD)',(
   assert.match(moduleRoutes,/router\.use\('\/projects',projectRecordRoutes\)/);
   assert.match(moduleRoutes,/if \(!allowed\.has\(req\.params\.slug\)\)/);
   assert.match(routes,/router\.use\(requireTenant\)/);
+  assert.ok(routes.includes("process.env.CONTAGEST_PROJECTS_V761_ENABLE!=='true'"),
+    'new project mutation API must be disabled by default until real PG17 QA');
   assert.match(routes,/router\.post\('\/',requirePermission\('modules\.manage'\)/);
   assert.match(routes,/router\.get\('\/',requirePermission\('modules\.manage'\)/);
   assert.match(routes,/actorId:ctx\.userId/);
