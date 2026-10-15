@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import express from 'express';
 import {
   createReportToken, createShareSchema, dateWindowCaracas, expiryDate,
-  hashReportToken, reportDate, shareAllowed, validateReportToken
+  hashReportToken, reportDate, reportSharingEnabled, shareAllowed, validateReportToken
 } from './report-share-policy.js';
 import { createHipicoReportShareRouter, readableMinor } from './report-share.routes.js';
 
@@ -232,3 +232,11 @@ test('production defaults fail closed with no public reads, mutations or token v
   assert.equal(read,false);
 });
 
+
+test('share rollout only activates with exact true and defaults closed',()=>{
+  assert.equal(reportSharingEnabled({} as NodeJS.ProcessEnv),false);
+  for(const value of ['', 'TRUE', '1','yes','false','true ']) {
+    assert.equal(reportSharingEnabled({HIPICO_REPORT_SHARES_ENABLED:value} as NodeJS.ProcessEnv),false);
+  }
+  assert.equal(reportSharingEnabled({HIPICO_REPORT_SHARES_ENABLED:'true'} as NodeJS.ProcessEnv),true);
+});
