@@ -130,7 +130,7 @@ test('new report modules participate in the offline PWA and Android parity contr
   const sw=fs.readFileSync(new URL('../frontend/public/hipico-control/sw.js',import.meta.url),'utf8');
   const android=fs.readFileSync(new URL('../android/hipico-control-v1130/scripts/sync-web.mjs',import.meta.url),'utf8');
   const app=fs.readFileSync(new URL('../frontend/public/hipico-control/assets/js/app.js',import.meta.url),'utf8');
-  assert.match(sw,/shell-r37-operations-desk/);
+  assert.match(sw,/shell-r38-consolidator/);
   for(const file of ['reference-report-operations.js','reference-report-projections.js','reference-report-ui.js']){
     assert.ok(sw.includes("'./assets/js/"+file+"'"));
     assert.ok(android.includes("'assets/js/"+file+"'"));
