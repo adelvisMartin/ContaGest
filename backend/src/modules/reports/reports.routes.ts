@@ -12,6 +12,7 @@ import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRo
 import { summarizeInvoicedUnitActivity } from './invoiced-unit-activity.js';
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
 import { deriveReorderCandidates } from './replenishment-candidates.js';
+import { previewReorderPolicy } from './reorder-policy-preview.js';
 import { parseReorderScanQuery, reorderScanPageMeta } from './reorder-scan-page.js';
 import { parseReorderSalesOptions, projectReorderSalesEvidence } from './reorder-sales-evidence.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
@@ -401,6 +402,53 @@ router.get('/inventory/slow-moving', asyncHandler(async (req, res) => {
       throw new HttpError(409, 'No se puede confirmar el indicador: historial físico inválido o no conciliado.', { code: 'OUTBOUND_ACTIVITY_UNRECONCILED' });
     throw error;
   }
+}));
+
+// Stateless simulation only. The operator-supplied assumptions are NOT
+// persisted reorder policies, lot/location availability or purchase authority.
+const reorderPolicyPreviewQuery = z.object({
+  productId: z.string().uuid(),
+  reorderPointExact: z.string(),
+  targetStockExact: z.string(),
+  safetyStockExact: z.string().optional(),
+  orderMultipleExact: z.string().optional(),
+  leadTimeDays: z.string().optional()
+}).strict();
+
+router.get('/inventory/reorder/preview', asyncHandler(async (req, res) => {
+  const parsed = reorderPolicyPreviewQuery.safeParse(req.query);
+  if (!parsed.success)
+    throw new HttpError(400, 'Parámetros de simulación de reposición inválidos.', { code: 'REORDER_POLICY_QUERY_INVALID' });
+  const ctx = context(req);
+  const product = await prisma.product.findFirst({
+    where: { id: parsed.data.productId, tenantId: ctx.tenantId, active: true },
+    select: { id: true, sku: true, name: true, unit: true, stock: true, reserved: true, minStock: true }
+  });
+  if (!product) throw new HttpError(404, 'Producto no encontrado.', { code: 'REORDER_POLICY_PRODUCT_NOT_FOUND' });
+  let policyPreview;
+  try {
+    policyPreview = previewReorderPolicy({
+      stockExact: product.stock,
+      reservedExact: product.reserved,
+      canonicalMinStockExact: product.minStock,
+      reorderPointExact: parsed.data.reorderPointExact,
+      targetStockExact: parsed.data.targetStockExact,
+      safetyStockExact: parsed.data.safetyStockExact,
+      orderMultipleExact: parsed.data.orderMultipleExact,
+      leadTimeDays: parsed.data.leadTimeDays
+    });
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    const inconsistentStock = error.message === 'REORDER_POLICY_UNRECONCILED_RESERVATIONS';
+    throw new HttpError(inconsistentStock ? 409 : 422,
+      'La política simulada no es consistente con sus límites o con las existencias.',
+      { code: inconsistentStock ? 'REORDER_POLICY_STOCK_CONFLICT' : 'REORDER_POLICY_ASSUMPTION_INVALID' });
+  }
+  res.setHeader('cache-control', 'no-store');
+  ok(res, {
+    product: { id: product.id, sku: product.sku, name: product.name, unit: product.unit },
+    policyPreview
+  });
 }));
 
 router.get('/inventory/reorder', asyncHandler(async (req, res) => {
