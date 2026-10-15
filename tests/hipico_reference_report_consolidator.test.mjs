@@ -117,6 +117,22 @@ test('reorder button preserves column permutation and remains reversible',()=>{
   assert.deepEqual(original,CONSOLIDATOR_COLUMNS.map(v=>v.id),'no shared mutation');
 });
 
+test('mixed-currency sorting never calculates a fictional USD+VES value',()=>{
+  const input=fixture();
+  input.movements.push(
+    {id:'usd',groupId:'triple-c',date:'2026-10-14',type:'deposit',
+      participantId:'p0',amount:1,currency:'USD',status:'posted',createdAt:'2026-10-15T03:00:00Z'},
+    {id:'ves',groupId:'triple-c',date:'2026-10-14',type:'deposit',
+      participantId:'p1',amount:15,currency:'USD',status:'posted',createdAt:'2026-10-15T03:10:00Z'}
+  );
+  const ordered=projectConsolidatedBalances(input,{
+    ...query,signColumn:'deposit',sign:'positive',sortColumn:'deposit',sortDirection:'asc'
+  });
+  const mixed=ordered.rows.find(r=>r.id==='p0').deposit;
+  assert.deepEqual(mixed,{USD:1,VES:100});
+  assert.deepEqual(ordered.matching.at(-1).deposit,{VES:100});
+});
+
 test('page exports contain exact visible rows/ordered columns, not all 42 clients',()=>{
   const model=projectConsolidatedBalances(fixture(),{...query,hideInactive:false,page:2});
   assert.equal(model.pageRows.length,21);
@@ -144,6 +160,8 @@ test('render includes every observed third-view control and escapes untrusted la
     'consolidator-move-column','consolidator-page'
   ])assert.ok(html.includes('data-action="'+action+'"'),action);
   assert.ok(html.includes('consolidator-filter-form'));
+  assert.ok(html.includes('data-action="consolidator-personal"'));
+  assert.ok(html.includes('aria-label="Abrir estado personal de '));
   assert.ok(html.includes('Sin conexión'));
   assert.ok(!html.includes('<script>'));
   assert.ok(html.includes('No disponible'));
