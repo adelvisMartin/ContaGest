@@ -176,3 +176,16 @@ test('completion, failure and heartbeat share exact job and claim token validato
   assert.equal((code.match(/assertAsyncJobLeaseToken\(leaseToken\);/g) || []).length, 3);
   assert.doesNotMatch(code, /\[0-9a-f-\]\{36\}/);
 });
+
+
+test('atomic enqueue requires trusted, versioned handler allowlist before database insert', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  const start = code.indexOf('export async function enqueueAsyncJobIntent(');
+  const next = code.indexOf('// Only the already tenant-bound worker', start);
+  assert.ok(start >= 0 && next > start);
+  const enqueue = code.slice(start,next);
+  assert.match(enqueue, /handlerRegistry: AsyncJobHandlerRegistry/);
+  assert.match(enqueue, /assertApprovedAsyncJobHandler\(handlerRegistry, request\.handlerKey, JSON\.parse\(request\.payloadJson\)\)/);
+  assert.ok(enqueue.indexOf('assertApprovedAsyncJobHandler(') < enqueue.indexOf('tx.$queryRaw'));
+  assert.match(code, /from '\.\/async-handler-registry\.js'/);
+});
