@@ -110,3 +110,34 @@ node --test tests/hipico_report_share_cli_contract.test.mjs
 El workflow del PR corre estas pruebas sobre el SHA candidato. HTTP usa store falso: **no equivale a un test PostgreSQL/RLS ejecutado**. Antes de dar un enlace real se exige migración revisada en staging, RLS con rol `contagest_runtime`, validación de `FOR SHARE` y `RepeatableRead`, carga de 42+ cuentas y redacción de query strings del ingress/CDN. No poner token de clientes en issues o mensajes públicos.
 
 **Integración de ramas (verificada):** PR #999 ya fusionado a `main` (15/10/2026). El PR #1000 fue reconciliado mediante merge commit `a96d260bcf770d88ba47e45ce5fa5f98194b1af9` con dos padres para preservar íntegros el consolidador/PWA r38 y las novedades de release v660. Su PR tiene base `main` y una comparación de solo 12 archivos propios. No hay migración aplicada ni habilitación de enlaces reales. Nuevas validaciones de RLS, HTTP, PostgreSQL y CI siguen pendientes antes del merge.
+
+
+## Activación protegida, pruebas aisladas y coste CI (15/10/2026)
+
+**Fail-closed:** todos los endpoints `/api/v1/hipico/report-shares`, incluidos GET públicos, creación, lista y revocación, retornan HTTP 503 `HIPICO_REPORT_SHARES_DISABLED` mientras `HIPICO_REPORT_SHARES_ENABLED` no sea exactamente `true`. El valor predeterminado es **desactivado**. Ni la migración ni el merge activan el acceso a reportes financieros. Para habilitarlo se requiere que el operador confirme el resultado real de RLS, el alcance de grupo, la observabilidad sin tokens `?t=`, los roles efectivos y la política de expedición de capacidades.
+
+**Comandos de contrato sin red ni PostgreSQL:**
+
+```bash
+npm run test:hipico:share:offline
+# Requiere dependencias npm ya instaladas:
+npx --no-install tsx --test backend/src/modules/hipico/report-share.routes.test.ts
+```
+
+**Prueba adversarial PostgreSQL 17 de verdad, SOLO entorno descartable:**
+
+```bash
+# Prepara manualmente PostgreSQL 17 LOCAL con base RECIÉN CREADA,
+# nombre hipico_share_test_*, usuario postgres superusuario.
+# NUNCA usar Supabase remoto, base real, staging compartida ni datos de usuarios.
+export HIPICO_SHARE_RLS_DATABASE_URL='postgresql://postgres:***@127.0.0.1:5432/hipico_share_test_v1000'
+export HIPICO_SHARE_RLS_CONSENT='ephemeral-local-postgres17-hipico-share-rls'
+npm run test:hipico:share:postgres
+```
+
+El guard prohíbe nombres de base que no empiecen por `hipico_share_test_`, hosts fuera de loopback, usuarios distintos de `postgres`, consultas y fragmentos URL, versiones de PostgreSQL distintas a 17, esquemas con tablas existentes y ausencia de consentimiento. El script prepara migraciones reales en la base **efímera** y comprueba `FORCE RLS`, propietario A/B, ausencia de contexto, escritura cruzada, revocación cruzada, ámbito grupo y eliminación de GUC al cerrar la transacción. **Nunca se ha ejecutado aquí contra PostgreSQL real**, por lo que no está marcado PASS hasta ver su salida.
+
+**GitHub Actions con cuota Free:** el workflow especializado `.github/workflows/hipico-report-share-links.yml` ya NO usa eventos `pull_request` ni `push`; queda `workflow_dispatch` para ejecución expresa en una referencia donde el workflow esté disponible. Emplea una base PostgreSQL 17 efímera y ejecuta typecheck/API/RLS. **No se ha desactivado el CI general ni se han eludido reglas de protección de rama**, que continúan siendo responsabilidad del repositorio. Las pruebas locales siguen disponibles sin gastar minutos de Actions.
+
+**Criterio de salida:** que `git` y GitHub indiquen PR integrable no reemplaza test PostgreSQL, revisión de cambios y prueba de proxy que elimine `t` de logs. El QA físico del sistema completo puede posponerse, pero no deben distribuirse enlaces financieros mientras los gates de seguridad no tengan evidencia.
+
