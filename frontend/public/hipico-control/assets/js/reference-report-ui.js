@@ -164,8 +164,8 @@ export function referenceReportLines(workspace, filter) {
   for(const r of races){
     lines.push('',r.racetrack+' · '+r.number+'ª carrera · Pizarra: '+(r.board||'No registrada'));
     for(const b of r.bets)lines.push(b.play+' '+b.horse+' '+number(b.amount)+' · '+
-      b.player.code+' '+(b.playerResult===null?'Pendiente':signedMoney(b.playerResult,curr))+
-      (b.receiver?' / '+b.receiver.code+' '+(b.receiverResult===null?'Pendiente':signedMoney(b.receiverResult,curr)):''));
+      b.player.code+' '+(b.status==='cancelled'?'Anulada':b.playerResult===null?'Pendiente':signedMoney(b.playerResult,curr))+
+      (b.receiver?' / '+b.receiver.code+' '+(b.status==='cancelled'?'Anulada':b.receiverResult===null?'Pendiente':signedMoney(b.receiverResult,curr)):''));
   }
   if(model.invalidReferences)lines.push('ADVERTENCIA: '+model.invalidReferences+' referencias no conciliadas.');
   return lines;
