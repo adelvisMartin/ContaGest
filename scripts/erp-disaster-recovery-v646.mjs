@@ -13,7 +13,7 @@ import { verifyNativePostgres17 } from './zero-cost-bootstrap-v668.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const SHA=/^[a-f0-9]{40}$/;
 const STAGES=Object.freeze(['prerequisites','migrate-source','seed-source','rls-source',
-  'fixtures','backup','fault-injection','migrate-target','rls-target','restore','integrity','cleanup']);
+  'fixtures','backup','fault-injection','migrate-target','rls-target','restore','api-smoke','integrity','cleanup']);
 export function stagePlan(){return [...STAGES];}
 
 export function checkAdmin(env={}){
@@ -146,6 +146,10 @@ export async function runDrill(env=process.env){
         execute('pg_restore',['--dbname',dest.DATABASE_URL,'--data-only','--no-owner',
           '--no-acl','--single-transaction','--exit-on-error','--disable-triggers',archive],dest);
         pass('restore');
+        const smokeEnv={...dest,DR646_TENANT_IDS:ids.join(',')};
+        execute('npm',['--workspace','backend','exec','--','tsx','--test',
+          '../qa/erp-restore-smoke-v646.test.ts'],smokeEnv,180000);
+        pass('api-smoke');
         const recovered=JSON.parse(sql(dest,snapshotQuery(ids)));
         report.syntheticDigestSha256=verifySnapshots(snapshot,recovered);
         if(createHash('sha256').update(await readFile(archive)).digest('hex')!==archiveSha)
