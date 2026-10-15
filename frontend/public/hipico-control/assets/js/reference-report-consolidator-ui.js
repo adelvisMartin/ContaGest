@@ -69,7 +69,11 @@ export function renderConsolidator(model,presentation={}){
       '</div></div></th>';
   }).join('');
   const body=model.pageRows.map(row=>
-    '<tr>'+f.columnOrder.map(id=>'<td class="'+signClass(row,id)+'">'+esc(cell(row,id,model.baseCurrency))+'</td>').join('')+'</tr>'
+    '<tr>'+f.columnOrder.map(id=>'<td class="'+signClass(row,id)+'">'+
+      (id==='participant'
+        ? '<button type="button" class="reference-consolidator__person-link" data-action="consolidator-personal" data-id="'+esc(row.id)+
+          '" aria-label="Abrir estado personal de '+esc(row.code)+'">'+esc(cell(row,id,model.baseCurrency))+'</button>'
+        : esc(cell(row,id,model.baseCurrency)))+'</td>').join('')+'</tr>'
   ).join('')||'<tr><td colspan="'+f.columnOrder.length+'">No hay cuentas para estos filtros.</td></tr>';
   const signOpts=[['all','Todos'],['positive','Positivos'],['negative','Negativos'],['zero','Cero']]
     .map(([key,title])=>'<option value="'+key+'" '+(f.sign===key?'selected':'')+'>'+title+'</option>').join('');
