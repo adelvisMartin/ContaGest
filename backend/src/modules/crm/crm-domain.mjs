@@ -52,6 +52,8 @@ export function findClientDuplicateCandidates({tenantId, lead, clients}) {
 export function assessClientConversion({tenantId, lead, clients}) {
   const identity = normalizeLeadIdentity(lead);
   const candidates = findClientDuplicateCandidates({tenantId, lead, clients});
+  // Preserve the historical contract for multiple Client candidates.
+  if (candidates.length > 1) return Object.freeze({status:'BLOCKED', reason:'AMBIGUOUS_CLIENT_MATCH', candidates});
   // RIF is the legal identity authority. Matching an email cannot reconcile a
   // prospect against a different taxpayer, even with only one Client candidate.
   // This is advisory only: actual conversion still needs tenant RBAC + DB CAS.
@@ -70,7 +72,6 @@ export function assessClientConversion({tenantId, lead, clients}) {
       });
     }
   }
-  if (candidates.length > 1) return Object.freeze({status:'BLOCKED', reason:'AMBIGUOUS_CLIENT_MATCH', candidates});
   if (candidates.length === 1) return Object.freeze({status:'REVIEW_EXISTING', reason:'EXISTING_CLIENT_AUTHORITY', candidates});
   if (!identity.rif) return Object.freeze({status:'BLOCKED', reason:'CLIENT_RIF_REQUIRED', candidates});
   return Object.freeze({status:'REVIEW_NEW', reason:'NO_EXISTING_CLIENT_MATCH', candidates});
