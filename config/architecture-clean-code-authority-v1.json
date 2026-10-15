@@ -2,7 +2,11 @@
   "version": 1,
   "owner": "scripts/architecture-clean-code-audit-v622.mjs",
   "baseline": "334c7c608229cf53d2f423ccc38ecb0da0e2e51b",
-  "sourceRoots": ["frontend/src", "backend", "packages"],
+  "sourceRoots": [
+    "frontend/src",
+    "backend",
+    "packages"
+  ],
   "findingTypes": [
     "DUPLICATE_AUTHORITY",
     "BOUNDARY_VIOLATION",
@@ -15,7 +19,12 @@
     "OVERSIZED_MODULE",
     "DUPLICATE_HELPER"
   ],
-  "severityOrder": ["P0", "P1", "P2", "P3"],
+  "severityOrder": [
+    "P0",
+    "P1",
+    "P2",
+    "P3"
+  ],
   "rules": {
     "deadCodeRequiresZeroConsumers": true,
     "findingsRequireEvidence": true,
@@ -31,6 +40,12 @@
       "frontend/src/components/ui/kit.js",
       "frontend/src/components/ui/erp.js",
       "frontend/src/components/vnext/index.js"
+    ],
+    "status": "RETIRED",
+    "retirementOwnerIssue": 622,
+    "retirementEvidence": [
+      "tests/clean_code_refactor_authority_issue_622.test.mjs",
+      "docs/architecture/clean-code-refactor-authority-v1.md"
     ]
   }
 }

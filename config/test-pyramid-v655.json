@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 655,
+  "authority": "AGENTS.md",
+  "issue": 655,
+  "baselineSha": "d9b3d9d9f44a5be84d44fdd23740882cbb3c368b",
+  "baselineTestFiles": 677,
+  "scanRoots": [
+    "backend/src",
+    "qa",
+    "tests",
+    "tools/hipico-whatsapp-bridge",
+    "tools/hipico-whatsapp-web-bridge"
+  ],
+  "sourceClassifier": "INFERRED (filename/directory only; not proof of execution)",
+  "allowedLevels": [
+    "UNIT",
+    "CONTRACT",
+    "POSTGRES_INTEGRATION",
+    "BROWSER_E2E",
+    "PROVIDER_SPECIFIC"
+  ],
+  "baselinePolicy": "All discovered test files receive an inferred owner/level; explicitly protected critical behaviors cannot be removed or downgraded. A deletion/reclassification must have supersession proof and equivalent runtime coverage.",
+  "criticalBehaviors": [
+    {
+      "id": "tenant-isolation",
+      "file": "qa/tenant-isolation-adversarial-v641.test.ts",
+      "level": "POSTGRES_INTEGRATION",
+      "owner": "appsec-iam",
+      "environment": "postgresql17-isolated",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/tenant-isolation-adversarial-v641.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "ledger-posting",
+      "file": "qa/ledger-posting-real-v91.test.ts",
+      "level": "POSTGRES_INTEGRATION",
+      "owner": "accounting",
+      "environment": "postgresql17-isolated",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/ledger-posting-real-v91.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "financial-reconciliation",
+      "file": "qa/financial-reconciliation-v559.test.ts",
+      "level": "POSTGRES_INTEGRATION",
+      "owner": "accounting",
+      "environment": "postgresql17-isolated",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/financial-reconciliation-v559.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "financial-fx",
+      "file": "qa/financial-fx-v560.test.ts",
+      "level": "POSTGRES_INTEGRATION",
+      "owner": "accounting",
+      "environment": "postgresql17-isolated",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/financial-fx-v560.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "financial-idempotency",
+      "file": "qa/financial-idempotency-v92.test.ts",
+      "level": "POSTGRES_INTEGRATION",
+      "owner": "accounting",
+      "environment": "postgresql17-isolated",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/financial-idempotency-v92.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "fiscal-authority",
+      "file": "qa/fiscal-authority-v561.test.ts",
+      "level": "POSTGRES_INTEGRATION",
+      "owner": "accounting",
+      "environment": "postgresql17-isolated",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/fiscal-authority-v561.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "payables-persistence",
+      "file": "qa/payables-v235.integration.test.ts",
+      "level": "POSTGRES_INTEGRATION",
+      "owner": "accounting",
+      "environment": "postgresql17-isolated",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test ../qa/payables-v235.integration.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "auth-boundary",
+      "file": "backend/src/modules/auth/auth.boundary.test.ts",
+      "level": "UNIT",
+      "owner": "appsec-iam",
+      "environment": "node22",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test src/modules/auth/auth.boundary.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "hipico-autonomy",
+      "file": "backend/src/modules/hipico-bot/hipico-autonomous-runtime.test.ts",
+      "level": "UNIT",
+      "owner": "hipico-reliability",
+      "environment": "node22",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npm --workspace backend exec -- tsx --test src/modules/hipico-bot/hipico-autonomous-runtime.test.ts",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "migration-chain",
+      "file": "tests/migration_chain_v626_contract.test.mjs",
+      "level": "CONTRACT",
+      "owner": "dbre",
+      "environment": "node22",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "node --test tests/migration_chain_v626_contract.test.mjs",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "erp-main-journey",
+      "file": "qa/erp-system-campaign-v155.spec.mjs",
+      "level": "BROWSER_E2E",
+      "owner": "qa-release",
+      "environment": "chromium-postgres-isolated",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npx playwright test qa/erp-system-campaign-v155.spec.mjs --project=chromium",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "a11y-browser",
+      "file": "qa/accessibility-wcag22-v99.spec.mjs",
+      "level": "BROWSER_E2E",
+      "owner": "frontend-pwa-ux",
+      "environment": "chromium",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "npx playwright test qa/accessibility-wcag22-v99.spec.mjs --project=chromium",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    },
+    {
+      "id": "physical-handoff",
+      "file": "tests/hipico_physical_qa_issue_119.test.mjs",
+      "level": "CONTRACT",
+      "owner": "hipico-reliability",
+      "environment": "node22",
+      "evidenceStatus": "NOT_EXECUTED",
+      "supersededBy": null,
+      "command": "node --test tests/hipico_physical_qa_issue_119.test.mjs",
+      "levelAuthority": "MANUALLY_ASSIGNED; execution evidence NOT_EXECUTED"
+    }
+  ]
+}

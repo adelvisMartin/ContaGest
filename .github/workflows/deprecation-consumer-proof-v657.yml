@@ -1,0 +1,32 @@
+name: Deprecation consumer proof v657
+on:
+  pull_request:
+    paths:
+      - 'scripts/deprecation-consumer-proof-v657.mjs'
+      - 'scripts/architecture-clean-code-audit-v622.mjs'
+      - 'config/architecture-clean-code-authority-v1.json'
+      - 'tests/deprecation_consumer_proof_issue_657.test.mjs'
+      - 'docs/qa/deprecation-consumer-proof-v657.md'
+      - '.github/workflows/deprecation-consumer-proof-v657.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Consumer-proof regression contracts
+        run: node --test tests/deprecation_consumer_proof_issue_657.test.mjs
+      - name: Source gate for retired adapter and consumers
+        run: node scripts/deprecation-consumer-proof-v657.mjs
+      - name: Preserve original architecture characterization
+        run: |
+          node --test tests/clean_code_refactor_authority_issue_622.test.mjs
+          node scripts/architecture-clean-code-audit-v622.mjs --check
