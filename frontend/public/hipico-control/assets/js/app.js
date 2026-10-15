@@ -6,6 +6,7 @@ import { clearLocalWorkspace, createSnapshot, downloadFile, enqueueOutbox, flush
 import { downloadPdf, downloadXlsx, fixedWidthTable } from "./reports.js";
 import { assertReportDate } from "./reference-report-projections.js";
 import { renderReferenceReport, referenceReportLines } from "./reference-report-ui.js";
+import { caracasToday, raceCopyText } from "./reference-report-operations.js";
 import { mergeWorkspaces, shouldMergeCloud } from "./sync.js";
 import { appendCloudAudit, currentSession, currentUserSummary, fetchCloudAccess, fetchCloudProfile, fetchCloudWorkspace, fetchRecentShadowEvaluations, initializeCloudSession, isTransientCloudError, isVersionConflict, saveCloudWorkspace, signIn, signOut, signUp } from "./supabase.js";
 import { APP_VERSION, CLOUD_CONFIG } from "./config.js";
@@ -19,8 +20,9 @@ let workspace = null;
 let view = new URLSearchParams(location.search).get("view") || "dashboard";
 let raceTab = new URLSearchParams(location.search).get("tab") || "capture";
 let reportTab = "daily";
-let referenceReportDate = today();
+let referenceReportDate = caracasToday();
 let referenceReportParticipantId = "";
+let referenceReportRefresh = { busy: false, checkedAt: null, status: "Datos del espacio de trabajo local (no sincronización en vivo)." };
 let modal = null;
 let cloudWorkspaceId = null;
 let cloudProfile = null;
@@ -633,7 +635,7 @@ function renderInternalReferenceReport() {
   if (filter.type === "personal" && !filter.participantId) {
     return '<section class="card"><div class="card__body">No hay participantes en este grupo. Agrégalos desde Participantes para consultar su estado personal.</div></section>';
   }
-  try { return renderReferenceReport(workspace, filter); }
+  try { return renderReferenceReport(workspace, filter, referenceReportRefresh); }
   catch (error) { return `<section class="notice" role="alert">El informe no puede mostrarse: ${escapeHtml(error.message)}</section>`; }
 }
 function renderDaily() { const day = activeDay(), stats = dayStats(day); return `<div class="grid grid--two"><section class="card"><div class="card__head"><h3>Resumen de ${shortDate(day.date)}</h3></div><div class="card__body"><div class="control-stack"><div><span>Carreras</span><strong>${stats.races}</strong></div><div><span>Apuestas</span><strong>${stats.bets}</strong></div><div><span>Volumen</span><strong>${money(stats.volume, activeCurrency())}</strong></div><div><span>Comisión</span><strong>${money(stats.commission, activeCurrency())}</strong></div><div><span>Pendientes</span><strong>${stats.pending}</strong></div><div><span>Diferencia</span><strong>${money(stats.controlDifference, activeCurrency(), true)}</strong></div></div><div class="capture-actions section-gap"><button class="button" data-action="copy-daily">Copiar cierre</button><button class="button" data-action="export-daily-pdf">PDF diario</button><button class="button" data-action="export-daily-xlsx">Excel diario</button><button class="button" data-action="export-balances">CSV saldos</button></div></div></section><section class="card"><div class="card__head"><h3>Validaciones</h3></div><div class="card__body"><div class="check-list"><div class="${stats.pending ? "is-bad" : "is-good"}">${stats.pending ? "✕" : "✓"} Apuestas pendientes: ${stats.pending}</div><div class="${stats.openRaces.length ? "is-bad" : "is-good"}">${stats.openRaces.length ? "✕" : "✓"} Carreras sin finalizar: ${stats.openRaces.length}</div><div class="${Math.abs(stats.controlDifference) > .01 ? "is-bad" : "is-good"}">${Math.abs(stats.controlDifference) > .01 ? "✕" : "✓"} Diferencia: ${number(stats.controlDifference)}</div></div></div></section></div>`; }
@@ -681,6 +683,70 @@ root.addEventListener("click", async (event) => {
             return;
         }
         const action = el.dataset.action;
+        if (action === "reference-report-today") {
+            referenceReportDate = caracasToday();
+            referenceReportRefresh.status = "Vista de hoy en el dispositivo (no implica sincronización).";
+            render();
+            return;
+        }
+        if (action === "reference-report-switch") {
+            const target = String(el.dataset.target || "");
+            if (!["race-history", "daily-movements"].includes(target)) throw new Error("Vista de informe no permitida.");
+            const input = root.querySelector("#reference-report-date");
+            if (input?.value) referenceReportDate = assertReportDate(input.value);
+            reportTab = target;
+            render();
+            return;
+        }
+        if (action === "reference-report-copy-race") {
+            const filter = referenceReportFilter();
+            const copied = raceCopyText(workspace, { ...filter, raceId: String(el.dataset.id || ""),
+                participantId: filter.type === "personal" ? filter.participantId : null });
+            await copyText(copied, "Jugadas y resultados de la carrera copiados.");
+            return;
+        }
+        if (action === "reference-report-refresh") {
+            if (referenceReportRefresh.busy) return;
+            const input = root.querySelector("#reference-report-date");
+            if (input?.value) referenceReportDate = assertReportDate(input.value);
+            referenceReportRefresh.busy = true;
+            referenceReportRefresh.status = "Consultando los datos disponibles…";
+            render();
+            try {
+                if (isSyncing) throw new Error("Hay una sincronización en curso. Intenta de nuevo.");
+                await flushWorkspaceWrites();
+                if (mode === "cloud" && currentSession() && navigator.onLine) {
+                    if (workspace.syncQueue?.length || (await listOutbox()).length) {
+                        referenceReportRefresh.status = "Hay cambios pendientes de sincronizar. Se muestran los datos locales; no se reemplazaron.";
+                    } else {
+                        const remote = await fetchCloudWorkspace();
+                        if (remote?.state) {
+                            workspace = normalizeWorkspaceShape(mergeWorkspaces(workspace, remote.state));
+                            cloudWorkspaceId = remote.id || cloudWorkspaceId;
+                            workspace.syncMeta.lastSyncedVersion = Number(remote.version || workspace.syncMeta.lastSyncedVersion || 0);
+                            workspace.syncMeta.lastSyncedAt = now();
+                            await saveLocalWorkspace(workspace);
+                            referenceReportRefresh.status = "Datos revisados con el espacio remoto y el dispositivo.";
+                        } else {
+                            referenceReportRefresh.status = "No existe aún una versión remota; se muestran los datos locales.";
+                        }
+                    }
+                } else {
+                    // No pretend that pressing Refresh downloads new records offline.
+                    referenceReportRefresh.status = navigator.onLine && mode === "local"
+                        ? "Datos de este dispositivo consultados; sin sesión de nube."
+                        : "Sin conexión: se muestran datos disponibles en este dispositivo.";
+                }
+                referenceReportRefresh.checkedAt = new Date().toLocaleString("es-VE", { timeZone: "America/Caracas" });
+            } catch (error) {
+                referenceReportRefresh.status = "No se pudo actualizar desde la nube; se conservan los datos del dispositivo.";
+                toast(error.message || "No se pudo actualizar el informe.", "error");
+            } finally {
+                referenceReportRefresh.busy = false;
+                render();
+            }
+            return;
+        }
         if (action === "copy-reference-report") {
             await copyText(referenceReportLines(workspace, referenceReportFilter()).join("\n"), "Resumen copiado.");
             return;
