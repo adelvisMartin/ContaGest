@@ -50,6 +50,6 @@ export const FULL_ROUTE_BROWSER_CONTRACT=Object.freeze({
   }),
 });
 
-if(FULL_ROUTE_BROWSER_CONTRACT.routes.length!==58){
+if(FULL_ROUTE_BROWSER_CONTRACT.routes.length!==60){
   throw new Error(`FULL_ROUTE_BROWSER_CATALOG_DRIFT:${FULL_ROUTE_BROWSER_CONTRACT.routes.length}`);
 }

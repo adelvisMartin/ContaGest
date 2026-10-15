@@ -248,6 +248,18 @@
         "LICENSE",
         "skills/ponytail/SKILL.md"
       ]
+    },
+    {
+      "id": "rea",
+      "kind": "mcp-package",
+      "repo": "morluto/rea",
+      "commit": "d69acc3455c33f90a2fc4381db43d38b6af50622",
+      "license": "MIT",
+      "trustLevel": "reviewed-advisory-reverse-engineering",
+      "package": "rea-agents",
+      "packageVersion": "6.5.0",
+      "namespace": "rea",
+      "vendorPaths": []
     }
   ]
 }

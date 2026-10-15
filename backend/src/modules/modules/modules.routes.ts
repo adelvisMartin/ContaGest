@@ -6,6 +6,9 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { moduleRecordSchema } from '../schemas.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import crmLeadRoutes from '../crm/crm-leads.routes.js';
+import crmOpportunityRoutes from '../crm/crm-opportunities.routes.js';
+import projectRecordRoutes from '../projects/project-record.routes.js';
 
 type ModuleView = { slug: string; route: string; title: string; category: string; endpoint: string };
 const registry = registryData as ModuleView[];
@@ -13,6 +16,12 @@ const allowed = new Set(registry.map((view) => view.slug));
 const router = Router();
 
 router.get('/', (_req, res) => ok(res, registry));
+
+// Dedicated CRM lead capture under the existing /modules authority and route count.
+router.use('/crm/leads',crmLeadRoutes);
+router.use('/crm/opportunities',crmOpportunityRoutes);
+// #761 server-owned Project records, isolated from generic mutable Stitch records.
+router.use('/projects',projectRecordRoutes);
 
 router.use('/:slug/records', requireTenant, requirePermission('modules.manage'));
 

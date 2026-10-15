@@ -52,7 +52,39 @@ export function findClientDuplicateCandidates({tenantId, lead, clients}) {
 export function assessClientConversion({tenantId, lead, clients}) {
   const identity = normalizeLeadIdentity(lead);
   const candidates = findClientDuplicateCandidates({tenantId, lead, clients});
+  // Preserve the historical contract for multiple Client candidates.
   if (candidates.length > 1) return Object.freeze({status:'BLOCKED', reason:'AMBIGUOUS_CLIENT_MATCH', candidates});
+  // RIF is the legal identity authority. An email-only match with an
+  // unreadable historical Client RIF must also fail closed: absence of a
+  // *valid* existing RIF is not evidence of the same taxpayer.
+  // This is advisory only: actual conversion still needs tenant RBAC + DB CAS.
+  if (identity.rif && identity.email) {
+    const unverifiable = clients.filter(client => {
+      if (!client || client.tenantId !== tenantId || client.active === false ||
+          typeof client.id !== 'string' || !client.id) return false;
+      const existing = normalizeLeadIdentity(client);
+      return existing.email === identity.email && existing.rif === null;
+    }).map(client => client.id);
+    if (unverifiable.length) {
+      return Object.freeze({
+        status:'BLOCKED', reason:'UNVERIFIABLE_CLIENT_RIF',
+        candidates:Object.freeze([...new Set([...candidates, ...unverifiable])].sort())
+      });
+    }
+    const conflicting = clients.filter(client => {
+      if (!client || client.tenantId !== tenantId || client.active === false ||
+          typeof client.id !== 'string' || !client.id) return false;
+      const existing = normalizeLeadIdentity(client);
+      return existing.email === identity.email &&
+        existing.rif !== null && existing.rif !== identity.rif;
+    }).map(client => client.id);
+    if (conflicting.length) {
+      return Object.freeze({
+        status:'BLOCKED', reason:'CONFLICTING_RIF_EMAIL',
+        candidates:Object.freeze([...new Set([...candidates, ...conflicting])].sort())
+      });
+    }
+  }
   if (candidates.length === 1) return Object.freeze({status:'REVIEW_EXISTING', reason:'EXISTING_CLIENT_AUTHORITY', candidates});
   if (!identity.rif) return Object.freeze({status:'BLOCKED', reason:'CLIENT_RIF_REQUIRED', candidates});
   return Object.freeze({status:'REVIEW_NEW', reason:'NO_EXISTING_CLIENT_MATCH', candidates});
@@ -104,4 +136,37 @@ export function forecastByCurrency({tenantId, opportunities}) {
   return Object.freeze([...totals.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([currency,x])=>Object.freeze({
     currency, count:x.count, gross:minorUnitsToAmount(x.gross), weighted:minorUnitsToAmount((x.weightedNumerator + 50n) / 100n)
   })));
+}
+
+// A deterministic, persistence-free intent for an atomic stage update.
+// The caller MUST authorize the actor and run CAS(version) + unique(eventId)
+// + append activity in a single tenant-scoped PostgreSQL transaction.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const validId = value => typeof value === 'string' && UUID.test(value);
+const validVersion = value => Number.isSafeInteger(value) && value >= 0 && value < Number.MAX_SAFE_INTEGER;
+
+/** Pure transition planner: does NOT persist or authorize the write. */
+export function planOpportunityStageChange({
+  tenantId, opportunity, expectedVersion, nextStage, actorId,
+  eventId, occurredAt, seenEventIds = []
+}) {
+  if (typeof tenantId !== 'string' || !tenantId.trim()) throw new TypeError('Tenant is required');
+  if (!opportunity || opportunity.tenantId !== tenantId) throw new Error('CROSS_TENANT_STAGE_CHANGE_DENIED');
+  if (!validId(opportunity.id) || !validId(actorId) || !validId(eventId)) throw new TypeError('Invalid CRM identifier');
+  if (!validVersion(opportunity.version) || !validVersion(expectedVersion)) throw new TypeError('Invalid CRM version');
+  if (opportunity.version !== expectedVersion) throw new Error('STALE_CRM_OPPORTUNITY_VERSION');
+  if (!Array.isArray(seenEventIds) || seenEventIds.some(id => !validId(id))) throw new TypeError('Invalid event history');
+  if (seenEventIds.some(id => id.toLowerCase() === eventId.toLowerCase())) throw new Error('DUPLICATE_CRM_EVENT_ID');
+  if (typeof occurredAt !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(occurredAt) ||
+      !Number.isFinite(Date.parse(occurredAt)) ||
+      new Date(occurredAt).toISOString() !== occurredAt) throw new TypeError('Invalid server timestamp');
+  const to = transitionOpportunity(opportunity.stage, nextStage);
+  const version = expectedVersion + 1;
+  const next = Object.freeze({...opportunity, stage:to, version});
+  const activity = Object.freeze({
+    id:eventId, tenantId, opportunityId:opportunity.id, actorId,
+    type:'CRM_STAGE_TRANSITION', from:opportunity.stage, to, version, occurredAt
+  });
+  return Object.freeze({next, activity});
 }
