@@ -282,3 +282,46 @@ QA de navegador y PostgreSQL17 con modificaciones concurrentes reales.
 El issue CRM #760 continúa abierto para Opportunities y Quote #753,
 conversión Client atómica, métricas de pipeline, timeline, import/export
 y certificación de producción.
+
+## 2026-10-15 · Opportunity draft desde un prospecto calificado
+
+**Nuevas rutas**: `POST /api/v1/modules/crm/opportunities/from-lead/:leadId`
+(`sales.manage`) y `GET /api/v1/modules/crm/opportunities` (`sales.view`).
+Reutilizan el router `/modules` y el modelo operacional temporal
+`ModuleRecord` con slug reservado `crm-opportunities` (no está en Stitch).
+No se crea una segunda tabla `Client`, cotización, factura, ledger ni
+migración, y se mantiene el mismo aislamiento del servidor por tenant.
+
+El POST exige un `Lead` de ese tenant con etapa `qualified` y revisión
+`expectedLeadUpdatedAt` UTC exacta, y un cuerpo estricto con `title`,
+`currency` (tres letras ISO), `expectedValue` decimal positivo de
+precisión fija (18,2) y `probability` entera 0–100. Los importes se
+normalizan como cadenas con cálculo BigInt; son **previsiones**, no
+autoridad fiscal, financiera ni equivalencias FX. La nueva oportunidad
+nace en `qualified` sin confirmar propuesta, venta ni conversión Cliente.
+
+El `ModuleRecord.id` de oportunidad deriva de SHA-256(tenant + lead UUID
++ separador de dominio) con forma UUIDv5. El mismo lead del mismo tenant
+no puede abrir dos oportunidades iniciales; PK duplicada devuelve 409.
+Dentro de la **misma transacción Prisma**, se comprueba el Lead calificado,
+se hace CAS `updateMany` de id+tenant+slug+status+updatedAt con count=1
+y `data:{status:'qualified'}` (toca su revisión), se inserta Opportunity
+y un AuditLog mínimo. Esta revisión optimista serializa el alta frente
+a `qualified→lost`; si el Lead cambió, responde 409. Una pérdida
+de conexión después del commit no genera otra oportunidad al reintentar
+con el mismo lead. El backend omite RIF, correo, notas y valores
+económicos de la auditoría.
+
+Listado limitado a 100 filas, ordenado y filtrado en Prisma por empresa
+y slug. La API no promete una conversión a `Client` ni un pipeline
+de Opportunity completo: todavía faltan edición, CAS/versionado real
+por oportunidad, registro duradero de eventos, métricas y gráficos
+con multi-moneda sin mezclas, integración de Quote #753, import/export
+y UX operativa. El modelo `ModuleRecord` sigue siendo transitorio;
+la futura migración debe preservar Lead y Opportunity existentes.
+
+QA: `node --test tests/crm_opportunity_capture_v760.test.mjs`, incorporado
+a backend npm test. El ensayo aislado con una transacción simulada
+NO sustituye PostgreSQL17 con restricciones, locks y RLS reales.
+Se requiere también TypeScript build, HTTP autenticado/CSRF/RBAC y E2E.
+El ticket #760 permanece abierto hasta verificar el CRM completo.
