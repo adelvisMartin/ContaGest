@@ -34,7 +34,7 @@ export function salesKpiRows(groups: readonly SalesKpiAggregate[]) {
   });
 }
 
-export function salesKpiDocumentRows(invoices: readonly Array<{
+export function salesKpiDocumentRows(invoices: ReadonlyArray<{
   id: string; number: string; issueDate: Date; fiscalPeriod: string;
   currency: string; status: string; subtotal: RawDecimal; iva: RawDecimal; total: RawDecimal;
 }>) {
