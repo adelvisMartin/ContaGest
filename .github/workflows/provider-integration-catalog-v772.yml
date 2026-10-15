@@ -1,0 +1,55 @@
+name: "Integrations #772 - provider catalog contract"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'config/provider-integration-catalog-v772.json'
+      - 'scripts/verify-provider-integration-catalog-v772.mjs'
+      - 'tests/provider_integration_catalog_v772.test.mjs'
+      - 'docs/INTEGRATION_CATALOG_V772.md'
+      - '.github/workflows/provider-integration-catalog-v772.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-catalog-v772-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Exact candidate checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Validate parser and catalog contract
+        run: |
+          node --check scripts/verify-provider-integration-catalog-v772.mjs
+          node --check tests/provider_integration_catalog_v772.test.mjs
+          node scripts/verify-provider-integration-catalog-v772.mjs
+      - name: Adversarial configuration tests
+        run: node --test tests/provider_integration_catalog_v772.test.mjs
+      - name: Evidence of exact checked-out SHA
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/integrations/772
+          printf 'issue=772\nsha=%s\nrun=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > artifacts/integrations/772/exact-sha.txt
+      - name: Archive evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integrations-v772-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/integrations/772/
+          if-no-files-found: error
