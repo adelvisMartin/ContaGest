@@ -133,6 +133,33 @@ export async function heartbeatClaimedAsyncJob(tx: Prisma.TransactionClient, inp
   return rows[0];
 }
 
+// Read-only reconciler view: safe aggregates only, never exposes payload or error text.
+// Requires the same tenant-bound transaction/RLS context as claims and heartbeats.
+// PostgreSQL bigint counts are returned as decimal strings (no precision loss).
+export async function inspectTenantAsyncJobHealth(tx: Prisma.TransactionClient, input: {tenantId: string}) {
+  assertAsyncJobTenantId(input.tenantId);
+  const tenantId = input.tenantId;
+  const rows = await tx.$queryRaw<Array<{
+    queued: string; retry: string; running: string; dead: string;
+    staleRunning: string; exhaustedRunning: string; oldestDueAt: Date | null;
+  }>>(Prisma.sql`
+    SELECT
+      count(*) FILTER (WHERE "status"='queued')::text AS "queued",
+      count(*) FILTER (WHERE "status"='retry')::text AS "retry",
+      count(*) FILTER (WHERE "status"='running')::text AS "running",
+      count(*) FILTER (WHERE "status"='dead')::text AS "dead",
+      count(*) FILTER (WHERE "status"='running' AND "leaseUntil" <= statement_timestamp())::text AS "staleRunning",
+      count(*) FILTER (WHERE "status"='running' AND "leaseUntil" <= statement_timestamp()
+        AND "attempts" >= "maxAttempts")::text AS "exhaustedRunning",
+      min("runAt") FILTER (WHERE "status" IN ('queued','retry')
+        AND "runAt" <= statement_timestamp()) AS "oldestDueAt"
+    FROM public."AsyncJobIntent"
+    WHERE "tenantId"=${tenantId}
+  `);
+  if (rows.length !== 1) throw new Error('ASYNC_JOB_HEALTH_UNAVAILABLE');
+  return rows[0];
+}
+
 // Expired last-attempt claims must not remain permanently stuck as running.
 // A future tenant-scoped reconciler should run this periodically after binding tenant RLS.
 export async function quarantineExhaustedAsyncJobLeases(tx: Prisma.TransactionClient, input: {
