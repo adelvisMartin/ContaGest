@@ -34,7 +34,7 @@ export function assertSmokeEnvironment(env, candidateSha) {
 export function buildSmokeSteps() {
   return [
     { id: 'schema', command: 'npm', args: ['--workspace', 'backend', 'run', 'prisma:generate'] },
-    { id: 'migrations', command: 'npm', args: ['--workspace', 'backend', 'run', 'prisma:deploy'] },
+    { id: 'migrations', command: 'npm', args: ['--workspace', 'backend', 'run', 'migration:test:from-zero'] },
     { id: 'seed', command: 'npm', args: ['--workspace', 'backend', 'run', 'seed'] },
     { id: 'rls', command: 'npm', args: ['--workspace', 'backend', 'run', 'db:rls'] },
     { id: 'api-finance', command: 'npm', args: ['--workspace', 'backend', 'exec', '--', 'tsx', '--test', '../qa/erp-operational-financial-v664.test.ts'] },
