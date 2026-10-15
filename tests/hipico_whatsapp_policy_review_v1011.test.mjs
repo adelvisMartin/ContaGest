@@ -53,9 +53,11 @@ test('#1011: a synthetic LAB case is not an authorization to write SOURCE', () =
     labOwnerAuthorized: true
   }).decision, 'BLOCKED');
   const lab = evaluateWhatsAppUseCase1011('LAB_SYNTHETIC', {
-    synthetic: true, labOwnerAuthorized: true
+    channel: 'LAB', synthetic: true, labOwnerAuthorized: true
   });
   assert.equal(lab.decision, 'LAB_ONLY');
+  assert.equal(evaluateWhatsAppUseCase1011('LAB_SYNTHETIC', {channel: 'SOURCE', synthetic: true, labOwnerAuthorized: true}).decision, 'BLOCKED');
+  assert.equal(evaluateWhatsAppUseCase1011('LAB_SYNTHETIC', null).decision, 'BLOCKED');
   assert.equal(lab.productionSourceWritingAuthorized, false);
   assert.equal(lab.independentRuntimeIdentityGuardRequired, true);
 });
