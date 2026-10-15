@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 660,
+  "contexts": [
+    {
+      "id": "platform",
+      "authority": "AGENTS.md",
+      "issues": [
+        624,
+        636,
+        641,
+        665
+      ]
+    },
+    {
+      "id": "finance",
+      "authority": "docs/ADR_LEDGER_POSTING_LIFECYCLE_V91.md",
+      "issues": [
+        628,
+        629,
+        637,
+        643
+      ]
+    },
+    {
+      "id": "commercial",
+      "authority": "docs/ARCHITECTURE_BOUNDARIES_V1.md",
+      "issues": [
+        624,
+        659
+      ]
+    },
+    {
+      "id": "operations",
+      "authority": "docs/RUNBOOK_PRODUCTION_V566.md",
+      "issues": [
+        566,
+        647,
+        660
+      ]
+    },
+    {
+      "id": "hipico",
+      "authority": "docs/architecture/PRODUCT_BOUNDARIES_CONTAGEST_HIPICO.md",
+      "issues": [
+        837,
+        839
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "preflight",
+      "context": "platform",
+      "mode": "READ_ONLY",
+      "runbook": "docs/operations/ENVIRONMENT_MANIFEST_V665.md",
+      "commands": [
+        "git rev-parse HEAD",
+        "npm run test:config:manifest",
+        "npm run skills:check",
+        "node scripts/production-config-preflight-v566.mjs --environment=staging"
+      ]
+    },
+    {
+      "id": "isolated-qa",
+      "context": "operations",
+      "mode": "QA_ISOLATED",
+      "runbook": "docs/qa/local-verification-runner-v630.md",
+      "commands": [
+        "npm run verify:local -- --profile changed --base main --expected-sha <SHA>"
+      ]
+    },
+    {
+      "id": "database-precheck",
+      "context": "finance",
+      "mode": "READ_ONLY",
+      "runbook": "docs/RUNBOOK_PRODUCTION_V566.md",
+      "commands": [
+        "npm --workspace backend run migration:manifest",
+        "node scripts/migration-state-v566.mjs"
+      ]
+    },
+    {
+      "id": "backup-and-restore-drill",
+      "context": "operations",
+      "mode": "OPERATOR_APPROVAL",
+      "runbook": "docs/SELF_HOSTING_RUNBOOK.md",
+      "commands": [
+        "npm run test:hipico:backup-preflight"
+      ]
+    },
+    {
+      "id": "migration-deploy",
+      "context": "finance",
+      "mode": "OPERATOR_APPROVAL",
+      "runbook": "docs/RUNBOOK_PRODUCTION_V566.md",
+      "commands": [
+        "npm --workspace backend run prisma:deploy"
+      ]
+    },
+    {
+      "id": "build-and-provenance",
+      "context": "operations",
+      "mode": "QA_ISOLATED",
+      "runbook": "docs/RUNBOOK_PRODUCTION_V566.md",
+      "commands": [
+        "npm run build",
+        "node scripts/release-artifact-manifest-v566.mjs"
+      ]
+    },
+    {
+      "id": "runtime-smokes",
+      "context": "operations",
+      "mode": "OPERATOR_APPROVAL",
+      "runbook": "docs/RUNBOOK_PRODUCTION_V566.md",
+      "commands": [
+        "npm run smoke:hipico",
+        "node scripts/production-smoke-v566.mjs"
+      ]
+    },
+    {
+      "id": "rollback-decision",
+      "context": "operations",
+      "mode": "OPERATOR_APPROVAL",
+      "runbook": "docs/RUNBOOK_PRODUCTION_V566.md",
+      "commands": [
+        "git rev-parse HEAD"
+      ]
+    }
+  ]
+}
