@@ -1604,3 +1604,70 @@ test('inbox refuses unsafe directory mode after chmod fails or a symlink swap oc
   const windows=await run({platform:'win32',startingMode:0o40777,chmodFails:true});
   assert.equal(windows.result,null,'POSIX permission modes cannot certify NTFS ACLs');
 });
+
+
+test('AES key FD identity prevents substitution after pathname validation',async()=>{
+  const source=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
+  const begin=source.indexOf('  async function loadKey(){');
+  const end=source.indexOf('  async function lockOwner(){',begin);
+  assert.ok(begin>=0&&end>begin,'canonical AES loading authority missing');
+  const section=source.slice(begin,end);
+  const {runInNewContext}=await import('node:vm');
+  const {constants:fsConstants}=await import('node:fs');
+  const before={
+    isFile:()=>true,isSymbolicLink:()=>false,size:32,
+    ino:101,dev:7,mode:0o100600
+  };
+  async function run({platform='linux',after={},readSize=32,eloop=false}={}){
+    let fdRead=0,closed=0,rawRead=0,openedFlags=null;
+    const mockedFs={
+      lstat:async()=>before,
+      readFile:async()=>{rawRead++;throw new Error('PATH_READ_UNSAFE');},
+      open:async(_file,flags)=>{
+        openedFlags=flags;
+        if(eloop)throw Object.assign(new Error('synthetic symlink swap'),{code:'ELOOP'});
+        return {
+          stat:async()=>({...before,...after}),
+          readFile:async()=>{fdRead++;return Buffer.alloc(readSize,11);},
+          close:async()=>{closed++;}
+        };
+      }
+    };
+    const loadKey=runInNewContext('(()=>{'+section+'return loadKey;})()',{
+      fs:mockedFs,fsConstants,process:{platform},token:'lab-owner',
+      keyFile:'/synthetic/inbox.key',root:'/synthetic',Buffer
+    });
+    let error=null,bytes=null;
+    try{bytes=await loadKey();}catch(e){error=String(e.message);}
+    return {error,bytes,fdRead,closed,rawRead,openedFlags};
+  }
+  const pass=await run();
+  assert.equal(pass.error,null);
+  assert.equal(pass.bytes.length,32);
+  assert.equal(pass.fdRead,1);
+  assert.equal(pass.closed,1);
+  assert.equal(pass.rawRead,0,'never reopen validated key by pathname');
+  assert.ok((pass.openedFlags & fsConstants.O_NOFOLLOW)!==0);
+  for(const after of [{ino:102},{dev:8},{size:31},{isFile:()=>false}]){
+    const fail=await run({after});
+    assert.equal(fail.error,'LAB_PENDING_KEY_INVALID');
+    assert.equal(fail.fdRead,0);
+    assert.equal(fail.closed,1,'invalid opened key must close descriptor');
+    assert.equal(fail.rawRead,0);
+  }
+  const publicKey=await run({after:{mode:0o100644}});
+  assert.equal(publicKey.error,'LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
+  assert.equal(publicKey.fdRead,0);
+  assert.equal(publicKey.closed,1);
+  const changedSize=await run({readSize:8});
+  assert.equal(changedSize.error,'LAB_PENDING_KEY_INVALID');
+  assert.equal(changedSize.closed,1);
+  const symlink=await run({eloop:true});
+  assert.equal(symlink.error,'LAB_PENDING_KEY_INVALID');
+  assert.equal(symlink.fdRead,0);
+  assert.equal(symlink.closed,0);
+  const windows=await run({platform:'win32',after:{mode:0o100644,ino:102}});
+  assert.equal(windows.error,null,'POSIX inode/mode checks do not establish NTFS permissions');
+  assert.equal(windows.openedFlags,fsConstants.O_RDONLY);
+  assert.equal(windows.closed,1);
+});
