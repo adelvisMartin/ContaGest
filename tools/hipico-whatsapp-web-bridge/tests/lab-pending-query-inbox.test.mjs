@@ -1614,6 +1614,8 @@ test('AES key FD identity prevents substitution after pathname validation',async
   const section=source.slice(begin,end);
   const {runInNewContext}=await import('node:vm');
   const {constants:fsConstants}=await import('node:fs');
+  // Windows lacks a native O_NOFOLLOW; provide it only to the simulated POSIX runner.
+  const posixFlags={...fsConstants,O_NOFOLLOW:fsConstants.O_NOFOLLOW??0x20000};
   const before={
     isFile:()=>true,isSymbolicLink:()=>false,size:32,
     ino:101,dev:7,mode:0o100600
@@ -1634,7 +1636,7 @@ test('AES key FD identity prevents substitution after pathname validation',async
       }
     };
     const loadKey=runInNewContext('(()=>{'+section+'return loadKey;})()',{
-      fs:mockedFs,fsConstants,process:{platform},token:'lab-owner',
+      fs:mockedFs,fsConstants:posixFlags,process:{platform},token:'lab-owner',
       keyFile:'/synthetic/inbox.key',root:'/synthetic',Buffer
     });
     let error=null,bytes=null;
@@ -1647,7 +1649,7 @@ test('AES key FD identity prevents substitution after pathname validation',async
   assert.equal(pass.fdRead,1);
   assert.equal(pass.closed,1);
   assert.equal(pass.rawRead,0,'never reopen validated key by pathname');
-  assert.ok((pass.openedFlags & fsConstants.O_NOFOLLOW)!==0);
+  assert.ok((pass.openedFlags & posixFlags.O_NOFOLLOW)!==0);
   for(const after of [{ino:102},{dev:8},{size:31},{isFile:()=>false}]){
     const fail=await run({after});
     assert.equal(fail.error,'LAB_PENDING_KEY_INVALID');
