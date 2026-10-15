@@ -1,0 +1,48 @@
+name: Dependency governance v656
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/dependency-governance-v656.mjs'
+      - 'config/dependency-governance-v656.json'
+      - 'tests/dependency_governance_v656.test.mjs'
+      - 'docs/qa/dependency-governance-v656.md'
+      - '.github/workflows/dependency-governance-v656.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'backend/package.json'
+      - 'frontend/package.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-governance:
+    name: Direct dependencies · owners · licenses · exact SHA
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Syntax and regression fixtures
+        run: |
+          node --check scripts/dependency-governance-v656.mjs
+          node --test tests/dependency_governance_v656.test.mjs
+      - name: Generate and validate exact-SHA dependency manifest
+        run: node scripts/dependency-governance-v656.mjs --sha="$(git rev-parse HEAD)" --check
+      - name: Retain manifest for review
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dependency-governance-v656-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/dependency-governance-v656/**/manifest.json
+          if-no-files-found: warn
+          retention-days: 30
