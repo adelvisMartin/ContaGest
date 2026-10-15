@@ -14,6 +14,8 @@ const preflightSchema = z.object({
 }).strict().refine(input => !!input.rif || !!input.email);
 
 router.post('/preflight', asyncHandler(async (req, res) => {
+  // Even review-only preflight reveals Client identifiers: never cache responses.
+  res.setHeader('Cache-Control', 'private, no-store');
   const parsed = preflightSchema.safeParse(req.body);
   if (!parsed.success) throw new HttpError(400, 'Identidad CRM inválida.');
   const tenantId = (req as any).context.tenantId as string;
