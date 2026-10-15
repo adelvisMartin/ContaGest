@@ -256,3 +256,29 @@ rutas, sin afirmar que sustituye pruebas de transacción PostgreSQL 17.
 Pendientes: tests HTTP con JWT/CSRF/RBAC, PG17 multi-tenant, navegación
 de la UI hacia el PATCH y browser E2E. El ticket #760 permanece ABIERTO
 hasta completar Opportunity/Quote y conversión transaccional a Client.
+
+## 2026-10-15 · Cambiar etapa del lead desde Clientes
+
+El directorio **Últimos prospectos** ahora muestra acciones Calificar
+y Descartar solo para etapas admitidas. Los botones usan `ErpButton`
+canónico y almacenan exclusivamente ID y destino; el cliente recupera
+`updatedAt` de la última consulta autorizada al servidor para formar
+`PATCH /modules/crm/leads/:id/stage` con `{nextStage,expectedUpdatedAt}`.
+
+El servicio `crmLeadService.mjs` valida UUID de lead, sello UTC exacto
+y grafo permitido antes de contactar con BackendApi; la sesión y CSRF
+se suministran por el transporte común. El botón se deshabilita mientras
+hay una petición y un guard evita doble submit. En éxito, error o HTTP
+409, el listado se vuelve a solicitar en vez de modificar `Store`
+anticipadamente. Los mensajes accesibles no exponen PII del servidor.
+Los prospectos descartados no ofrecen acciones y los calificados
+solo permiten Descartar: una venta ganada no existe en el modelo Lead.
+
+La suite `tests/crm_leads_ui_v760.test.mjs`, ya conectada al root npm test,
+verifica permisos implícitos de servicio, validación de revisión y etapa,
+no reintento del PATCH 409 y binding de botones en la vista. Aún falta
+QA de navegador y PostgreSQL17 con modificaciones concurrentes reales.
+
+El issue CRM #760 continúa abierto para Opportunities y Quote #753,
+conversión Client atómica, métricas de pipeline, timeline, import/export
+y certificación de producción.
