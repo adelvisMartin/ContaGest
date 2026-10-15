@@ -18,7 +18,7 @@ export function salesKpiDecimal(value: RawDecimal | null | undefined): string {
 
 export function salesKpiRows(groups: readonly SalesKpiAggregate[]) {
   return groups.map((group) => {
-    if (!/^[A-Z]{3}$/.test(group.currency) ||
+    if (!/^[A-Z][A-Z0-9]{2,7}$/.test(group.currency) ||
       !SALES_KPI_STATUSES.includes(group.status as typeof SALES_KPI_STATUSES[number]) ||
       !Number.isSafeInteger(group._count._all) || group._count._all < 0) {
       throw new TypeError('KPI_GROUP_INVALID');
