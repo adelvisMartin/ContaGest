@@ -5,6 +5,8 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { createProjectRecord, listProjectRecords, ProjectOwnerNotFound, ProjectReplayConflict } from './project-record-store.js';
+import { transitionProjectStatus, ProjectStatusNotFound, ProjectStatusConflict,
+  ProjectStatusForbidden, ProjectStatusTransitionRejected } from './project-status-transition.js';
 
 const router=Router();
 router.use(requireTenant);
@@ -58,5 +60,35 @@ router.post('/',requirePermission('modules.manage'),validateBody(draftSchema),as
     throw error;
   }
 }));
+
+const projectStatusSchema=z.object({
+  nextStatus:z.enum(['active','archived']),
+  expectedUpdatedAt:z.string().datetime({offset:false,local:false})
+}).strict();
+
+// Guarded by the same disabled-by-default v761 flag and server-side RBAC.
+router.patch('/:id/status',requirePermission('modules.manage'),validateBody(projectStatusSchema),
+  asyncHandler(async(req,res)=>{
+    const ctx=(req as any).context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
+    if(!ctx.userId)throw new HttpError(403,'Se requiere identidad de usuario autenticada.');
+    try{
+      const result=await transitionProjectStatus({
+        db:prisma,tenantId:ctx.tenantId,actorId:ctx.userId,projectId:req.params.id,
+        nextStatus:req.body.nextStatus,expectedUpdatedAt:req.body.expectedUpdatedAt,
+        ipAddress:ctx.ip,userAgent:ctx.userAgent
+      });
+      res.setHeader('Cache-Control','private, no-store');
+      ok(res,result);
+    }catch(error){
+      if(error instanceof ProjectStatusNotFound)throw new HttpError(404,'Proyecto no encontrado.');
+      if(error instanceof ProjectStatusForbidden)throw new HttpError(403,'Solo el responsable activo puede cambiar el proyecto.');
+      if(error instanceof ProjectStatusConflict)throw new HttpError(409,'El proyecto cambió. Actualiza la información y vuelve a intentarlo.');
+      if(error instanceof ProjectStatusTransitionRejected)throw new HttpError(409,'La transición de estado no está permitida.');
+      if(error instanceof TypeError&&[
+        'PROJECT_STATUS_REVISION_REQUIRED','PROJECT_STATUS_ID_INVALID'
+      ].includes(error.message))throw new HttpError(400,'Identificador o revisión de proyecto inválidos.');
+      throw error;
+    }
+  }));
 
 export default router;

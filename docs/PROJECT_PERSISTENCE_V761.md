@@ -22,3 +22,39 @@ El tenant y el responsable **siempre** vienen de `requestContext` autenticado. N
 Próximos incrementos de #761: crear Task y TimeEntry con FK compuestas, estados CAS, aprobaciones auditadas, snapshot de RateCard con Decimal exacto, y generación idempotente de **borradores** de SalesInvoice existente; jamás habilitar posting automático o aprobar un monto sin reglas explícitas de redondeo y retención.
 
 **Rollback:** revertir el código y la ruta; los Project creados no se eliminan automáticamente para evitar pérdida silenciosa. El operador debe planificar export/migración de cualquier dato almacenado antes de retirar permanentemente el namespace. **No cerrar #761 con este incremento parcial.**
+
+
+## Ciclo de vida del Proyecto con CAS (#761, incremento posterior)
+
+Se añade `PATCH /api/v1/modules/projects/:id/status`, detrás de **la misma
+bandera desactivada por defecto** `CONTAGEST_PROJECTS_V761_ENABLE`, de
+`requireTenant`, `modules.manage` y una identidad de usuario verificable.
+El cuerpo JSON estricto contiene solamente:
+
+```json
+{"nextStatus":"active","expectedUpdatedAt":"2026-10-15T17:40:00.000Z"}
+```
+
+El responsable que creó el proyecto debe conservar `UserProfile.active` en
+el **mismo tenant**. La transición permitida es `planning → active`,
+y luego `active → archived`. Archivado es terminal: no hay reapertura,
+borrado físico, facturación ni modificación de entradas existentes mediante
+esta ruta. Si hay dos cambios concurrentes, el `updateMany` compara
+simultáneamente `id, tenantId, moduleSlug, status, updatedAt` en PostgreSQL.
+Una actualización afectando cero filas devuelve HTTP 409 (relectura
+obligatoria). El `AuditLog` mínimo se escribe en la **misma transacción**:
+si no puede escribirse, se revierte el estado. El servicio relee el registro
+tras escribir y verifica estado, tenant y namespace antes de devolver éxito.
+
+Error 400: identificador/versión malformados; 403: usuario distinto del
+responsable o inactivo; 404: proyecto ausente; 409: revisión obsoleta o
+transición prohibida; 503: funcionalidad no habilitada. Nunca se acepta el
+tenant o un supuesto `managerId` del cuerpo de la petición.
+
+`npx tsx --test ../tests/project_status_transition_v761.test.mjs` (desde `backend/`) añade regresiones
+deterministas con DB simulada: CAS ganador/perdedor, audit fallido,
+falsificación de identidad, referencias de otra empresa, transición terminal,
+revisión inválida y prohibición de efectos monetarios. Los tests mock no
+acreditan PostgreSQL17/tenant RLS y no autorizan la activación del módulo.
+La aplicación permanece en **NO-GO** para activar la bandera hasta completar
+PG17, autenticación/RBAC, QA HTTP/browser y recuperación exact-SHA.
