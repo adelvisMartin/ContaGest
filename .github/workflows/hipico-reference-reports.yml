@@ -6,6 +6,8 @@ on:
     paths:
       - 'frontend/public/hipico-control/assets/js/reference-report-*.js'
       - 'frontend/public/hipico-control/assets/js/app.js'
+      - 'frontend/public/hipico-control/sw.js'
+      - 'android/hipico-control-v1130/scripts/sync-web.mjs'
       - 'frontend/public/hipico-control/assets/css/ui-system-v4-convergence.css'
       - 'tests/hipico_reference_report_projections.test.mjs'
       - 'docs/hipico/REFERENCE_REPORTS_2026-10-15.md'
