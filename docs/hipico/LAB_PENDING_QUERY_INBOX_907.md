@@ -408,3 +408,56 @@ en Windows verifica reapertura sin declarar que revisó DACL/NTFS.
 La verificación aislada no sustituye `npm run test:lab:recovery`,
 `npm run qa`, CI exact-SHA, QA Windows ni soak físico.
 
+
+## Raíz del inbox cifrado: modo privado verificable (#907, seguimiento)
+
+En Linux/macOS, `safeRoot()` intenta aplicar `0700` a la carpeta de
+consultas LAB y vuelve a consultar el estado real del directorio. Si el
+`chmod` falla y todavía existen permisos para grupo/otros,
+`initialize()` se detiene con `LAB_PENDING_ROOT_PERMISSIONS_UNSAFE`
+**antes de cargar o crear la clave AES**. Un cambio a symlink entre las
+dos lecturas del estado del directorio genera `LAB_PENDING_ROOT_UNSAFE`.
+No hay fallback a la carpeta abierta, ni envío de WhatsApp ni borrado
+automático de ciphertext para ocultar el error.
+
+**Respuesta operativa:** detener el Bridge LAB; revisar propietario,
+permisos y ruta del directorio, incluido el volumen montado; comprobar que
+el almacenamiento es privado y restablecer `0700` sólo bajo control del
+operador autorizado. Conservar `inbox.key` y los archivos cifrados. Si
+alguna vez pudieron acceder terceros, tratarlo como un posible incidente:
+corregir permisos no demuestra que el material no fuera leído.
+No adjuntar rutas de usuario completas, identificadores ni secretos
+a los tickets de diagnóstico.
+
+En Windows no se infiere privacidad de `stat.mode`. Sigue obligatoria
+la inspección física de ACL NTFS del directorio, clave y perfil de servicio
+en el equipo real; estos tests Linux/aislados **no** acreditan ACL Windows,
+pruebas WhatsApp ni CI exact-SHA. SOURCE continúa sin escritura automática.
+
+
+## Lectura de clave AES atada a descriptor (seguimiento #907)
+
+La validación de `inbox.key` no termina con un `lstat` del nombre: en
+Linux/macOS el Bridge abre la clave con `O_NOFOLLOW`, comprueba sobre
+**el archivo abierto** tamaño 32 B, dispositivo/inodo y permisos privados,
+y lee los bytes por ese mismo descriptor. Se rechazan reemplazos o
+enlaces simbólicos entre la comprobación de ruta y la apertura. Cualquier
+error después de `open` cierra el descriptor incluso si la clave
+no puede usarse. Nunca se regenera ni borra la clave o los registros
+cifrados para esconder un fallo de identidad/permisos.
+
+En Windows se comprueba que el archivo abierto es regular y de 32 B, sin
+atribuir significado de ACL NTFS a `stat.mode` o a los identificadores de
+inodo POSIX. La revisión de permisos Windows continúa en el QA físico.
+
+Si el inicio falla por `LAB_PENDING_KEY_INVALID` o
+`LAB_PENDING_KEY_PERMISSIONS_UNSAFE`, detener el Bridge, conservar intactos
+`inbox.key` y ciphertext, revisar ruta/permisos, y restaurar desde un
+respaldo autorizado si corresponde. No rotar una clave AES arbitrariamente,
+pues impediría descifrar las consultas todavía pendientes.
+
+La regresión prueba una sustitución de inodo/dispositivo, cambio de modo,
+archivo no regular, reducción de longitud y cambio a symlink después de
+la primera validación, sin falsear una prueba de integración del Bridge:
+Node 22 completo, CI exact-SHA, pruebas Windows/WhatsApp LAB y soak
+requieren ejecución separada antes de cerrar #907.

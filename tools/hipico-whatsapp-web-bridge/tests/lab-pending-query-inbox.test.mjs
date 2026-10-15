@@ -1552,3 +1552,127 @@ test('inbox rejects an existing POSIX AES key readable by other users without de
   assert.equal((await recovered.read(MESSAGE))?.messageId,MESSAGE);
   await recovered.close();
 });
+
+
+test('inbox repairs a preexisting permissive LAB root before creating a secret key on POSIX',async t=>{
+  if(process.platform==='win32')return;
+  const f=await harness(t);
+  // No key or ciphertext exists when the empty fixture directory is exposed.
+  await fs.chmod(f.rootDir,0o755);
+  const inbox=f.create();
+  await inbox.initialize();
+  assert.equal((await fs.lstat(f.rootDir)).mode & 0o077,0,
+    'LAB inbox root must not be accessible by another group or user');
+  assert.equal((await fs.lstat(path.join(f.rootDir,'inbox.key'))).mode & 0o077,0);
+  await inbox.close();
+});
+
+test('inbox refuses unsafe directory mode after chmod fails or a symlink swap occurs',async()=>{
+  const source=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
+  const begin=source.indexOf('  async function safeRoot(){');
+  const end=source.indexOf('  async function loadKey(){',begin);
+  assert.ok(begin>=0 && end>begin,'canonical root security implementation is missing');
+  const section=source.slice(begin,end);
+  const {runInNewContext}=await import('node:vm');
+  const run=async({platform,startingMode,chmodFails=false,swapToSymlink=false})=>{
+    let lstatCalls=0;
+    let mode=startingMode;
+    const stat=()=>{
+      lstatCalls++;
+      const link=swapToSymlink && lstatCalls===2;
+      return {isDirectory:()=>!link,isSymbolicLink:()=>link,mode};
+    };
+    const fakeFs={
+      mkdir:async()=>{},
+      lstat:async()=>stat(),
+      chmod:async()=>{if(chmodFails)throw new Error('synthetic EACCES');mode=0o40700;}
+    };
+    const safeRoot=runInNewContext('(()=>{'+section+'return safeRoot;})()',{
+      root:'/synthetic/lab-inbox',fs:fakeFs,process:{platform}
+    });
+    return {result:await safeRoot().then(()=>null,e=>String(e.message)),lstatCalls};
+  };
+  const unsafe=await run({platform:'linux',startingMode:0o40755,chmodFails:true});
+  assert.equal(unsafe.result,'LAB_PENDING_ROOT_PERMISSIONS_UNSAFE');
+  assert.equal(unsafe.lstatCalls,2,'permissions must be checked after chmod');
+  const privateRoot=await run({platform:'linux',startingMode:0o40700,chmodFails:true});
+  assert.equal(privateRoot.result,null,'verified private root may remain usable after chmod failure');
+  const repaired=await run({platform:'linux',startingMode:0o40777});
+  assert.equal(repaired.result,null,'successful chmod repairs a permissive root');
+  const swapped=await run({platform:'linux',startingMode:0o40700,swapToSymlink:true});
+  assert.equal(swapped.result,'LAB_PENDING_ROOT_UNSAFE');
+  const windows=await run({platform:'win32',startingMode:0o40777,chmodFails:true});
+  assert.equal(windows.result,null,'POSIX permission modes cannot certify NTFS ACLs');
+});
+
+
+test('AES key FD identity prevents substitution after pathname validation',async()=>{
+  const source=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
+  const begin=source.indexOf('  async function loadKey(){');
+  const end=source.indexOf('  async function lockOwner(){',begin);
+  assert.ok(begin>=0&&end>begin,'canonical AES loading authority missing');
+  const section=source.slice(begin,end);
+  const {runInNewContext}=await import('node:vm');
+  const {constants:fsConstants}=await import('node:fs');
+  // Windows lacks a native O_NOFOLLOW; provide it only to the simulated POSIX runner.
+  const posixFlags={...fsConstants,O_NOFOLLOW:fsConstants.O_NOFOLLOW??0x20000};
+  const before={
+    isFile:()=>true,isSymbolicLink:()=>false,size:32,
+    ino:101,dev:7,mode:0o100600
+  };
+  async function run({platform='linux',initialMode=0o100600,after={},readSize=32,eloop=false}={}){
+    let fdRead=0,closed=0,rawRead=0,openedFlags=null;
+    const mockedFs={
+      lstat:async()=>({...before,mode:initialMode}),
+      readFile:async()=>{rawRead++;throw new Error('PATH_READ_UNSAFE');},
+      open:async(_file,flags)=>{
+        openedFlags=flags;
+        if(eloop)throw Object.assign(new Error('synthetic symlink swap'),{code:'ELOOP'});
+        return {
+          stat:async()=>({...before,...after}),
+          readFile:async()=>{fdRead++;return Buffer.alloc(readSize,11);},
+          close:async()=>{closed++;}
+        };
+      }
+    };
+    const loadKey=runInNewContext('(()=>{'+section+'return loadKey;})()',{
+      fs:mockedFs,fsConstants:posixFlags,process:{platform},token:'lab-owner',
+      keyFile:'/synthetic/inbox.key',root:'/synthetic',Buffer
+    });
+    let error=null,bytes=null;
+    try{bytes=await loadKey();}catch(e){error=String(e.message);}
+    return {error,bytes,fdRead,closed,rawRead,openedFlags};
+  }
+  const pass=await run();
+  assert.equal(pass.error,null);
+  assert.equal(pass.bytes.length,32);
+  assert.equal(pass.fdRead,1);
+  assert.equal(pass.closed,1);
+  assert.equal(pass.rawRead,0,'never reopen validated key by pathname');
+  assert.ok((pass.openedFlags & posixFlags.O_NOFOLLOW)!==0);
+  for(const after of [{ino:102},{dev:8},{size:31},{isFile:()=>false}]){
+    const fail=await run({after});
+    assert.equal(fail.error,'LAB_PENDING_KEY_INVALID');
+    assert.equal(fail.fdRead,0);
+    assert.equal(fail.closed,1,'invalid opened key must close descriptor');
+    assert.equal(fail.rawRead,0);
+  }
+  const initiallyPublic=await run({initialMode:0o100644,after:{mode:0o100600}});
+  assert.equal(initiallyPublic.error,'LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
+  assert.equal(initiallyPublic.openedFlags,null,'reject exposed key even if a racing chmod repairs it');
+  const publicKey=await run({after:{mode:0o100644}});
+  assert.equal(publicKey.error,'LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
+  assert.equal(publicKey.fdRead,0);
+  assert.equal(publicKey.closed,1);
+  const changedSize=await run({readSize:8});
+  assert.equal(changedSize.error,'LAB_PENDING_KEY_INVALID');
+  assert.equal(changedSize.closed,1);
+  const symlink=await run({eloop:true});
+  assert.equal(symlink.error,'LAB_PENDING_KEY_INVALID');
+  assert.equal(symlink.fdRead,0);
+  assert.equal(symlink.closed,0);
+  const windows=await run({platform:'win32',after:{mode:0o100644,ino:102}});
+  assert.equal(windows.error,null,'POSIX inode/mode checks do not establish NTFS permissions');
+  assert.equal(windows.openedFlags,fsConstants.O_RDONLY);
+  assert.equal(windows.closed,1);
+});
