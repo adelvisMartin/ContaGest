@@ -32,17 +32,17 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ops-v566-ci-only
-          POSTGRES_DB: contagest_ops_v566
+          POSTGRES_DB: contagest_ops_v566_drill
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d contagest_ops_v566"
+          --health-cmd "pg_isready -U postgres -d contagest_ops_v566_drill"
           --health-interval 5s --health-timeout 5s --health-retries 12
     env:
       NODE_ENV: test
       API_MODE: prisma
-      DATABASE_URL: postgresql://postgres:ops-v566-ci-only@127.0.0.1:5432/contagest_ops_v566?schema=public
-      DIRECT_DATABASE_URL: postgresql://postgres:ops-v566-ci-only@127.0.0.1:5432/contagest_ops_v566?schema=public
+      DATABASE_URL: postgresql://postgres:ops-v566-ci-only@127.0.0.1:5432/contagest_ops_v566_drill?schema=public
+      DIRECT_DATABASE_URL: postgresql://postgres:ops-v566-ci-only@127.0.0.1:5432/contagest_ops_v566_drill?schema=public
       JWT_SECRET: ops-v566-ci-only-jwt-secret-0123456789-abcdef
       LICENSE_HASH_SECRET: ops-v566-ci-only-license-secret-0123456789-abcdef
       ALLOW_DEV_TENANT_HEADER: 'false'
@@ -64,7 +64,7 @@ jobs:
         run: node scripts/production-config-preflight-v566.mjs --environment=test
       - name: Prepare disposable PostgreSQL
         env: { PGPASSWORD: ops-v566-ci-only }
-        run: psql -h 127.0.0.1 -U postgres -d contagest_ops_v566 -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+        run: psql -h 127.0.0.1 -U postgres -d contagest_ops_v566_drill -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
       - name: Forward-only migrations
         run: npm --workspace backend run prisma:deploy
       - name: Verify migration state before promotion
@@ -92,11 +92,11 @@ jobs:
       - name: Seed isolated restore fixture
         env: { PGPASSWORD: ops-v566-ci-only }
         run: |
-          psql -h 127.0.0.1 -U postgres -d contagest_ops_v566 -v ON_ERROR_STOP=1 -c "INSERT INTO \"Tenant\" (id,rif,name,\"updatedAt\") VALUES (gen_random_uuid(),'J-V566-RESTORE','restore-drill',NOW());"
+          psql -h 127.0.0.1 -U postgres -d contagest_ops_v566_drill -v ON_ERROR_STOP=1 -c "INSERT INTO \"Tenant\" (id,rif,name,\"updatedAt\") VALUES (gen_random_uuid(),'J-V566-RESTORE','restore-drill',NOW());"
       - name: Isolated database recovery drill
         env: { PGPASSWORD: ops-v566-ci-only }
         run: |
-          pg_dump -h 127.0.0.1 -U postgres -d contagest_ops_v566 -Fc -f artifacts/release/recovery-v566.dump
+          pg_dump -h 127.0.0.1 -U postgres -d contagest_ops_v566_drill -Fc -f artifacts/release/recovery-v566.dump
           createdb -h 127.0.0.1 -U postgres contagest_recovery_v566
           pg_restore -h 127.0.0.1 -U postgres -d contagest_recovery_v566 --no-owner --no-privileges artifacts/release/recovery-v566.dump
           psql -h 127.0.0.1 -U postgres -d contagest_recovery_v566 -Atc "SELECT count(*) FROM \"Tenant\" WHERE rif='J-V566-RESTORE'" > artifacts/release/restore-count.txt
