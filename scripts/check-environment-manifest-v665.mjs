@@ -103,6 +103,12 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
   for(const line of parsed.invalidLines)add('MANIFEST_INVALID_SAMPLE_LINE',owner,'line '+line);
   for(const key of parsed.duplicates)add('DUPLICATE_SAMPLE_KEY',owner,key);
   for(const [key,record] of Object.entries(catalog)){
+   // Corrupt per-key entries must produce safe diagnostics, not TypeErrors.
+   // The diagnostic contains an owner/key only, never the supplied value.
+   if(!record||typeof record!=='object'||Array.isArray(record)){
+    add('MANIFEST_INVALID_ENTRY',owner,key);
+    continue;
+   }
    if(!VALID_TYPES.has(record.type)||!VALID_VISIBILITY.has(record.visibility)||
       !VALID_REQUIRED.has(record.requiredWhen)||!VALID_SAMPLE.has(record.sample)||
       typeof record.sensitive!=='boolean')add('MANIFEST_INVALID_ENTRY',owner,key);

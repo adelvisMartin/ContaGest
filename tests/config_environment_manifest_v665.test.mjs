@@ -245,3 +245,23 @@ test('#665 authenticated PostgreSQL connections remain server-only valid samples
  assert.equal(MANIFEST.variables.backend.DATABASE_RUNTIME_URL.visibility,'server');
  assert.equal(MANIFEST.variables.backend.DATABASE_RUNTIME_URL.sensitive,true);
 });
+
+test('#665 malformed per-key metadata fails closed without TypeError or disclosure',()=>{
+ for(const [owner,key] of [
+  ['backend','PORT'],
+  ['frontend','VITE_API_BASE_URL'],
+  ['bridge','HIPICO_INGEST_URL'],
+  ['build','GITHUB_SHA']
+ ]){
+  for(const malformed of [null,false,42,[], 'synthetic-private-value']){
+   const corrupted=structuredClone(MANIFEST);
+   corrupted.variables[owner][key]=malformed;
+   const report=checkEnvironmentManifest(samples,corrupted);
+   assert.equal(report.status,'FAIL',owner+'/'+key);
+   assert.ok(report.findings.some(f=>
+    f.code==='MANIFEST_INVALID_ENTRY'&&f.owner===owner&&f.key===key
+   ),owner+'/'+key);
+   assert.equal(JSON.stringify(report).includes('synthetic-private-value'),false);
+  }
+ }
+});

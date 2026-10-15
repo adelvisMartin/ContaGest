@@ -78,3 +78,16 @@ Comprobar con `npm run test:config:manifest` sobre el SHA final.
 **No demostrado aquí:** los validadores de todos los procesos en ejecución,
 bundles reales de proveedores, Docker y E2E. Esos criterios de #665 continúan
 abiertos hasta verificarse materialmente.
+
+## Estructura de entradas de configuración (#665, hardening)
+
+Cada entrada de `variables[owner][key]` debe ser un objeto. Una alteración
+a `null`, boolean, número, cadena o array debe producir
+`MANIFEST_INVALID_ENTRY` sin lanzar excepciones ni imprimir el valor
+proporcionado, incluso en el catálogo `build`. Este incremento cubre 20
+mutaciones sintéticas (4 owners × 5 tipos), además de los tests previos.
+La política de protección de secretos frontend y rutas fijas se conserva.
+
+El test nativo `npm run test:config:manifest`, startup con proveedores,
+Docker y bundle de producción todavía deben ejecutarse en checkout
+exact-SHA; un PASS de comprobación V8 no sustituye Node 22.
