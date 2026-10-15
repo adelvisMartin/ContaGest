@@ -104,3 +104,21 @@ export function deriveReorderCandidates(rows: readonly ReorderStockRow[]) {
     .sort((a,b) => priority[a.status]-priority[b.status] ||
       a.sku.localeCompare(b.sku) || a.productId.localeCompare(b.productId));
 }
+
+
+/**
+ * Prepare one bounded catalog page from canonical stock health rows BEFORE
+ * any optional invoice query. All balance validation is atomic from the
+ * caller's point of view: no candidate ids escape on a malformed page.
+ * Caller must read products and sales in one tenant-scoped DB snapshot.
+ */
+export function prepareReorderStockPage(rows: readonly ReorderStockRow[]) {
+  const stockReview = inspectReorderStockRows(rows);
+  const reorderCandidates = deriveReorderCandidates(stockReview.eligibleRows);
+  return {
+    rows,
+    stockReview,
+    reorderCandidates,
+    salesCandidateIds: reorderCandidates.map(candidate => candidate.productId)
+  };
+}
