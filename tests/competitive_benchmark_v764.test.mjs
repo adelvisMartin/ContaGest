@@ -39,3 +39,18 @@ test('rejects claimed license without attributable evidence', () => {
   const copy = clone(); copy.sources.find(x => x.id === 'akaunting').licenseEvidenceUrl = null;
   assert.match(validateCompetitiveBenchmark(copy).join(';'), /licensed source lacks evidence/);
 });
+test('unsupported reference feature claims fail closed', () => {
+  const copy = clone(); const row = copy.features.find(x => x.id === 'VEOSS-013');
+  row.referenceEvidenceLevel = 'DOCUMENTED';
+  assert.match(validateCompetitiveBenchmark(copy).join(';'), /unsupported reference feature claim/);
+});
+test('unresolved reference cannot be upgraded without resolving vendor identity', () => {
+  const copy = clone(); const row = copy.features.find(x => x.productId === 'ecologic');
+  row.referenceEvidenceLevel = 'DOCUMENTED'; row.referenceEvidenceUrl = 'https://example.org';
+  assert.match(validateCompetitiveBenchmark(copy).join(';'), /unsupported reference feature claim|reference identity\/evidence mismatch/);
+});
+test('provisional reference cannot imply a documented official claim', () => {
+  const copy = clone(); const row = copy.features.find(x => x.id === 'VEOSS-009');
+  row.referenceEvidenceUrl = 'https://example.org';
+  assert.match(validateCompetitiveBenchmark(copy).join(';'), /unverified reference cannot carry evidence URL/);
+});
