@@ -7,6 +7,9 @@ const migration = fromRoot('backend/prisma/migrations/20261015035000_hipico_repo
 const store = fromRoot('backend/src/modules/hipico/report-share.store.ts');
 const routes = fromRoot('backend/src/modules/hipico/report-share.routes.ts');
 const app = fromRoot('backend/src/app.ts');
+const rlsScript = fromRoot('backend/scripts/hipico-report-share-rls-v1000.mjs');
+const manualWorkflow = fromRoot('.github/workflows/hipico-report-share-links.yml');
+const policy = fromRoot('backend/src/modules/hipico/report-share-policy.ts');
 
 test('migration stores a unique hash only, enables owner-scoped RLS and revocation',()=>{
   assert.match(migration,/token_hash CHAR\(64\) NOT NULL UNIQUE/i);
@@ -72,4 +75,34 @@ test('new public consolidation view fails closed on malformed scope and preserve
   assert.match(routes,/style-src 'nonce-/);
   assert.match(routes,/No disponible|no disponibles en este ledger/);
   assert.doesNotMatch(routes,/\beval\s*\(/);
+});
+
+test('report sharing remains opt-in and cannot issue or read by default',()=>{
+  assert.match(policy,/HIPICO_REPORT_SHARES_ENABLED === 'true'/);
+  assert.match(routes,/reportSharingEnabled/);
+  assert.match(routes,/HIPICO_REPORT_SHARES_DISABLED/);
+  assert.match(routes,/if \(!isEnabled\(\)\) return res\.status\(503\)/);
+});
+
+test('isolated PG17 RLS evidence script refuses remote or production databases before loading pg',()=>{
+  assert.match(rlsScript,/validateIsolatedDatabaseUrl/);
+  assert.match(rlsScript,/HIPICO_SHARE_RLS_CONSENT/);
+  assert.match(rlsScript,/HIPICO_SHARE_RLS_DATABASE_URL/);
+  assert.match(rlsScript,/\^\\/hipico_share_test_/);
+  assert.match(rlsScript,/\.hostname/);
+  assert.match(rlsScript,/await import\('pg'\)/);
+  assert.match(rlsScript,/SET LOCAL ROLE contagest_runtime/);
+  assert.match(rlsScript,/FOREIGN_OWNER_INSERT_DENIED/);
+  assert.match(rlsScript,/FOREIGN_OWNER_REVOKE_DENIED/);
+  assert.match(rlsScript,/TRANSACTION_LOCAL_OWNER_RESET/);
+  assert.doesNotMatch(rlsScript,/DROP DATABASE|DELETE FROM public\.hipico_money_ledger_entries/);
+});
+
+test('quota-saving specialist workflow only runs manually but keeps all material checks available',()=>{
+  assert.match(manualWorkflow,/workflow_dispatch:/);
+  assert.doesNotMatch(manualWorkflow,/^\s+pull_request:|^\s+push:/m);
+  for (const instruction of ['npm ci','typecheck','report-share.routes.test.ts',
+    'hipico_report_share_schema_contract.test.mjs',
+    'hipico_report_share_rls_guard_v1000.test.mjs',
+    'hipico-report-share-rls-v1000.mjs']) assert.ok(manualWorkflow.includes(instruction),instruction);
 });
