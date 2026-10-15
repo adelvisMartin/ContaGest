@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
+import { NotificationTemplateError, renderNotificationTemplate, evaluateNotificationQuietHours } from './notification-template-catalog.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -52,6 +53,36 @@ router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(a
     }
   });
   ok(res, result.ok ? { ok: true, provider: 'whatsapp-cloud', status: 'provider_accepted', delivered: false } : result);
+}));
+
+// Tenant-scoped, permission-guarded PREVIEW ONLY; never delivers or persists data.
+const previewSchema = z.object({
+  key: z.enum(['operational.notice', 'sales.order-status']),
+  locale: z.string().max(35).optional(),
+  values: z.record(z.string(), z.string()).optional(),
+  quietHours: z.object({
+    timeZone: z.string().min(1).max(120),
+    start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    at: z.string().datetime({ offset: true })
+  }).strict().optional()
+}).strict();
+
+router.post('/templates/preview', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
+  const payload = previewSchema.parse(req.body || {});
+  try {
+    const preview = renderNotificationTemplate(payload.key, payload.locale, payload.values);
+    const quietHours = payload.quietHours ? evaluateNotificationQuietHours({
+      timeZone: payload.quietHours.timeZone,
+      start: payload.quietHours.start,
+      end: payload.quietHours.end,
+      instant: new Date(payload.quietHours.at)
+    }) : null;
+    ok(res, { preview, quietHours, queued: false, delivered: false });
+  } catch (error) {
+    if (error instanceof NotificationTemplateError) throw new HttpError(422, error.message);
+    throw error;
+  }
 }));
 
 router.post('/send', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
