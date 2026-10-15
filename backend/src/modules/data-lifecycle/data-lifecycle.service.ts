@@ -101,7 +101,7 @@ export async function createRetentionPolicyVersion(input: {
 
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${`${input.tenantId}:${input.entityType}`}, 562))
+      SELECT 1::integer AS "lockAcquired" FROM pg_advisory_xact_lock(hashtextextended(${`${input.tenantId}:${input.entityType}`}, 562))
     `);
     const versions = await tx.$queryRaw<Array<{ version: number }>>(Prisma.sql`
       SELECT COALESCE(MAX("version"), 0)::integer AS "version"
