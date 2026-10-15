@@ -95,3 +95,50 @@ test('validator receives deeply immutable detached JSON but original remains mut
   original.nested.ids.push(43);
   assert.deepEqual(original.nested.ids,[42,43]);
 });
+
+
+test('oversized arrays fail before key enumeration and do not reach the handler', () => {
+  let enumerated = 0, invoked = 0;
+  const oversized = new Proxy(new Array(100_000), {
+    ownKeys() { enumerated++; throw Error('should not enumerate'); },
+  });
+  const registry = createAsyncJobHandlerRegistry([{
+    handlerKey: key, effectGuard: 'compare-and-set',
+    validatePayload() { invoked++; return true; },
+  }]);
+  assert.throws(() => assertApprovedAsyncJobHandler(registry,key,{items:oversized}),
+    (e) => e.message === 'ASYNC_HANDLER_PAYLOAD_INVALID');
+  assert.equal(enumerated,0);
+  assert.equal(invoked,0);
+});
+
+test('oversized strings are rejected before later property traversal', () => {
+  const registry = createAsyncJobHandlerRegistry([{
+    handlerKey: key, effectGuard: 'compare-and-set', validatePayload: () => true,
+  }]);
+  const payload = { data: 'a'.repeat(20_000), safe: 'ignored' };
+  assert.throws(() => assertApprovedAsyncJobHandler(registry,key,payload),
+    /ASYNC_HANDLER_PAYLOAD_INVALID/);
+  assert.equal(payload.data.length,20_000);
+});
+
+test('too many shallow keys fail without invoking the registered validator', () => {
+  let invoked=0;
+  const registry = createAsyncJobHandlerRegistry([{
+    handlerKey: key, effectGuard: 'effect-ledger', validatePayload() { invoked++; return true; },
+  }]);
+  const payload = Object.fromEntries(Array.from({length:8500},(_,i)=>['k'+i,0]));
+  assert.throws(() => assertApprovedAsyncJobHandler(registry,key,payload),
+    /ASYNC_HANDLER_PAYLOAD_INVALID/);
+  assert.equal(invoked,0);
+});
+
+test('modest dense arrays and Unicode payloads still reach an approved schema', () => {
+  const registry = createAsyncJobHandlerRegistry([{
+    handlerKey: key, effectGuard: 'compare-and-set',
+    validatePayload: p => Object.isFrozen(p) && Object.isFrozen(p.rows) &&
+      p.rows.length === 128 && p.message === '✔ seguridad',
+  }]);
+  const payload = {rows: Array.from({length:128},(_,i)=>i), message:'✔ seguridad'};
+  assert.doesNotThrow(()=>assertApprovedAsyncJobHandler(registry,key,payload));
+});

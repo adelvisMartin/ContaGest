@@ -1,5 +1,6 @@
 import { PageHeader, Button, Field, Select, EmptyState } from '../components/ui/index.js';
 import { createOrderDraft } from '../services/orderService.js';
+import { createCounterOrderCommit } from '../services/posCounterOrderCommit.mjs';
 import { NotificationService } from '../services/notificationService.js';
 import { escapeHtml } from '../utils/dom.js';
 
@@ -115,19 +116,44 @@ export const FastFoodPosPage = {
         items:latest.posCart || []
       });
     };
-    document.getElementById('btnCreateCounterOrder')?.addEventListener('click', async () => {
-      const order = buildOrder();
-      if (!order.items.length) return Toast.show('Agrega productos antes de crear el pedido.', 'warning');
-      if (!String(order.customer||'').trim()) return Toast.show('Indica el nombre del cliente.', 'warning');
+    const orderButton = document.getElementById('btnCreateCounterOrder');
+    const submitOrder = createCounterOrderCommit({
+      save: (order) => SupabaseSyncService.createFoodOrder(order),
+      commit: (saved) => Store.update((draft) => {
+        draft.foodOrders = [saved, ...(draft.foodOrders || []).filter((item) => item.id !== saved.id)];
+        draft.posCart = [];
+      })
+    });
+    let completed = false;
+    orderButton?.addEventListener('click', async () => {
+      if (completed || orderButton.disabled) return;
+      let order;
       try {
-        const saved = await SupabaseSyncService.createFoodOrder(order);
-        Store.update((draft) => { draft.foodOrders = [saved, ...(draft.foodOrders || []).filter((item) => item.id !== saved.id)]; draft.posCart = []; });
-        Toast.show('Pedido creado en Supabase y enviado a cocina.', 'success');
-      } catch (error) {
-        Store.update((draft) => { draft.foodOrders = [{ ...order, source:'local' }, ...(draft.foodOrders || [])]; draft.posCart = []; });
-        Toast.show(`Pedido creado localmente. Backend: ${error.message}`, 'warning');
+        order = buildOrder();
+      } catch {
+        return Toast.show('No se pudo preparar el pedido. Revisa el carrito.', 'warning');
       }
-      navigate('pedidos');
+      if (!order.items.length) return Toast.show('Agrega productos antes de crear el pedido.', 'warning');
+      if (!String(order.customer || '').trim()) return Toast.show('Indica el nombre del cliente.', 'warning');
+
+      orderButton.disabled = true;
+      try {
+        const result = await submitOrder(order);
+        if (result.status === 'busy') return;
+        completed = true;
+        if (!result.uiUpdated) {
+          Toast.show('El servidor confirmó el pedido, pero la vista no se actualizó. Consulta Pedidos antes de repetir.', 'warning');
+          return;
+        }
+        Toast.show('Pedido confirmado por el servidor y enviado a cocina.', 'success');
+        navigate('pedidos');
+      } catch {
+        // Network timeouts can occur after the backend has committed. The
+        // draft stays available and must never become a fake local order.
+        Toast.show('Pedido no confirmado. Revisa Pedidos y sincroniza antes de intentar otra vez.', 'warning');
+      } finally {
+        if (!completed) orderButton.disabled = false;
+      }
     });
     document.getElementById('btnSendOrderWhatsapp')?.addEventListener('click', async () => {
       const order = buildOrder();
