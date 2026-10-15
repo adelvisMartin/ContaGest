@@ -288,3 +288,39 @@ body:has(.ops-root[data-ops-authorized="true"]) .hc-help-trigger {
 @media (prefers-reduced-motion: reduce) {
   .reference-report__ledger .table-wrap { scroll-behavior: auto; }
 }
+
+
+/* Nine-column Hípico consolidator. Same visual v4 ownership as other Hípico reports. */
+.reference-consolidator { display:grid; gap:14px; min-width:0; }
+.reference-consolidator__filters .card__body {
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:end; gap:12px;
+}
+.reference-consolidator__filters .field { min-width:0; }
+.reference-consolidator__filters :is(.input,.select,.button) { min-height:var(--hc-v4-control); }
+.reference-consolidator__toggle { display:flex; align-items:center; gap:8px; font-size:var(--hc-v4-type-sm); padding:8px; }
+.reference-consolidator__filters .reference-report__actions { display:flex; flex-wrap:wrap; gap:8px; }
+.reference-consolidator__counts { display:flex; flex-wrap:wrap; align-items:center; gap:12px; font-variant-numeric:tabular-nums; }
+.reference-consolidator__totals { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; min-width:0; }
+.reference-consolidator__totals >div { min-width:0; border:1px solid var(--hc-border); border-radius:var(--hc-v4-radius-md); padding:10px; }
+.reference-consolidator__totals small { display:block; color:var(--hc-text-muted); font-size:var(--hc-v4-type-xs); }
+.reference-consolidator__totals strong { display:block; font-size:var(--hc-v4-type-sm); overflow-wrap:anywhere; margin-top:5px; font-variant-numeric:tabular-nums; }
+.reference-consolidator__table-wrap { max-width:100%; overflow-x:auto; }
+.reference-consolidator__table { min-width:1200px; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+.reference-consolidator__table th { min-width:115px; text-align:start; vertical-align:top; }
+.reference-consolidator__table th:first-child { min-width:170px; }
+.reference-consolidator__table td { white-space:nowrap; }
+.reference-consolidator__th { display:flex; flex-direction:column; gap:5px; }
+.reference-consolidator__reorder { display:flex; gap:4px; }
+.reference-consolidator__reorder button { min-height:30px; min-width:38px; }
+.reference-consolidator__pages { display:flex; gap:12px; justify-content:flex-end; align-items:center; margin-top:14px; }
+.reference-consolidator__pages span { font-size:var(--hc-v4-type-sm); }
+@media (max-width:900px) {
+  .reference-consolidator__filters .card__body { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .reference-consolidator__totals { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:600px) {
+  .reference-consolidator__filters .card__body { grid-template-columns:minmax(0,1fr); }
+  .reference-consolidator__filters :is(.input,.select,.button) { min-height:var(--hc-v4-touch); }
+  .reference-consolidator__totals { grid-template-columns:minmax(0,1fr); }
+  .reference-consolidator__pages { justify-content:space-between; }
+}
