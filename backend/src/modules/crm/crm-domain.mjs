@@ -105,3 +105,36 @@ export function forecastByCurrency({tenantId, opportunities}) {
     currency, count:x.count, gross:minorUnitsToAmount(x.gross), weighted:minorUnitsToAmount((x.weightedNumerator + 50n) / 100n)
   })));
 }
+
+// A deterministic, persistence-free intent for an atomic stage update.
+// The caller MUST authorize the actor and run CAS(version) + unique(eventId)
+// + append activity in a single tenant-scoped PostgreSQL transaction.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const validId = value => typeof value === 'string' && UUID.test(value);
+const validVersion = value => Number.isSafeInteger(value) && value >= 0 && value < Number.MAX_SAFE_INTEGER;
+
+/** Pure transition planner: does NOT persist or authorize the write. */
+export function planOpportunityStageChange({
+  tenantId, opportunity, expectedVersion, nextStage, actorId,
+  eventId, occurredAt, seenEventIds = []
+}) {
+  if (typeof tenantId !== 'string' || !tenantId.trim()) throw new TypeError('Tenant is required');
+  if (!opportunity || opportunity.tenantId !== tenantId) throw new Error('CROSS_TENANT_STAGE_CHANGE_DENIED');
+  if (!validId(opportunity.id) || !validId(actorId) || !validId(eventId)) throw new TypeError('Invalid CRM identifier');
+  if (!validVersion(opportunity.version) || !validVersion(expectedVersion)) throw new TypeError('Invalid CRM version');
+  if (opportunity.version !== expectedVersion) throw new Error('STALE_CRM_OPPORTUNITY_VERSION');
+  if (!Array.isArray(seenEventIds) || seenEventIds.some(id => !validId(id))) throw new TypeError('Invalid event history');
+  if (seenEventIds.some(id => id.toLowerCase() === eventId.toLowerCase())) throw new Error('DUPLICATE_CRM_EVENT_ID');
+  if (typeof occurredAt !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(occurredAt) ||
+      !Number.isFinite(Date.parse(occurredAt)) ||
+      new Date(occurredAt).toISOString() !== occurredAt) throw new TypeError('Invalid server timestamp');
+  const to = transitionOpportunity(opportunity.stage, nextStage);
+  const version = expectedVersion + 1;
+  const next = Object.freeze({...opportunity, stage:to, version});
+  const activity = Object.freeze({
+    id:eventId, tenantId, opportunityId:opportunity.id, actorId,
+    type:'CRM_STAGE_TRANSITION', from:opportunity.stage, to, version, occurredAt
+  });
+  return Object.freeze({next, activity});
+}

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   normalizeLeadIdentity, findClientDuplicateCandidates, assessClientConversion,
-  transitionOpportunity, amountToMinorUnits, minorUnitsToAmount, forecastByCurrency
+  transitionOpportunity, amountToMinorUnits, minorUnitsToAmount, forecastByCurrency, planOpportunityStageChange
 } from '../backend/src/modules/crm/crm-domain.mjs';
 
 const lead = {rif:'J-12345678-9', email:' CLIENT@EXAMPLE.COM '};
@@ -104,4 +104,54 @@ test('probabilities and money remain validated even for closed opportunities',()
   assert.throws(()=>forecastByCurrency({tenantId:'A',opportunities:[
     {tenantId:'A',stage:'won',expectedValue:'0.001',probability:10,currency:'USD'}
   ]}),/fixed-scale/);
+});
+
+const id = {
+  opportunity:'08ae729d-0fda-4a3a-802c-c0277f1d2e41',
+  actor:'dab8933f-d1db-4970-8b95-e31822bca854',
+  event:'bc765213-724d-4c02-95ab-f2770f11949c'
+};
+const stageParams=()=>({
+  tenantId:'A', opportunity:{id:id.opportunity,tenantId:'A',stage:'new',version:3},
+  expectedVersion:3,nextStage:'qualified',actorId:id.actor,
+  eventId:id.event,occurredAt:'2026-10-15T06:05:00.000Z'
+});
+
+test('CRM stage intent returns immutable next revision and privacy-minimal event',()=>{
+  const source=stageParams();
+  const result=planOpportunityStageChange(source);
+  assert.deepEqual(result.next,{id:id.opportunity,tenantId:'A',stage:'qualified',version:4});
+  assert.deepEqual(result.activity,{
+    id:id.event,tenantId:'A',opportunityId:id.opportunity,actorId:id.actor,
+    type:'CRM_STAGE_TRANSITION',from:'new',to:'qualified',version:4,
+    occurredAt:'2026-10-15T06:05:00.000Z'
+  });
+  assert.equal(source.opportunity.version,3);
+  assert.ok(Object.isFrozen(result) && Object.isFrozen(result.next) && Object.isFrozen(result.activity));
+});
+test('CRM stage intent rejects foreign tenant identity',()=>{
+  assert.throws(()=>planOpportunityStageChange({...stageParams(),tenantId:'B'}),/CROSS_TENANT/);
+});
+test('CRM stage intent rejects stale optimistic version',()=>{
+  assert.throws(()=>planOpportunityStageChange({...stageParams(),expectedVersion:2}),/STALE_CRM/);
+});
+test('CRM stage intent rejects duplicate event replay',()=>{
+  assert.throws(()=>planOpportunityStageChange({...stageParams(),seenEventIds:[id.event]}),/DUPLICATE_CRM_EVENT/);
+  assert.throws(()=>planOpportunityStageChange({...stageParams(),seenEventIds:[id.event.toUpperCase()]}),/DUPLICATE_CRM_EVENT/);
+});
+test('CRM stage intent rejects terminal-stage mutation',()=>{
+  assert.throws(()=>planOpportunityStageChange({...stageParams(),opportunity:{...stageParams().opportunity,stage:'lost'},nextStage:'won'}),/INVALID_CRM_STAGE_TRANSITION/);
+});
+test('CRM stage intent rejects unknown IDs, invalid event evidence and versions',()=>{
+  const cases=[
+    {actorId:'nobody'}, {eventId:'../../foo'},
+    {opportunity:{...stageParams().opportunity,id:'0'}},
+    {opportunity:{...stageParams().opportunity,version:-1}},
+    {expectedVersion:1.5}, {expectedVersion:Number.MAX_SAFE_INTEGER},
+    {seenEventIds:'not-list'},
+    {seenEventIds:['invalid']},
+    {occurredAt:'2026-02-30T06:05:00.000Z'},
+    {occurredAt:'2026-10-15T06:05:00+00:00'}
+  ];
+  for (const broken of cases) assert.throws(()=>planOpportunityStageChange({...stageParams(),...broken}));
 });
