@@ -122,7 +122,14 @@ test('only operator can create/list/revoke; public token never grants mutation',
   const body=await created.json() as any;
   assert.equal(body.ok,true);
   assert.ok(body.data.relativeUrl.includes('?t='));
+  assert.equal(body.data.consolidatedRelativeUrl,undefined,'personal token must not have group view URL');
   assert.ok(!JSON.stringify(body).includes('ownerId'));
+  const groupCreated=await fetch(base,{method:'POST',headers,
+    body:JSON.stringify({groupKey:'triple-c',audience:'group',hours:4})});
+  assert.equal(groupCreated.status,201);
+  const groupBody=await groupCreated.json() as any;
+  assert.match(groupBody.data.consolidatedRelativeUrl,/&view=consolidated$/);
+  assert.ok(!JSON.stringify(groupBody).includes('ownerId'));
   const listed=await fetch(base+'?groupKey=triple-c',{headers});
   assert.equal(listed.status,200);
   assert.ok(!JSON.stringify(await listed.json()).includes(token));
