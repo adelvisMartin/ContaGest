@@ -45,8 +45,11 @@ router.post('/',requirePermission('sales.manage'),validateBody(leadDraftSchema),
     });
   } catch (error) {
     if (error instanceof CrmLeadReplayError) throw new HttpError(409,'Este intento de alta CRM ya fue procesado. Consulta el listado antes de repetir.');
-    if (error instanceof TypeError && error.message === 'CRM_IDEMPOTENCY_KEY_REQUIRED') {
-      throw new HttpError(400,'La clave de intento CRM debe ser un UUIDv4 válido.');
+    if (error instanceof TypeError &&
+      (error.message === 'CRM_IDEMPOTENCY_KEY_REQUIRED' ||
+       error.message === 'CRM_LEAD_CONTACT_REQUIRED' ||
+       error.message.startsWith('INVALID_CRM_LEAD_'))) {
+      throw new HttpError(400,'Identidad fiscal o clave de intento CRM inválida.');
     }
     throw error;
   }
