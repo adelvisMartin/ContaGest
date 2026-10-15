@@ -380,3 +380,31 @@ aleatoria una sesión personal de WhatsApp o manipular archivos cifrados reales.
 Criterio de salida: `npm run qa` PASS sobre el SHA correcto, CI final PASS,
 prueba física de Windows/WhatsApp LAB documentada y soak independiente #120.
 Hasta entonces #907, #892 y #837 continúan abiertos y release NO-GO.
+
+## Permisos de clave AES del inbox LAB — Unix/macOS y Windows (#907)
+
+En Linux/macOS, el arranque ahora rechaza un `inbox.key` existente si
+los bits de permiso conceden cualquier acceso a grupo u otros
+(`LAB_PENDING_KEY_PERMISSIONS_UNSAFE`). El control también conserva
+los rechazos anteriores de claves de tamaño inválido o enlaces simbólicos.
+**No** cambia ni elimina registros cifrados y **no** regenera la clave.
+El operador debe detener el Bridge, examinar la causa de la exposición
+y restaurar el acceso privado (p. ej., `chmod 600 inbox.key`) **sin**
+hacer rotación improvisada ni borrar el inbox. Un permiso corregido no
+borra una posible exposición anterior; valorar la respuesta a incidentes
+y restauración según el riesgo.
+
+En Windows, los bits POSIX de `stat.mode` no prueban las ACL de NTFS.
+Se mantiene el control operativo de que el directorio y `inbox.key`
+sólo sean accesibles por la identidad del servicio, con evidencias
+físicas del equipo y almacenamiento protegido. No registrar ni
+adjuntar el contenido de la clave en issues, pruebas o informes.
+Los grupos SOURCE y LAB no adquieren nuevas capacidades con este cambio.
+
+Regresión añadida: clave `0600` → modo inseguro `0644`, `0640`
+o `0602` → denegación sin pérdida del material cifrado → recuperación
+con `0600`. La prueba del Bridge se ejecuta en sistemas POSIX;
+en Windows verifica reapertura sin declarar que revisó DACL/NTFS.
+La verificación aislada no sustituye `npm run test:lab:recovery`,
+`npm run qa`, CI exact-SHA, QA Windows ni soak físico.
+
