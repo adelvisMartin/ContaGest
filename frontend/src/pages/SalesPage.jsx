@@ -5,8 +5,7 @@ import {
   CgButton, CgDataTable, CgMoney, CgPageHeader, CgProvider, CgSelect, CgState, CgStatusChip, CgTextField
 } from '../components/ui/cg/CgPrimitives.jsx';
 import { shortDate } from '../core/formatters.js';
-import { RuntimePolicy } from '../services/runtimePolicy.js';
-import { uid, today } from '../utils/dom.js';
+import { today } from '../utils/dom.js';
 
 const rows=(value)=>Array.isArray(value)?value:[];
 const statusTone=(status)=>status==='Cobrada'?'success':status==='Anulada'?'error':'warning';
@@ -31,6 +30,7 @@ function SalesWorkspace({state,context}){
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
   const clientRef=useRef(null);
+  const saleSaveInFlight=useRef(false);
   const [form,setForm]=useState({
     date:today(),
     invoice:`FAC-${new Date().getFullYear()}-${String(rows(state.sales).length+1).padStart(3,'0')}`,
@@ -62,11 +62,17 @@ function SalesWorkspace({state,context}){
 
   async function submit(event){
     event.preventDefault();
+    if (saleSaveInFlight.current) return;
+    saleSaveInFlight.current = true;
     setSaving(true);
+    setError('');
     try{
       const client=clients.find((item)=>item.id===form.clientId);
       const payload={...form,client:form.client||client?.name||'Consumidor final'};
       const saved=await SupabaseSyncService.createSale(payload);
+      if (!saved || typeof saved.id !== 'string' || !saved.id.trim()) {
+        throw new Error('SALES_SERVER_CONFIRMATION_MISSING');
+      }
       Store.update((draft)=>{draft.sales=[saved,...(draft.sales||[]).filter((item)=>item.id!==saved.id)];});
       setSales((current)=>[saved,...current.filter((item)=>item.id!==saved.id)]);
       setForm({
@@ -74,21 +80,17 @@ function SalesWorkspace({state,context}){
         invoice:`FAC-${new Date().getFullYear()}-${String(sales.length+2).padStart(3,'0')}`,
         clientId:'',client:'',amount:'0',status:'Cobrada',method:'Transferencia'
       });
-      notify('Venta guardada y contabilizada.','success');
-    }catch(cause){
-      const decision=RuntimePolicy.handlePersistenceFailure(cause,'la venta');
-      if(decision.allowFallback){
-        const local={id:uid('sale'),...form,amount:Number(form.amount||0),source:'local'};
-        Store.update((draft)=>{
-          draft.sales=draft.sales||[];
-          draft.sales.unshift(local);
-          draft.auditLog=draft.auditLog||[];
-          draft.auditLog.unshift({id:uid('log'),module:'sales',action:'create-sale-offline-fallback',at:new Date().toISOString()});
-        });
-        setSales((current)=>[local,...current]);
-        notify(`Venta guardada localmente; la sincronización está pendiente. ${decision.message}`,'warning');
-      }else notify(decision.message,'error');
-    }finally{setSaving(false);}
+      notify(form.status==='Borrador'?'Borrador confirmado por el servidor.':'Venta confirmada por el servidor.','success');
+    }catch{
+      // A timeout may occur after the server commits. Never fabricate a sale
+      // locally or recommend an immediate retry without reconciliation.
+      const message='Venta no confirmada. Consulta y sincroniza Ventas antes de intentar otra vez; se conservó el formulario.';
+      setError(message);
+      notify(message,'warning');
+    }finally{
+      saleSaveInFlight.current = false;
+      setSaving(false);
+    }
   }
 
   function sendToQuote(sale){
