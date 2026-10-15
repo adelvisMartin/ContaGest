@@ -58,7 +58,7 @@ export function inspectReorderStockRows(rows: readonly ReorderStockRow[]) {
     const reserved = exactUnits(row.reservedExact, true);
     const available = exactUnits(row.availableExact, true);
     const minimum = exactUnits(row.minStockExact, true);
-    exactUnits(row.shortfallExact, false);
+    const shortfall = exactUnits(row.shortfallExact, false);
     if (stock - reserved !== available) {
       throw new TypeError('REORDER_AVAILABLE_MISMATCH');
     }
@@ -74,6 +74,17 @@ export function inspectReorderStockRows(rows: readonly ReorderStockRow[]) {
         manualReconciliationRequired: true, autoPurchaseEnabled: false
       });
     } else {
+      // Only canonical, internally coherent stock health rows can be offered
+      // for purchasing review. Balances alone do not prove that the derived
+      // threshold, shortfall, status and reorder flag were calculated correctly.
+      const gap = minimum > available ? minimum - available : 0n;
+      if (shortfall !== gap) throw new TypeError('REORDER_SHORTFALL_MISMATCH');
+      const expectedStatus: ReorderStatus = available <= 0n ? 'out_of_stock'
+        : available < minimum ? 'below_minimum'
+        : minimum > 0n && available === minimum ? 'at_minimum' : 'healthy';
+      if (row.status !== expectedStatus) throw new TypeError('REORDER_STATUS_MISMATCH');
+      const expectedReorder = minimum > 0n && available <= minimum;
+      if (row.needsReorder !== expectedReorder) throw new TypeError('REORDER_FLAG_MISMATCH');
       eligibleRows.push(row);
     }
   }
