@@ -19,3 +19,10 @@ The appsec wrapper requires review of tenant escape, IDOR, RBAC escalation, Pris
 
 ## MCP boundary
 Playwright MCP grants a client browser-control capability. Use it only against intended URLs and test identities. Do not configure production passwords or database secrets inside `.mcp.json`. Keep authentication in the browser/session or approved secret store. Destructive production tests remain prohibited.
+
+## #974 third-party guidance threat review — 2026-10-14
+
+- **Ponytail:** only `LICENSE` and `skills/ponytail/SKILL.md` are allowlisted; lifecycle hooks, plugins, scripts, installer commands and "ultra" permission reinterpretation are forbidden by default.
+- **Addy Osmani:** only a small lifecycle selection plus Definition of Done is allowlisted; no external automation or replacements for `AGENTS.md`, risk router or local CI gates.
+- **OmniRoute:** external manuals describe privileged API authentication and provider control. Reading these docs never authorizes API calls, automatic installation, provider proxying, credential movement, or sending tenant/financial/medical/WhatsApp data outside the approved runtime.
+- GitHub source SHA and MIT license were inspected for each source on 2026-10-14; a source pin/lock alone does not constitute runtime security certification. Audit source diffs before repinning.
