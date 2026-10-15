@@ -100,6 +100,11 @@ export async function createRetentionPolicyVersion(input: {
   }
 
   return prisma.$transaction(async (tx) => {
+    // Serialize policy changes with purge batches and legal holds of this tenant.
+    // Acquire tenant lock before the narrower entity/version lock everywhere.
+    await tx.$queryRaw(Prisma.sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 562))
+    `);
     await tx.$queryRaw(Prisma.sql`
       SELECT pg_advisory_xact_lock(hashtextextended(${`${input.tenantId}:${input.entityType}`}, 562))
     `);
@@ -432,6 +437,7 @@ export async function executePurgeBatch(input: { tenantId: string; jobId: string
   // job progress either all commit, or none of them do.
   const batchSize = Math.min(Math.max(Number(input.batchSize || 250), 1), 1000);
   let executionAuthorized = false;
+  let observedAttempts: number | null = null;
   try {
     return await prisma.$transaction(async (tx) => {
       // Also used by createLegalHold. A hold arriving during this transaction
@@ -454,6 +460,7 @@ export async function executePurgeBatch(input: { tenantId: string; jobId: string
         throw new HttpError(422, 'El job no pertenece a un adapter de purge permitido.', { code: 'PURGE_ADAPTER_MISSING' });
       }
       executionAuthorized = true;
+      observedAttempts = job.attempts;
       const entityType = job.entityType;
       const policy = await resolveRetentionPolicy(input.tenantId, entityType, new Date(), tx);
       if (!policy.purgeable || policy.retentionDays == null) {
@@ -500,6 +507,7 @@ export async function executePurgeBatch(input: { tenantId: string; jobId: string
         WHERE "id" = ${input.jobId}::uuid
           AND "tenantId" = ${input.tenantId}::uuid
           AND "operation" = 'purge'
+          AND "attempts" = ${observedAttempts}
           AND "status" NOT IN ('completed', 'blocked')
       `);
     }
