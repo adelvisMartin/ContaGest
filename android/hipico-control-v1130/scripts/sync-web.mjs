@@ -17,7 +17,7 @@ const required = [
   'logo-control-hipico.png',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-192-maskable.png', 'icons/icon-512-maskable.png',
   'assets/css/app.css',
-  'assets/js/app.js', 'assets/js/reference-report-projections.js', 'assets/js/reference-report-ui.js', 'assets/js/store.js', 'assets/js/supabase.js', 'assets/js/local-auth.js', 'assets/js/ui.js',
+  'assets/js/app.js', 'assets/js/reference-report-operations.js', 'assets/js/reference-report-projections.js', 'assets/js/reference-report-ui.js', 'assets/js/store.js', 'assets/js/supabase.js', 'assets/js/local-auth.js', 'assets/js/ui.js',
   'assets/js/theme-bootstrap.js', 'assets/js/command-center.js', 'assets/js/command-center-shell.js',
   'assets/js/password-recovery.js', 'assets/js/user-access.js', 'assets/js/help-center.js',
   'assets/js/whatsapp.js', 'assets/js/whatsapp/normalization.js', 'assets/js/whatsapp/parser.js', 'assets/js/whatsapp/ui-transcript.js'
