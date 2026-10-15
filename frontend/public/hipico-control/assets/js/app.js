@@ -766,6 +766,22 @@ root.addEventListener("click", async (event) => {
             }
             return;
         }
+        if (action === "consolidator-personal") {
+            const id = String(el.dataset.id || "");
+            const fallback = groupList()[0]?.id || "group-1";
+            const person = (workspace.participants || []).find(p => p.id === id &&
+                String(p.groupId || fallback) === String(activeGroupId()));
+            if (!person) throw new Error("Esta cuenta no pertenece al grupo activo.");
+            referenceReportParticipantId = id;
+            reportTab = "personal";
+            render();
+            return;
+        }
+        if (action === "consolidator-back") {
+            reportTab = "consolidator";
+            render();
+            return;
+        }
         if (action === "consolidator-today") {
             referenceReportDate = caracasToday();
             consolidatedFilters.page = 1;
