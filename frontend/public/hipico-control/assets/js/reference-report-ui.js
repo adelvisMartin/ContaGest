@@ -1,6 +1,6 @@
 import { money, number } from './format.js';
 import { escapeHtml } from './ui.js';
-import { projectOperationsDesk } from './reference-report-operations.js';
+import { caracasClock, projectOperationsDesk } from './reference-report-operations.js';
 import {
   assertReportDate, projectParticipantAccount, projectDailyMovements, projectRaceHistory
 } from './reference-report-projections.js';
@@ -147,7 +147,7 @@ function movementBadges(model) {
 }
 function renderDeskTransactions(model) {
   const rows = model.entryRows.map(row => {
-    const when = String(row.time || '').slice(11,19) || '—';
+    const when = caracasClock(row.time);
     const isCancelled = row.status === 'cancelled';
     const sign = row.amount < 0 ? 'amount-negative' : 'amount-positive';
     const kind = row.type === 'transfer'
