@@ -19,6 +19,15 @@ test('#1011: policy sources, dates and unverified technical permissions are visi
   assert.equal(review.groupApiAccountEligibility, 'NOT_VERIFIED');
   assert.equal(review.officialGroupsApiDetails, 'NOT_VERIFIED_RATE_LIMITED');
   assert.equal(review.legalReview, 'PENDING');
+  // Meta Business Messaging Policy §§4–6 (2026-09-23) restricts gambling
+  // but documents five narrow promotion exceptions; none authorizes SOURCE.
+  assert.deepEqual(review.onlineGamblingPromotionCountries, ['AU', 'JP', 'CO', 'MX', 'PE']);
+  assert.equal(review.onlineGamblingPromotionInVenezuela, 'NOT_ALLOWED_COUNTRY');
+  assert.equal(review.onlineGamblingPromotionException, 'COUNTRY_AGE_LICENSE_META_PERMISSION_REQUIRED');
+  assert.equal(evaluateWhatsAppUseCase1011('SOURCE_WAGERS', {
+    country: 'PE', metaPermission: true, license: true, ageGated: true,
+    channel: 'SOURCE'
+  }).decision, 'NO_GO');
   assert.ok(review.references.messagingPolicy.startsWith('https://business.whatsapp.com/policy/'));
   assert.ok(review.references.solutionTerms.startsWith('https://www.whatsapp.com/legal/'));
   assert.ok(review.references.groupsApi.startsWith('https://developers.facebook.com/'));
