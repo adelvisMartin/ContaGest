@@ -111,6 +111,19 @@ test('purge job is tenant-safe, resumable and idempotent without double effect',
   const firstClaim = await requestPurgeJob({ tenantId: tenantA, entityType: 'AnalyticsEvent', idempotencyKey: 'purge-resume-562', authorizationRef: 'qa-purge-562', batchSize: 1 });
   const retryClaim = await requestPurgeJob({ tenantId: tenantA, entityType: 'AnalyticsEvent', idempotencyKey: 'purge-resume-562', authorizationRef: 'qa-purge-562', batchSize: 1 });
   assert.equal(retryClaim.id, firstClaim.id);
+  await assert.rejects(
+    () => requestPurgeJob({
+      tenantId: tenantA, entityType: 'AnalyticsEvent', idempotencyKey: 'purge-resume-562',
+      authorizationRef: 'qa-purge-562', batchSize: 2
+    }),
+    (error: any) => error?.details?.code === 'IDEMPOTENCY_CONFLICT',
+    'the same job key cannot change its batch configuration'
+  );
+  await assert.rejects(
+    () => executePurgeBatch({ tenantId: tenantB, jobId: firstClaim.id, batchSize: 1 }),
+    /Job de lifecycle no encontrado en el tenant/i,
+    'tenant B must not execute tenant A job by ID'
+  );
 
   const firstBatch = await executePurgeBatch({ tenantId: tenantA, jobId: firstClaim.id, batchSize: 1 });
   assert.equal(firstBatch.status, 'pending');
@@ -154,4 +167,47 @@ test('real filesystem storage sandbox detects missing and unregistered objects w
   assert.deepEqual(orphans.missingObjects, [missingKey]);
   assert.deepEqual(orphans.unregisteredObjects, [unregisteredKey]);
   assert.deepEqual(orphans.alignedObjects, [liveKey]);
+});
+
+
+test('legal hold activated after claim blocks the destructive job and preserves its row', async () => {
+  const eventId = randomUUID();
+  const key = `hold-after-claim-${eventId}`;
+  let hold: Awaited<ReturnType<typeof createLegalHold>> | undefined;
+  await prisma.$executeRawUnsafe(
+    'INSERT INTO public."AnalyticsEvent" ("id","tenantId","sessionId","type","payload","createdAt") VALUES ($1::uuid,$2::uuid,$3,$4,\'{}\'::jsonb,$5)',
+    eventId, tenantA, key, 'v658-hold', new Date('2020-01-01T00:00:00Z'),
+  );
+  try {
+    const job = await requestPurgeJob({
+      tenantId: tenantA, entityType: 'AnalyticsEvent', idempotencyKey: key,
+      authorizationRef: 'qa-hold-after-claim-658', batchSize: 1
+    });
+    hold = await createLegalHold({
+      tenantId: tenantA, scopeType: 'entity', entityType: 'AnalyticsEvent',
+      reason: 'Synthetic claim-time hold', authorizationRef: 'qa-hold-658'
+    });
+    await assert.rejects(
+      () => executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize: 1 }),
+      (error: any) => error?.details?.code === 'LEGAL_HOLD_ACTIVE',
+    );
+    const rows = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+      'SELECT count(*)::int AS count FROM public."AnalyticsEvent" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
+      eventId, tenantA,
+    );
+    assert.equal(rows[0].count, 1, 'the held record must survive the blocked purge');
+    await assert.rejects(
+      () => executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize: 1 }),
+      (error: any) => error?.details?.code === 'LIFECYCLE_JOB_BLOCKED',
+    );
+  } finally {
+    if (hold) await releaseLegalHold({
+      tenantId: tenantA, holdId: hold.id, authorizationRef: 'qa-release-658',
+      reason: 'Synthetic hold teardown'
+    });
+    await prisma.$executeRawUnsafe(
+      'DELETE FROM public."AnalyticsEvent" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
+      eventId, tenantA,
+    );
+  }
 });
