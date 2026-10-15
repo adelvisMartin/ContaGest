@@ -13,6 +13,7 @@ import { summarizeInvoicedUnitActivity } from './invoiced-unit-activity.js';
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
 import { deriveReorderCandidates } from './replenishment-candidates.js';
 import { parseReorderScanQuery, reorderScanPageMeta } from './reorder-scan-page.js';
+import { parseReorderSalesOptions, projectReorderSalesEvidence } from './reorder-sales-evidence.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
 import { parseAgeingCutoffs } from './configurable-ageing.js';
 import { LOT_EXPIRY_RISK_VERSION, expiryUtcBounds, projectLotExpiryRisk } from './lot-expiry-risk.js';
@@ -404,38 +405,68 @@ router.get('/inventory/slow-moving', asyncHandler(async (req, res) => {
 
 router.get('/inventory/reorder', asyncHandler(async (req, res) => {
   let query;
+  let salesOptions;
   try {
-    query = parseReorderScanQuery(req.query);
+    // Sales evidence is opt-in; the existing scan parser stays strict.
+    const { includeSalesEvidence, salesWindowDays, ...scanParams } = req.query;
+    query = parseReorderScanQuery(scanParams);
+    salesOptions = parseReorderSalesOptions(includeSalesEvidence, salesWindowDays);
   } catch {
     throw new HttpError(400, 'Filtros de reporte de reposición inválidos.', { code: 'REORDER_SCAN_QUERY_INVALID' });
   }
   const ctx = context(req);
   const { take, skip, onlyNeedsReorder } = query;
+  const asOf = new Date();
+  const since = new Date(asOf.getTime() - salesOptions.salesWindowDays * 86_400_000);
 
-  // The catalog count and this page share the same PostgreSQL snapshot.
-  // Cross-request offset paging remains live and is NOT a persistent cursor.
-  const [activeProducts, products] = await prisma.$transaction(async tx => Promise.all([
-    tx.product.count({ where: { tenantId: ctx.tenantId, active: true } }),
-    tx.product.findMany({
-      where: { tenantId: ctx.tenantId, active: true },
-      select: {
-        id: true,
-        sku: true,
-        name: true,
-        unit: true,
-        stock: true,
-        reserved: true,
-        minStock: true
-      },
-      orderBy: [{ sku: 'asc' }, { id: 'asc' }],
-      skip,
-      take
-    })
-  ]), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  // Product catalog and optional observed sales share one PG snapshot.
+  // Across separate offset pages there is NO durable snapshot.
+  const { activeProducts, products, salesGroups } = await prisma.$transaction(async tx => {
+    const [activeProducts, products] = await Promise.all([
+      tx.product.count({ where: { tenantId: ctx.tenantId, active: true } }),
+      tx.product.findMany({
+        where: { tenantId: ctx.tenantId, active: true },
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          unit: true,
+          stock: true,
+          reserved: true,
+          minStock: true
+        },
+        orderBy: [{ sku: 'asc' }, { id: 'asc' }],
+        skip,
+        take
+      })
+    ]);
+    // Reported invoice quantity is only for reorder candidates scanned in
+    // this page. Invoice tenant and status live on the parent document.
+    const candidateIds = salesOptions.includeSalesEvidence
+      ? deriveReorderCandidates(products.map(buildInventoryStockHealth)).map(row => row.productId)
+      : [];
+    const salesGroups = candidateIds.length
+      ? await tx.salesInvoiceLine.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: candidateIds },
+            invoice: {
+              is: {
+                tenantId: ctx.tenantId,
+                status: { in: [...SALES_KPI_STATUSES] },
+                issueDate: { gte: since, lte: asOf }
+              }
+            }
+          },
+          _sum: { quantity: true },
+          _count: { _all: true },
+          orderBy: { productId: 'asc' }
+        })
+      : [];
+    return { activeProducts, products, salesGroups };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 
   const rows = products.map(buildInventoryStockHealth);
-  // Filtering is page-local. A page with zero matches can still have
-  // matching products on subsequent catalog pages.
   const filteredRows = onlyNeedsReorder ? rows.filter(row => row.needsReorder) : rows;
   const reorderCandidates = deriveReorderCandidates(rows);
   const pagination = reorderScanPageMeta({
@@ -454,7 +485,15 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
       scope: 'SCANNED_PAGE_ONLY',
       autoPurchaseEnabled: false,
       noLocationForecastUntil: '#755',
-      reorderCandidates
+      reorderCandidates,
+      ...(salesOptions.includeSalesEvidence ? {
+        salesEvidence: projectReorderSalesEvidence({
+          candidates: reorderCandidates,
+          groups: salesGroups,
+          asOf,
+          salesWindowDays: salesOptions.salesWindowDays
+        })
+      } : {})
     },
     pagination,
     meta: {
