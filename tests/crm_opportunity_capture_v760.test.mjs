@@ -95,6 +95,18 @@ test('missing or foreign-tenant lead aborts with no writes',async()=>{
  assert.deepEqual(s.attempted.map(x=>x[0]),['read']);
  assert.equal(s.committed.length,0);
 });
+test('foreign, mis-typed, or mismatched lead from broken reader fails closed',async()=>{
+ for(const row of [
+  existingLead({tenantId:'tenant-b'}),
+  existingLead({moduleSlug:'crm-leads-foreign'}),
+  existingLead({id:'f5b9ec95-a0c4-55ab-a91e-7484d741b82d'})
+ ]){
+  const s=fakeStore({lead:row});
+  await assert.rejects(createOpportunityFromQualifiedLead({...request(),db:s.db}),CrmOpportunityLeadNotFoundError);
+  assert.deepEqual(s.attempted.map(x=>x[0]),['read']);
+  assert.equal(s.committed.length,0);
+ }
+});
 test('lead not qualified or previously lost blocks opportunity creation',async()=>{
  for(const status of ['new','lost','won']){
   const s=fakeStore({lead:existingLead({status})});
