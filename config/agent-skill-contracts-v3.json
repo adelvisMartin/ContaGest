@@ -1092,6 +1092,139 @@
         "version": "1",
         "path": ".agents/skills/contagest-rea-benchmark/SKILL.md"
       }
+    },
+    {
+      "id": "contagest-ponytail",
+      "status": "ACTIVE",
+      "purpose": "Minimal correct diffs without dropping correctness, audit, security or verification.",
+      "triggers": [
+        "implementation simplification",
+        "scope creep review",
+        "unnecessary dependency"
+      ],
+      "requiredInputs": [
+        "exact SHA",
+        "affected callers/contracts/tests"
+      ],
+      "authoritativeSources": [
+        "AGENTS.md",
+        "project source/tests",
+        "live GitHub state",
+        "reviewed pinned advisory reference"
+      ],
+      "prohibitedActions": [
+        "invent shortcuts",
+        "skip gates for speed",
+        "erase validation"
+      ],
+      "expectedEvidence": [
+        "scope rationale",
+        "minimal diff evidence"
+      ],
+      "minimumValidation": [
+        "SOURCE_REVIEW",
+        "LOCAL_STATIC"
+      ],
+      "riskEscalation": "Any P0/P1, security, accounting, tenant or release conflict defers to project specialist and blocks advisory override.",
+      "dependencies": [
+        "contagest-erp-orchestrator",
+        "contagest-release-evidence"
+      ],
+      "provenance": {
+        "kind": "project-owned-wrapper",
+        "version": "3",
+        "path": ".agents/skills/contagest-ponytail/SKILL.md",
+        "sourceLock": "ponytail"
+      }
+    },
+    {
+      "id": "contagest-addy-engineering",
+      "status": "ACTIVE",
+      "purpose": "Phase-specific engineering discipline: plan, incremental build, testing, review, Git and CI.",
+      "triggers": [
+        "ticket planning",
+        "implementation review",
+        "multi-window coordination"
+      ],
+      "requiredInputs": [
+        "issue acceptance",
+        "exact SHA",
+        "current repo policy"
+      ],
+      "authoritativeSources": [
+        "AGENTS.md",
+        "project source/tests",
+        "live GitHub state",
+        "reviewed pinned advisory reference"
+      ],
+      "prohibitedActions": [
+        "override repo policy",
+        "invent passed tests",
+        "bulk merge without verified HEAD"
+      ],
+      "expectedEvidence": [
+        "incremental evidence",
+        "targeted tests",
+        "reviewed PR"
+      ],
+      "minimumValidation": [
+        "SOURCE_REVIEW",
+        "LOCAL_STATIC"
+      ],
+      "riskEscalation": "Any P0/P1, security, accounting, tenant or release conflict defers to project specialist and blocks advisory override.",
+      "dependencies": [
+        "contagest-erp-orchestrator",
+        "contagest-release-evidence"
+      ],
+      "provenance": {
+        "kind": "project-owned-wrapper",
+        "version": "3",
+        "path": ".agents/skills/contagest-addy-engineering/SKILL.md",
+        "sourceLock": "addy-osmani-engineering"
+      }
+    },
+    {
+      "id": "contagest-omniroute",
+      "status": "ACTIVE",
+      "purpose": "Read-only optional analysis of LLM gateway capabilities, resilience, costs and secret/privacy boundaries.",
+      "triggers": [
+        "provider architecture evaluation",
+        "LLM routing comparison",
+        "resilience audit"
+      ],
+      "requiredInputs": [
+        "current code configuration",
+        "approved provider scope"
+      ],
+      "authoritativeSources": [
+        "AGENTS.md",
+        "project source/tests",
+        "live GitHub state",
+        "reviewed pinned advisory reference"
+      ],
+      "prohibitedActions": [
+        "activate proxy",
+        "send prompts or secrets",
+        "claim live health without testing"
+      ],
+      "expectedEvidence": [
+        "configuration gap analysis",
+        "trust-boundary inventory"
+      ],
+      "minimumValidation": [
+        "SOURCE_REVIEW"
+      ],
+      "riskEscalation": "Any P0/P1, security, accounting, tenant or release conflict defers to project specialist and blocks advisory override.",
+      "dependencies": [
+        "contagest-appsec-review",
+        "contagest-erp-orchestrator"
+      ],
+      "provenance": {
+        "kind": "project-owned-wrapper",
+        "version": "3",
+        "path": ".agents/skills/contagest-omniroute/SKILL.md",
+        "sourceLock": "omniroute"
+      }
     }
   ]
 }

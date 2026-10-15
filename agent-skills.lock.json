@@ -262,6 +262,21 @@
       "vendorPaths": []
     },
     {
+      "id": "omniroute",
+      "kind": "github-skill",
+      "repo": "diegosouzapw/OmniRoute",
+      "commit": "fc5e2bccd4f70fecf5aab94dfb8136c74ab5a21b",
+      "license": "MIT",
+      "trustLevel": "read-only-evaluation-reference",
+      "namespace": "omniroute",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/omni-auth/SKILL.md",
+        "skills/omni-combos-routing/SKILL.md",
+        "skills/omni-resilience/SKILL.md"
+      ]
+    },
+    {
       "id": "codex-smart-project-memory",
       "kind": "github-skill",
       "repo": "richenyu/codex-smart-project-memory",
