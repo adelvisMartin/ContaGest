@@ -10,8 +10,14 @@ export function canonicalRifVariants(rif) {
   if (typeof rif !== 'string' || !/^[VEJPG][0-9]{8,10}$/.test(rif)) return [];
   const prefix = rif[0];
   const numbers = rif.slice(1);
+  const body = numbers.slice(0, -1);
+  const checkDigit = numbers.at(-1);
+  const dottedBody = body.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  // Include common legacy human-entry formats. This is still an exact,
+  // bounded lookup: never broaden to fuzzy LIKE matching across taxpayers.
   return Object.freeze([...new Set([
-    rif, prefix + '-' + numbers, prefix + '-' + numbers.slice(0, -1) + '-' + numbers.at(-1)
+    rif, prefix + '-' + numbers, prefix + '-' + body + '-' + checkDigit,
+    prefix + '-' + dottedBody + '-' + checkDigit
   ])]);
 }
 

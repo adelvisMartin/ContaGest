@@ -147,6 +147,11 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     }
     const stat=await fs.lstat(keyFile);
     if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==32)throw new Error('LAB_PENDING_KEY_INVALID');
+    // Private AES key material must never be readable by other users on POSIX.
+    // Windows mode bits do not represent NTFS ACLs; validate those during physical QA.
+    if(process.platform!=='win32' && (stat.mode & 0o077)!==0){
+      throw new Error('LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
+    }
     return await fs.readFile(keyFile);
   }
   async function lockOwner(){
