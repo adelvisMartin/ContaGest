@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { resolveGitContext, withEphemeralDatabase } from './local-verification-runner-v630.mjs';
 import { assertLoopbackPostgresUrl, verifyNativePostgres17 } from './zero-cost-bootstrap-v668.mjs';
 import { checkedBaseUrl, runHipicoSmoke } from './hipico-operational-smoke-v664.mjs';
@@ -100,6 +100,8 @@ export async function runOperationalSmoke({ env = process.env, candidateSha, erp
         report.stages.push(result);
         if (result.status !== 'PASS') throw new Error('SMOKE_STEP_FAILED');
       }
+      // Prisma generators must not silently change source after the SHA was captured.
+      resolveGitContext({ cwd: process.cwd(), expectedSha: candidateSha, baseRef: 'main' });
     });
 
     if (!erpOnly) {
