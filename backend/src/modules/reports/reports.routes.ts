@@ -10,6 +10,7 @@ import {
 } from '../../shared/services/inventory-stock-health.service.js';
 import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRows } from './sales-kpi.js';
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
+import { deriveReorderCandidates } from './replenishment-candidates.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('reports.view'));
@@ -196,11 +197,20 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
 
   const rows = products.map(buildInventoryStockHealth);
   const filteredRows = onlyNeedsReorder ? rows.filter((row) => row.needsReorder) : rows;
+  const reorderCandidates = deriveReorderCandidates(rows);
 
   ok(res, {
     report: 'inventory-reorder',
     rows: filteredRows,
     summary: summarizeInventoryStockHealth(filteredRows),
+    planning: {
+      authority: 'Product.stock-reserved-minStock',
+      mode: 'REVIEW_ONLY',
+      scope: 'SCANNED_PAGE_ONLY',
+      autoPurchaseEnabled: false,
+      noLocationForecastUntil: '#755',
+      reorderCandidates
+    },
     meta: {
       onlyNeedsReorder,
       activeProducts,
