@@ -535,7 +535,7 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
   const { rows, stockReview, reorderCandidates } = scan;
   const filteredRows = onlyNeedsReorder ? rows.filter(row => row.needsReorder) : rows;
   const pagination = reorderScanPageMeta({
-    skip, take, scannedProducts: products.length, activeProducts,
+    skip, take, scannedProducts: rows.length, activeProducts,
     matchesInPage: rows.filter(row => row.needsReorder).length
   });
 
@@ -590,7 +590,7 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
     meta: {
       onlyNeedsReorder,
       activeProducts,
-      scannedProducts: products.length,
+      scannedProducts: rows.length,
       scanLimit: take,
       skip,
       pageScoped: true,
