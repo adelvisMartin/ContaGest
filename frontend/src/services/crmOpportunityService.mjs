@@ -37,10 +37,31 @@ export function validateOpportunityForm(lead,values) {
   });
 }
 
+/** UI-only guard. Backend still owns tenant, CAS and stage authorization. */
+export function validateOpportunityLossAction(opportunity) {
+  if(!opportunity || typeof opportunity.id !== 'string' || !UUID.test(opportunity.id) ||
+     opportunity.stage !== 'qualified' || typeof opportunity.updatedAt !== 'string' ||
+     !REVISION.test(opportunity.updatedAt) ||
+     !Number.isFinite(Date.parse(opportunity.updatedAt)) ||
+     new Date(opportunity.updatedAt).toISOString() !== opportunity.updatedAt)
+    throw new TypeError('CRM_OPPORTUNITY_LOSS_INVALID');
+  return Object.freeze({id:opportunity.id,expectedUpdatedAt:opportunity.updatedAt});
+}
+
 export function createCrmOpportunityService({api}) {
   if(!api || typeof api.get !== 'function' || typeof api.request !== 'function')
     throw new TypeError('CRM_OPPORTUNITY_API_REQUIRED');
   return Object.freeze({
+    async markLost(opportunity) {
+      const {id,expectedUpdatedAt}=validateOpportunityLossAction(opportunity);
+      const result=await api.request(CRM_OPPORTUNITY_ENDPOINT+'/'+id+'/lost',{
+        method:'PATCH',body:{expectedUpdatedAt}
+      });
+      if(!result || result.id!==id || result.stage!=='lost' ||
+         typeof result.updatedAt!=='string' || !REVISION.test(result.updatedAt))
+        throw new TypeError('CRM_OPPORTUNITY_LOSS_RESULT_INVALID');
+      return result;
+    },
     async list() {
       const data=await api.get(CRM_OPPORTUNITY_ENDPOINT+'?take=50&skip=0');
       if(!Array.isArray(data)) throw new TypeError('CRM_OPPORTUNITY_LIST_INVALID');
