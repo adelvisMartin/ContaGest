@@ -50,6 +50,23 @@ El ejemplo de `curl` es ilustrativo: en producción usar entorno seguro que no a
 
 **Riesgo operativo inherente al query parameter:** `?t=` sigue siendo una credencial URL, susceptible a historial del navegador, registros del proxy/hosting o divulgación por reenvío. La respuesta deshabilita caché, robots, referrers, recursos externos y framing; los logs internos deben usar solo template de ruta sin query. En producción configurar el gateway/edge/CDN para REDACTAR el query `t` **antes de registrar solicitudes**. No distribuir el enlace vía servicios de analítica ni cargar píxeles. Revocar inmediatamente ante pérdida, y limitar aún más los TTL según el riesgo.
 
+## Gestión sencilla desde la terminal del operador
+
+Se añadió un comando opcional que **no solicita ni acepta el token de operador como parámetro**. Solo lee `HIPICO_OPERATOR_CONTROL_TOKEN` desde el entorno local y usa una URL HTTPS configurada, sin rutas, queries, credenciales incrustadas ni redirecciones HTTP. Permite crear, listar y revocar enlaces desde un canal administrativo supervisado:
+
+```powershell
+# Definir HIPICO_OPERATOR_CONTROL_TOKEN en un gestor de secretos local.
+$env:HIPICO_REPORT_API_ORIGIN = 'https://BACKEND-DE-TU-CLUB'
+npm run hipico:report-links -- create grupo-autorizado participant CLIENTE_AUTORIZADO 24
+npm run hipico:report-links -- create grupo-autorizado group 4
+npm run hipico:report-links -- list grupo-autorizado
+npm run hipico:report-links -- revoke 00000000-0000-4000-8000-000000000000
+```
+
+El valor de ejemplo en `revoke` no corresponde a ningún enlace válido. El enlace creado solo se imprime en la terminal en el momento de la emisión: compártelo privadamente, nunca en GitHub/issue/chat público. La CLI no almacena esa URL. No se requiere configurar el token de operador en ningún frontend.
+
+`GET /public` sin `date` usa el día calendario operativo de Caracas; el HTML compartido incluye un selector de fecha que mantiene el mismo ámbito ya autorizado por el token.
+
 ## QA y rollback
 
 ```bash
