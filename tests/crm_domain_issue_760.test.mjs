@@ -155,3 +155,59 @@ test('CRM stage intent rejects unknown IDs, invalid event evidence and versions'
   ];
   for (const broken of cases) assert.throws(()=>planOpportunityStageChange({...stageParams(),...broken}));
 });
+
+
+test('same email but different legal RIF blocks even with a single Client candidate',()=>{
+  const result=assessClientConversion({
+    tenantId:'A',
+    lead:{rif:'J-12345678-9', email:'company@example.com'},
+    clients:[{id:'legal-other',tenantId:'A',rif:'V-12345678-9',email:'COMPANY@example.com'}]
+  });
+  assert.deepEqual(result,{
+    status:'BLOCKED',reason:'CONFLICTING_RIF_EMAIL',candidates:['legal-other']
+  });
+  assert.ok(Object.isFrozen(result) && Object.isFrozen(result.candidates));
+});
+
+test('conflicting email does not override RIF even when a matching-RIF Client also exists',()=>{
+  const result=assessClientConversion({
+    tenantId:'A', lead:{rif:'J123456789',email:'same@example.com'},
+    clients:[
+      {id:'match-rif',tenantId:'A',rif:'J123456789',email:'old@example.com'},
+      {id:'email-wrong-rif',tenantId:'A',rif:'V123456789',email:'same@example.com'}
+    ]
+  });
+  assert.deepEqual(result,{
+    status:'BLOCKED',reason:'AMBIGUOUS_CLIENT_MATCH',
+    candidates:['email-wrong-rif','match-rif']
+  });
+});
+
+test('matching legal RIF may be reviewed when the email has changed',()=>{
+  assert.deepEqual(assessClientConversion({
+    tenantId:'A',lead:{rif:'J-12345678-9',email:'new@example.com'},
+    clients:[{id:'canonical',tenantId:'A',rif:'J123456789',email:'old@example.com'}]
+  }),{status:'REVIEW_EXISTING',reason:'EXISTING_CLIENT_AUTHORITY',candidates:['canonical']});
+});
+
+test('foreign tenant and deactivated conflicting identities are never leaked',()=>{
+  const result=assessClientConversion({
+    tenantId:'A', lead:{rif:'J123456789',email:'same@example.com'},
+    clients:[
+      {id:'another-tenant',tenantId:'B',rif:'V123456789',email:'same@example.com'},
+      {id:'disabled',tenantId:'A',rif:'V123456789',email:'same@example.com',active:false}
+    ]
+  });
+  assert.deepEqual(result,{
+    status:'REVIEW_NEW',reason:'NO_EXISTING_CLIENT_MATCH',candidates:[]
+  });
+});
+
+test('CRM conflict verdict reveals only opaque IDs, not fiscal identities or emails',()=>{
+  const result=assessClientConversion({
+    tenantId:'A', lead:{rif:'J123456789',email:'lead@example.com'},
+    clients:[{id:'opaque-id',tenantId:'A',rif:'V123456789',email:'lead@example.com'}]
+  });
+  assert.equal(result.status,'BLOCKED');
+  assert.doesNotMatch(JSON.stringify(result),/lead@example|J123456789|V123456789/);
+});
