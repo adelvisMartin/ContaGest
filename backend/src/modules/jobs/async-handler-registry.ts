@@ -18,13 +18,28 @@ export type AsyncJobHandlerRegistry = Readonly<{
 // Validators run on a detached, frozen JSON snapshot. Running a validator on the
 // caller object first and comparing JSON afterwards would still allow side effects
 // (including mutations on a rejected request and getter invocation).
-function immutableJsonSnapshot(value: unknown, depth = 0, active = new Set<object>()): unknown {
-  if (depth > 12) throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+const MAX_JSON_CHARS = 16 * 1024;
+const MAX_JSON_NODES = 8192;
+type SnapshotBudget = { remainingNodes: number; remainingChars: number };
+
+function immutableJsonSnapshot(
+  value: unknown,
+  depth = 0,
+  active = new Set<object>(),
+  budget: SnapshotBudget = { remainingNodes: MAX_JSON_NODES, remainingChars: MAX_JSON_CHARS },
+): unknown {
+  if (depth > 12 || --budget.remainingNodes < 0) throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+  // Reject grossly oversized values before enumerating/cloning an attacker-owned tree.
+  // This is a conservative guard; the final UTF-8 JSON byte check remains authoritative.
+  if (typeof value === 'string' && (budget.remainingChars -= value.length) < 0) {
+    throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+  }
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value !== 'object') throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
   if (active.has(value)) throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
   const array = Array.isArray(value);
+  if (array && value.length > MAX_JSON_NODES) throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
   if (Object.getPrototypeOf(value) !== (array ? Array.prototype : Object.prototype)) {
     throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
   }
@@ -32,18 +47,20 @@ function immutableJsonSnapshot(value: unknown, depth = 0, active = new Set<objec
   const snapshot: Record<string, unknown> | unknown[] = array ? [] : {};
   try {
     const keys = Reflect.ownKeys(value);
-    if (array && keys.length !== value.length + 1) throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+    if (keys.length > MAX_JSON_NODES + (array ? 1 : 0) ||
+      (array && keys.length !== value.length + 1)) throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
     for (const key of keys) {
       if (array && key === 'length') continue;
       if (typeof key !== 'string' || (array && !/^(0|[1-9][0-9]*)$/.test(key))) {
         throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
       }
+      if ((budget.remainingChars -= key.length) < 0) throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
         throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
       }
       Object.defineProperty(snapshot, key, {
-        value: immutableJsonSnapshot(descriptor.value, depth + 1, active),
+        value: immutableJsonSnapshot(descriptor.value, depth + 1, active, budget),
         enumerable: true, configurable: false, writable: false,
       });
     }
