@@ -64,11 +64,11 @@ jobs:
       - name: ERP Wave A source audit
         run: npm run audit:erp-ui-wave-a
 
-      - name: Characterization and contract tests
-        run: npm test
-
       - name: REA comparative audit contract tests (offline synthetic evidence)
         run: node --test tests/rea_benchmark_audit.test.mjs
+
+      - name: Characterization and contract tests
+        run: npm test
 
       - name: ERP visual system audit 58 routes
         run: npm run audit:visual:strict
