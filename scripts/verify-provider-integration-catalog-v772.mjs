@@ -28,7 +28,7 @@ export function validateCatalog(data) {
   requireTrue(data?.schemaVersion === 1, 'SCHEMA_VERSION');
   requireTrue(data?.sourceReuse === 'NONE', 'SOURCE_REUSE');
   requireTrue(data?.runtimeEnabled === false && data?.status === 'RESEARCH_ONLY', 'RUNTIME_MUST_REMAIN_DISABLED');
-  requireTrue(/^\d{40}$/.test(data?.baselineSha ?? ''), 'BASELINE_SHA');
+  requireTrue(/^[a-f0-9]{40}$/.test(data?.baselineSha ?? ''), 'BASELINE_SHA');
   requireTrue(data?.ownership?.issue === 772 && typeof data?.ownership?.apiContract === 'string', 'CONTRACT_AUTHORITY');
   const c = data?.contract;
   requireTrue(c?.version === 'integration-port-v1', 'CONTRACT_VERSION');
