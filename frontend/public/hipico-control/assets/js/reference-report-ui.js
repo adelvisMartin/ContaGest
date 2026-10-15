@@ -33,7 +33,7 @@ function warning(model) {
   return `<div class="notice" role="alert">Atención: ${count(model.invalidReferences)} registro(s) con referencias fuera del grupo. No se presentan ni se incluyen en los totales del informe; revisa su origen antes de cerrar.</div>`;
 }
 
-function controls(workspace, model, type, participantId) {
+function controls(workspace, model, type, participantId, presentation = {}) {
   const members = (workspace.participants || []).filter((item) =>
     String(item.groupId || (workspace.config.groups || [])[0]?.id) === model.groupId
   );
@@ -49,7 +49,7 @@ function controls(workspace, model, type, participantId) {
       <div class="reference-report__actions">
         <button class="button button--primary" type="submit">Ver</button>
         <button class="button" type="button" data-action="reference-report-today" aria-label="Mostrar jornada de hoy (Venezuela)">Hoy</button>
-        <button class="button" type="button" data-action="reference-report-refresh" aria-label="Volver a consultar los datos disponibles">Actualizar</button>
+        <button class="button" type="button" data-action="reference-report-refresh" aria-label="Volver a consultar los datos disponibles" ${presentation.busy ? 'disabled aria-busy="true"' : ''}>${presentation.busy ? 'Consultando…' : 'Actualizar'}</button>
         ${type === "race-history" ? `<button class="button" type="button" data-action="reference-report-switch" data-target="daily-movements">Movimientos</button>` : type === "daily-movements" ? `<button class="button" type="button" data-action="reference-report-switch" data-target="race-history">Carreras</button>` : ""}
       </div>
     </div>
@@ -223,7 +223,7 @@ export function renderReferenceReport(workspace, filter, presentation = {}) {
       <div class="page-actions"><button class="button" data-action="copy-reference-report" type="button">Copiar resumen</button>
       <button class="button" data-action="export-reference-report-pdf" type="button">PDF</button></div>
     </div>
-    ${controls(workspace,model,type,filter.participantId)}
+    ${controls(workspace,model,type,filter.participantId,presentation)}
     ${warning(model)}
     <p role="status" class="reference-report__sync-status">${label(presentation.status || "Datos del espacio de trabajo local.")}${presentation.checkedAt ? ` · Consulta ${label(presentation.checkedAt)}` : ""}</p>
     <div class="reference-report__content section-gap">
