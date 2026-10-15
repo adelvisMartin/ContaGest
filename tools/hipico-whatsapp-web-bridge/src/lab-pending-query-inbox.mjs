@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { normalizeGroupId, extractGroupIds } from './group-identity.mjs';
@@ -156,12 +157,37 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     }
     const stat=await fs.lstat(keyFile);
     if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==32)throw new Error('LAB_PENDING_KEY_INVALID');
-    // Private AES key material must never be readable by other users on POSIX.
-    // Windows mode bits do not represent NTFS ACLs; validate those during physical QA.
     if(process.platform!=='win32' && (stat.mode & 0o077)!==0){
       throw new Error('LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
     }
-    return await fs.readFile(keyFile);
+    // The previous path lstat cannot authorize a second read by pathname:
+    // another process could replace inbox.key between the check and read.
+    // Pin the actual opened file, reject symlinks on POSIX and validate its
+    // identity/permissions using the opened descriptor before reading bytes.
+    let handle;
+    try{
+      const flags=fsConstants.O_RDONLY |
+        (process.platform==='win32'?0:fsConstants.O_NOFOLLOW);
+      try{handle=await fs.open(keyFile,flags);}
+      catch(error){
+        if(error?.code==='ELOOP')throw new Error('LAB_PENDING_KEY_INVALID');
+        throw error;
+      }
+      const opened=await handle.stat();
+      if(!opened.isFile()||opened.size!==32||
+         (process.platform!=='win32'&&(opened.dev!==stat.dev||opened.ino!==stat.ino))){
+        throw new Error('LAB_PENDING_KEY_INVALID');
+      }
+      // Windows mode bits are not NTFS ACLs; verify those during physical QA.
+      if(process.platform!=='win32' && (opened.mode & 0o077)!==0){
+        throw new Error('LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
+      }
+      const bytes=await handle.readFile();
+      if(bytes.length!==32)throw new Error('LAB_PENDING_KEY_INVALID');
+      return bytes;
+    }finally{
+      await handle?.close();
+    }
   }
   async function lockOwner(){
     const myToken=crypto.randomUUID();
