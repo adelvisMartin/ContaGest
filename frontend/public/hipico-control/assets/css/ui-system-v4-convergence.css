@@ -214,3 +214,31 @@ body:has(.ops-root[data-ops-authorized="true"]) .hc-help-trigger {
     animation: none !important;
   }
 }
+
+
+/* Authenticated Hípico reference reports use the existing v4 design authority. */
+.reference-report { min-width: 0; display: grid; gap: 14px; }
+.reference-report__filters .card__body {
+  display: flex; flex-wrap: wrap; align-items: end; gap: 12px;
+}
+.reference-report__filters .field { flex: 1 1 200px; min-width: 0; }
+.reference-report__filters :is(.input, .select, .button) { min-height: var(--hc-v4-control); }
+.reference-report__content { display: grid; gap: 14px; min-width: 0; }
+.reference-report__kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.reference-report__kpis > div { padding: 12px; border: 1px solid var(--hc-border); border-radius: var(--hc-v4-radius-md); min-width: 0; }
+.reference-report__kpis small { display: block; color: var(--hc-text-muted); }
+.reference-report__kpis strong { display: block; margin-top: 6px; font-size: 1.12rem; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.reference-report__section { margin: 10px 0; font-size: 1rem; }
+.reference-report__race { margin-bottom: 12px; min-width: 0; }
+.reference-report__race .card__head { flex-wrap: wrap; min-width: 0; }
+.reference-report__race .card__head > div { min-width: 0; }
+.reference-report__race .card__head small { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+.reference-report__race .table-wrap { max-width: 100%; overflow-x: auto; }
+.reference-report__race th, .reference-report__race td { text-align: start; }
+.reference-report__cancelled { opacity: .75; }
+.reference-report .responsive-records article { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .reference-report__kpis { grid-template-columns: 1fr; }
+  .reference-report__filters .field, .reference-report__filters .button { flex-basis: 100%; }
+  .reference-report__filters :is(.input, .select, .button) { min-height: var(--hc-v4-touch); }
+}
