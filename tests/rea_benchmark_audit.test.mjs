@@ -107,5 +107,5 @@ test('report refuses capture traversal or symlink escaping private folder', asyn
   await writeFile(fx.input, JSON.stringify(fx.manifest));
   const result = run('report', '--input', fx.input, '--out', fx.output);
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /escapes the audit directory/);
+  assert.match(result.stderr, /capture must be a regular file inside the audit folder/);
 });
