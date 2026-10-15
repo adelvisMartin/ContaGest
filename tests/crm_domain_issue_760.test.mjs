@@ -211,3 +211,30 @@ test('CRM conflict verdict reveals only opaque IDs, not fiscal identities or ema
   assert.equal(result.status,'BLOCKED');
   assert.doesNotMatch(JSON.stringify(result),/lead@example|J123456789|V123456789/);
 });
+
+
+test('matching email with malformed legacy Client RIF fails closed for fiscal identity',()=>{
+ const verdict=assessClientConversion({
+  tenantId:'A',lead:{rif:'J-12345678-9',email:'shared@example.com'},
+  clients:[{id:'legacy-client',tenantId:'A',rif:'legacy-unparsed',email:'shared@example.com'}]
+ });
+ assert.deepEqual(verdict,{status:'BLOCKED',reason:'UNVERIFIABLE_CLIENT_RIF',candidates:['legacy-client']});
+ assert.ok(Object.isFrozen(verdict.candidates));
+ assert.doesNotMatch(JSON.stringify(verdict),/legacy-unparsed|shared@example/);
+});
+
+test('invalid legacy RIF of unrelated tenant or disabled Client cannot block prospect',()=>{
+ const verdict=assessClientConversion({
+  tenantId:'A',lead:{rif:'J-12345678-9',email:'shared@example.com'},
+  clients:[
+   {id:'another-company',tenantId:'B',rif:'legacy-unparsed',email:'shared@example.com'},
+   {id:'disabled-client',tenantId:'A',rif:'legacy-unparsed',email:'shared@example.com',active:false}
+  ]
+ });
+ assert.deepEqual(verdict,{status:'REVIEW_NEW',reason:'NO_EXISTING_CLIENT_MATCH',candidates:[]});
+});
+
+test('a no-match tax identity cannot be approved by fiscal preflight',()=>{
+ const r=assessClientConversion({tenantId:'A',lead:{rif:'J-12345678-9'},clients:[]});
+ assert.deepEqual(r,{status:'REVIEW_NEW',reason:'NO_EXISTING_CLIENT_MATCH',candidates:[]});
+});
