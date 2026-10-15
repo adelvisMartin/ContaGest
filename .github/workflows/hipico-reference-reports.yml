@@ -1,0 +1,38 @@
+name: Control Hípico reference reports — synthetic contracts
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/public/hipico-control/assets/js/reference-report-*.js'
+      - 'frontend/public/hipico-control/assets/js/app.js'
+      - 'frontend/public/hipico-control/assets/css/ui-system-v4-convergence.css'
+      - 'tests/hipico_reference_report_projections.test.mjs'
+      - 'docs/hipico/REFERENCE_REPORTS_2026-10-15.md'
+      - '.github/workflows/hipico-reference-reports.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Validate reporting module syntax
+        run: |
+          node --check frontend/public/hipico-control/assets/js/app.js
+          node --check frontend/public/hipico-control/assets/js/reference-report-projections.js
+          node --check frontend/public/hipico-control/assets/js/reference-report-ui.js
+      - name: Read-only reports — isolation and math contracts
+        run: node --test tests/hipico_reference_report_projections.test.mjs
