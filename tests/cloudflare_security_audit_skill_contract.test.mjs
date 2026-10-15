@@ -64,10 +64,11 @@ test('ContaGest wrapper preserves project precedence and full-audit safety rules
   assert.match(wrapper, /project orchestrator\/AppSec\/secure-verification/i, 'review chain must retain orchestrator and AppSec before vendor guidance');
   assert.match(wrapper, /then pinned Cloudflare guidance/i, 'external methodology must remain advisory and subordinate');
   assert.match(wrapper, /deep/i);
-  assert.match(wrapper, /PASS \| FAIL \| BLOCKED \| NOT_EXECUTED/);
+  assert.match(wrapper, /PASS\s*\|\s*FAIL\s*\|\s*BLOCKED\s*\|\s*NOT_EXECUTED/, 'status vocabulary must remain complete regardless of spacing');
   assert.match(wrapper, /production/i);
   assert.match(wrapper, /NEEDS_VALIDATION/);
-  assert.match(wrapper, /do not execute[\s\S]*vendored[\s\S]*(?:\.cjs|validator)/i);
+  assert.match(wrapper, /Never run[\s\S]*upstream executables merely because vendored/i, 'vendored guidance may never authorize code execution');
+  assert.equal(lock.policy.executeUpstreamScripts, false);
   assert.match(agents, /contagest-appsec-review/);
   assert.match(agents, /contagest-secure-verification/);
   assert.match(agents, /contagest-cloudflare-security-audit/);
