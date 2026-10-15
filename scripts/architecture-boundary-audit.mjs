@@ -1,3 +1,4 @@
+import {auditOwnership} from './architecture-ownership-audit-v653.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -291,6 +292,9 @@ function isDirectRun() {
 
 if (isDirectRun()) {
   const result = auditRepositoryArchitecture(process.cwd());
+  const ownership = auditOwnership(process.cwd());
+  result.errors.push(...ownership.findings);
+  result.ok = result.ok && ownership.ok;
   console.log(`Architecture audit: runtime=${result.runtimeRouteCount} visual=${result.visualRouteCount} manifest=${result.routeManifestEntries ?? 0} backendFiles=${result.backendFilesScanned ?? 0}`);
   if (!result.ok) {
     for (const error of result.errors) console.error(`- ${error}`);

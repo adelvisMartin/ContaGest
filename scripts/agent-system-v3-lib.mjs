@@ -11,11 +11,11 @@ const ROUTES=Object.freeze({
   database:{agents:['dbre','backend-api','qa-release'],skills:['contagest-erp-orchestrator','contagest-db-migration-safety','contagest-tenant-isolation-rbac','contagest-bcp-dr']},
   finance:{agents:['accounting','dbre','qa-release'],skills:['contagest-erp-orchestrator','contagest-accounting-integrity','contagest-tenant-isolation-rbac','contagest-release-evidence']},
   'auth-security':{agents:['appsec-iam','backend-api','qa-release'],skills:['contagest-erp-orchestrator','contagest-tenant-isolation-rbac','contagest-appsec-review','contagest-secure-verification']},
-  backend:{agents:['backend-api','qa-release'],skills:['contagest-erp-orchestrator','contagest-secure-verification','contagest-release-evidence']},
+  backend:{agents:['backend-api','integration-contracts','qa-release'],skills:['contagest-erp-orchestrator','contagest-secure-verification','contagest-release-evidence','contagest-api-contract-design']},
   'frontend-ui':{agents:['frontend-pwa-ux','qa-release'],skills:['contagest-erp-orchestrator','contagest-ui-audit','contagest-functional-module-audit']},
-  qa:{agents:['qa-release'],skills:['contagest-erp-orchestrator','contagest-systematic-debugging','contagest-release-evidence']},
+  qa:{agents:['qa-release','ci-triage'],skills:['contagest-erp-orchestrator','contagest-systematic-debugging','contagest-release-evidence','contagest-ci-triage']},
   release:{agents:['qa-release','appsec-iam'],skills:['contagest-erp-orchestrator','contagest-release-evidence','contagest-secure-verification','contagest-bcp-dr']},
-  hipico:{agents:['hipico-reliability','appsec-iam','qa-release'],skills:['contagest-erp-orchestrator','contagest-systematic-debugging','contagest-secure-verification','contagest-release-evidence']},
+  hipico:{agents:['hipico-reliability','hipico-lab-operations','appsec-iam','qa-release'],skills:['contagest-erp-orchestrator','contagest-hipico-lab-operations','contagest-secure-verification','contagest-release-evidence']},
   clinical:{agents:['frontend-pwa-ux','backend-api','appsec-iam','qa-release'],skills:['contagest-erp-orchestrator','contagest-functional-module-audit','contagest-tenant-isolation-rbac','contagest-appsec-review']},
   architecture:{agents:['orchestrator','qa-release'],skills:['contagest-erp-orchestrator','contagest-systematic-debugging','contagest-release-evidence']}
 });
@@ -27,7 +27,12 @@ const INTENT_SKILLS=Object.freeze({
   'ui-polish':'contagest-impeccable',
   'apple-design-review':'contagest-apple-design',
   'architecture-diagram':'contagest-archify',
-  copywriting:'contagest-copywriting'
+  copywriting:'contagest-copywriting',
+  'simplicity-review':'contagest-simplicity-review',
+  'code-review':'contagest-code-review-quality',
+  'api-design':'contagest-api-contract-design',
+  'ci-triage':'contagest-ci-triage',
+  'hipico-lab-review':'contagest-hipico-lab-operations'
 });
 const DIMENSION_ORDER=policy.evidence.dimensions;
 const uniq=(values)=>[...new Set(values.filter(Boolean))];
@@ -70,7 +75,11 @@ export function routeTask({risk='P2',type='feature',domains=[],boundaries=[],int
   if(!selected.length)throw new Error(`AGENT_ROUTE_AMBIGUOUS no route for domains: ${canonical.join(',')}`);
   const agents=uniq(selected.flatMap((route)=>route.agents));
   let skills=uniq(selected.flatMap((route)=>route.skills)).filter((id)=>activeSkills.has(id));
-  if(type==='bugfix'||type==='incident')skills=uniq(['contagest-systematic-debugging',...skills]);
+  if(type==='bugfix'||type==='incident'){
+    skills=uniq(['contagest-systematic-debugging',...skills]);
+    // Prioritize the incident's release/security/debugging skills within the 4-skill cap.
+    if(canonical.includes('hipico'))skills=skills.filter((id)=>id!=='contagest-hipico-lab-operations');
+  }
   if((risk==='P0'||risk==='P1')&&!skills.includes('contagest-release-evidence'))skills.push('contagest-release-evidence');
   if(!skills.includes('contagest-erp-orchestrator'))skills.unshift('contagest-erp-orchestrator');
   const score=(id)=>{

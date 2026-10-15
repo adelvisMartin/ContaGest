@@ -1,3 +1,5 @@
+> **SUPERSEDED AUTHORITY: AGENTS.md.** Este documento conserva lineamientos históricos de v11.15 para consulta; la autoridad actual de CSS, tokens, estructura y accesibilidad es [`AGENTS.md`](../AGENTS.md). No usar estas pautas para introducir estilos alternativos.
+
 # ContaGest-VE — Style Guide v11.15
 
 ## Propósito

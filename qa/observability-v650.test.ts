@@ -78,6 +78,11 @@ test('issue #650 expected errors expose bounded details and correlation', () => 
 
   assert.equal(statusCode, 409);
   assert.equal(body.code, 'BUSINESS_CONFLICT');
+  assert.equal(body.type, 'urn:contagest:problem:business_conflict');
+  assert.equal(body.title, 'Conflicto');
+  assert.equal(body.status, 409);
+  assert.equal(body.detail, 'Conflicto de negocio.');
+  assert.equal(body.message, body.detail);
   assert.equal(body.requestId, 'qa-request-650-http-error');
   assert.equal(body.correlationId, 'qa-correlation-650-http-error');
   assert.equal(body.details.code, 'BUSINESS_CONFLICT');
@@ -85,7 +90,9 @@ test('issue #650 expected errors expose bounded details and correlation', () => 
   assert.equal(body.details.password, '[REDACTED]');
   assert.equal(body.details.reason, 'password=[REDACTED]');
   assert.equal(logged.correlationId, 'qa-correlation-650-http-error');
-  assert.doesNotMatch(JSON.stringify({ body, logged }), /SENSITIVE_SENTINEL_650|password=/i);
+  // The label password=[REDACTED] is safe; only cleartext password assignments may leak.
+  assert.doesNotMatch(JSON.stringify({ body, logged }), /SENSITIVE_SENTINEL_650/i);
+  assert.doesNotMatch(JSON.stringify({ body, logged }), /password=(?!\[REDACTED\])/i);
 });
 
 test('issue #650 observed jobs share correlation and never serialize sensitive values or thrown error messages', async () => {
@@ -113,7 +120,8 @@ test('issue #650 observed jobs share correlation and never serialize sensitive v
   assert.equal(records[1].fields.processed, 3);
   assert.equal(records[1].fields.reason, 'password=[REDACTED]');
   assert.equal('password' in records[1].fields, false);
-  assert.doesNotMatch(JSON.stringify(records), /SENSITIVE_SENTINEL_650|password=/i);
+  assert.doesNotMatch(JSON.stringify(records), /SENSITIVE_SENTINEL_650/i);
+  assert.doesNotMatch(JSON.stringify(records), /password=(?!\[REDACTED\])/i);
 
   records.length = 0;
   await assert.rejects(observeJob('qa650.job.failure', async () => {

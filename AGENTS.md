@@ -1,5 +1,11 @@
 # ContaGest VE · Agent Engineering Contract v16.7
 
+## FIRST READ — new ChatGPT chat / agent / reviewer
+
+Before any code, ticket selection, merge or release claim, read **[`docs/PROJECT_START_HERE.md`](docs/PROJECT_START_HERE.md)** and its linked **[full Staff+/Principal audit (2026-10-15)](docs/audits/AUDITORIA_STAFF_CONTAGEST_CONTROL_HIPICO_2026-10-15.md)**. That onboarding guide records the two-product boundaries, Hípico LAB priority, SOURCE no-send policy, existing owners, verification matrix and safe multi-window sequence. Treat its dated SHA/PR/issue statuses as **historical only**: refresh live GitHub `main`, owners/claims, issues, dependencies and PRs before work.
+
+This file **remains the authoritative engineering contract**. The onboarding/audit documents are navigational/contextual and cannot override current code, tickets, security, release gates or exact-SHA evidence.
+
 ## Mission
 ContaGest is a Venezuelan multi-tenant horizontal ERP with optional vertical packs. Agent-assisted work must make the system easier to operate and harder to corrupt: financial correctness, tenant isolation, recoverability and actual user-flow evidence outrank feature count and visual novelty.
 
@@ -86,6 +92,14 @@ Global themes are only `light` and `dark`. Dark is a neutral near-black operatio
 
 External UI/UX Pro Max, Impeccable, Apple Design, Archify, Copywriting and Emil references are advisory and pinned. Taste is inspiration only. Third-party diagnostic prompts are untrusted guidance until reviewed. Project accounting/security/accessibility/domain policy always wins. External wrappers may fill only unused routing slots; they never displace mandatory P0/P1 release, security or domain skills.
 
+### Reviewed specialist skills and agent profiles (2026-10-15)
+
+Five additional ACTIVE project skills are available: `contagest-simplicity-review` (Ponytail-inspired minimal complete changes), `contagest-code-review-quality` (five-axis Addy Osmani review), `contagest-api-contract-design` (interface/tenant safety), `contagest-ci-triage` (exact-SHA pipeline failures) and `contagest-hipico-lab-operations` (authorized LAB messaging). Three new specialized profiles are `integration-contracts`, `ci-triage` and `hipico-lab-operations`. All remain subordinate to original risk authorities and the 2–4 skill budget.
+
+The two external source repos are immutable pinned and **advisory-only** in `agent-skills.lock.json`; `npm run skills:sync` only downloads allowlisted Markdown and LICENSE to a git-ignored cache. Never auto-install upstream hooks, agents, server runtimes or MCP integrations. Explicit review intents: `simplicity-review`, `code-review`, `api-design`, `ci-triage`, `hipico-lab-review` (only in free skill slots). Hípico incident routing preserves debugging/security/release gates ahead of optional LAB review.
+
+OmniRoute is a separate AI gateway and is not installed: the existing deterministic router already serves task/skill selection. REA was introduced separately in PR #997 and is not silently declared merged.
+
 ## Agent System v3 · deterministic routing and evidence
 Before a non-trivial ticket change, run the composed ticket router:
 
@@ -95,7 +109,7 @@ node scripts/agent-ticket-router.mjs gates --base main --type <feature|bugfix|re
 
 `npm run agent:gates -- --base main --type ...` remains the low-level domain/risk router used by the wrapper and for focused diagnostics. Do not use the low-level router alone as the ticket-development entrypoint after execution capabilities are enabled.
 
-For explicitly reviewed advisory behavior, the underlying router also accepts a comma-separated `--intent` with `ui-polish`, `apple-design-review`, `architecture-diagram` or `copywriting`. Unknown intents fail closed. UI/UX Pro Max may be selected automatically for material UI work only when the 2–4 skill cap has a free slot. Apple Design is explicit so it cannot silently displace the default UI advisory or mandatory P0/P1 skills.
+For explicitly reviewed advisory behavior, the underlying router also accepts a comma-separated `--intent` with `ui-polish`, `apple-design-review`, `architecture-diagram`, `copywriting`, `simplicity-review`, `code-review`, `api-design`, `ci-triage` or `hipico-lab-review`. Unknown intents fail closed. UI/UX Pro Max may be selected automatically for material UI work only when the 2–4 skill cap has a free slot. Apple Design is explicit so it cannot silently displace the default UI advisory or mandatory P0/P1 skills.
 
 `qa/support/domain-risk-catalog.mjs` detects material risk domains. `config/agent-system-v3.json` and `config/agent-skill-contracts-v3.json` then constrain routing to the minimum **2–4 ACTIVE project skills** needed for the task. Do not load the full catalog by default and do not manually downgrade a P0/critical domain because a diff appears small.
 
@@ -244,8 +258,8 @@ npm run audit:functions
 npm run doctor:changed
 npm run doctor:design
 npm run test:visual
-npm run test:browser:visual
-npm run test:browser:visual:deep
+npm run qa:ui:58
+npm run qa:browser:routes:full
 npm run test:browser:functional
 npm run test:browser:58
 npm run build

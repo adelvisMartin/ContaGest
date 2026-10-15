@@ -62,6 +62,15 @@ export type StorageObjectRow = {
 
 const PROTECTED_ENTITIES = new Set(['AuditLog', 'LedgerEntry', 'FiscalDocument', 'FiscalCloseEvidence', 'ClinicalMediaObject', 'CarePatient']);
 const PURGE_ADAPTER_ENTITIES = new Set(['AnalyticsEvent', 'ImportBatch', 'NotificationLog', 'AddressGeocode']);
+// Fail closed before a destructive SQL statement. PostgreSQL LIMIT must never
+// receive NaN/fractions/unsafe numbers, even if a caller bypasses HTTP validation.
+function normalizePurgeBatchSize(value: number | undefined): number {
+  if (value === undefined) return 250;
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new HttpError(422, 'batchSize de purge debe ser un entero positivo.', { code: 'PURGE_BATCH_SIZE_INVALID' });
+  }
+  return Math.min(value, 1000);
+}
 
 function canonicalize(value: unknown): unknown {
   if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return value;
@@ -100,8 +109,13 @@ export async function createRetentionPolicyVersion(input: {
   }
 
   return prisma.$transaction(async (tx) => {
+    // Serialize policy changes with purge batches and legal holds of this tenant.
+    // Acquire tenant lock before the narrower entity/version lock everywhere.
     await tx.$queryRaw(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${`${input.tenantId}:${input.entityType}`}, 562))
+      SELECT 1::integer AS "lockAcquired" FROM pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 562))
+    `);
+    await tx.$queryRaw(Prisma.sql`
+      SELECT 1::integer AS "lockAcquired" FROM pg_advisory_xact_lock(hashtextextended(${`${input.tenantId}:${input.entityType}`}, 562))
     `);
     const versions = await tx.$queryRaw<Array<{ version: number }>>(Prisma.sql`
       SELECT COALESCE(MAX("version"), 0)::integer AS "version"
@@ -136,8 +150,13 @@ export async function listRetentionPolicies(tenantId: string, entityType?: strin
   `);
 }
 
-export async function resolveRetentionPolicy(tenantId: string, entityType: string, at = new Date()) {
-  const rows = await prisma.$queryRaw<RetentionPolicyRow[]>(Prisma.sql`
+export async function resolveRetentionPolicy(
+  tenantId: string,
+  entityType: string,
+  at = new Date(),
+  db: Pick<Prisma.TransactionClient, '$queryRaw'> = prisma
+) {
+  const rows = await db.$queryRaw<RetentionPolicyRow[]>(Prisma.sql`
     SELECT *
     FROM public."DataRetentionPolicyVersion"
     WHERE "entityType" = ${entityType}
@@ -161,15 +180,22 @@ export async function createLegalHold(input: {
   createdBy?: string | null;
 }) {
   const id = randomUUID();
-  const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
+  return prisma.$transaction(async (tx) => {
+    // Serialize newly-created tenant/entity/record holds against a running purge.
+    // This lock covers all lifecycle classes for this tenant, intentionally.
+    await tx.$queryRaw(Prisma.sql`
+      SELECT 1::integer AS "lockAcquired" FROM pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 562))
+    `);
+    const rows = await tx.$queryRaw<any[]>(Prisma.sql`
     INSERT INTO public."DataLegalHold" (
       "id", "tenantId", "scopeType", "entityType", "recordId", "reason", "authorizationRef", "createdBy"
     ) VALUES (
       ${id}::uuid, ${input.tenantId}::uuid, ${input.scopeType}, ${input.entityType || null}, ${input.recordId || null},
       ${input.reason}, ${input.authorizationRef}, ${input.createdBy || null}
     ) RETURNING *
-  `);
-  return rows[0];
+    `);
+    return rows[0];
+  });
 }
 
 export async function listLegalHolds(tenantId: string, activeOnly = true) {
@@ -208,8 +234,13 @@ export async function releaseLegalHold(input: {
   });
 }
 
-export async function assertNoLegalHold(tenantId: string, entityType: string, recordId?: string | null) {
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+export async function assertNoLegalHold(
+  tenantId: string,
+  entityType: string,
+  recordId?: string | null,
+  db: Pick<Prisma.TransactionClient, '$queryRaw'> = prisma
+) {
+  const rows = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT "id"
     FROM public."DataLegalHold"
     WHERE "tenantId" = ${tenantId}::uuid
@@ -310,7 +341,7 @@ export async function requestPurgeJob(input: {
     throw new HttpError(422, 'La política vigente no autoriza purge o no define retentionDays.', { code: 'RETENTION_NOT_CONFIGURED', entityType: input.entityType });
   }
   await assertNoLegalHold(input.tenantId, input.entityType);
-  const batchSize = Math.min(Math.max(Number(input.batchSize || 250), 1), 1000);
+  const batchSize = normalizePurgeBatchSize(input.batchSize);
   return claimLifecycleJob({
     tenantId: input.tenantId,
     operation: 'purge',
@@ -322,9 +353,11 @@ export async function requestPurgeJob(input: {
   });
 }
 
-async function deletePurgeableRows(tenantId: string, entityType: string, cutoff: Date, batchSize: number) {
+async function deletePurgeableRows(
+  tx: Prisma.TransactionClient, tenantId: string, entityType: string, cutoff: Date, batchSize: number
+) {
   if (entityType === 'AnalyticsEvent') {
-    return prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    return tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       WITH target AS (
         SELECT "id" FROM public."AnalyticsEvent"
         WHERE "tenantId" = ${tenantId}::uuid AND "createdAt" < ${cutoff}
@@ -337,7 +370,7 @@ async function deletePurgeableRows(tenantId: string, entityType: string, cutoff:
     `);
   }
   if (entityType === 'ImportBatch') {
-    return prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    return tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       WITH target AS (
         SELECT "id" FROM public."ImportBatch"
         WHERE "tenantId" = ${tenantId}::uuid AND "createdAt" < ${cutoff}
@@ -350,7 +383,7 @@ async function deletePurgeableRows(tenantId: string, entityType: string, cutoff:
     `);
   }
   if (entityType === 'NotificationLog') {
-    return prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    return tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       WITH target AS (
         SELECT "id" FROM public."NotificationLog"
         WHERE "tenantId" = ${tenantId}::uuid AND "createdAt" < ${cutoff}
@@ -363,7 +396,7 @@ async function deletePurgeableRows(tenantId: string, entityType: string, cutoff:
     `);
   }
   if (entityType === 'AddressGeocode') {
-    return prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    return tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       WITH target AS (
         SELECT "id" FROM public."AddressGeocode"
         WHERE "tenantId" = ${tenantId}::uuid AND "createdAt" < ${cutoff}
@@ -378,7 +411,7 @@ async function deletePurgeableRows(tenantId: string, entityType: string, cutoff:
   throw new HttpError(422, 'Adapter de purge no disponible.', { code: 'PURGE_ADAPTER_MISSING', entityType });
 }
 
-async function persistLifecycleEvidence(input: {
+async function persistLifecycleEvidence(tx: Prisma.TransactionClient, input: {
   tenantId: string;
   jobId: string;
   action: string;
@@ -397,7 +430,7 @@ async function persistLifecycleEvidence(input: {
     recordCount: input.ids.length,
     details: input.details
   });
-  await prisma.$executeRaw(Prisma.sql`
+  await tx.$executeRaw(Prisma.sql`
     INSERT INTO public."DataLifecycleEvidence" (
       "tenantId", "jobId", "action", "entityType", "subjectDigest", "recordCount", "details", "evidenceHash"
     ) VALUES (
@@ -409,41 +442,84 @@ async function persistLifecycleEvidence(input: {
 }
 
 export async function executePurgeBatch(input: { tenantId: string; jobId: string; batchSize?: number }) {
-  const job = await resumeLifecycleJob(input.tenantId, input.jobId);
-  if (job.status === 'completed') return job;
-  const entityType = job.entityType || '';
-  const batchSize = Math.min(Math.max(Number(input.batchSize || 250), 1), 1000);
-
+  // A transaction is the deletion authority: DELETE, hashed evidence and
+  // job progress either all commit, or none of them do.
+  const batchSize = normalizePurgeBatchSize(input.batchSize);
+  let executionAuthorized = false;
+  let observedAttempts: number | null = null;
   try {
-    const policy = await resolveRetentionPolicy(input.tenantId, entityType);
-    if (!policy.purgeable || policy.retentionDays == null) {
-      throw new HttpError(422, 'La política vigente ya no autoriza purge.', { code: 'RETENTION_NOT_CONFIGURED', entityType });
-    }
-    await assertNoLegalHold(input.tenantId, entityType);
-    const cutoff = new Date(Date.now() - policy.retentionDays * 86_400_000);
-    const deleted = await deletePurgeableRows(input.tenantId, entityType, cutoff, batchSize);
-    const details = { cutoff: cutoff.toISOString(), batchSize, policyId: policy.id, policyHash: policy.contentHash };
-    const evidence = await persistLifecycleEvidence({ tenantId: input.tenantId, jobId: job.id, action: 'purge', entityType, ids: deleted.map((row) => String(row.id)), details });
-    const completed = deleted.length < batchSize;
-    const result = { deletedCount: deleted.length, ...evidence, ...details };
-    const rows = await prisma.$queryRaw<LifecycleJobRow[]>(Prisma.sql`
-      UPDATE public."DataLifecycleJob"
-      SET "status" = ${completed ? 'completed' : 'pending'},
-          "cursor" = ${JSON.stringify({ lastRunAt: new Date().toISOString(), deletedCount: deleted.length })}::jsonb,
-          "result" = ${JSON.stringify(result)}::jsonb,
-          "completedAt" = ${completed ? new Date() : null},
-          "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "id" = ${job.id}::uuid AND "tenantId" = ${input.tenantId}::uuid
-      RETURNING *
-    `);
-    return rows[0];
+    return await prisma.$transaction(async (tx) => {
+      // Also used by createLegalHold. A hold arriving during this transaction
+      // must wait and applies to the *next* batch, never to a half-committed one.
+      await tx.$queryRaw(Prisma.sql`
+        SELECT 1::integer AS "lockAcquired" FROM pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 562))
+      `);
+      const jobs = await tx.$queryRaw<LifecycleJobRow[]>(Prisma.sql`
+        SELECT * FROM public."DataLifecycleJob"
+        WHERE "id" = ${input.jobId}::uuid AND "tenantId" = ${input.tenantId}::uuid
+        FOR UPDATE
+      `);
+      const job = jobs[0];
+      if (!job) throw new HttpError(404, 'Job de lifecycle no encontrado en el tenant.');
+      if (job.status === 'completed') return job;
+      if (job.status === 'blocked') {
+        throw new HttpError(423, 'El job está bloqueado y requiere resolver sus prechecks.', { code: 'LIFECYCLE_JOB_BLOCKED' });
+      }
+      if (job.operation !== 'purge' || !job.entityType || !PURGE_ADAPTER_ENTITIES.has(job.entityType)) {
+        throw new HttpError(422, 'El job no pertenece a un adapter de purge permitido.', { code: 'PURGE_ADAPTER_MISSING' });
+      }
+      executionAuthorized = true;
+      observedAttempts = job.attempts;
+      const entityType = job.entityType;
+      const policy = await resolveRetentionPolicy(input.tenantId, entityType, new Date(), tx);
+      if (!policy.purgeable || policy.retentionDays == null) {
+        throw new HttpError(422, 'La política vigente ya no autoriza purge.', { code: 'RETENTION_NOT_CONFIGURED', entityType });
+      }
+      await assertNoLegalHold(input.tenantId, entityType, null, tx);
+      const cutoff = new Date(Date.now() - policy.retentionDays * 86_400_000);
+      const deleted = await deletePurgeableRows(tx, input.tenantId, entityType, cutoff, batchSize);
+      const details = { cutoff: cutoff.toISOString(), batchSize, policyId: policy.id, policyHash: policy.contentHash };
+      const evidence = await persistLifecycleEvidence(tx, {
+        tenantId: input.tenantId, jobId: job.id, action: 'purge', entityType,
+        ids: deleted.map((row) => String(row.id)), details
+      });
+      const completed = deleted.length < batchSize;
+      const result = { deletedCount: deleted.length, ...evidence, ...details };
+      const rows = await tx.$queryRaw<LifecycleJobRow[]>(Prisma.sql`
+        UPDATE public."DataLifecycleJob"
+        SET "status" = ${completed ? 'completed' : 'pending'},
+            "attempts" = "attempts" + 1,
+            "startedAt" = COALESCE("startedAt", CURRENT_TIMESTAMP),
+            "lastError" = NULL,
+            "cursor" = ${JSON.stringify({ lastRunAt: new Date().toISOString(), deletedCount: deleted.length })}::jsonb,
+            "result" = ${JSON.stringify(result)}::jsonb,
+            "completedAt" = ${completed ? new Date() : null},
+            "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${job.id}::uuid AND "tenantId" = ${input.tenantId}::uuid
+        RETURNING *
+      `);
+      return rows[0];
+    }, { timeout: 15_000 });
   } catch (error) {
-    const blocked = error instanceof HttpError && error.details && typeof error.details === 'object' && (error.details as any).code === 'LEGAL_HOLD_ACTIVE';
-    await prisma.$executeRaw(Prisma.sql`
-      UPDATE public."DataLifecycleJob"
-      SET "status" = ${blocked ? 'blocked' : 'failed'}, "lastError" = ${error instanceof Error ? error.message.slice(0, 1000) : 'unknown error'}, "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "id" = ${job.id}::uuid AND "tenantId" = ${input.tenantId}::uuid
-    `);
+    // Aborted transactions roll back the DELETE and evidence together.
+    // Persist a bounded error *code*, never a raw exception or PII, so retry
+    // remains possible without leaking DB/provider error messages.
+    if (executionAuthorized) {
+      const blocked = error instanceof HttpError &&
+        error.details && typeof error.details === 'object' &&
+        (error.details as { code?: string }).code === 'LEGAL_HOLD_ACTIVE';
+      await prisma.$executeRaw(Prisma.sql`
+        UPDATE public."DataLifecycleJob"
+        SET "status" = ${blocked ? 'blocked' : 'failed'},
+            "lastError" = ${blocked ? 'LEGAL_HOLD_ACTIVE' : 'PURGE_BATCH_FAILED'},
+            "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${input.jobId}::uuid
+          AND "tenantId" = ${input.tenantId}::uuid
+          AND "operation" = 'purge'
+          AND "attempts" = ${observedAttempts}
+          AND "status" NOT IN ('completed', 'blocked')
+      `);
+    }
     throw error;
   }
 }

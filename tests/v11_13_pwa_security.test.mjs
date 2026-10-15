@@ -50,7 +50,19 @@ test('PWA install flow and service worker do not cache API data', () => {
   assert.match(sw, /isSensitiveRequest\(url\)\) return/);
   assert.match(sw, /cache:\s*'no-store'/);
   assert.equal(manifest.display, 'standalone');
-  assert.equal(manifest.scope, '/');
+  // A relative scope intentionally confines the PWA to its installation base.
+  // A root-wide scope would broaden control when served under a subpath.
+  assert.equal(manifest.scope, './');
+  assert.equal(manifest.id, './');
+  for (const base of [
+    'https://qa.example.test/manifest.webmanifest',
+    'https://qa.example.test/erp/manifest.webmanifest'
+  ]) {
+    const installRoot = new URL('./', base);
+    assert.equal(new URL(manifest.scope, base).href, installRoot.href);
+    assert.equal(new URL(manifest.start_url, base).pathname, installRoot.pathname);
+    assert.equal(new URL(manifest.id, base).href, installRoot.href);
+  }
 });
 
 test('Vercel production policy denies framing and prevents API/service-worker caching', () => {
