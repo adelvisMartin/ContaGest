@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { prepareAsyncJobIntent, planAsyncJobFailure, assertAsyncJobTenantId } from '../backend/src/modules/jobs/job-intent-policy.ts';
+import { prepareAsyncJobIntent, planAsyncJobFailure, assertAsyncJobTenantId, assertAsyncJobId, assertAsyncJobLeaseToken } from '../backend/src/modules/jobs/job-intent-policy.ts';
 
 const base = () => ({ tenantId: '96a5f951-03ef-44f6-a3de-984e9b29cf52', handlerKey: 'reports.refresh.v1', effectKey: 'report:42', payload: { amount: '0.01', id: '42' }, maxAttempts: 3, runAt: new Date('2026-10-15T15:00:00Z') });
 
@@ -74,7 +74,7 @@ test('fencing tokens are unique per claim and cannot be reused by a restarted wo
   assert.match(code, /"leaseOwner"=\$\{workerId\} \|\| ':' \|\| gen_random_uuid\(\)::text/);
   assert.match(code, /RETURNING j\."id".+j\."leaseOwner"/);
   assert.match(code, /"leaseOwner"=\$\{leaseToken\}/);
-  assert.match(code, /JOB_LEASE_TOKEN_INVALID/);
+  assert.match(code, /assertAsyncJobLeaseToken\(leaseToken\)/);
 });
 
 test('last-attempt expired leases transition to dead-letter only under tenant scope', () => {
@@ -119,8 +119,8 @@ test('heartbeats are fenced by tenant, job ID, unique claim token and live datab
   assert.ok(start > 0 && end > start);
   const heartbeat = code.slice(start, end);
   assert.match(heartbeat, /assertAsyncJobTenantId\(tenantId\)/);
-  assert.match(heartbeat, /JOB_ID_INVALID/);
-  assert.match(heartbeat, /JOB_LEASE_TOKEN_INVALID/);
+  assert.match(heartbeat, /assertAsyncJobId\(id\)/);
+  assert.match(heartbeat, /assertAsyncJobLeaseToken\(leaseToken\)/);
   assert.match(heartbeat, /JOB_LEASE_INVALID/);
   assert.match(heartbeat, /"tenantId"=\$\{tenantId\} AND "id"=\$\{id\}/);
   assert.match(heartbeat, /"status"='running' AND "leaseOwner"=\$\{leaseToken\}/);
@@ -154,4 +154,25 @@ test('read-only tenant job health exposes bounded fields without payload, PII or
   assert.match(health, /statement_timestamp\(\)/);
   assert.match(health, /::text AS "queued"/);
   assert.doesNotMatch(health, /RETURNING|\bUPDATE\b|\bDELETE\b|"payload"|"lastErrorCode"/);
+});
+
+
+test('claim IDs and lease tokens reject malformed values before accessing the database', () => {
+  const jobId = '4b4cb382-e839-4bf0-87c5-ff414cd5c46b';
+  const token = `worker:v2:${jobId}`;
+  assert.doesNotThrow(() => assertAsyncJobId(jobId));
+  assert.doesNotThrow(() => assertAsyncJobLeaseToken(token));
+  for (const id of [undefined, 42, '', '00000000-0000-0000-0000-000000000000', '4b4cb382-e839-4bf0-87c5-ff414cd5c46g']) {
+    assert.throws(() => assertAsyncJobId(id), /JOB_ID_INVALID/);
+  }
+  for (const token of [undefined, null, '', jobId, `:${jobId}`, `worker:${jobId.slice(0,-1)}x`, `worker:${'a'.repeat(36)}`, `worker${'x'.repeat(120)}:${jobId}`]) {
+    assert.throws(() => assertAsyncJobLeaseToken(token), /JOB_LEASE_TOKEN_INVALID/);
+  }
+});
+
+test('completion, failure and heartbeat share exact job and claim token validators', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  assert.equal((code.match(/assertAsyncJobId\(id\);/g) || []).length, 3);
+  assert.equal((code.match(/assertAsyncJobLeaseToken\(leaseToken\);/g) || []).length, 3);
+  assert.doesNotMatch(code, /\[0-9a-f-\]\{36\}/);
 });
