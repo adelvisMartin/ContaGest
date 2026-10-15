@@ -46,6 +46,8 @@ jobs:
         run: npm --workspace backend run typecheck
       - name: API security and authorization HTTP contracts
         run: npx --no-install tsx --test backend/src/modules/hipico/report-share.routes.test.ts
+      - name: Financial report bearer token redaction regressions
+        run: npx --no-install tsx --test backend/src/shared/observability/hipico-report-token-redaction.test.ts
       - name: Static RLS and owner-scope contracts
         run: node --test tests/hipico_report_share_schema_contract.test.mjs
       - name: Canonical ledger account/journal reconciliation contract
