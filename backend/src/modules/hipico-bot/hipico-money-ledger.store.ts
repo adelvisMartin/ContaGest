@@ -126,16 +126,36 @@ export async function appendHipicoLedgerEntry(input:LedgerInput){
 }
 
 export async function reconcileHipicoLedger(ownerId:string,groupKey:string){
-  return prisma.$queryRaw<Array<{participantCode:string;currency:string;balanceMinor:string;sumMinor:string;matches:boolean}>>`
-    SELECT a.participant_code AS "participantCode",a.currency,a.balance_minor::text AS "balanceMinor",
-      COALESCE(SUM(e.amount_minor),0)::text AS "sumMinor",
-      (a.balance_minor=COALESCE(SUM(e.amount_minor),0)) AS matches
-    FROM public.hipico_money_accounts a
-    LEFT JOIN public.hipico_money_ledger_entries e
-      ON e.owner_id=a.owner_id AND e.group_key=a.group_key AND e.participant_code=a.participant_code AND e.currency=a.currency
-    WHERE a.owner_id=${ownerId}::uuid AND a.group_key=${groupKey}
-    GROUP BY a.owner_id,a.group_key,a.participant_code,a.currency,a.balance_minor
-    ORDER BY a.participant_code,a.currency
+  // Both input relations are scoped BEFORE the FULL OUTER JOIN. An account-only
+  // LEFT JOIN hides orphan journal entries and can incorrectly report no drift.
+  // Never seed, edit or delete accounts/ledger as part of this read-only audit.
+  return prisma.$queryRaw<Array<{
+    participantCode:string;currency:string;balanceMinor:string;sumMinor:string;
+    matches:boolean;accountPresent:boolean;ledgerPresent:boolean
+  }>>`
+    WITH scoped_accounts AS (
+      SELECT participant_code,currency,balance_minor
+      FROM public.hipico_money_accounts
+      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
+    ), scoped_journal AS (
+      SELECT participant_code,currency,SUM(amount_minor) AS sum_minor
+      FROM public.hipico_money_ledger_entries
+      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
+      GROUP BY participant_code,currency
+    )
+    SELECT COALESCE(a.participant_code,j.participant_code) AS "participantCode",
+      COALESCE(a.currency,j.currency) AS currency,
+      COALESCE(a.balance_minor,0)::text AS "balanceMinor",
+      COALESCE(j.sum_minor,0)::text AS "sumMinor",
+      (a.participant_code IS NOT NULL
+        AND a.balance_minor=COALESCE(j.sum_minor,0)) AS matches,
+      (a.participant_code IS NOT NULL) AS "accountPresent",
+      (j.participant_code IS NOT NULL) AS "ledgerPresent"
+    FROM scoped_accounts a
+    FULL OUTER JOIN scoped_journal j
+      ON a.participant_code=j.participant_code AND a.currency=j.currency
+    ORDER BY COALESCE(a.participant_code,j.participant_code),
+      COALESCE(a.currency,j.currency)
   `;
 }
 
