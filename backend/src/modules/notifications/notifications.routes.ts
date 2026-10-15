@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
-import { NotificationTemplateError, renderNotificationTemplate, evaluateNotificationQuietHours } from './notification-template-catalog.js';
+import { NotificationTemplateError, renderNotificationTemplate, evaluateNotificationQuietHours, listNotificationTemplateDescriptors } from './notification-template-catalog.js';
 
 const router = Router();
 router.use(requireTenant);
@@ -67,6 +67,11 @@ const previewSchema = z.object({
     at: z.string().datetime({ offset: true })
   }).strict().optional()
 }).strict();
+
+// Tenant + permission gate applies also to catalog metadata. No public or PII data.
+router.get('/templates', requirePermission('sales.manage'), asyncHandler(async (_req, res) => {
+  ok(res, { templates: listNotificationTemplateDescriptors(), queueReady: false });
+}));
 
 router.post('/templates/preview', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
   const payload = previewSchema.parse(req.body || {});
