@@ -201,13 +201,16 @@ test('legal hold activated after claim blocks the destructive job and preserves 
       (error: any) => error?.details?.code === 'LIFECYCLE_JOB_BLOCKED',
     );
   } finally {
-    if (hold) await releaseLegalHold({
-      tenantId: tenantA, holdId: hold.id, authorizationRef: 'qa-release-658',
-      reason: 'Synthetic hold teardown'
-    });
-    await prisma.$executeRawUnsafe(
-      'DELETE FROM public."AnalyticsEvent" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
-      eventId, tenantA,
-    );
+    try {
+      if (hold) await releaseLegalHold({
+        tenantId: tenantA, holdId: hold.id, authorizationRef: 'qa-release-658',
+        reason: 'Synthetic hold teardown'
+      });
+    } finally {
+      await prisma.$executeRawUnsafe(
+        'DELETE FROM public."AnalyticsEvent" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
+        eventId, tenantA,
+      );
+    }
   }
 });
