@@ -75,7 +75,7 @@ function executeStep(step, env) {
   };
 }
 
-export async function runOperationalSmoke({ env = process.env, candidateSha, erpOnly = false, execute = executeStep, withDatabase = withEphemeralDatabase, hipicoSmoke = runHipicoSmoke } = {}) {
+export async function runOperationalSmoke({ env = process.env, candidateSha, erpOnly = false, execute = executeStep, withDatabase = withEphemeralDatabase, hipicoSmoke = runHipicoSmoke, postgresProbe = verifyNativePostgres17, gitContext = resolveGitContext } = {}) {
   const report = {
     schema: 'erp-operational-smoke-v664-v1',
     candidateSha,
@@ -91,7 +91,7 @@ export async function runOperationalSmoke({ env = process.env, candidateSha, erp
       if (!env.HIPICO_SMOKE_BASE_URL) throw new Error('SMOKE_HIPICO_BASE_URL_REQUIRED');
       checkedBaseUrl(env.HIPICO_SMOKE_BASE_URL);
     }
-    const version = verifyNativePostgres17({ adminUrl: admin.toString() });
+    const version = postgresProbe({ adminUrl: admin.toString() });
     report.postgresMajor = version.major;
 
     await withDatabase({ candidateSha, env }, async (databaseEnv, db) => {
@@ -102,7 +102,7 @@ export async function runOperationalSmoke({ env = process.env, candidateSha, erp
         if (result.status !== 'PASS') throw new Error('SMOKE_STEP_FAILED');
       }
       // Prisma generators must not silently change source after the SHA was captured.
-      resolveGitContext({ cwd: process.cwd(), expectedSha: candidateSha, baseRef: env.SMOKE_BASE_SHA || 'origin/main' });
+      gitContext({ cwd: process.cwd(), expectedSha: candidateSha, baseRef: env.SMOKE_BASE_SHA || 'origin/main' });
     });
 
     if (!erpOnly) {
@@ -115,8 +115,14 @@ export async function runOperationalSmoke({ env = process.env, candidateSha, erp
     } else {
       report.stages.push({ id: 'hipico-readonly', status: 'NOT_APPLICABLE', code: 'ERP_ONLY' });
     }
-    report.status = report.stages.some(x => x.status === 'FAIL') ? 'FAIL'
-      : report.stages.some(x => x.status === 'BLOCKED') ? 'BLOCKED' : 'PASS';
+    // A PASS is legal only if every required stage actually passed.
+    // The sole permitted exception is an explicitly scoped ERP-only Hípico stage.
+    const accepted = (stage) => stage.status === 'PASS'
+      || (erpOnly && stage.id === 'hipico-readonly' && stage.status === 'NOT_APPLICABLE');
+    report.status = report.stages.every(accepted) ? 'PASS'
+      : report.stages.some(stage => stage.status === 'FAIL'
+        || !['PASS', 'BLOCKED', 'NOT_EXECUTED', 'NOT_APPLICABLE'].includes(stage.status))
+        ? 'FAIL' : 'BLOCKED';
   } catch (error) {
     const code = String(error?.message || 'SMOKE_UNKNOWN');
     const blocked = /SMOKE_LOCAL_POSTGRES_ADMIN_REQUIRED|SMOKE_HIPICO_BASE_URL_REQUIRED|ZERO_COST_.*(?:REQUIRED|FAILED)|LOCAL_POSTGRES_BLOCKED/.test(code);
