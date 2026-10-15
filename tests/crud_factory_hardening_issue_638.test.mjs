@@ -47,6 +47,9 @@ test('#638: create/update field allowlists reject tenant, system and mass-assign
     { fn: 'assertCrudMutationFields', args: ['client', 'create', { name: 'Cliente', createdAt: 'yesterday' }] },
     { fn: 'assertCrudMutationFields', args: ['client', 'update', { userId: 'superuser' }] },
     { fn: 'assertCrudMutationFields', args: ['supplier', 'update', { role: 'admin' }] },
+    { fn: 'assertCrudMutationFields', args: ['client', 'update', { rif: 'J9999999' }] },
+    { fn: 'assertCrudMutationFields', args: ['supplier', 'update', { rif: 'J8888888' }] },
+    { fn: 'assertCrudMutationFields', args: ['bankAccount', 'update', { currency: 'USD' }] },
     { fn: 'assertCrudMutationFields', args: ['client', 'update', {}] },
     { fn: 'assertCrudMutationFields', args: ['client', 'create', []] },
     { fn: 'assertCrudMutationFields', args: ['client', 'create', null] }
