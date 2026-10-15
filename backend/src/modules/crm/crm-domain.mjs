@@ -89,11 +89,19 @@ export function forecastByCurrency({tenantId, opportunities}) {
     if (!Number.isInteger(probability) || probability < 0 || probability > 100) throw new TypeError('Probability must be an integer from 0 to 100');
     const minor = amountToMinorUnits(row.expectedValue);
     if (row.stage === 'lost') continue;
-    const weighted = (minor * BigInt(probability) + 50n) / 100n;
-    const before = totals.get(currency) ?? {gross:0n, weighted:0n, count:0};
-    totals.set(currency, {gross:before.gross+minor,weighted:before.weighted+weighted,count:before.count+1});
+    // Keep fractional minor units until the currency total is complete.
+    // Rounding per opportunity overstates many tiny deals (e.g. 100 x 0.01 at 50%).
+    // Won opportunities are realized pipeline value, regardless of stale probability.
+    const effectiveProbability = row.stage === 'won' ? 100 : probability;
+    const weightedNumerator = minor * BigInt(effectiveProbability);
+    const before = totals.get(currency) ?? {gross:0n, weightedNumerator:0n, count:0};
+    totals.set(currency, {
+      gross:before.gross+minor,
+      weightedNumerator:before.weightedNumerator+weightedNumerator,
+      count:before.count+1
+    });
   }
   return Object.freeze([...totals.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([currency,x])=>Object.freeze({
-    currency, count:x.count, gross:minorUnitsToAmount(x.gross), weighted:minorUnitsToAmount(x.weighted)
+    currency, count:x.count, gross:minorUnitsToAmount(x.gross), weighted:minorUnitsToAmount((x.weightedNumerator + 50n) / 100n)
   })));
 }
