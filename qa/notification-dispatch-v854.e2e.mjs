@@ -40,3 +40,32 @@ test('#854: a generic notification is not falsely queued without an outbox', asy
   expect(body).not.toMatch(/"queued"\s*:\s*true/);
   expect(body).toMatch(/cola de notificaciones|NOTIFICATION.*UNAVAILABLE/i);
 });
+
+test('#854: safe template preview neither queues nor exposes unescaped HTML', async ({ request }) => {
+  const { base, token } = target();
+  const response = await request.post(base + '/api/v1/notifications/templates/preview', {
+    headers: { Authorization: 'Bearer ' + token },
+    data: {
+      key: 'operational.notice',
+      locale: 'es-VE',
+      values: { title: '<img src=x>', detail: 'Turno registrado' },
+      quietHours: {
+        timeZone: 'America/Caracas',
+        start: '22:00', end: '07:00', at: '2026-10-15T02:00:00Z'
+      }
+    }
+  });
+  expect(response.status()).toBe(200);
+  const json = await response.json();
+  expect(json.ok).toBe(true);
+  expect(json.data.preview.subject).toContain('&lt;img');
+  expect(json.data.preview.deliveryScheduled).toBe(false);
+  expect(json.data.queued).toBe(false);
+  expect(json.data.delivered).toBe(false);
+  expect(json.data.quietHours.deferred).toBe(true);
+  const rejected = await request.post(base + '/api/v1/notifications/templates/preview', {
+    headers: { Authorization: 'Bearer ' + token },
+    data: { key: 'operational.notice', values: { title: 'OK', detail: 'OK', tenantId: 'OTHER' } }
+  });
+  expect(rejected.status()).toBe(422);
+});
