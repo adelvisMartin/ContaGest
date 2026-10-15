@@ -1,5 +1,7 @@
 -- #853 · additive, tenant-isolated transactional job intents. No worker is enabled by this migration.
--- The canonical tenant binder and runtime roles are provided by #845/#720.
+-- Runtime RLS policies are installed by the canonical #845 sidecar AFTER Prisma deploy.
+-- Keep this table FORCE RLS with no permissive policy until sidecar provisioning;
+-- never reference private.contagest_runtime_tenant_id() before that function exists.
 CREATE TABLE public."AsyncJobIntent" (
   "id" TEXT PRIMARY KEY DEFAULT (gen_random_uuid()::text),
   "tenantId" TEXT NOT NULL REFERENCES public."Tenant"("id") ON DELETE RESTRICT,
@@ -40,9 +42,7 @@ BEGIN
   END LOOP;
   IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'contagest_runtime') THEN
     GRANT SELECT, INSERT, UPDATE ON public."AsyncJobIntent" TO contagest_runtime;
-    CREATE POLICY async_job_intent_runtime_tenant ON public."AsyncJobIntent"
-      FOR ALL TO contagest_runtime
-      USING ("tenantId" = private.contagest_runtime_tenant_id())
-      WITH CHECK ("tenantId" = private.contagest_runtime_tenant_id());
+    -- No policy here: the v845 sidecar creates contagest_runtime_tenant_scope
+    -- for all PascalCase tenantId tables only after defining the guard function.
   END IF;
 END $$;
