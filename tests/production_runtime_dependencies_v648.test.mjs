@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const dockerfile = readFileSync(new URL('../ops/docker/Dockerfile.api', import.meta.url), 'utf8');
-const backendPackage = JSON.parse(readFileSync(new URL('../backend/package.json', import.meta.url), 'utf8'));
 
 function verifyProductionInstall(source) {
   const productionDeps = source.split('FROM build AS production-deps\n')[1]?.split('\nFROM ')[0];
@@ -24,10 +23,11 @@ test('la imagen de la API sólo copia dependencias runtime depuradas', () => {
   verifyProductionInstall(dockerfile);
 });
 
-test('el contrato preserva Prisma CLI y cliente como dependencias de producción', () => {
-  assert.ok(backendPackage.dependencies?.prisma);
-  assert.ok(backendPackage.dependencies?.['@prisma/client']);
-  assert.equal(backendPackage.devDependencies?.typescript != null, true);
+test('la imagen conserva esquema Prisma y scripts de migración', () => {
+  assert.match(dockerfile, /^COPY backend\/prisma backend\/prisma$/m);
+  assert.match(dockerfile, /^COPY backend\/scripts backend\/scripts$/m);
+  assert.match(dockerfile, /^COPY --from=build \/app\/backend\/prisma \/app\/backend\/prisma$/m);
+  assert.match(dockerfile, /^COPY --from=build \/app\/backend\/scripts \/app\/backend\/scripts$/m);
 });
 
 test('regresión: no se admite copiar node_modules sin depurar', () => {
