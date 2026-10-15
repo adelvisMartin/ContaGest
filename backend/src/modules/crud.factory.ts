@@ -22,7 +22,7 @@ type CrudOptions = {
   model: CrudModel;
   entity: string;
   permission: string;
-  schema: z.ZodObject<z.ZodRawShape>;
+  schema: z.ZodObject;
 };
 
 type CrudRecord = { id: string; [field: string]: unknown };
