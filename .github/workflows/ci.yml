@@ -64,6 +64,9 @@ jobs:
       - name: ERP Wave A source audit
         run: npm run audit:erp-ui-wave-a
 
+      - name: REA local installer preflight (offline synthetic evidence)
+        run: node --test tests/rea_local_install.test.mjs
+
       - name: REA comparative audit contract tests (offline synthetic evidence)
         run: node --test tests/rea_benchmark_audit.test.mjs
 
