@@ -29,10 +29,12 @@ test('at-minimum with zero deficit requests review instead of automatic zero-uni
   assert.equal(candidate.minShortfallExact,'0.000');
   assert.equal(candidate.action,'REVIEW_REORDER_POINT');
 });
-test('negative available after reservation still triggers manual review', () => {
-  const [candidate]=deriveReorderCandidates([row({status:'out_of_stock',availableExact:'-1.000',shortfallExact:'5.000'})]);
-  assert.equal(candidate.action,'REVIEW_REPLENISHMENT');
-  assert.equal(candidate.availableExact,'-1.000');
+test('over-reserved available stock is excluded from ordinary replenishment candidates', () => {
+  const candidates=deriveReorderCandidates([row({
+    status:'out_of_stock',stockExact:'2.000',reservedExact:'3.000',
+    availableExact:'-1.000',shortfallExact:'5.000'
+  })]);
+  assert.equal(candidates.length,0);
 });
 test('prioritizes out-of-stock before below-minimum before threshold, stable by SKU', () => {
   const rows=[
