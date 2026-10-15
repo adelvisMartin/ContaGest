@@ -35,7 +35,7 @@ No se enviaron mensajes ni se usaron credenciales reales durante la implementaci
 ## Pruebas
 
 - `node --test tests/notifications_delivery_truth_issue_854.test.mjs`: cinco regresiones de fuente sobre rutas, estados y redacción. Integrado en `npm --workspace backend test` para que se ejecute con el pipeline de CI ya existente.
-- `qa/notification-dispatch-v854.spec.mjs`: Playwright API E2E **opcional y de fallo cerrado**, exige `CG_NOTIFICATION_E2E_ISOLATED=true`, `CG_NOTIFICATION_E2E_URL=http://127.0.0.1:PUERTO` y `CG_NOTIFICATION_E2E_TOKEN` sintético para una cuenta con permiso `sales.manage`. Responde HTTP 503 sin datos privados.
+- `qa/notification-dispatch-v854.e2e.mjs`: Playwright API E2E **opcional y de fallo cerrado**, deliberadamente fuera del glob de suites automáticas; se ejecuta sólo mediante `npx playwright test --config playwright.notifications-v854.config.mjs`, exige `CG_NOTIFICATION_E2E_ISOLATED=true`, `CG_NOTIFICATION_E2E_URL=http://127.0.0.1:PUERTO` y `CG_NOTIFICATION_E2E_TOKEN` sintético para una cuenta con permiso `sales.manage`. Responde HTTP 503 sin datos privados.
 - `npm run typecheck`, `npm run test`, `npm run build:backend` y navegador, PostgreSQL 17 efímero, BOLA A/B: obligatoriedad de pruebas locales completas antes del cierre final. Sin dependencias añadidas, DDL ni migraciones en este incremento.
 - No interpretar cola de GitHub Actions como PASS o fallo de código.
 
