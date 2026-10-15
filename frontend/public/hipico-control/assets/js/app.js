@@ -860,6 +860,10 @@ root.addEventListener("click", async (event) => {
         if (action === "select-group") {
             const id = el.dataset.id; const y = scrollTopValue(); if (!groupList().some((group) => group.id === id)) return;
             workspace.config.activeGroupId = id; workspace.config.activeWhatsappGroupId = id; workspace.activeRaceId = workspace.config.activeRaceByGroup?.[id] || null;
+            referenceReportParticipantId = "";
+            consolidatedFilters = consolidateFilterDefaults();
+            referenceReportRefresh.checkedAt = null;
+            referenceReportRefresh.status = "Grupo cambiado: datos locales del nuevo grupo sin consultar nuevamente la nube.";
             workspace.config.captureGroupIds = [...new Set([id, ...(workspace.config.captureGroupIds || []).filter((groupId) => groupId !== id)])];
             persist(); render(); restoreScroll(y); toast(`Grupo activo: ${activeGroup().name}`, "success"); return;
         }
