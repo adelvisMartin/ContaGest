@@ -157,6 +157,9 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     }
     const stat=await fs.lstat(keyFile);
     if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==32)throw new Error('LAB_PENDING_KEY_INVALID');
+    if(process.platform!=='win32' && (stat.mode & 0o077)!==0){
+      throw new Error('LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
+    }
     // The previous path lstat cannot authorize a second read by pathname:
     // another process could replace inbox.key between the check and read.
     // Pin the actual opened file, reject symlinks on POSIX and validate its
