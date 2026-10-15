@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "baselineSha": "01060d9938e282c133e7da18615fd8d9ea3ab195",
+  "sourceReuse": "NONE",
+  "runtimeEnabled": false,
+  "status": "RESEARCH_ONLY",
+  "ownership": {
+    "issue": 772,
+    "apiContract": "backend/src/shared/contracts/api-contract-v1.json",
+    "generatedInventory": "scripts/generate-api-inventory-v565.mjs",
+    "securityIssues": [
+      651,
+      652,
+      653,
+      853,
+      854
+    ]
+  },
+  "contract": {
+    "version": "integration-port-v1",
+    "identity": {
+      "tenantFromAuthenticatedServer": true,
+      "rolePermissionCheck": "server",
+      "connectionScopedToTenant": true,
+      "correlationIdRequired": true,
+      "credentialStorage": "server-side-secret-reference",
+      "noBrowserCredentials": true
+    },
+    "network": {
+      "httpsOnly": true,
+      "hostAllowlistPerConnection": true,
+      "blockPrivateAddresses": true,
+      "preventRedirectToUnapprovedHost": true,
+      "connectTimeoutMs": 5000,
+      "requestTimeoutMs": 15000,
+      "maxResponseBytes": 2097152,
+      "rateLimitPolicy": "respect-provider-429-and-retry-after"
+    },
+    "delivery": {
+      "maxAttempts": 3,
+      "backoff": "bounded-exponential-jitter",
+      "retryNonIdempotentWithoutProviderDedupe": false,
+      "idempotencyScope": "tenant+connection+operation+external-event",
+      "inboxDeduplication": "durable",
+      "outboxRequiredForSideEffects": true,
+      "deadLetterQueue": true,
+      "reconciliationRequired": true
+    },
+    "webhooks": {
+      "signedRawBodyRequired": true,
+      "maxClockSkewSeconds": 300,
+      "durableNonceOrEventId": true,
+      "failClosedOnInvalidSignature": true,
+      "tenantResolvedFromRegisteredConnection": true,
+      "neverFromPayload": true
+    },
+    "observability": {
+      "redact": [
+        "authorization",
+        "cookie",
+        "set-cookie",
+        "password",
+        "apiKey",
+        "apiSecret",
+        "webhookSignature",
+        "personalData",
+        "rawBody"
+      ],
+      "correlationIdRequired": true,
+      "noSecretsInLogs": true
+    },
+    "availability": {
+      "providerOutage": "bounded-retries-then-dlq",
+      "selfHostPreferred": true,
+      "paidMandatory": false
+    },
+    "apiContractAuthority": "#652/#565"
+  },
+  "providers": [
+    {
+      "id": "erpnext",
+      "name": "ERPNext / Frappe",
+      "decision": "CONSUME_EXTERNAL_API",
+      "status": "CANDIDATE",
+      "useCase": "tenant-scoped read-only parties/product import, with explicit mapping and dry-run",
+      "documentedApi": "/api/resource/{DocType}",
+      "auth": "API_KEY_SECRET_TOKEN",
+      "source": "https://docs.frappe.io/framework/user/en/api/rest",
+      "rateLimits": "site-configured; 429 and Retry-After may apply",
+      "license": "GPL-3.0",
+      "licenseSource": "https://github.com/frappe/erpnext",
+      "cost": "SELF_HOST_PREFERRED",
+      "priority": "P1",
+      "issueOwner": 772,
+      "enabled": false
+    },
+    {
+      "id": "dolibarr",
+      "name": "Dolibarr",
+      "decision": "CONSUME_EXTERNAL_API",
+      "status": "CANDIDATE",
+      "useCase": "read contacts/products from self-hosted installation after mapping/permission review",
+      "documentedApi": "/api/index.php/{resource}",
+      "auth": "DOLAPIKEY_HEADER",
+      "source": "https://wiki.dolibarr.org/index.php/Module_Web_Services_REST",
+      "rateLimits": "installation-specific, verify before implementation",
+      "license": "GPL-3.0-or-later",
+      "licenseSource": "https://github.com/Dolibarr/dolibarr",
+      "cost": "SELF_HOST_PREFERRED",
+      "priority": "P1",
+      "issueOwner": 772,
+      "enabled": false
+    },
+    {
+      "id": "odoo19",
+      "name": "Odoo 19",
+      "decision": "IMPLEMENT_INTERNAL_EQUIVALENT",
+      "status": "CANDIDATE",
+      "useCase": "compare customer/order mapping; external connector opt-in only after plan/license confirmation",
+      "documentedApi": "/json/2/{model}/{method}",
+      "auth": "BEARER_API_KEY",
+      "source": "https://www.odoo.com/documentation/19.0/developer/reference/external_api.html",
+      "rateLimits": "deployment/plan dependent; verify per installation",
+      "license": "LGPL-3.0-Community; proprietary-Enterprise",
+      "licenseSource": "https://www.odoo.com/documentation/master/legal/licenses.html",
+      "cost": "PLAN_RESTRICTED_CLOUD_API",
+      "priority": "P2",
+      "issueOwner": 772,
+      "enabled": false
+    },
+    {
+      "id": "akaunting",
+      "name": "Akaunting",
+      "decision": "IMPLEMENT_INTERNAL_EQUIVALENT",
+      "status": "CANDIDATE",
+      "useCase": "compare invoice/customer export mapping; do not add mandatory Basic-Auth credential flow",
+      "documentedApi": "/api/* (inspect version-specific routes/api.php)",
+      "auth": "HTTP_BASIC",
+      "source": "https://akaunting.com/hc/docs/developers/restful-api/",
+      "rateLimits": "not stated in reviewed guide",
+      "license": "BSL-verify-version-and-ToS",
+      "licenseSource": "https://github.com/akaunting/akaunting",
+      "cost": "LICENSE_REVIEW_REQUIRED",
+      "priority": "P2",
+      "issueOwner": 772,
+      "enabled": false
+    },
+    {
+      "id": "invoice-ninja",
+      "name": "Invoice Ninja 5",
+      "decision": "CONSUME_EXTERNAL_API",
+      "status": "CANDIDATE",
+      "useCase": "optional invoice read and migration dry-run, never dual-post accounting",
+      "documentedApi": "/api/v1/invoices",
+      "auth": "X_API_TOKEN_HEADER",
+      "source": "https://invoiceninja.github.io/docs/developer-guide",
+      "rateLimits": "deployment-dependent; verify on actual instance",
+      "license": "Elastic-License-review",
+      "licenseSource": "https://github.com/invoiceninja/invoiceninja",
+      "cost": "SELF_HOST_WITH_LICENSE_REVIEW",
+      "priority": "P2",
+      "issueOwner": 772,
+      "enabled": false
+    },
+    {
+      "id": "finpartner",
+      "name": "Finpartner",
+      "decision": "NOT_APPLICABLE",
+      "status": "UNVERIFIED",
+      "useCase": "benchmark client-accountant portal workflows, no external API contract confirmed",
+      "documentedApi": null,
+      "auth": "UNVERIFIED",
+      "source": "https://finpartner.pt/app-finpartner/",
+      "rateLimits": "unverified",
+      "license": "COMMERCIAL_NO_SOURCE_REUSE",
+      "licenseSource": "https://finpartner.pt/app-finpartner/",
+      "cost": "UNKNOWN",
+      "priority": "P2",
+      "issueOwner": 745,
+      "enabled": false
+    },
+    {
+      "id": "vertical-benchmarks",
+      "name": "Specialized vertical vendors",
+      "decision": "NOT_APPLICABLE",
+      "status": "UNVERIFIED",
+      "useCase": "use workflows as non-contractual benchmark, no unverified API adapters",
+      "documentedApi": null,
+      "auth": "UNVERIFIED",
+      "source": "https://github.com/adelvisMartin/ContaGest/issues/707",
+      "rateLimits": "unverified",
+      "license": "UNVERIFIED",
+      "licenseSource": "https://github.com/adelvisMartin/ContaGest/issues/707",
+      "cost": "UNKNOWN",
+      "priority": "P2",
+      "issueOwner": 707,
+      "enabled": false
+    }
+  ]
+}
