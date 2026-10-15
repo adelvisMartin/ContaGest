@@ -129,7 +129,10 @@ test('page exports contain exact visible rows/ordered columns, not all 42 client
   assert.equal(pdf.some(x=>x.includes('Pagina 2/2')),true);
   const text=consolidatedVisibleText(model);
   assert.equal(text.split('\n').length,23);
-  assert.ok(text.includes("'=HYPERLINK"),'formula-like spreadsheet strings are prefixed');
+  const injected = {
+    ...model, pageRows:[{...model.pageRows[0], code:'=HYPERLINK("https://invalid.example","X")', name:''}]
+  };
+  assert.ok(consolidatedVisibleText(injected).includes("'=HYPERLINK"),'formula-leading spreadsheet strings must be prefixed');
 });
 
 test('render includes every observed third-view control and escapes untrusted labels',()=>{
