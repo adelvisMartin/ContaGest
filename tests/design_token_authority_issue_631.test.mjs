@@ -41,7 +41,7 @@ test('canonical semantic token source is versioned and complete', () => {
   }
   assert.ok(tokens.products?.hipico?.light?.brand);
   assert.ok(tokens.products?.hipico?.dark?.brand);
-  assert.equal(tokens.products.hipico.variantReason, 'editorial-brand');
+  assert.equal(tokens.products.hipico.variantReason, 'equestrian-operations');
 });
 
 test('generated CSS adapters are byte-for-byte derived from the canonical source', () => {
@@ -81,21 +81,37 @@ test('main and Hípico load generated adapters with deterministic authority orde
   assert.ok(tokenCss > appCss, 'Hípico token adapter must load after the transitional app.css fallback');
 });
 
-test('light dark and system themes share one authority including reactive MUI resolution', () => {
+test('light dark and system themes use canonical profile, normalized preference and reactive MUI resolution', () => {
   const app = read('frontend/src/app.js');
   const runtime = read('frontend/src/components/muiRuntime.js');
-  assert.match(app, /\['light','dark','system'\]/);
-  assert.match(app, /prefers-color-scheme:\s*dark/);
-  assert.match(runtime, /prefers-color-scheme:\s*dark/);
+  const ux = read('frontend/src/design-system/uxContract.v1.js');
+  const themeCatalog = read('frontend/src/data/themeCatalog.js');
+  assert.match(ux, /\['light','dark','system'\]/);
+  assert.match(app, /THEME_OPTIONS\.map\(\(i\)=>i\.key\)/);
+  assert.match(themeCatalog, /THEME_OPTIONS/);
+  assert.match(app, /normalizeThemePreference\(theme\)/);
+  assert.match(app, /resolveThemeMode\(normalized,Boolean\(systemThemeQuery\?\.matches\)\)/);
+  assert.match(app, /SYSTEM_THEME_QUERY/);
+  assert.match(runtime, /resolveThemeMode/);
   assert.match(runtime, /addEventListener\('change'/);
 });
 
-test('Hípico consumes shared primitives while retaining its documented editorial variant', () => {
+test('Hípico consumes shared primitives and derives its documented equestrian variant from the same canonical source', () => {
   const css = read(hipicoCssPath);
-  assert.match(css, /--hc-touch:\s*44px/);
-  assert.match(css, /--hc-radius-md:\s*10px/);
-  assert.match(css, /--hc-brand:\s*#721522/i);
-  assert.match(css, /data-theme="dark"[\s\S]*--hc-brand:\s*#c76474/i);
+  const hipico = tokens.products.hipico;
+  assert.equal(hipico.variantReason, 'equestrian-operations');
+  const darkStart = css.indexOf(':root[data-theme="dark"]');
+  const systemStart = css.indexOf('@media (prefers-color-scheme: dark)');
+  assert.ok(darkStart > 0 && systemStart > darkStart, 'light, dark and system adapters must remain separate');
+  const lightCss = css.slice(0, darkStart);
+  const darkCss = css.slice(darkStart, systemStart);
+  const expectRole = (source, role, value) =>
+    assert.ok(source.includes(role+': '+value+';'), role+' must match canonical semanticTokens.v1.js');
+  expectRole(lightCss, '--hc-touch', hipico.controls.touch);
+  expectRole(lightCss, '--hc-radius-md', hipico.radius.md);
+  expectRole(lightCss, '--hc-brand', hipico.light.brand);
+  expectRole(darkCss, '--hc-brand', hipico.dark.brand);
+  expectRole(darkCss, '--hc-radius-md', hipico.radius.md);
   assert.match(css, /data-theme="system"/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
 });
