@@ -79,7 +79,9 @@ export async function createOpportunityFromQualifiedLead({
       const lead=await tx.moduleRecord.findFirst({
         where:leadWhere,select:{id:true,tenantId:true,moduleSlug:true,status:true,updatedAt:true}
       });
-      if(!lead) throw new CrmOpportunityLeadNotFoundError();
+      if(!lead || lead.id !== leadId || lead.tenantId !== tenantId || lead.moduleSlug !== CRM_LEAD_MODULE) {
+        throw new CrmOpportunityLeadNotFoundError();
+      }
       if(lead.status !== 'qualified' || !(lead.updatedAt instanceof Date) ||
         lead.updatedAt.toISOString() !== input.expectedLeadUpdatedAt) throw new CrmOpportunityConflictError();
       const lock=await tx.moduleRecord.updateMany({
