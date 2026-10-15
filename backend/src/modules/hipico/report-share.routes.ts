@@ -104,7 +104,7 @@ export function createHipicoReportShareRouter(options: RouterOptions = {}) {
       if (!data) return publicFailure(res);
       if (req.accepts(['html', 'json']) === 'html') {
         const nonce = crypto.randomBytes(16).toString('base64');
-        res.setHeader('Content-Security-Policy', `default-src 'none'; style-src 'nonce-${nonce}'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`);
+        res.setHeader('Content-Security-Policy', `default-src 'none'; style-src 'nonce-${nonce}'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`);
         return res.status(200).type('html').send(htmlReport(data, nonce, token));
       }
       return res.status(200).json({ ok: true, data });
