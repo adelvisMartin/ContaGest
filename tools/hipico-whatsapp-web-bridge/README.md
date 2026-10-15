@@ -14,14 +14,14 @@ SOURCE real (read-only)
 
 ## Estado de política SOURCE
 
-La Política de mensajes de WhatsApp Business revisada el **2026-09-29** incluye apuestas con dinero real entre los usos prohibidos de los Servicios de WhatsApp Business. El Bridge por tanto mantiene SOURCE automático en **NO-GO**.
+**Alcance vigente del owner (2026-10-15):** grupo privado de amigos, actividad hípica recreativa sin dinero real ni efecto económico; canal previsto: WhatsApp Messenger normal. No se usará WhatsApp Business ni ninguna de sus API. El NO-GO de autoenvío SOURCE se basa en los términos de Messenger sobre mensajería automática/uso no personal salvo autorización expresa, no en apuestas monetarias bajo la política Business.
 
 - `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true` falla validación.
 - `.env`, licencia, país o metadata de revisión no levantan el gate.
 - `npm run source:policy` explica el estado sin imprimir secretos.
-- LAB continúa disponible para pruebas autónomas seguras.
+- LAB sintético/local continúa disponible para pruebas; esto no declara autorizado el envío automático por WhatsApp.
 
-Referencia de política: `https://business.whatsapp.com/policy/`.
+Referencia de política: `https://www.whatsapp.com/legal/terms-of-service?lang=es`.
 
 ## Transport capability contract
 
@@ -43,7 +43,7 @@ Es el adapter actual. La capacidad técnica de enviar **no** autoriza SOURCE.
 - `official=true`
 - `implemented=false`
 
-Está registrado únicamente como boundary futuro. Seleccionarlo hoy falla validación para evitar una falsa sensación de soporte. Aun implementándolo, el gate de apuestas con dinero real seguirá bloqueando este caso mientras la política oficial no cambie.
+Está registrado únicamente como boundary futuro de un producto excluido por el owner. No seleccionarlo para este caso ni usarlo como sustituto de Messenger.
 
 ## Invariantes de seguridad
 
@@ -558,7 +558,7 @@ ejecuciones más focalizadas. Estos tests emplean sockets locales y disco
 temporal, **no envían mensajes reales a WhatsApp**, y no sustituyen las
 pruebas físicas con dos sesiones LAB/SOURCE, PostgreSQL 17, ni el soak
 #119/#120. Un `FAIL` deja el release en NO-GO; estados `queued` de
-GitHub Actions no equivalen a PASS. SOURCE sigue en lectura.
+GitHub Actions no equivalen a PASS. **Nota de política 2026-10-15:** para el grupo recreativo del owner, Messenger normal no se conecta a lectura ni escritura automáticas. El guard existente bloquea autoenvío; el bloqueo de lectura SOURCE aún está pendiente en #1011. No ejecutar el runtime/historial contra un grupo real hasta integrar y probar ese gate. LAB significa harness sintético local, sin iniciar sesión en WhatsApp.
 
 Para el QA general:
 

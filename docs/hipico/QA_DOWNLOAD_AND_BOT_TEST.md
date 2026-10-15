@@ -107,7 +107,7 @@ Esperado para la prueba actual:
 - SOURCE auto-reply `DISABLED` si no fue solicitado;
 - si alguien intenta habilitar SOURCE, estado `NO_GO` con `SOURCE_AUTO_REPLY_POLICY_NO_GO`.
 
-La Política de mensajes de WhatsApp Business revisada 2026-09-29 prohíbe facilitar apuestas con dinero real; una licencia, un país o un flag `.env` no convierten este flujo en GO.
+El alcance actual es WhatsApp Messenger normal para un grupo privado de amigos, recreativo y sin dinero real. Sus [Condiciones del servicio](https://www.whatsapp.com/legal/terms-of-service?lang=es) restringen mensajería automática/uso no personal salvo autorización expresa; por eso un flag `.env`, la operación desde una cuenta normal o el carácter recreativo no convierten el autoenvío en GO. WhatsApp Business queda excluido.
 
 ## 6. Probar autonomía segura
 

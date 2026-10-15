@@ -20,6 +20,7 @@ Se preservan Resumen, Captura, Participantes, Chat WhatsApp, Adelantadas, Histor
 - `LIVE_INGESTION.md` y `SHADOW_VALIDATION.md`: WhatsApp/Bridge.
 - `OFFLINE_AND_RECOVERY.md`: continuidad operativa.
 - `RELEASE_CHECKLIST.md`: release gate.
+- [`WHATSAPP_RECREATIONAL_BOT_SCOPE_2026-10-15.md`](WHATSAPP_RECREATIONAL_BOT_SCOPE_2026-10-15.md): alcance aprobado del chatbot en grupo privado recreativo, plan LAB/manual y gate de Messenger.
 
 ## Regla de identidad
 
@@ -48,9 +49,11 @@ Los contadores de uso del proveedor se persisten como `inputUnits/outputUnits`, 
 
 La fase de respuestas directas a SOURCE que se diseñó históricamente **no está habilitada para producción**. El Bridge conserva partes de ese contrato para compatibilidad, pero su guard canónico en `tools/hipico-whatsapp-web-bridge/src/source-policy-gate.mjs` siempre devuelve `eligible: false` para la revisión vigente; `runtime-config.mjs` rechaza arrancar con `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true`. Ni `.env`, una cuenta personal ni otro transporte pueden usarse para eludir la decisión.
 
-La automatización que sí debe verificarse es **SOURCE de solo lectura (cuando esté permitido) → normalización/dedupe → Conversation Engine + Risk Policy → LAB autorizado**. Los mensajes casuales y consultas seguras pueden responderse autónomamente en LAB. Para ambigüedad, jugadas, resultados, saldos o liquidaciones, las reglas del dominio conservan la autoridad y pueden requerir aclaración o revisión humana. Un proveedor LLM nunca tiene autoridad financiera.
+La automatización que puede verificarse sin permiso adicional es **fixtures sintéticos locales → normalización/dedupe → Conversation Engine + Risk Policy → respuesta simulada**. No conectar WhatsApp Messenger real a procesos automáticos de lectura o escritura desde SOURCE ni LAB por Playwright/DOM mientras no exista autorización expresa. Las entradas al harness se suministran manualmente y se sanea cualquier dato. Para ambigüedad, el sistema pide aclaración o crea un pendiente; un proveedor LLM nunca tiene autoridad de dominio ni financiera.
 
-La entrega a LAB está sujeta a identidad exacta de los grupos, control de duplicados, spool durable, kill switch y permisos del adapter. La simulación LAB no acredita soporte oficial de WhatsApp para el grupo real ni permiso para facilitar apuestas monetarias.
+El perfil aprobado para el grupo de amigos es recreativo, sin dinero real, pagos, depósitos, retiros, premios canjeables ni efecto económico; el canal solicitado es WhatsApp Messenger normal y no se usará WhatsApp Business. La entrega a un harness LAB local está sujeta a identidad sintética, control de duplicados, spool durable y kill switch. La simulación LAB no acredita autorización de WhatsApp para automatizar el grupo normal. Debido a las condiciones de Messenger sobre mensajería automática/uso no personal, SOURCE no debe conectarse para lectura ni envío automáticos hasta que exista autorización expresa comprobable. Las sugerencias manuales y el harness local pueden avanzar con sus gates.
+
+**Estado del código al 15-10-2026:** el guard de SOURCE bloquea autoenvío, pero todavía existen rutas Bridge/Playwright que pueden leer SOURCE. El gate de lectura no está implementado. No ejecutar `npm start`, `npm run history:v130`, backfill u otros lectores con una sesión/grupo real; el ticket #1011 debe cerrar ese gap antes de cualquier prueba conectada. La lectura funcional a desarrollar ahora usa texto/fixtures suministrados manualmente en el harness local.
 
 ## Contrato de configuración Hípico (#665)
 
