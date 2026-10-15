@@ -188,7 +188,8 @@ const stockAgeingQuery = z.object({
   includeCohorts: z.enum(['true', 'false']).optional(),
   cohortTake: z.string().optional(),
   cohortSkip: z.string().optional(),
-  cohortBucket: z.string().optional()
+  cohortBucket: z.string().optional(),
+  cohortRange: z.string().optional()
 }).strict();
 // Commercial activity is sourced from actual issued/paid/overdue invoice lines.
 // It is not physical stock movement, estimated demand or approval to purchase.
@@ -270,7 +271,10 @@ router.get('/inventory/ageing', asyncHandler(async (req, res) => {
   }
   let cohortOptions;
   try {
-    cohortOptions = parseFifoCohortOptions(query.data.includeCohorts, query.data.cohortTake, query.data.cohortSkip, query.data.cohortBucket);
+    cohortOptions = parseFifoCohortOptions(
+      query.data.includeCohorts, query.data.cohortTake, query.data.cohortSkip,
+      query.data.cohortBucket, query.data.cohortRange, bucketCutoffs
+    );
   } catch {
     throw new HttpError(400, 'Parámetros de detalle FIFO inválidos.', { code: 'AGEING_COHORT_QUERY_INVALID' });
   }

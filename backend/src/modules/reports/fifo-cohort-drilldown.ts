@@ -5,7 +5,12 @@ export const FIFO_COHORT_SKIP_MAX = 5000;
 const DAY_MS = 86_400_000;
 
 export type FifoFixedBucket = 'day0to30' | 'day31to90' | 'day91to180' | 'day181Plus';
-export type FifoCohortOptions = Readonly<{ take: number; skip: number; fixedBucket?: FifoFixedBucket }>;
+export type FifoCohortOptions = Readonly<{
+  take: number;
+  skip: number;
+  fixedBucket?: FifoFixedBucket;
+  customRange?: Readonly<{ rangeIndex: 0 | 1 | 2 | 3; cutoffsDays: readonly [number, number, number] }>;
+}>;
 const FIXED_BUCKETS: readonly string[] = ['day0to30', 'day31to90', 'day91to180', 'day181Plus'];
 export type RemainingFifoCohort = Readonly<{
   movementId: string;
@@ -25,10 +30,11 @@ function field(raw: unknown, fallback: number, min: number, max: number): number
 
 /** Omitted and explicit false keep the original ageing API response identical. */
 export function parseFifoCohortOptions(
-  enabled: unknown, rawTake: unknown, rawSkip: unknown, rawBucket?: unknown
+  enabled: unknown, rawTake: unknown, rawSkip: unknown, rawBucket?: unknown,
+  rawRange?: unknown, customCutoffs?: readonly [number, number, number] | null
 ): FifoCohortOptions | null {
   if (enabled === undefined || enabled === 'false') {
-    if (rawTake !== undefined || rawSkip !== undefined || rawBucket !== undefined)
+    if (rawTake !== undefined || rawSkip !== undefined || rawBucket !== undefined || rawRange !== undefined)
       throw new TypeError('FIFO_COHORT_QUERY_INVALID');
     return null;
   }
@@ -36,11 +42,30 @@ export function parseFifoCohortOptions(
   if (rawBucket !== undefined &&
       (typeof rawBucket !== 'string' || !FIXED_BUCKETS.includes(rawBucket)))
     throw new TypeError('FIFO_COHORT_QUERY_INVALID');
+  if (rawRange !== undefined && (rawBucket !== undefined ||
+      typeof rawRange !== 'string' || !/^[0-3]$/.test(rawRange) ||
+      !validCustomCutoffs(customCutoffs))) throw new TypeError('FIFO_COHORT_QUERY_INVALID');
   return {
     take: field(rawTake, 25, 1, FIFO_COHORT_PAGE_MAX),
     skip: field(rawSkip, 0, 0, FIFO_COHORT_SKIP_MAX),
-    ...(rawBucket === undefined ? {} : { fixedBucket: rawBucket as FifoFixedBucket })
+    ...(rawBucket === undefined ? {} : { fixedBucket: rawBucket as FifoFixedBucket }),
+    ...(rawRange === undefined ? {} : {
+      customRange: {
+        rangeIndex: Number(rawRange) as 0 | 1 | 2 | 3,
+        cutoffsDays: [...customCutoffs!] as [number, number, number]
+      }
+    })
   };
+}
+
+function validCustomCutoffs(raw: unknown): raw is readonly [number, number, number] {
+  if (!Array.isArray(raw) || raw.length !== 3 || !raw.every(Number.isSafeInteger)) return false;
+  const [a, b, c] = raw;
+  return 0 < a && a < b && b < c && c <= 3650;
+}
+
+function customRangeIndex(ageDays: number, [a, b, c]: readonly [number, number, number]): number {
+  return ageDays <= a ? 0 : ageDays <= b ? 1 : ageDays <= c ? 2 : 3;
 }
 
 function exact(units: bigint): string {
@@ -66,7 +91,13 @@ export function projectFifoCohortDrilldown(input: {
       !options || !Number.isSafeInteger(options.take) || options.take < 1 || options.take > FIFO_COHORT_PAGE_MAX ||
       !Number.isSafeInteger(options.skip) || options.skip < 0 || options.skip > FIFO_COHORT_SKIP_MAX ||
       cohorts.length > FIFO_COHORT_SKIP_MAX ||
-      (options.fixedBucket !== undefined && !FIXED_BUCKETS.includes(options.fixedBucket)))
+      (options.fixedBucket !== undefined && !FIXED_BUCKETS.includes(options.fixedBucket)) ||
+      (options.customRange !== undefined && (
+        options.fixedBucket !== undefined ||
+        !Number.isSafeInteger(options.customRange.rangeIndex) ||
+        options.customRange.rangeIndex < 0 || options.customRange.rangeIndex > 3 ||
+        !validCustomCutoffs(options.customRange.cutoffsDays)
+      )))
     throw new TypeError('FIFO_COHORT_INPUT_INVALID');
 
   let sum = 0n;
@@ -89,8 +120,13 @@ export function projectFifoCohortDrilldown(input: {
 
   // Validate/reconcile ALL cohorts before filtering; filtered totals never
   // replace canonical full-stock totals or make an incomplete ledger pass.
-  const matched = options.fixedBucket === undefined ? cohorts : cohorts.filter(c =>
-    fixedBucket(Math.floor((now! - c.receivedAt) / DAY_MS)) === options.fixedBucket);
+  const matched = options.fixedBucket !== undefined
+    ? cohorts.filter(c => fixedBucket(Math.floor((now! - c.receivedAt) / DAY_MS)) === options.fixedBucket)
+    : options.customRange !== undefined
+      ? cohorts.filter(c => customRangeIndex(
+          Math.floor((now! - c.receivedAt) / DAY_MS), options.customRange!.cutoffsDays
+        ) === options.customRange!.rangeIndex)
+      : cohorts;
   const matchedUnits = matched.reduce((total, c) => total + c.quantity, 0n);
   const page = matched.slice(options.skip, options.skip + options.take);
   const pageUnits = page.reduce((total, c) => total + c.quantity, 0n);
@@ -103,11 +139,21 @@ export function projectFifoCohortDrilldown(input: {
     asOf: asOf.toISOString(),
     totalCohorts: cohorts.length,
     totalQuantityExact: exact(sum),
-    ...(options.fixedBucket === undefined ? {} : { filter: {
+    ...(options.fixedBucket !== undefined ? { filter: {
       fixedBucket: options.fixedBucket,
       matchingCohorts: matched.length,
       matchingQuantityExact: exact(matchedUnits)
-    } }),
+    } } : options.customRange !== undefined ? { filter: {
+      type: 'CUSTOM_CONFIGURED_RANGE',
+      rangeIndex: options.customRange.rangeIndex,
+      cutoffsDays: [...options.customRange.cutoffsDays],
+      fromDay: options.customRange.rangeIndex === 0 ? 0
+        : options.customRange.cutoffsDays[options.customRange.rangeIndex - 1] + 1,
+      toDay: options.customRange.rangeIndex === 3 ? null
+        : options.customRange.cutoffsDays[options.customRange.rangeIndex],
+      matchingCohorts: matched.length,
+      matchingQuantityExact: exact(matchedUnits)
+    } } : {}),
     pageQuantityExact: exact(pageUnits),
     rows: page.map(c => {
       const ageDays = Math.floor((now! - c.receivedAt) / DAY_MS);
