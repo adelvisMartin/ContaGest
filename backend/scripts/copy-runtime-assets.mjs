@@ -8,6 +8,14 @@ const assets = [
   {
     source: 'src/shared/contracts/accessManifestRuntime.js',
     target: 'dist/src/shared/contracts/accessManifestRuntime.js'
+  },
+  {
+    source: 'src/modules/crm/crm-domain.mjs',
+    target: 'dist/src/modules/crm/crm-domain.mjs'
+  },
+  {
+    source: 'src/modules/crm/client-match-preflight.mjs',
+    target: 'dist/src/modules/crm/client-match-preflight.mjs'
   }
 ];
 
