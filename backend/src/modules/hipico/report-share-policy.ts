@@ -28,9 +28,12 @@ export function hashReportToken(token: string) {
   if (!validateReportToken(token)) throw new Error('HIPICO_REPORT_TOKEN_INVALID');
   return crypto.createHash('sha256').update(TOKEN_PREFIX).update(token).digest('hex');
 }
-export function dateWindowUtc(date: string) {
+// Club reports use the Venezuela operational day (America/Caracas: UTC-04,
+// no daylight-saving time). UTC midnight would place late-night transactions
+// on the wrong race date. Revisit only if group timezone becomes configurable.
+export function dateWindowCaracas(date: string) {
   const day = reportDate.parse(date);
-  const start = new Date(day + 'T00:00:00.000Z');
+  const start = new Date(day + 'T04:00:00.000Z');
   const end = new Date(start.valueOf() + 24 * 60 * 60 * 1000);
   return { from: start, until: end };
 }
