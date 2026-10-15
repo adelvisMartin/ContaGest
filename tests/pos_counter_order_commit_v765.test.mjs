@@ -65,3 +65,26 @@ test('does not mutate frozen confirmed order', async () => {
   assert.equal(output.order,saved);
   assert.equal(saved.id,'server-order-001');
 });
+
+test('food POS page consumes authoritative single-flight submitter', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../frontend/src/pages/FastFoodPosPage.js', import.meta.url), 'utf8');
+  assert.match(source, /createCounterOrderCommit\(\{/);
+  assert.match(source, /save:\s*\(order\)\s*=>\s*SupabaseSyncService\.createFoodOrder\(order\)/);
+  assert.match(source, /if\s*\(!result\.uiUpdated\)/);
+  assert.match(source, /if\s*\(!completed\)\s*orderButton\.disabled\s*=\s*false/);
+  assert.doesNotMatch(source, /source\s*:\s*['"]local['"]/);
+  assert.doesNotMatch(source, /Pedido creado localmente/);
+});
+
+test('error path warns of uncertain server result, never navigates as confirmed', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../frontend/src/pages/FastFoodPosPage.js', import.meta.url), 'utf8');
+  const orderStart = source.indexOf('const orderButton =');
+  const orderEnd = source.indexOf("document.getElementById('btnSendOrderWhatsapp')", orderStart);
+  assert.ok(orderStart > 0 && orderEnd > orderStart);
+  const handler = source.slice(orderStart, orderEnd);
+  assert.match(handler, /catch\s*\{[\s\S]*?Pedido no confirmado/);
+  assert.equal((handler.match(/navigate\('pedidos'\)/g) || []).length, 1);
+  assert.match(handler, /if\s*\(!result\.uiUpdated\)\s*\{[\s\S]*?return;[\s\S]*?navigate\('pedidos'\)/);
+});
