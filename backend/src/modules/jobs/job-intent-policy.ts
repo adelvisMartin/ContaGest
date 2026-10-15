@@ -15,8 +15,13 @@ function canonicalJson(value: unknown, depth = 0): unknown {
   throw new Error('JOB_PAYLOAD_NON_JSON');
 }
 
+export function assertAsyncJobTenantId(tenantId: unknown): asserts tenantId is string {
+  if (typeof tenantId !== 'string' || !UUID.test(tenantId)) throw new Error('JOB_TENANT_INVALID');
+}
+
 export function prepareAsyncJobIntent(input: {tenantId: string; handlerKey: string; effectKey: string; payload: Record<string, unknown>; maxAttempts: number; runAt: Date}) {
-  if (!input || !UUID.test(input.tenantId || '')) throw new Error('JOB_TENANT_INVALID');
+  if (!input) throw new Error('JOB_TENANT_INVALID');
+  assertAsyncJobTenantId(input.tenantId);
   if (typeof input.handlerKey !== 'string' || input.handlerKey.length > 100 || !HANDLER_KEY.test(input.handlerKey)) {
     throw new Error('JOB_HANDLER_KEY_INVALID');
   }
