@@ -46,7 +46,11 @@ function toCurrencyAmounts(map) {
     .map(([code,cents])=>[code,cents/100]));
 }
 function amountParts(row, col) {
-  if(CURRENCY_COLUMNS.has(col)) return Object.values(row[col] || {});
+  if(CURRENCY_COLUMNS.has(col)) {
+    if(row[col] === null) return []; // Unknown column is not numeric zero.
+    const parts=Object.values(row[col] || {});
+    return parts.length ? parts : [0]; // No transaction in a supported type is zero.
+  }
   if(col === 'participant' || row[col] === null) return [];
   return [row[col]];
 }
