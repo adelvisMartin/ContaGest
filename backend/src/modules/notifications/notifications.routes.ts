@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
@@ -32,7 +31,7 @@ async function sendWhatsAppCloud(to: string, message: string) {
     })
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new HttpError(response.status, `WhatsApp Cloud API error: ${JSON.stringify(data)}`);
+  if (!response.ok) throw new HttpError(response.status, 'WhatsApp Cloud API rechazó la solicitud.');
   return { ok: true, provider: 'whatsapp-cloud', data };
 }
 
@@ -45,17 +44,21 @@ router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(a
     data: {
       tenantId: ctx.tenantId,
       moduleSlug: 'notification-log',
-      title: `WhatsApp ${order.number || ''}`,
-      status: result.ok ? 'sent' : 'skipped',
-      payload: { channel: 'whatsapp', order, result, message: body.message }
+      title: 'Notificación WhatsApp',
+      // A provider HTTP acknowledgement does not prove delivery to the recipient.
+      status: result.ok ? 'provider_accepted' : 'skipped',
+      // Never store phone, arbitrary order fields, message body or raw provider JSON.
+      payload: { channel: 'whatsapp', provider: 'whatsapp-cloud', providerAccepted: result.ok, deliveryConfirmed: false }
     }
   });
-  ok(res, result);
+  ok(res, result.ok ? { ok: true, provider: 'whatsapp-cloud', status: 'provider_accepted', delivered: false } : result);
 }));
 
 router.post('/send', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
-  const body = messageSchema.parse(req.body || {});
-  ok(res, { queued: true, channel: 'generic', to: body.to, message: body.message });
+  messageSchema.parse(req.body || {});
+  // No #853 transactional outbox/worker exists behind this endpoint yet.
+  // Never report queued=true or echo a private message when nothing was persisted.
+  throw new HttpError(503, 'La cola de notificaciones no está disponible; no se programó ningún envío.');
 }));
 
 export default router;
