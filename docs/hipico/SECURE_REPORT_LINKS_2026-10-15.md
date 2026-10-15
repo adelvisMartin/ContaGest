@@ -166,3 +166,14 @@ npm run test:hipico:share:offline
 npm run test:hipico:share:postgres
 ```
 Un fallo por falta de PostgreSQL o consentimiento conserva el estado `NOT_EXECUTED` o `BLOCKED`; no es un resultado PASS. Tras cada intento, destruir solamente la base efímera autorizada y revocar los secretos temporales del runner.
+
+
+## Mitigación en logs y errores de aplicación — #1018 (15/10/2026)
+
+**Hallazgo de código:** el servidor utiliza correctamente `requestRouteTemplate(req)` en métricas/HTTP, sin emitir `req.originalUrl`, pero `redactTelemetryValue` no identificaba el parámetro monoletra `t` que transporta la credencial de reportes compartibles. Un error operacional que incluyera `/api/v1/hipico/report-shares/public?t=<token>`, o el objeto de parámetros `{query:{t:...}}`, podía conservar el secreto al registrarse o convertirse en mensaje de error.
+
+**Implementado:** `backend/src/shared/observability/redaction.ts` agrega redacción contextual exacta de `?t=`/`&t=` (incluidas claves percent-encoded), valores opacos de 43 caracteres cuando aparecen como `t=<valor>`/`t: <valor>`, y campos JSON denominados exactamente `t` o `T`. Conserva campos no sensibles como `date`, `view` y otros parámetros cortos `t=12`, y las reglas ya existentes de `token`, `access_token` y firmas de proveedores.
+
+**Prueba dirigida:** `backend/src/shared/observability/hipico-report-token-redaction.test.ts`, ejecutable en una instalación local con `npx --no-install tsx --test backend/src/shared/observability/hipico-report-token-redaction.test.ts`, incorporada al workflow especializado `workflow_dispatch` (sin triggers automáticos para PR/push). Compara URL completa, clave codificada, errores persistidos y respuestas públicas normalizadas, datos anidados y regresión de otras credenciales. Los casos básicos se ejercitaron contra las funciones de redacción en V8 como comprobación parcial; **CI/Node exact-SHA queda pendiente**.
+
+**Límite de responsabilidad:** ninguna función de la aplicación puede impedir que un gateway/proxy/CDN, un proveedor de logs o analytics externos registre el URL original **antes** de llegar a Express. No se ha comprobado la configuración real del ingress ni se ha completado el requisito original de #1018. Para activar `HIPICO_REPORT_SHARES_ENABLED=true`, el operador deberá revisar y ensayar redacción `t` en todos los logs aguas arriba, límites de TTL, caché, headers, retención y trazas, con tokens de prueba revocables. El código fusionado por sí solo **no autoriza producción**.
