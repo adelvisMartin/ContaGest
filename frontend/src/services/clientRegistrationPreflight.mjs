@@ -25,9 +25,14 @@ export function decideClientRegistrationPreflight(result) {
   const success = result.status === 'REVIEW_NEW' &&
     result.reason === 'NO_EXISTING_CLIENT_MATCH' && result.candidates.length === 0;
   if (success) return Object.freeze({ maySubmit:true, reason:'REVIEW_NEW', message:MESSAGES.REVIEW_NEW });
-  const code = result.status === 'REVIEW_EXISTING' && result.candidates.length > 0
+  const blockedReasons = new Set([
+    'AMBIGUOUS_CLIENT_MATCH', 'CONFLICTING_RIF_EMAIL',
+    'UNVERIFIABLE_CLIENT_RIF', 'CANDIDATE_LIMIT_EXCEEDED', 'CLIENT_RIF_REQUIRED'
+  ]);
+  const code = result.status === 'REVIEW_EXISTING' &&
+      result.reason === 'EXISTING_CLIENT_AUTHORITY' && result.candidates.length > 0
     ? 'REVIEW_EXISTING'
-    : result.status === 'BLOCKED' && Object.hasOwn(MESSAGES, result.reason)
+    : result.status === 'BLOCKED' && blockedReasons.has(result.reason)
       ? result.reason : 'PREFLIGHT_INVALID';
   return Object.freeze({ maySubmit:false, reason:code, message:MESSAGES[code] });
 }
