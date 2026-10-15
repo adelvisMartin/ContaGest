@@ -17,7 +17,7 @@ const ROUTES=Object.freeze({
   release:{agents:['qa-release','appsec-iam'],skills:['contagest-erp-orchestrator','contagest-release-evidence','contagest-secure-verification','contagest-bcp-dr']},
   hipico:{agents:['hipico-reliability','hipico-lab-operations','appsec-iam','qa-release'],skills:['contagest-erp-orchestrator','contagest-hipico-lab-operations','contagest-secure-verification','contagest-release-evidence']},
   clinical:{agents:['frontend-pwa-ux','backend-api','appsec-iam','qa-release'],skills:['contagest-erp-orchestrator','contagest-functional-module-audit','contagest-tenant-isolation-rbac','contagest-appsec-review']},
-  architecture:{agents:['orchestrator','qa-release'],skills:['contagest-erp-orchestrator','contagest-systematic-debugging','contagest-release-evidence','contagest-code-review-quality']}
+  architecture:{agents:['orchestrator','qa-release'],skills:['contagest-erp-orchestrator','contagest-systematic-debugging','contagest-release-evidence']}
 });
 
 const DOMAIN_ALIASES=Object.freeze({
