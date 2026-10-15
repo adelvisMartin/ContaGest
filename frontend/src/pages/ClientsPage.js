@@ -3,6 +3,7 @@ import { escapeHtml, mountSubmit, qsa } from '../utils/dom.js';
 import { isValidRif } from '../core/validators.js';
 import { BackendApi } from '../services/backendApi.js';
 import { checkClientRegistrationBeforeSave } from '../services/clientRegistrationPreflight.mjs';
+import { createCrmLeadService } from '../services/crmLeadService.mjs';
 
 const safe = (value) => escapeHtml(String(value ?? ''));
 
@@ -27,6 +28,11 @@ export const ClientsPage = {
       rows:clients
     });
 
+    const prospectForm = `<form id="crmLeadForm" class="cg-record-form"><div class="cg-record-fields">
+      ${Field({labelKey:'Nombre del prospecto',name:'name',required:true})}${Field({labelKey:'RIF del prospecto',name:'rif',placeholder:'J-12345678-9'})}${Field({labelKey:'Correo',name:'email',type:'email',placeholder:'contacto@empresa.com'})}${Field({labelKey:'Teléfono',name:'phone'})}${Textarea({labelKey:'Notas comerciales',name:'notes',className:'cg-field-wide'})}
+      </div><p id="crmLeadStatus" role="status" aria-live="polite" class="cg-ui-muted">Los prospectos se guardan en el servidor sin convertirse automáticamente en clientes.</p><div class="cg-record-actions">${Button({text:'Registrar prospecto',icon:'fa-user-plus',type:'submit'})}${Button({id:'crmLeadRefresh',text:'Actualizar prospectos',icon:'fa-rotate',type:'button',variant:'secondary'})}</div></form>`;
+    const prospectPanel = `${ErpSection({title:'Prospectos CRM',description:'Alta y seguimiento inicial de interesados. Solo el servidor mantiene estos datos.',content:prospectForm})}${ErpSection({title:'Últimos prospectos',description:'Listado real consultado al CRM, independiente del directorio de clientes.',content:'<div id="crmLeadResults" role="region" aria-live="polite" aria-label="Listado de prospectos"><p class="cg-ui-muted">Cargando prospectos…</p></div>'})}`;
+
     const form = `<form id="clientForm" class="cg-record-form"><div class="cg-record-fields">
       ${Field({ labelKey:'name', name:'name', required:true })}${Field({ labelKey:'rif', name:'rif', required:true })}${Field({ labelKey:'email', name:'email', type:'email' })}${Field({ labelKey:'phone', name:'phone' })}${Field({ labelKey:'type', name:'type', value:'Contribuyente ordinario' })}${Textarea({ labelKey:'address', name:'address', className:'cg-field-wide' })}
       </div><p id="clientPreflightFeedback" role="status" aria-live="polite" class="cg-ui-muted">La identidad fiscal se verificará con el servidor antes de registrar.</p><div class="cg-record-actions">${Button({ text:'Registrar cliente', icon:'fa-user-plus', type:'submit' })}</div></form>`;
@@ -36,9 +42,57 @@ export const ClientsPage = {
       titleKey:'clientsTitle',
       descKey:'clientsDesc',
       actions:Button({ id:'btnSyncClients', text:'Sincronizar', icon:'fa-cloud-arrow-down', variant:'secondary', attrs:'type="button"' })
-    })}${ErpSection({ title:'Registrar cliente', description:'Datos comerciales y fiscales utilizados por cotizaciones y documentos.', content:form })}${ErpSection({ title:'Directorio de clientes', description:'Persistencia, validación fiscal y acciones operativas.', content:table })}</section>`;
+    })}${prospectPanel}${ErpSection({ title:'Registrar cliente', description:'Datos comerciales y fiscales utilizados por cotizaciones y documentos.', content:form })}${ErpSection({ title:'Directorio de clientes', description:'Persistencia, validación fiscal y acciones operativas.', content:table })}</section>`;
   },
   mount(state, { Store, Toast, navigate, Modal, SupabaseSyncService }) {
+    const crmLeads = createCrmLeadService({api:BackendApi});
+    const status = document.getElementById('crmLeadStatus');
+    const results = document.getElementById('crmLeadResults');
+    const refreshCrmLeads = async () => {
+      if (!results) return;
+      results.textContent = 'Cargando prospectos…';
+      try {
+        const rows = await crmLeads.list();
+        if (!rows.length) {
+          results.textContent = 'Todavía no hay prospectos registrados para esta empresa.';
+          return;
+        }
+        results.innerHTML = ErpDataTable({
+          caption:'Prospectos comerciales',
+          columns:[
+            {key:'name',label:'Prospecto',render:(lead)=>safe(lead.name)},
+            {key:'stage',label:'Etapa',render:(lead)=>safe(lead.stage||'new')},
+            {key:'email',label:'Correo',render:(lead)=>safe(lead.email)},
+            {key:'phone',label:'Teléfono',render:(lead)=>safe(lead.phone)},
+            {key:'createdAt',label:'Registrado',render:(lead)=>safe(lead.createdAt?new Date(lead.createdAt).toLocaleDateString('es-VE'):'')}
+          ],rows
+        });
+      } catch (_error) {
+        results.textContent = 'No se pudieron consultar los prospectos. Comprueba tu sesión y vuelve a intentar.';
+      }
+    };
+    document.getElementById('crmLeadRefresh')?.addEventListener('click',()=>{void refreshCrmLeads()});
+    mountSubmit('#crmLeadForm', async (data, form) => {
+      const submit = form.querySelector('button[type="submit"]');
+      if (submit?.disabled) return;
+      submit?.setAttribute('disabled','disabled');
+      if (status) status.textContent = 'Registrando prospecto con identidad verificada por el servidor…';
+      try {
+        await crmLeads.create(data);
+        if (status) status.textContent = 'Prospecto registrado. Puedes consultarlo en el listado.';
+        Toast.show('Prospecto guardado en CRM.', 'success');
+        form.reset();
+        await refreshCrmLeads();
+      } catch (error) {
+        // The attempted UUID is preserved for the same form values on retry;
+        // never create a local Lead after an ambiguous server/network error.
+        if (status) status.textContent = error?.status === 409
+          ? 'La solicitud ya fue procesada. Actualiza el listado antes de repetir.'
+          : 'No se confirmó el registro. Revisa la conexión; no se guardó un prospecto local.';
+        Toast.show('No se confirmó el registro del prospecto.', 'warning');
+      } finally { submit?.removeAttribute('disabled'); }
+    });
+    void refreshCrmLeads();
     document.getElementById('btnSyncClients')?.addEventListener('click', () => SupabaseSyncService.pullClients({ Store, Toast, force:true, silent:false }));
     mountSubmit('#clientForm', async (data, form) => {
       const submit = form.querySelector('button[type="submit"], [data-mui-button-fallback]');

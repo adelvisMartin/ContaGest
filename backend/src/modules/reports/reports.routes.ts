@@ -15,6 +15,7 @@ import { deriveReorderCandidates } from './replenishment-candidates.js';
 import { previewReorderPolicy } from './reorder-policy-preview.js';
 import { parseReorderScanQuery, reorderScanPageMeta } from './reorder-scan-page.js';
 import { parseReorderSalesOptions, projectReorderSalesEvidence } from './reorder-sales-evidence.js';
+import { parseGrossInvoiceLeadTime, projectGrossInvoiceLeadTimeReview } from './gross-invoice-leadtime-review.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
 import { parseAgeingCutoffs } from './configurable-ageing.js';
 import { LOT_EXPIRY_RISK_VERSION, expiryUtcBounds, projectLotExpiryRisk } from './lot-expiry-risk.js';
@@ -454,11 +455,13 @@ router.get('/inventory/reorder/preview', asyncHandler(async (req, res) => {
 router.get('/inventory/reorder', asyncHandler(async (req, res) => {
   let query;
   let salesOptions;
+  let reviewLeadTimeDays: number | null = null;
   try {
     // Sales evidence is opt-in; the existing scan parser stays strict.
-    const { includeSalesEvidence, salesWindowDays, ...scanParams } = req.query;
+    const { includeSalesEvidence, salesWindowDays, leadTimeDays, ...scanParams } = req.query;
     query = parseReorderScanQuery(scanParams);
     salesOptions = parseReorderSalesOptions(includeSalesEvidence, salesWindowDays);
+    reviewLeadTimeDays = parseGrossInvoiceLeadTime(leadTimeDays, salesOptions.includeSalesEvidence);
   } catch {
     throw new HttpError(400, 'Filtros de reporte de reposición inválidos.', { code: 'REORDER_SCAN_QUERY_INVALID' });
   }
@@ -522,6 +525,31 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
     matchesInPage: rows.filter(row => row.needsReorder).length
   });
 
+  const salesEvidence = salesOptions.includeSalesEvidence
+    ? projectReorderSalesEvidence({
+        candidates: reorderCandidates,
+        groups: salesGroups,
+        asOf,
+        salesWindowDays: salesOptions.salesWindowDays
+      })
+    : null;
+  let leadTimeReview = null;
+  if (salesEvidence && reviewLeadTimeDays !== null) {
+    try {
+      leadTimeReview = projectGrossInvoiceLeadTimeReview({
+        candidates: reorderCandidates,
+        salesItems: salesEvidence.items,
+        salesWindowDays: salesOptions.salesWindowDays,
+        leadTimeDays: reviewLeadTimeDays
+      });
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+      throw new HttpError(409, 'Los saldos o la actividad facturada no permiten una comparación confiable.', {
+        code: 'INVOICE_LEADTIME_EVIDENCE_CONFLICT'
+      });
+    }
+  }
+
   res.setHeader('cache-control', 'no-store');
   ok(res, {
     report: 'inventory-reorder',
@@ -534,13 +562,11 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
       autoPurchaseEnabled: false,
       noLocationForecastUntil: '#755',
       reorderCandidates,
-      ...(salesOptions.includeSalesEvidence ? {
-        salesEvidence: projectReorderSalesEvidence({
-          candidates: reorderCandidates,
-          groups: salesGroups,
-          asOf,
-          salesWindowDays: salesOptions.salesWindowDays
-        })
+      ...(salesEvidence ? {
+        salesEvidence: {
+          ...salesEvidence,
+          ...(leadTimeReview ? { leadTimeReview } : {})
+        }
       } : {})
     },
     pagination,

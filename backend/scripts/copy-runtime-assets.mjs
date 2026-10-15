@@ -16,6 +16,10 @@ const assets = [
   {
     source: 'src/modules/crm/client-match-preflight.mjs',
     target: 'dist/src/modules/crm/client-match-preflight.mjs'
+  },
+  {
+    source: 'src/modules/crm/crm-lead-store.mjs',
+    target: 'dist/src/modules/crm/crm-lead-store.mjs'
   }
 ];
 
