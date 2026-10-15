@@ -25,9 +25,10 @@ test('#664 refuses production and any remote/shared PostgreSQL configuration', (
 test('#664 plan is short and delegates to actual repository owners; no skipped tests or mocks', () => {
   const steps = buildSmokeSteps();
   assert.deepEqual(steps.map(x => x.id), [
-    'schema', 'migrations', 'seed', 'rls', 'api-finance', 'chromium-erp'
+    'schema', 'migrations', 'seed', 'rls', 'api-crud', 'api-finance', 'chromium-erp'
   ]);
   const serialized = JSON.stringify(steps);
+  assert.match(serialized, /erp-operational-crud-v664\.test\.ts/);
   assert.match(serialized, /erp-operational-financial-v664\.test\.ts/);
   assert.match(serialized, /migration:test:from-zero/);
   assert.match(serialized, /erp-real-browser-postgres-v5875\.mjs/);
