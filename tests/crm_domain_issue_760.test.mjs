@@ -178,7 +178,7 @@ test('conflicting email does not override RIF even when a matching-RIF Client al
     ]
   });
   assert.deepEqual(result,{
-    status:'BLOCKED',reason:'CONFLICTING_RIF_EMAIL',
+    status:'BLOCKED',reason:'AMBIGUOUS_CLIENT_MATCH',
     candidates:['email-wrong-rif','match-rif']
   });
 });
