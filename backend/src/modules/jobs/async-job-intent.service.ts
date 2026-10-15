@@ -47,7 +47,7 @@ export async function claimDueAsyncJobs(tx: Prisma.TransactionClient, input: {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 25) throw new Error('JOB_BATCH_INVALID');
   // Database time is authoritative for claim expiry; worker clocks cannot
   // steal a live lease early or complete an already-expired claim.
-  return tx.$queryRaw<Array<{id: string; handlerKey: string; payload: unknown; attempts: number; maxAttempts: number; leaseOwner: string}>>(Prisma.sql`
+  return tx.$queryRaw<Array<{id: string; handlerKey: string; effectKey: string; payload: unknown; attempts: number; maxAttempts: number; leaseOwner: string}>>(Prisma.sql`
     WITH due AS (
       SELECT "id" FROM public."AsyncJobIntent"
       WHERE "tenantId" = ${tenantId}
@@ -61,7 +61,7 @@ export async function claimDueAsyncJobs(tx: Prisma.TransactionClient, input: {
     SET "status"='running', "leaseOwner"=${workerId} || ':' || gen_random_uuid()::text, "leaseUntil"=clock_timestamp() + (${leaseSeconds} * INTERVAL '1 second'),
         "attempts"=j."attempts"+1, "updatedAt"=clock_timestamp()
     FROM due WHERE j."id"=due."id" AND j."tenantId"=${tenantId}
-    RETURNING j."id", j."handlerKey", j."payload", j."attempts", j."maxAttempts", j."leaseOwner"
+    RETURNING j."id", j."handlerKey", j."effectKey", j."payload", j."attempts", j."maxAttempts", j."leaseOwner"
   `);
 }
 
