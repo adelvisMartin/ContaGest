@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  createCrmOpportunityService,validateOpportunityForm,CRM_OPPORTUNITY_ENDPOINT
+  createCrmOpportunityService,validateOpportunityForm,validateOpportunityLossAction,CRM_OPPORTUNITY_ENDPOINT
 } from '../frontend/src/services/crmOpportunityService.mjs';
 
 const ID='8ac836d4-04d8-5190-a2a1-0ca3ff1d4812';
@@ -95,4 +95,59 @@ test('Clients screen displays read-only money data without local or fiscal write
  assert.match(ui,/safe\(item\.expectedValue\)\+' '\+safe\(item\.currency\)/);
  assert.doesNotMatch(ui,/Store\.update\(\(draft\).*crmOpportunities/);
  assert.doesNotMatch(ui,/prisma\.client\.(create|update)/);
+});
+
+
+const EXISTING_OPPORTUNITY_ID='f1bdc4b1-b7dd-51c1-90c2-6df63a2762e0';
+const EXISTING_OPPORTUNITY_UPDATED='2026-10-15T18:30:00.000Z';
+const opportunity=(stage='qualified')=>({
+  id:EXISTING_OPPORTUNITY_ID,stage,updatedAt:EXISTING_OPPORTUNITY_UPDATED
+});
+test('loss action supplies only canonical ID + revision and checks qualified stage',()=>{
+ assert.deepEqual(validateOpportunityLossAction(opportunity()),{
+  id:EXISTING_OPPORTUNITY_ID,expectedUpdatedAt:EXISTING_OPPORTUNITY_UPDATED
+ });
+ assert.ok(Object.isFrozen(validateOpportunityLossAction(opportunity())));
+});
+test('opportunity loss refuses terminal, malicious IDs and invalid revisions',()=>{
+ for(const value of [
+  opportunity('lost'),opportunity('won'),opportunity('proposal'),
+  {...opportunity(),id:'../../other-tenant'},
+  {...opportunity(),updatedAt:'2026-02-30T18:30:00.000Z'},
+  {...opportunity(),updatedAt:'2026-10-15T18:30:00Z'},null
+ ])assert.throws(()=>validateOpportunityLossAction(value),/CRM_OPPORTUNITY_LOSS_INVALID/);
+});
+test('loss service PATCH is authenticated through canonical API and uses server revision',async()=>{
+ let call;
+ const svc=createCrmOpportunityService({api:fake({request:async(path,opts)=>{
+  call={path,opts};return{id:EXISTING_OPPORTUNITY_ID,stage:'lost',updatedAt:'2026-10-15T18:31:00.000Z'};
+ }})});
+ const out=await svc.markLost(opportunity());
+ assert.equal(out.stage,'lost');
+ assert.equal(call.path,CRM_OPPORTUNITY_ENDPOINT+'/'+EXISTING_OPPORTUNITY_ID+'/lost');
+ assert.equal(call.opts.method,'PATCH');
+ assert.deepEqual(call.opts.body,{expectedUpdatedAt:EXISTING_OPPORTUNITY_UPDATED});
+ assert.doesNotMatch(JSON.stringify(call),/tenantId|actorId|clientId/);
+});
+test('HTTP 409 is propagated exactly once, no automatic retry or local opportunity mutation',async()=>{
+ let calls=0;
+ const svc=createCrmOpportunityService({api:fake({request:async()=>{
+  calls++;throw Object.assign(new Error('stale opportunity'),{status:409});
+ }})});
+ await assert.rejects(svc.markLost(opportunity()),/stale opportunity/);
+ assert.equal(calls,1);
+});
+test('bad loss response is not treated as a committed transition',async()=>{
+ const svc=createCrmOpportunityService({api:fake({request:async()=>({id:'wrong',stage:'lost'})})});
+ await assert.rejects(svc.markLost(opportunity()),/CRM_OPPORTUNITY_LOSS_RESULT_INVALID/);
+});
+test('UI binds only qualified opportunity buttons with server revision and refresh on conflict',()=>{
+ const ui=readFileSync(new URL('../frontend/src/pages/ClientsPage.js',import.meta.url),'utf8');
+ assert.match(ui,/item\.stage==='qualified'/);
+ assert.match(ui,/data:\{'crm-opportunity-loss-id':item\.id\}/);
+ assert.match(ui,/loadedCrmOpportunities\.find\(row=>/);
+ assert.match(ui,/await crmOpportunities\.markLost\(opportunity\)/);
+ assert.match(ui,/error\?\.status===409/);
+ assert.match(ui,/await refreshCrmOpportunities\(\)/);
+ assert.doesNotMatch(ui,/Store\.update\(\(draft\).*crmOpportunityLossId/);
 });
