@@ -3,6 +3,7 @@
  * Read-model only. No tenant authorization, capacity claim or transaction is performed.
  */
 import { calculateSlotCandidates, type SlotCandidateQuery } from './slot-candidates.js';
+import { resolveBookingPolicy, decideBookingWindow, type VersionedPolicy } from './booking-policy.js';
 import {
   planExclusiveSegments,
   type ExistingAllocation,
@@ -22,6 +23,8 @@ export type MultiStageSlotQuery = Readonly<{
   candidateQuery: Omit<SlotCandidateQuery, 'limit'>;
   steps: readonly ResourceStep[];
   existing?: readonly ExistingAllocation[];
+  /** Trusted tenant/service policy versions, resolved at a server-owned UTC clock. */
+  bookingPolicy?: Readonly<{ tenant: VersionedPolicy; service?: VersionedPolicy; atUtc: string }>;
   limit?: number;
 }>;
 
@@ -38,6 +41,9 @@ export type MultiStageSlotResult = Readonly<{
   truncated: boolean;
   examinedCandidates: number;
   rejectedByResources: number;
+  rejectedByPolicy: number;
+  /** Revision evidence is returned only when an effective policy was supplied. */
+  policyEvidence: Readonly<{ tenantRevision: string; serviceRevision: string | null; evaluatedAtUtc: string }> | null;
   scannedBaseCandidates: number;
   candidateWindowLimit: 256;
 }>;
@@ -56,7 +62,7 @@ function whole(value: unknown, min: number, max: number): number {
  */
 export function searchMultiStageSlots(input: MultiStageSlotQuery): MultiStageSlotResult {
   if (!input || typeof input !== 'object' || Array.isArray(input) ||
-      Object.keys(input).some(key => !['candidateQuery', 'steps', 'existing', 'limit'].includes(key)) ||
+      Object.keys(input).some(key => !['candidateQuery', 'steps', 'existing', 'bookingPolicy', 'limit'].includes(key)) ||
       !input.candidateQuery || typeof input.candidateQuery !== 'object' ||
       Array.isArray(input.candidateQuery) ||
       Object.keys(input.candidateQuery).some(key => ![
@@ -66,6 +72,8 @@ export function searchMultiStageSlots(input: MultiStageSlotQuery): MultiStageSlo
     throw new MultiStageSlotSearchError();
   }
   const limit = whole(input.limit ?? 24, 1, 64);
+  // Missing policy remains backward compatible; supplied versions fail closed.
+  const policy = input.bookingPolicy === undefined ? null : resolveBookingPolicy(input.bookingPolicy);
 
   // Force canonical validation of ALL steps and pre-existing claims even when
   // the supplied availability windows are empty. The probe is discarded.
@@ -85,7 +93,9 @@ export function searchMultiStageSlots(input: MultiStageSlotQuery): MultiStageSlo
   const requiredBefore = Math.max(0, ...input.steps.map(step => (step.bufferBeforeMinutes ?? 0) - step.offsetMinutes));
   const requiredAfter = Math.max(0, ...input.steps.map(step =>
     step.offsetMinutes + step.durationMinutes + (step.bufferAfterMinutes ?? 0) - duration));
-  if (duration !== maximumEnd || before < requiredBefore || after < requiredAfter) {
+  // Client-supplied envelope cannot shrink server policy buffers.
+  if ((policy && (before < policy.values.bufferBeforeMinutes || after < policy.values.bufferAfterMinutes)) ||
+      duration !== maximumEnd || before < requiredBefore || after < requiredAfter) {
     throw new MultiStageSlotSearchError();
   }
 
@@ -94,6 +104,7 @@ export function searchMultiStageSlots(input: MultiStageSlotQuery): MultiStageSlo
   const base = calculateSlotCandidates({ ...input.candidateQuery, limit: 256 });
   const accepted: MultiStageSuggestion[] = [];
   let rejectedByResources = 0;
+  let rejectedByPolicy = 0;
   for (const candidate of base.slots) {
     const preview = planExclusiveSegments({
       startsAtUtc: candidate.start,
@@ -102,6 +113,10 @@ export function searchMultiStageSlots(input: MultiStageSlotQuery): MultiStageSlo
     });
     if (!preview.ok) {
       rejectedByResources += 1;
+      continue;
+    }
+    if (policy && !decideBookingWindow(policy, policy.resolvedAtUtc, candidate.start).allowed) {
+      rejectedByPolicy += 1;
       continue;
     }
     accepted.push({
@@ -116,6 +131,12 @@ export function searchMultiStageSlots(input: MultiStageSlotQuery): MultiStageSlo
     truncated: base.truncated || accepted.length > limit,
     examinedCandidates: base.slots.length,
     rejectedByResources,
+    rejectedByPolicy,
+    policyEvidence: policy ? {
+      tenantRevision: policy.tenantRevision,
+      serviceRevision: policy.serviceRevision,
+      evaluatedAtUtc: policy.resolvedAtUtc
+    } : null,
     scannedBaseCandidates: base.scanned,
     candidateWindowLimit: 256
   };
