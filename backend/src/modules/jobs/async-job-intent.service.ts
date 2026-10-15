@@ -40,19 +40,20 @@ export async function claimDueAsyncJobs(tx: Prisma.TransactionClient, input: {
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new Error('JOB_CLOCK_INVALID');
   if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 15 || leaseSeconds > 900) throw new Error('JOB_LEASE_INVALID');
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 25) throw new Error('JOB_BATCH_INVALID');
-  const leaseUntil = new Date(now.getTime() + leaseSeconds * 1000);
+  // Database time is authoritative for claim expiry; worker clocks cannot
+  // steal a live lease early or complete an already-expired claim.
   return tx.$queryRaw<Array<{id: string; handlerKey: string; payload: unknown; attempts: number; maxAttempts: number; leaseOwner: string}>>(Prisma.sql`
     WITH due AS (
       SELECT "id" FROM public."AsyncJobIntent"
       WHERE "tenantId" = ${tenantId}
-        AND (("status" IN ('queued','retry') AND "runAt" <= ${now})
-          OR ("status" = 'running' AND "leaseUntil" <= ${now}))
+        AND (("status" IN ('queued','retry') AND "runAt" <= clock_timestamp())
+          OR ("status" = 'running' AND "leaseUntil" <= clock_timestamp()))
         AND "attempts" < "maxAttempts"
       ORDER BY "runAt" ASC, "createdAt" ASC
       FOR UPDATE SKIP LOCKED LIMIT ${limit}
     )
     UPDATE public."AsyncJobIntent" AS j
-    SET "status"='running', "leaseOwner"=${workerId} || ':' || gen_random_uuid()::text, "leaseUntil"=${leaseUntil},
+    SET "status"='running', "leaseOwner"=${workerId} || ':' || gen_random_uuid()::text, "leaseUntil"=clock_timestamp() + (${leaseSeconds} * INTERVAL '1 second'),
         "attempts"=j."attempts"+1, "updatedAt"=${now}
     FROM due WHERE j."id"=due."id" AND j."tenantId"=${tenantId}
     RETURNING j."id", j."handlerKey", j."payload", j."attempts", j."maxAttempts", j."leaseOwner"
@@ -68,7 +69,7 @@ export async function completeClaimedAsyncJob(tx: Prisma.TransactionClient, inpu
     UPDATE public."AsyncJobIntent"
     SET "status"='completed', "leaseOwner"=NULL, "leaseUntil"=NULL, "updatedAt"=${now}
     WHERE "tenantId" = ${tenantId} AND "id" = ${id}
-      AND "status"='running' AND "leaseOwner" = ${leaseToken} AND "leaseUntil" > ${now}
+      AND "status"='running' AND "leaseOwner" = ${leaseToken} AND "leaseUntil" > clock_timestamp()
     RETURNING "id"
   `);
   if (rows.length !== 1) throw new Error('ASYNC_JOB_LEASE_LOST');
@@ -88,7 +89,7 @@ export async function failClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
     SET "status"=${decision.status}, "runAt"=COALESCE(${decision.runAt}, "runAt"),
         "leaseOwner"=NULL, "leaseUntil"=NULL, "lastErrorCode"=${safeErrorCode}, "updatedAt"=${now}
     WHERE "tenantId"=${tenantId} AND "id"=${id}
-      AND "status"='running' AND "leaseOwner"=${leaseToken} AND "leaseUntil">${now}
+      AND "status"='running' AND "leaseOwner"=${leaseToken} AND "leaseUntil">clock_timestamp()
       AND "attempts"=${attempts} AND "maxAttempts"=${maxAttempts}
     RETURNING "id", "status"
   `);
@@ -109,7 +110,7 @@ export async function quarantineExhaustedAsyncJobLeases(tx: Prisma.TransactionCl
     WITH exhausted AS (
       SELECT "id" FROM public."AsyncJobIntent"
       WHERE "tenantId" = ${tenantId} AND "status" = 'running'
-        AND "leaseUntil" <= ${now} AND "attempts" >= "maxAttempts"
+        AND "leaseUntil" <= clock_timestamp() AND "attempts" >= "maxAttempts"
       ORDER BY "leaseUntil" ASC
       FOR UPDATE SKIP LOCKED LIMIT ${limit}
     )
