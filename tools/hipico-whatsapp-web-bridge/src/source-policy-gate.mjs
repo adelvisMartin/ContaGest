@@ -1,13 +1,18 @@
 import { resolveTransportCapabilities } from './transport-capabilities.mjs';
+import { WHATSAPP_POLICY_REVIEW_1011, evaluateWhatsAppUseCase1011 } from './policy-review-v1011.mjs';
 
 export const SOURCE_AUTO_REPLY_POLICY_NO_GO = 'SOURCE_AUTO_REPLY_POLICY_NO_GO';
-export const SOURCE_POLICY_SNAPSHOT = 'WHATSAPP_BUSINESS_POLICY_2026-09-29';
+export const SOURCE_POLICY_SNAPSHOT = WHATSAPP_POLICY_REVIEW_1011.id;
 export const SOURCE_POLICY_REFERENCE = 'https://business.whatsapp.com/policy/';
 
 export const SOURCE_POLICY_REVIEW = Object.freeze({
   snapshot: SOURCE_POLICY_SNAPSHOT,
   status: 'NO_GO',
-  reviewedAt: '2026-09-29',
+  reviewedAt: WHATSAPP_POLICY_REVIEW_1011.reviewedAt,
+  nextReviewBy: WHATSAPP_POLICY_REVIEW_1011.nextReviewBy,
+  officialGroupsApiDetails: WHATSAPP_POLICY_REVIEW_1011.officialGroupsApiDetails,
+  groupApiAccountEligibility: WHATSAPP_POLICY_REVIEW_1011.groupApiAccountEligibility,
+  legalReview: WHATSAPP_POLICY_REVIEW_1011.legalReview,
   policyReference: SOURCE_POLICY_REFERENCE,
   reason: 'REAL_MONEY_GAMBLING_PROHIBITED_BY_WHATSAPP_BUSINESS_POLICY'
 });
@@ -50,7 +55,8 @@ export function evaluateSourceAutoReplyPolicy(config = {}, capabilities = resolv
       metaPermissionRef: String(config.metaPermissionEvidenceRef || '').trim() || null,
       ageGateConfirmed: Boolean(config.sourceAgeGateConfirmed)
     }),
-    reasons: Object.freeze(reasons)
+    reasons: Object.freeze(reasons),
+    caseReview: evaluateWhatsAppUseCase1011('SOURCE_GENERAL_INFORMATION')
   });
 }
 
