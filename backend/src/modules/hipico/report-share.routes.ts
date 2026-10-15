@@ -223,7 +223,10 @@ export function createHipicoReportShareRouter(options: RouterOptions = {}) {
       // Only this authorized response exposes the raw secret, once.
       return res.status(201).json({
         ok: true, data: { id: result.id, expiresAt: result.expiresAt,
-          relativeUrl: `${reportPath}?t=${result.token}`
+          relativeUrl: `${reportPath}?t=${result.token}`,
+          ...(parsed.data.audience === 'group' ? {
+            consolidatedRelativeUrl: `${reportPath}?t=${result.token}&view=consolidated`
+          } : {})
         }
       });
     } catch { return res.status(503).json({ ok: false, code: 'HIPICO_REPORT_ISSUE_UNAVAILABLE' }); }
