@@ -115,3 +115,17 @@ fraccionarios, negativos, cero, `NaN`, infinitos y enteros inseguros.
 Conserva el límite operativo de 1000 filas por lote y el default 250.
 La integración PG17 requiere error `PURGE_BATCH_SIZE_INVALID` sin alterar
 el estado o contador de intentos de un job.
+
+### Compatibilidad Prisma/PostgreSQL 17 de locks de ciclo de vida
+
+El retorno de `pg_advisory_xact_lock(bigint)` es `void`. En el candidato
+anterior los cuatro locks se consultaban con `SELECT pg_advisory_xact_lock(...)`,
+lo que expone el tipo void al deserializador de `$queryRaw`. Ahora se
+adquieren dentro de la misma transacción con
+`SELECT 1::integer AS "lockAcquired" FROM pg_advisory_xact_lock(...)`,
+cuyo resultado es un entero soportado. El control de fuente exige cuatro
+usos seguros y prohíbe seleccionar directamente el retorno void.
+
+La corrección **no está verificada aún contra Prisma y PostgreSQL real**.
+La regresión de integración PG17 de policy/legal hold/purge sigue siendo
+gate material pendiente para fusionar este PR destructivo.

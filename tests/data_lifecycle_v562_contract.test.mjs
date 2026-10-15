@@ -189,3 +189,26 @@ test('#658 purge batch size validation is shared before any SQL or job creation'
   assert.match(request, /normalizePurgeBatchSize\(input\.batchSize\)/);
   assert.match(execution, /normalizePurgeBatchSize\(input\.batchSize\)/);
 });
+
+test('#658 pg advisory lock results never return PostgreSQL void to Prisma', () => {
+  // pg_advisory_xact_lock returns type void. Prisma raw selects must project
+  // a supported integer instead, without changing transaction lock semantics.
+  assert.doesNotMatch(service, /SELECT\s+pg_advisory_xact_lock\(/i);
+  const safeLocks = [...service.matchAll(/SELECT\s+1::integer\s+AS\s+"lockAcquired"\s+FROM\s+pg_advisory_xact_lock\(/g)];
+  assert.equal(safeLocks.length, 4, 'tenant x3 and policy entity x1 locks must all project an integer');
+  const policyWrite = service.slice(
+    service.indexOf('export async function createRetentionPolicyVersion'),
+    service.indexOf('export async function listRetentionPolicies')
+  );
+  const legalHold = service.slice(
+    service.indexOf('export async function createLegalHold'),
+    service.indexOf('export async function listLegalHolds')
+  );
+  const purge = service.slice(
+    service.indexOf('export async function executePurgeBatch'),
+    service.indexOf('export async function registerStorageObject')
+  );
+  for (const scope of [policyWrite, legalHold, purge]) {
+    assert.match(scope, /1::integer\s+AS\s+"lockAcquired"\s+FROM\s+pg_advisory_xact_lock/);
+  }
+});

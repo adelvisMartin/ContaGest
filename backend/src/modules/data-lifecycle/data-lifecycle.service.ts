@@ -112,10 +112,10 @@ export async function createRetentionPolicyVersion(input: {
     // Serialize policy changes with purge batches and legal holds of this tenant.
     // Acquire tenant lock before the narrower entity/version lock everywhere.
     await tx.$queryRaw(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 562))
+      SELECT 1::integer AS "lockAcquired" FROM pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 562))
     `);
     await tx.$queryRaw(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${`${input.tenantId}:${input.entityType}`}, 562))
+      SELECT 1::integer AS "lockAcquired" FROM pg_advisory_xact_lock(hashtextextended(${`${input.tenantId}:${input.entityType}`}, 562))
     `);
     const versions = await tx.$queryRaw<Array<{ version: number }>>(Prisma.sql`
       SELECT COALESCE(MAX("version"), 0)::integer AS "version"
@@ -184,7 +184,7 @@ export async function createLegalHold(input: {
     // Serialize newly-created tenant/entity/record holds against a running purge.
     // This lock covers all lifecycle classes for this tenant, intentionally.
     await tx.$queryRaw(Prisma.sql`
-      SELECT pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 562))
+      SELECT 1::integer AS "lockAcquired" FROM pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 562))
     `);
     const rows = await tx.$queryRaw<any[]>(Prisma.sql`
     INSERT INTO public."DataLegalHold" (
@@ -452,7 +452,7 @@ export async function executePurgeBatch(input: { tenantId: string; jobId: string
       // Also used by createLegalHold. A hold arriving during this transaction
       // must wait and applies to the *next* batch, never to a half-committed one.
       await tx.$queryRaw(Prisma.sql`
-        SELECT pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 562))
+        SELECT 1::integer AS "lockAcquired" FROM pg_advisory_xact_lock(hashtextextended(${input.tenantId}, 562))
       `);
       const jobs = await tx.$queryRaw<LifecycleJobRow[]>(Prisma.sql`
         SELECT * FROM public."DataLifecycleJob"
