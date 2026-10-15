@@ -25,7 +25,8 @@ La aplicación interna de Control Hípico incorpora **Consolidador** como pesta�
 ## Funciones de uso y exportación
 
 - Fecha ISO con **Ver** y **Hoy** Caracas; **Actualizar** reusa la consulta local/nube conservadora de los informes previos.
-- Búsqueda por código o nombre; filtros positivos/negativos/cero por columna; ordenación ascendente/descendente y reordenación de columnas mediante botones utilizables con teclado.
+- Búsqueda por código o nombre; filtros positivos/negativos/cero por columna; ordenación ascendente/descendente y reordenación de columnas mediante botones utilizables con teclado. Una moneda no se suma con otra ni siquiera para ordenar: se agrupa por los códigos de moneda comparables.
+- Cada participante puede abrirse directamente en **Estado personal** mediante un botón de la fila, conservando fecha y grupo; «Volver al consolidador» retorna a la tabla filtrada y paginada. Cambiar de grupo reinicia filtros personales y estado de consulta.
 - **Ocultar sin movimientos** considera operaciones/jugadas **del día consultado**, no elimina al participante ni modifica el saldo; valor inicial activado. Tamaño de página: **21**; la tabla indica cuántos cumplen los filtros.
 - Paneles independientes: **total del grupo** sin filtros y **total de las cuentas filtradas** antes de paginar. Para operaciones monetarias, las monedas permanecen separadas por código de origen. No sumar USD+VES. Cada export contiene la **página realmente visible** y el orden visible de columnas, no las 42 cuentas ocultas.
 - **Copiar Excel** genera TSV con protección contra inyección de fórmulas; **XLSX** usa `reports.js` existente; **PDF** muestra rótulo, fecha, columnas y valores por participante; **Imagen PNG** usa Canvas local, sin render remoto ni bibliotecas externas. PNG está dimensionado para una sola página de 21 filas; se trunca visualmente el ancho de celdas que no cabe, mientras XLSX/PDF conserva el valor completo.
