@@ -13,6 +13,7 @@ import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from '
 import { deriveReorderCandidates } from './replenishment-candidates.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
 import { LOT_EXPIRY_RISK_VERSION, expiryUtcBounds, projectLotExpiryRisk } from './lot-expiry-risk.js';
+import { summarizePhysicalOutbound } from './stock-movement-activity.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('reports.view'));
@@ -260,6 +261,58 @@ router.get('/inventory/expiry', asyncHandler(async (req, res) => {
     rows,
     pagination: { hasMore, nextSkip: hasMore ? skip + take : null }
   });
+}));
+
+// Advisory outbound inactivity only: a verified physical ledger does not
+// establish customer demand or inventory location. No auto purchasing.
+const physicalOutboundQuery = z.object({
+  productId: z.string().uuid(),
+  inactivityDays: z.coerce.number().int().min(1).max(3650).default(90)
+}).strict();
+router.get('/inventory/slow-moving', asyncHandler(async (req, res) => {
+  const parsed = physicalOutboundQuery.safeParse(req.query);
+  if (!parsed.success) throw new HttpError(400, 'Filtros de actividad física inválidos.', { code: 'OUTBOUND_ACTIVITY_QUERY_INVALID' });
+  const ctx = context(req);
+  const asOf = new Date();
+  try {
+    const result = await prisma.$transaction(async tx => {
+      const product = await tx.product.findFirst({
+        where: { id: parsed.data.productId, tenantId: ctx.tenantId, active: true },
+        select: { id: true, sku: true, name: true, unit: true, stock: true }
+      });
+      if (!product) throw new HttpError(404, 'Producto no encontrado.', { code: 'OUTBOUND_PRODUCT_NOT_FOUND' });
+      const movements = await tx.inventoryMovement.findMany({
+        where: { tenantId: ctx.tenantId, productId: product.id },
+        select: { id: true, type: true, quantity: true, createdAt: true },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: STOCK_AGEING_MAX_MOVEMENTS + 1
+      });
+      if (movements.length > STOCK_AGEING_MAX_MOVEMENTS)
+        throw new HttpError(409, 'Historial demasiado extenso para verificar el indicador.', { code: 'OUTBOUND_HISTORY_LIMIT' });
+      const reconciliation = calculateStockAgeing({ movements, stockExact: product.stock, asOf });
+      return {
+        product: { id: product.id, sku: product.sku, name: product.name, unit: product.unit },
+        activity: summarizePhysicalOutbound({
+          movements,
+          stockExact: reconciliation.stockExact,
+          asOf,
+          inactivityDays: parsed.data.inactivityDays,
+          reconciled: true
+        }),
+        provenance: {
+          reconciliation: reconciliation.version,
+          movementCount: reconciliation.movementCount,
+          lotAllocation: 'NOT_VERIFIED'
+        }
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+    res.setHeader('cache-control', 'no-store');
+    ok(res, result);
+  } catch (error) {
+    if (error instanceof StockAgeingError || error instanceof TypeError)
+      throw new HttpError(409, 'No se puede confirmar el indicador: historial físico inválido o no conciliado.', { code: 'OUTBOUND_ACTIVITY_UNRECONCILED' });
+    throw error;
+  }
 }));
 
 router.get('/inventory/reorder', asyncHandler(async (req, res) => {
