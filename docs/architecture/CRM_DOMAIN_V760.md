@@ -223,3 +223,105 @@ Verificación: `node --test tests/crm_leads_ui_v760.test.mjs` se enlaza al
 no sustituyen un flujo HTTP/Playwright con cookie/CSRF ni PG17 real.
 El CRM completo sigue pendiente: actualización, oportunidades, cotizaciones,
 métricas, Client conversion atómica, import/export, permisos E2E y QA.
+
+## 2026-10-15 · Actualización transaccional de etapa de prospectos
+
+`PATCH /api/v1/modules/crm/leads/:id/stage` permite mover un lead
+`new → qualified / lost` o `qualified → lost`. Requiere el permiso
+`sales.manage`, actor y tenant autorizados en sesión, un ID de lead UUID
+y un cuerpo estricto `{nextStage,expectedUpdatedAt}` con revisión UTC
+milisegundos obtenida del listado. No permite `proposal`, `won` ni reabrir
+`lost`: pertenecen al ciclo de Opportunity y/o Quote #753 futuro.
+
+El servicio `crm-lead-stage.mjs` realiza dentro de **una transacción Prisma**:
+(1) buscar por `id + tenantId + moduleSlug=crm-leads`; (2) validar
+etapa y revisión; (3) `updateMany` con comparación atómica de
+`id+tenantId+moduleSlug+status+updatedAt`, exigiendo exactamente una fila;
+(4) insertar AuditLog de etapas sin RIF/correo ni payload PII;
+(5) releer por alcance de empresa y devolver `{id,stage,updatedAt}`.
+Cuando otra transacción modificó el prospecto, responde HTTP 409, sin
+sobrescribir ni generar auditoría. Lead ajeno responde 404. Un fallo de
+auditoría o fallo de lectura final revierte toda la transacción.
+
+La fecha `updatedAt` sirve como token de concurrencia del modelo legado;
+una columna entera `version` y un histórico inmutable de eventos siguen
+siendo los contratos recomendados para el esquema CRM definitivo. No
+se crea cliente, documento comercial, ingreso ni puntuación de IA.
+El nuevo `.mjs` se copia al `dist` compilado mediante el script
+`copy-runtime-assets.mjs`; su regresión está incluida en backend `npm test`.
+
+Verificación: `node --test tests/crm_lead_stage_v760.test.mjs` con Prisma
+simulado para casos de CAS, rollback, bloqueo de etapas, aislamiento y
+rutas, sin afirmar que sustituye pruebas de transacción PostgreSQL 17.
+Pendientes: tests HTTP con JWT/CSRF/RBAC, PG17 multi-tenant, navegación
+de la UI hacia el PATCH y browser E2E. El ticket #760 permanece ABIERTO
+hasta completar Opportunity/Quote y conversión transaccional a Client.
+
+## 2026-10-15 · Cambiar etapa del lead desde Clientes
+
+El directorio **Últimos prospectos** ahora muestra acciones Calificar
+y Descartar solo para etapas admitidas. Los botones usan `ErpButton`
+canónico y almacenan exclusivamente ID y destino; el cliente recupera
+`updatedAt` de la última consulta autorizada al servidor para formar
+`PATCH /modules/crm/leads/:id/stage` con `{nextStage,expectedUpdatedAt}`.
+
+El servicio `crmLeadService.mjs` valida UUID de lead, sello UTC exacto
+y grafo permitido antes de contactar con BackendApi; la sesión y CSRF
+se suministran por el transporte común. El botón se deshabilita mientras
+hay una petición y un guard evita doble submit. En éxito, error o HTTP
+409, el listado se vuelve a solicitar en vez de modificar `Store`
+anticipadamente. Los mensajes accesibles no exponen PII del servidor.
+Los prospectos descartados no ofrecen acciones y los calificados
+solo permiten Descartar: una venta ganada no existe en el modelo Lead.
+
+La suite `tests/crm_leads_ui_v760.test.mjs`, ya conectada al root npm test,
+verifica permisos implícitos de servicio, validación de revisión y etapa,
+no reintento del PATCH 409 y binding de botones en la vista. Aún falta
+QA de navegador y PostgreSQL17 con modificaciones concurrentes reales.
+
+El issue CRM #760 continúa abierto para Opportunities y Quote #753,
+conversión Client atómica, métricas de pipeline, timeline, import/export
+y certificación de producción.
+
+## 2026-10-15 · Opportunity draft desde un prospecto calificado
+
+**Nuevas rutas**: `POST /api/v1/modules/crm/opportunities/from-lead/:leadId`
+(`sales.manage`) y `GET /api/v1/modules/crm/opportunities` (`sales.view`).
+Reutilizan el router `/modules` y el modelo operacional temporal
+`ModuleRecord` con slug reservado `crm-opportunities` (no está en Stitch).
+No se crea una segunda tabla `Client`, cotización, factura, ledger ni
+migración, y se mantiene el mismo aislamiento del servidor por tenant.
+
+El POST exige un `Lead` de ese tenant con etapa `qualified` y revisión
+`expectedLeadUpdatedAt` UTC exacta, y un cuerpo estricto con `title`,
+`currency` (tres letras ISO), `expectedValue` decimal positivo de
+precisión fija (18,2) y `probability` entera 0–100. Los importes se
+normalizan como cadenas con cálculo BigInt; son **previsiones**, no
+autoridad fiscal, financiera ni equivalencias FX. La nueva oportunidad
+nace en `qualified` sin confirmar propuesta, venta ni conversión Cliente.
+
+El `ModuleRecord.id` de oportunidad deriva de SHA-256(tenant + lead UUID
++ separador de dominio) con forma UUIDv5. El mismo lead del mismo tenant
+no puede abrir dos oportunidades iniciales; PK duplicada devuelve 409.
+Dentro de la **misma transacción Prisma**, se comprueba el Lead calificado,
+se hace CAS `updateMany` de id+tenant+slug+status+updatedAt con count=1
+y `data:{status:'qualified'}` (toca su revisión), se inserta Opportunity
+y un AuditLog mínimo. Esta revisión optimista serializa el alta frente
+a `qualified→lost`; si el Lead cambió, responde 409. Una pérdida
+de conexión después del commit no genera otra oportunidad al reintentar
+con el mismo lead. El backend omite RIF, correo, notas y valores
+económicos de la auditoría.
+
+Listado limitado a 100 filas, ordenado y filtrado en Prisma por empresa
+y slug. La API no promete una conversión a `Client` ni un pipeline
+de Opportunity completo: todavía faltan edición, CAS/versionado real
+por oportunidad, registro duradero de eventos, métricas y gráficos
+con multi-moneda sin mezclas, integración de Quote #753, import/export
+y UX operativa. El modelo `ModuleRecord` sigue siendo transitorio;
+la futura migración debe preservar Lead y Opportunity existentes.
+
+QA: `node --test tests/crm_opportunity_capture_v760.test.mjs`, incorporado
+a backend npm test. El ensayo aislado con una transacción simulada
+NO sustituye PostgreSQL17 con restricciones, locks y RLS reales.
+Se requiere también TypeScript build, HTTP autenticado/CSRF/RBAC y E2E.
+El ticket #760 permanece abierto hasta verificar el CRM completo.

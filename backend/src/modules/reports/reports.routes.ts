@@ -11,7 +11,7 @@ import {
 import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRows } from './sales-kpi.js';
 import { summarizeInvoicedUnitActivity } from './invoiced-unit-activity.js';
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
-import { deriveReorderCandidates } from './replenishment-candidates.js';
+import { prepareReorderStockPage } from './replenishment-candidates.js';
 import { previewReorderPolicy } from './reorder-policy-preview.js';
 import { parseReorderScanQuery, reorderScanPageMeta } from './reorder-scan-page.js';
 import { parseReorderSalesOptions, projectReorderSalesEvidence } from './reorder-sales-evidence.js';
@@ -472,7 +472,7 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
 
   // Product catalog and optional observed sales share one PG snapshot.
   // Across separate offset pages there is NO durable snapshot.
-  const { activeProducts, products, salesGroups } = await prisma.$transaction(async tx => {
+  const { activeProducts, scan, salesGroups } = await prisma.$transaction(async tx => {
     const [activeProducts, products] = await Promise.all([
       tx.product.count({ where: { tenantId: ctx.tenantId, active: true } }),
       tx.product.findMany({
@@ -491,10 +491,23 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
         take
       })
     ]);
-    // Reported invoice quantity is only for reorder candidates scanned in
-    // this page. Invoice tenant and status live on the parent document.
+    // Validate and segregate ALL canonical page balances first, while still
+    // inside the same snapshot and BEFORE even an optional sales aggregation.
+    // A malformed page must fail as 409, never escape as an unhandled TypeError.
+    const scan = (() => {
+      try {
+        return prepareReorderStockPage(products.map(buildInventoryStockHealth));
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        throw new HttpError(409, 'El cálculo de disponibilidad no concuerda con los datos canónicos.', {
+          code: 'REORDER_STOCK_PROJECTION_CONFLICT'
+        });
+      }
+    })();
+    // Only safe reorder candidates may participate in the optional invoice
+    // aggregate; exceptions stay visible in the report but are not queried.
     const candidateIds = salesOptions.includeSalesEvidence
-      ? deriveReorderCandidates(products.map(buildInventoryStockHealth)).map(row => row.productId)
+      ? scan.salesCandidateIds
       : [];
     const salesGroups = candidateIds.length
       ? await tx.salesInvoiceLine.groupBy({
@@ -514,14 +527,15 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
           orderBy: { productId: 'asc' }
         })
       : [];
-    return { activeProducts, products, salesGroups };
+    return { activeProducts, scan, salesGroups };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 
-  const rows = products.map(buildInventoryStockHealth);
+  // The validated page and commercial aggregate came from ONE snapshot.
+  // Invalid balances remain in the original rows/summary, not candidates.
+  const { rows, stockReview, reorderCandidates } = scan;
   const filteredRows = onlyNeedsReorder ? rows.filter(row => row.needsReorder) : rows;
-  const reorderCandidates = deriveReorderCandidates(rows);
   const pagination = reorderScanPageMeta({
-    skip, take, scannedProducts: products.length, activeProducts,
+    skip, take, scannedProducts: rows.length, activeProducts,
     matchesInPage: rows.filter(row => row.needsReorder).length
   });
 
@@ -562,6 +576,9 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
       autoPurchaseEnabled: false,
       noLocationForecastUntil: '#755',
       reorderCandidates,
+      stockExceptions: stockReview.stockExceptions,
+      stockExceptionCount: stockReview.stockExceptions.length,
+      exceptionsScope: 'SCANNED_CATALOG_PAGE_ONLY',
       ...(salesEvidence ? {
         salesEvidence: {
           ...salesEvidence,
@@ -573,7 +590,7 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
     meta: {
       onlyNeedsReorder,
       activeProducts,
-      scannedProducts: products.length,
+      scannedProducts: rows.length,
       scanLimit: take,
       skip,
       pageScoped: true,

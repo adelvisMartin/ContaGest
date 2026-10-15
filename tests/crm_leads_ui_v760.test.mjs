@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createCrmLeadService, normalizeCrmLeadDraft, CRM_LEADS_ENDPOINT } from '../frontend/src/services/crmLeadService.mjs';
+import { createCrmLeadService, normalizeCrmLeadDraft, CRM_LEADS_ENDPOINT, validateLeadStageAction } from '../frontend/src/services/crmLeadService.mjs';
 
 const KEY_A='aacaa84f-03d2-42e1-8039-e4f47b39ad42';
 const KEY_B='ce796bd2-0afe-422c-8210-42903a6c345e';
@@ -63,4 +63,54 @@ test('UI embeds prospect list/form inside canonical Clients screen, not a second
  assert.match(ui,/createCrmLeadService/); assert.match(ui,/await crmLeads\.create\(data\)/);
  assert.match(ui,/await crmLeads\.list\(\)/);assert.match(ui,/role="status" aria-live="polite"/);
  assert.doesNotMatch(ui,/Store\.update\(\(draft\).*crmLeads/);
+});
+
+const EXISTING_LEAD_ID='00a94043-3ec9-5cef-9019-443c9da5369b';
+const EXISTING_DATE='2026-10-15T17:30:12.230Z';
+const existing=(stage='new')=>({
+  id:EXISTING_LEAD_ID,stage,updatedAt:EXISTING_DATE,name:'Lead'
+});
+test('lead stage service calls canonical PATCH with exactly expected server revision',async()=>{
+ let call;
+ const service=createCrmLeadService({api:fake({request:async(path,opts)=>{
+  call={path,opts};return {id:EXISTING_LEAD_ID,stage:'qualified',updatedAt:'2026-10-15T18:00:00.000Z'};
+ }})});
+ const result=await service.changeStage(existing(),'qualified');
+ assert.equal(call.path,CRM_LEADS_ENDPOINT+'/'+EXISTING_LEAD_ID+'/stage');
+ assert.equal(call.opts.method,'PATCH');
+ assert.deepEqual(call.opts.body,{nextStage:'qualified',expectedUpdatedAt:EXISTING_DATE});
+ assert.deepEqual(result,{id:EXISTING_LEAD_ID,stage:'qualified',updatedAt:'2026-10-15T18:00:00.000Z'});
+});
+test('lead stage action never permits opportunity proposal, won or terminal reopening',()=>{
+ for(const [stage,next] of [
+  ['new','proposal'],['new','won'],['qualified','won'],['lost','qualified'],
+  ['qualified','qualified'],['unknown','lost']
+ ])assert.throws(()=>validateLeadStageAction(existing(stage),next),/CRM_STAGE_ACTION_INVALID/);
+ assert.equal(validateLeadStageAction(existing('qualified'),'lost').nextStage,'lost');
+});
+test('invalid ID or timestamp blocks stage PATCH before any API call',async()=>{
+ let calls=0;
+ const svc=createCrmLeadService({api:fake({request:async()=>{calls++;return{}}})});
+ for(const data of [
+  {...existing(),id:'../../bad'},
+  {...existing(),updatedAt:'2026-02-30T17:30:12.230Z'},
+  {...existing(),updatedAt:'2026-10-15T17:30:12+00:00'}
+ ])await assert.rejects(svc.changeStage(data,'qualified'),/CRM_STAGE_ACTION_INVALID/);
+ assert.equal(calls,0);
+});
+test('conflict 409 does not automatically retry a stale stage PATCH',async()=>{
+ let calls=0;
+ const svc=createCrmLeadService({api:fake({request:async()=>{calls++;throw Object.assign(new Error('stale'),{status:409});}})});
+ await assert.rejects(svc.changeStage(existing(),'qualified'),/stale/);
+ assert.equal(calls,1);
+});
+test('UI stage controls use existing server rows, accessible errors and refresh',()=>{
+ const ui=readFileSync(new URL('../frontend/src/pages/ClientsPage.js',import.meta.url),'utf8');
+ assert.match(ui,/data:\{'crm-stage-id':lead\.id,'crm-next-stage':'qualified'\}/);
+ assert.match(ui,/data:\{'crm-stage-id':lead\.id,'crm-next-stage':'lost'\}/);
+ assert.match(ui,/loadedCrmLeads\.find\(item=>item\.id===button\.dataset\.crmStageId\)/);
+ assert.match(ui,/await crmLeads\.changeStage\(lead,button\.dataset\.crmNextStage\)/);
+ assert.match(ui,/await refreshCrmLeads\(\)/);
+ assert.match(ui,/error\?\.status===409/);
+ assert.doesNotMatch(ui,/Store\.update\(\(draft\).*stageRequestInFlight/);
 });

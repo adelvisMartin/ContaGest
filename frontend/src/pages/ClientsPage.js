@@ -48,11 +48,15 @@ export const ClientsPage = {
     const crmLeads = createCrmLeadService({api:BackendApi});
     const status = document.getElementById('crmLeadStatus');
     const results = document.getElementById('crmLeadResults');
+    let loadedCrmLeads = [];
+    let stageRequestInFlight = false;
     const refreshCrmLeads = async () => {
+      loadedCrmLeads = [];
       if (!results) return;
       results.textContent = 'Cargando prospectos…';
       try {
         const rows = await crmLeads.list();
+        loadedCrmLeads = rows;
         if (!rows.length) {
           results.textContent = 'Todavía no hay prospectos registrados para esta empresa.';
           return;
@@ -64,13 +68,48 @@ export const ClientsPage = {
             {key:'stage',label:'Etapa',render:(lead)=>safe(lead.stage||'new')},
             {key:'email',label:'Correo',render:(lead)=>safe(lead.email)},
             {key:'phone',label:'Teléfono',render:(lead)=>safe(lead.phone)},
-            {key:'createdAt',label:'Registrado',render:(lead)=>safe(lead.createdAt?new Date(lead.createdAt).toLocaleDateString('es-VE'):'')}
+            {key:'createdAt',label:'Registrado',render:(lead)=>safe(lead.createdAt?new Date(lead.createdAt).toLocaleDateString('es-VE'):'')},
+            {key:'actions',label:'Etapa',render:(lead)=>{
+              if (lead.stage === 'lost') return Badge('Descartado','neutral');
+              const actions=[];
+              if (lead.stage === 'new') actions.push(ErpButton('Calificar',{
+                variant:'secondary',data:{'crm-stage-id':lead.id,'crm-next-stage':'qualified'}
+              }));
+              if (lead.stage === 'new' || lead.stage === 'qualified') actions.push(ErpButton('Descartar',{
+                variant:'danger',data:{'crm-stage-id':lead.id,'crm-next-stage':'lost'}
+              }));
+              return actions.length ? ErpRow(actions.join(''),{wrap:true}) : Badge('Sin acciones','neutral');
+            }}
           ],rows
         });
       } catch (_error) {
         results.textContent = 'No se pudieron consultar los prospectos. Comprueba tu sesión y vuelve a intentar.';
       }
     };
+    results?.addEventListener('click',async(event)=>{
+      const button=event.target?.closest?.('[data-crm-stage-id]');
+      if (!button || stageRequestInFlight) return;
+      const lead=loadedCrmLeads.find(item=>item.id===button.dataset.crmStageId);
+      if (!lead) return;
+      stageRequestInFlight=true;
+      button.setAttribute('disabled','disabled');
+      if (status) status.textContent='Actualizando etapa del prospecto…';
+      try {
+        await crmLeads.changeStage(lead,button.dataset.crmNextStage);
+        if (status) status.textContent='La nueva etapa quedó guardada y auditada.';
+        Toast.show('Etapa de prospecto actualizada.', 'success');
+      } catch (error) {
+        const concurrent=error?.status===409;
+        if (status) status.textContent=concurrent
+          ? 'Otro usuario actualizó el prospecto. El listado se volverá a consultar.'
+          : 'No se confirmó el cambio de etapa. No se realizaron cambios locales.';
+        Toast.show('No se pudo confirmar la etapa. Revisa el listado actualizado.', 'warning');
+      } finally {
+        button.removeAttribute('disabled');
+        stageRequestInFlight=false;
+        await refreshCrmLeads();
+      }
+    });
     document.getElementById('crmLeadRefresh')?.addEventListener('click',()=>{void refreshCrmLeads()});
     mountSubmit('#crmLeadForm', async (data, form) => {
       const submit = form.querySelector('button[type="submit"]');
