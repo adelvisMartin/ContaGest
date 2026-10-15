@@ -14,6 +14,7 @@ import { deriveReorderCandidates } from './replenishment-candidates.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
 import { LOT_EXPIRY_RISK_VERSION, expiryUtcBounds, projectLotExpiryRisk } from './lot-expiry-risk.js';
 import { summarizePhysicalOutbound } from './stock-movement-activity.js';
+import { calculateObservedStockCoverage } from './stock-coverage.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('reports.view'));
@@ -278,7 +279,7 @@ router.get('/inventory/slow-moving', asyncHandler(async (req, res) => {
     const result = await prisma.$transaction(async tx => {
       const product = await tx.product.findFirst({
         where: { id: parsed.data.productId, tenantId: ctx.tenantId, active: true },
-        select: { id: true, sku: true, name: true, unit: true, stock: true }
+        select: { id: true, sku: true, name: true, unit: true, stock: true, reserved: true }
       });
       if (!product) throw new HttpError(404, 'Producto no encontrado.', { code: 'OUTBOUND_PRODUCT_NOT_FOUND' });
       const movements = await tx.inventoryMovement.findMany({
@@ -290,13 +291,21 @@ router.get('/inventory/slow-moving', asyncHandler(async (req, res) => {
       if (movements.length > STOCK_AGEING_MAX_MOVEMENTS)
         throw new HttpError(409, 'Historial demasiado extenso para verificar el indicador.', { code: 'OUTBOUND_HISTORY_LIMIT' });
       const reconciliation = calculateStockAgeing({ movements, stockExact: product.stock, asOf });
-      return {
-        product: { id: product.id, sku: product.sku, name: product.name, unit: product.unit },
-        activity: summarizePhysicalOutbound({
+      const activity = summarizePhysicalOutbound({
           movements,
           stockExact: reconciliation.stockExact,
           asOf,
           inactivityDays: parsed.data.inactivityDays,
+          reconciled: true
+        });
+      return {
+        product: { id: product.id, sku: product.sku, name: product.name, unit: product.unit },
+        activity,
+        coverage: calculateObservedStockCoverage({
+          stockExact: reconciliation.stockExact,
+          reservedExact: product.reserved,
+          outboundQuantityWindowExact: activity.outboundQuantityWindowExact,
+          windowDays: parsed.data.inactivityDays,
           reconciled: true
         }),
         provenance: {
