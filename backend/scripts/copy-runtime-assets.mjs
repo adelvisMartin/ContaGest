@@ -28,6 +28,10 @@ const assets = [
   {
     source: 'src/modules/crm/crm-opportunity-store.mjs',
     target: 'dist/src/modules/crm/crm-opportunity-store.mjs'
+  },
+  {
+    source: 'src/modules/crm/crm-opportunity-stage.mjs',
+    target: 'dist/src/modules/crm/crm-opportunity-stage.mjs'
   }
 ];
 
