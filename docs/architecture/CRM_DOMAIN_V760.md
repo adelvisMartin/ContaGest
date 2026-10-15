@@ -55,3 +55,16 @@ implemented. Final authority remains the canonical `Client` table, server
 tenant context, RBAC and database uniqueness/atomic transaction. A later
 transactional converter must re-run and enforce this conflict rule against
 fresh tenant-scoped data, never trust a stale or client-supplied candidate list.
+
+
+## 2026-10-15 · Canonical Client matching preflight API (partial CRM #760)
+
+**Live mounted endpoint:** `POST /api/v1/clients/preflight` (same existing `/clients` route authority, not a second CRM module). Requires a verified tenant and the existing `clients.manage` permission plus the existing licence guard. Request body is strict JSON with `rif` and/or `email`. Unknown keys and malformed supplied identities are rejected. Tenant/user are taken from the server session, never from body or headers in production.
+
+The handler queries **only the existing Prisma Client model** and is deliberately read-only. Query predicates include tenantId, active clients, exact-case-insensitive normalized RIF variants or email, a bounded 201-row read (200 maximum results), and a minimal field selection. More than 200 matches returns `BLOCKED/CANDIDATE_LIMIT_EXCEEDED` with no candidate IDs. Database errors do not become authorization to convert. The verdict always contains `reviewOnly:true` and `conversionAuthorized:false`; it exposes only opaque Client IDs, no client emails/RIF/contact fields.
+
+This is a **heuristic review aid**, not a comprehensive fiscal uniqueness check: legacy Client RIF punctuation variants beyond the three enumerated spellings may not match. An empty result does **not** prove that no client already exists. The eventual persistent conversion must re-query canonical Client under tenant-scoped locks/unique RIF rules, apply RBAC, and atomically reconcile. Email addresses are not legal taxpayer identities; cross-RIF same-email candidates are blocked.
+
+Regression command (repository root): `node --test tests/crm_client_preflight_v760.test.mjs`; wired into `backend npm test`. The isolated suite uses an injected fake Prisma reader, not a real PostgreSQL instance. Route HTTP / auth / PG17 / E2E tests and full backend typecheck/build remain pending before treating the entire CRM as production-ready; #760 stays OPEN.
+
+No Lead/Opportunity DDL, quote link, conversion mutation, FX/accounting, provider notification, frontend UI or migration is delivered by this slice. Revert the isolated endpoint, runner hook and helper to roll back without data loss.
