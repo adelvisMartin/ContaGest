@@ -96,7 +96,6 @@ export async function failClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
   return rows[0];
 }
 
-
 // Expired last-attempt claims must not remain permanently stuck as running.
 // A future tenant-scoped reconciler should run this periodically after binding tenant RLS.
 export async function quarantineExhaustedAsyncJobLeases(tx: Prisma.TransactionClient, input: {
