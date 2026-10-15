@@ -46,7 +46,7 @@ async function api(t: any) {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/hipico/report-shares', createHipicoReportShareRouter({
-    ownerId: () => owner, validateOperator: (v) => v === 'approved-operator', store: fakeStore as any, now: () => now
+    ownerId: () => owner, validateOperator: (v) => v === 'approved-operator', store: fakeStore as any, now: () => now, enabled: () => true
   }));
   const server = app.listen(0,'127.0.0.1');
   await new Promise<void>((resolve, reject) => {
@@ -206,3 +206,29 @@ test('revoked group capability never grants consolidated access',async(t)=>{
   const base=await api(t);
   assert.equal((await fetch(base+'/public?t='+groupToken+'&view=consolidated')).status,404);
 });
+
+
+test('production defaults fail closed with no public reads, mutations or token validation',async(t)=>{
+  const app=express();app.use(express.json());
+  let issued=false,read=false;
+  const guarded=createHipicoReportShareRouter({
+    enabled:()=>false,ownerId:()=>owner,validateOperator:()=>true,now:()=>now,
+    store:{ ...fakeStore, issue: async (v:any) => {issued=true;return fakeStore.issue(v)},
+      read: async (o:string,t:string,d:string) => {read=true;return fakeStore.read(o,t,d)} } as any
+  });
+  app.use('/api/v1/hipico/report-shares',guarded);
+  const server=app.listen(0,'127.0.0.1');
+  await new Promise<void>(resolve=>server.once('listening',resolve));
+  t.after(()=>new Promise<void>(resolve=>server.close(()=>resolve())));
+  const base='http://127.0.0.1:'+(server.address() as AddressInfo).port+'/api/v1/hipico/report-shares';
+  const pub=await fetch(base+'/public?t='+token+'&view=consolidated');
+  assert.equal(pub.status,503);
+  assert.equal((await pub.json() as any).code,'HIPICO_REPORT_SHARES_DISABLED');
+  assert.match(pub.headers.get('cache-control')||'',/no-store/);
+  const write=await fetch(base,{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({groupKey:'triple-c',audience:'group',hours:3})});
+  assert.equal(write.status,503);
+  assert.equal(issued,false);
+  assert.equal(read,false);
+});
+
