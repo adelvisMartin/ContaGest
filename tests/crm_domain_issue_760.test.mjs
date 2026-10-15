@@ -72,3 +72,36 @@ test('invalid probability, currency and stage fail closed',()=>{
 test('very large monetary values use BigInt without float drift',()=>{
   assert.equal(minorUnitsToAmount(amountToMinorUnits('9999999999999999.99')),'9999999999999999.99');
 });
+
+
+test('weighted pipeline rounds once per currency, not once per row',()=>{
+  const tiny=Array.from({length:100},()=>({tenantId:'A',stage:'qualified',expectedValue:'0.01',probability:50,currency:'VES'}));
+  assert.deepEqual(forecastByCurrency({tenantId:'A',opportunities:tiny}),[
+    {currency:'VES',count:100,gross:'1.00',weighted:'0.50'}
+  ]);
+});
+test('weighted result cannot depend on opportunity insertion order',()=>{
+  const rows=[
+    {tenantId:'A',stage:'new',expectedValue:'0.01',probability:33,currency:'VES'},
+    {tenantId:'A',stage:'qualified',expectedValue:'0.01',probability:33,currency:'VES'},
+    {tenantId:'A',stage:'proposal',expectedValue:'0.01',probability:33,currency:'VES'}
+  ];
+  const original=forecastByCurrency({tenantId:'A',opportunities:rows});
+  const reverse=forecastByCurrency({tenantId:'A',opportunities:[...rows].reverse()});
+  assert.deepEqual(original,reverse);
+  assert.equal(original[0].weighted,'0.01');
+});
+test('won pipeline contributes full amount regardless of stale estimated probability',()=>{
+  const rows=[{tenantId:'A',stage:'won',expectedValue:'88.19',probability:0,currency:'USD'}];
+  assert.deepEqual(forecastByCurrency({tenantId:'A',opportunities:rows}),[
+    {currency:'USD',count:1,gross:'88.19',weighted:'88.19'}
+  ]);
+});
+test('probabilities and money remain validated even for closed opportunities',()=>{
+  assert.throws(()=>forecastByCurrency({tenantId:'A',opportunities:[
+    {tenantId:'A',stage:'lost',expectedValue:'1.00',probability:NaN,currency:'USD'}
+  ]}),/Probability/);
+  assert.throws(()=>forecastByCurrency({tenantId:'A',opportunities:[
+    {tenantId:'A',stage:'won',expectedValue:'0.001',probability:10,currency:'USD'}
+  ]}),/fixed-scale/);
+});
