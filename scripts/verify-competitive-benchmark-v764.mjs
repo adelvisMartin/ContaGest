@@ -28,6 +28,10 @@ export function validateCompetitiveBenchmark(input) {
     const s = sources.get(f.productId);
     if (!s) errors.push('unknown product: ' + f.productId);
     if (!f.module || !f.referenceFeature || !f.assessment) errors.push('incomplete matrix row: ' + f.id);
+    if (!['DOCUMENTED','PROVISIONAL','UNRESOLVED'].includes(f.referenceEvidenceLevel)) errors.push('invalid reference evidence: ' + f.id);
+    if (f.referenceEvidenceLevel === 'DOCUMENTED' && (s?.sourceLevel !== 'OFFICIAL' || !isHttps(f.referenceEvidenceUrl))) errors.push('unsupported reference feature claim: ' + f.id);
+    if (f.referenceEvidenceLevel !== 'DOCUMENTED' && f.referenceEvidenceUrl != null) errors.push('unverified reference cannot carry evidence URL: ' + f.id);
+    if ((s?.sourceLevel === 'UNRESOLVED') !== (f.referenceEvidenceLevel === 'UNRESOLVED')) errors.push('reference identity/evidence mismatch: ' + f.id);
     if (!['EXISTS','PARTIAL','MISSING','NOT_APPLICABLE'].includes(f.status)) errors.push('invalid classification: ' + f.id);
     if (!['P0','P1','P2','N/A'].includes(f.priority)) errors.push('invalid priority: ' + f.id);
     if (!Number.isInteger(f.ownerIssue) || f.ownerIssue < 1) errors.push('gap without issue owner: ' + f.id);
