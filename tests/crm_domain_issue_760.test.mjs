@@ -106,7 +106,6 @@ test('probabilities and money remain validated even for closed opportunities',()
   ]}),/fixed-scale/);
 });
 
-
 const id = {
   opportunity:'08ae729d-0fda-4a3a-802c-c0277f1d2e41',
   actor:'dab8933f-d1db-4970-8b95-e31822bca854',
