@@ -214,3 +214,116 @@ test('legal hold activated after claim blocks the destructive job and preserves 
     }
   }
 });
+
+
+test('purge failure after DELETE rolls back rows, evidence and cursor; retry is safe', async () => {
+  const eventId = randomUUID();
+  const idempotencyKey = `rollback-v658-${eventId}`;
+  const functionName = 'qa_lifecycle_v658_injected_evidence_failure';
+  const triggerName = 'qa_lifecycle_v658_injected_evidence_failure_trg';
+  let triggerInstalled = false;
+  let functionInstalled = false;
+  await prisma.$executeRawUnsafe(
+    'INSERT INTO public."AnalyticsEvent" ("id","tenantId","sessionId","type","payload","createdAt") VALUES ($1::uuid,$2::uuid,$3,$4,\'{}\'::jsonb,$5)',
+    eventId, tenantA, idempotencyKey, 'v658-rollback', new Date('2020-01-01T00:00:00Z'),
+  );
+  try {
+    const job = await requestPurgeJob({
+      tenantId: tenantA, entityType: 'AnalyticsEvent', idempotencyKey,
+      authorizationRef: 'qa-rollback-658', batchSize: 1
+    });
+    await prisma.$executeRawUnsafe(`
+      CREATE FUNCTION public.${functionName}() RETURNS trigger
+      LANGUAGE plpgsql AS $function$
+      BEGIN RAISE EXCEPTION 'QA_658_INJECTED_EVIDENCE_FAILURE'; END
+      $function$
+    `);
+    functionInstalled = true;
+    // The job UUID is generated locally, never derived from user input.
+    await prisma.$executeRawUnsafe(`
+      CREATE TRIGGER ${triggerName}
+      BEFORE INSERT ON public."DataLifecycleEvidence"
+      FOR EACH ROW WHEN (NEW."jobId" = '${job.id}'::uuid)
+      EXECUTE FUNCTION public.${functionName}()
+    `);
+    triggerInstalled = true;
+    await assert.rejects(
+      () => executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize: 1 }),
+      /QA_658_INJECTED_EVIDENCE_FAILURE/,
+    );
+    const [eventRows, evidenceRows, jobRows] = await Promise.all([
+      prisma.$queryRawUnsafe<Array<{ count: number }>>(
+        'SELECT count(*)::int AS count FROM public."AnalyticsEvent" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
+        eventId, tenantA,
+      ),
+      prisma.$queryRawUnsafe<Array<{ count: number }>>(
+        'SELECT count(*)::int AS count FROM public."DataLifecycleEvidence" WHERE "jobId"=$1::uuid AND "tenantId"=$2::uuid',
+        job.id, tenantA,
+      ),
+      prisma.$queryRawUnsafe<Array<{ status: string; lastError: string | null }>>(
+        'SELECT "status","lastError" FROM public."DataLifecycleJob" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
+        job.id, tenantA,
+      ),
+    ]);
+    assert.equal(eventRows[0].count, 1, 'DELETE cannot commit before its evidence');
+    assert.equal(evidenceRows[0].count, 0, 'failed batch cannot leave phantom evidence');
+    assert.equal(jobRows[0].status, 'failed');
+    assert.equal(jobRows[0].lastError, 'PURGE_BATCH_FAILED');
+    await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS ${triggerName} ON public."DataLifecycleEvidence"`);
+    triggerInstalled = false;
+    await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public.${functionName}()`);
+    functionInstalled = false;
+
+    const resumed = await executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize: 1 });
+    assert.equal(resumed.status, 'pending');
+    const terminal = await executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize: 1 });
+    assert.equal(terminal.status, 'completed');
+    const finalRows = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+      'SELECT count(*)::int AS count FROM public."AnalyticsEvent" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
+      eventId, tenantA,
+    );
+    assert.equal(finalRows[0].count, 0);
+  } finally {
+    if (triggerInstalled) await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS ${triggerName} ON public."DataLifecycleEvidence"`);
+    if (functionInstalled) await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public.${functionName}()`);
+    await prisma.$executeRawUnsafe(
+      'DELETE FROM public."AnalyticsEvent" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
+      eventId, tenantA,
+    );
+  }
+});
+
+test('two simultaneous workers serialize one tenant purge job without double deletion', async () => {
+  const firstId = randomUUID();
+  const secondId = randomUUID();
+  const idempotencyKey = `concurrent-v658-${firstId}`;
+  const old = new Date('2020-01-01T00:00:00Z');
+  for (const id of [firstId, secondId]) {
+    await prisma.$executeRawUnsafe(
+      'INSERT INTO public."AnalyticsEvent" ("id","tenantId","sessionId","type","payload","createdAt") VALUES ($1::uuid,$2::uuid,$3,$4,\'{}\'::jsonb,$5)',
+      id, tenantA, id, 'v658-concurrency', old,
+    );
+  }
+  const job = await requestPurgeJob({
+    tenantId: tenantA, entityType: 'AnalyticsEvent', idempotencyKey,
+    authorizationRef: 'qa-concurrent-658', batchSize: 1
+  });
+  const results = await Promise.all([
+    executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize: 1 }),
+    executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize: 1 }),
+  ]);
+  assert.equal(results.every((row) => row.status === 'pending'), true);
+  const evidence = await prisma.$queryRawUnsafe<Array<{ count: number; total: number }>>(
+    'SELECT count(*)::int AS count, coalesce(sum("recordCount"),0)::int AS total FROM public."DataLifecycleEvidence" WHERE "jobId"=$1::uuid AND "tenantId"=$2::uuid',
+    job.id, tenantA,
+  );
+  assert.equal(evidence[0].total, 2, 'each deleted subject must have one evidence count');
+  assert.equal(evidence[0].count, 2, 'each worker must append one immutable batch');
+  const finished = await executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize: 1 });
+  assert.equal(finished.status, 'completed');
+  const remaining = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+    'SELECT count(*)::int AS count FROM public."AnalyticsEvent" WHERE "id" IN ($1::uuid, $2::uuid) AND "tenantId"=$3::uuid',
+    firstId, secondId, tenantA,
+  );
+  assert.equal(remaining[0].count, 0);
+});
