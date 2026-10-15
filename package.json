@@ -122,7 +122,7 @@
     "audit:raw-sql-security": "node scripts/raw-sql-security-audit-v6875.mjs",
     "audit:design-system-authority": "node scripts/design-system-authority-audit-v6975.mjs",
     "audit:vertical-assets": "node scripts/vertical-asset-system-audit-v7075.mjs",
-    "test:hipico:reference": "node --test tests/hipico_reference_report_projections.test.mjs"
+    "test:hipico:reference": "node --test tests/hipico_reference_report_projections.test.mjs tests/hipico_reference_report_operations.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0"
