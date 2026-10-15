@@ -204,3 +204,16 @@ test('failure persistence depends on central safe classification', () => {
   assert.ok(!failure.includes('retryable: boolean; safeErrorCode: string;'));
   assert.ok(code.includes("from './async-failure-policy.js'"));
 });
+
+
+test('claimed jobs carry the original effect key required by handler idempotency', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  const start = code.indexOf('export async function claimDueAsyncJobs(');
+  const end = code.indexOf('export async function completeClaimedAsyncJob(', start);
+  assert.ok(start >= 0 && end > start);
+  const claim = code.slice(start, end);
+  assert.ok(claim.includes('effectKey: string; payload: unknown;'));
+  assert.ok(claim.includes('j."handlerKey", j."effectKey", j."payload"'));
+  assert.ok(claim.includes('j."tenantId"=${tenantId}'));
+  assert.ok(claim.includes('FOR UPDATE SKIP LOCKED'));
+});
