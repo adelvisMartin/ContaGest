@@ -67,7 +67,9 @@ router.get('/:id',asyncHandler(async(req,res)=>ok(res,await getOwned(context(req
 // Read-only preview. Booking writers must revalidate slots/resources atomically in PostgreSQL.
 // Location/timezone come exclusively from tenant-owned server data, never from the query.
 router.get('/:id/time/resolve',asyncHandler(async(req,res)=>{
-  const {localDateTime,disambiguation}=resolveTimeQuerySchema.parse(req.query);
+  const parsed=resolveTimeQuerySchema.safeParse(req.query);
+  if(!parsed.success) throw new HttpError(400,'Parámetros de fecha/hora inválidos.',{code:'SCHEDULING_RESOLVE_QUERY_INVALID'});
+  const {localDateTime,disambiguation}=parsed.data;
   const location=await getOwned(context(req).tenantId,req.params.id);
   try {
     ok(res,resolveLocalWallClock({timezone:location.timezone,localDateTime,disambiguation}));
