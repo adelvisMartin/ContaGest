@@ -58,7 +58,7 @@ async function injectExtremeContent(page){
 }
 
 for(const item of MODULE_VISUAL_CATALOG){
-  test(`${item.route} · full anti-overlap 58-route matrix`,async({page})=>{
+  test(`${item.route} · full anti-overlap 60-route matrix`,async({page})=>{
     const failures=[];
     for(const mode of MODES){
       for(const viewport of VIEWPORTS){

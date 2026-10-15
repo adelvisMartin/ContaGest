@@ -4,14 +4,14 @@ import fs from 'node:fs';
 
 const readJson = (path) => JSON.parse(fs.readFileSync(path, 'utf8'));
 const sources = {
-  ponytail: ['DietrichGebert/ponytail', '2961b52fc1fe6a5a87c7a959a79512e5c2f3ffe5', 'skills/ponytail/SKILL.md'],
+  ponytail: ['DietrichGebert/ponytail', '84740e3d344b69b4a133201fa519eb37a62a2b2a', 'skills/ponytail/SKILL.md'],
   omniroute: ['diegosouzapw/OmniRoute', 'fc5e2bccd4f70fecf5aab94dfb8136c74ab5a21b', 'skills/omni-resilience/SKILL.md'],
-  'addy-agent-skills': ['addyosmani/agent-skills', 'aeac41d4d005999432bb7312f7ff06383a91d59d', 'skills/test-driven-development/SKILL.md']
+  'addy-osmani-engineering': ['addyosmani/agent-skills', 'aeac41d4d005999432bb7312f7ff06383a91d59d', 'skills/code-review-and-quality/SKILL.md']
 };
 const wrappers = {
   ponytail: 'contagest-ponytail',
   omniroute: 'contagest-omniroute',
-  'addy-agent-skills': 'contagest-addy-engineering'
+  'addy-osmani-engineering': 'contagest-addy-engineering'
 };
 
 test('#974 sources are pinned, inert, MIT and allowlisted to documentation', () => {

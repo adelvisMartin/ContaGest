@@ -1,5 +1,6 @@
 import { loadRuntimeConfig, VERSION } from './runtime-config.mjs';
-import { policyDiagnostic } from './source-policy-gate.mjs';
+import { policyDiagnostic, SOURCE_POLICY_REVIEW } from './source-policy-gate.mjs';
+import { WHATSAPP_USE_CASES_1011, evaluateWhatsAppUseCase1011 } from './policy-review-v1011.mjs';
 
 const config = loadRuntimeConfig(process.env, process.cwd());
 const { transport, sourcePolicy } = policyDiagnostic(config);
@@ -29,8 +30,14 @@ const payload = {
     policyCode: sourcePolicy.policyCode,
     snapshot: sourcePolicy.snapshot,
     policyReference: sourcePolicy.policyReference,
-    reasons: sourcePolicy.reasons
-  }
+    reasons: sourcePolicy.reasons,
+    reviewedAt: SOURCE_POLICY_REVIEW.reviewedAt,
+    nextReviewBy: SOURCE_POLICY_REVIEW.nextReviewBy,
+    groupApiAccountEligibility: SOURCE_POLICY_REVIEW.groupApiAccountEligibility,
+    officialGroupsApiDetails: SOURCE_POLICY_REVIEW.officialGroupsApiDetails,
+    legalReview: SOURCE_POLICY_REVIEW.legalReview
+  },
+  useCaseEligibility: WHATSAPP_USE_CASES_1011.map((useCase) => evaluateWhatsAppUseCase1011(useCase))
 };
 
 process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);

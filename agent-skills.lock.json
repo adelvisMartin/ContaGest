@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-14",
+  "generatedAt": "2026-10-05",
   "policy": {
     "updateMode": "pinned-only",
     "executeUpstreamScripts": false,
@@ -222,17 +222,44 @@
       ]
     },
     {
+      "id": "addy-osmani-engineering",
+      "kind": "github-skill",
+      "repo": "addyosmani/agent-skills",
+      "commit": "aeac41d4d005999432bb7312f7ff06383a91d59d",
+      "license": "MIT",
+      "trustLevel": "reviewed-advisory-engineering",
+      "namespace": "addy-engineering",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/api-and-interface-design/SKILL.md",
+        "skills/code-review-and-quality/SKILL.md",
+        "skills/ci-cd-and-automation/SKILL.md"
+      ]
+    },
+    {
       "id": "ponytail",
       "kind": "github-skill",
       "repo": "DietrichGebert/ponytail",
-      "commit": "2961b52fc1fe6a5a87c7a959a79512e5c2f3ffe5",
+      "commit": "84740e3d344b69b4a133201fa519eb37a62a2b2a",
       "license": "MIT",
-      "trustLevel": "reviewed-inert-engineering-advisory",
+      "trustLevel": "reviewed-advisory-simplicity",
       "namespace": "ponytail",
       "vendorPaths": [
         "LICENSE",
         "skills/ponytail/SKILL.md"
       ]
+    },
+    {
+      "id": "rea",
+      "kind": "mcp-package",
+      "repo": "morluto/rea",
+      "commit": "d69acc3455c33f90a2fc4381db43d38b6af50622",
+      "license": "MIT",
+      "trustLevel": "reviewed-advisory-reverse-engineering",
+      "package": "rea-agents",
+      "packageVersion": "6.5.0",
+      "namespace": "rea",
+      "vendorPaths": []
     },
     {
       "id": "omniroute",
@@ -247,26 +274,6 @@
         "skills/omni-auth/SKILL.md",
         "skills/omni-combos-routing/SKILL.md",
         "skills/omni-resilience/SKILL.md"
-      ]
-    },
-    {
-      "id": "addy-agent-skills",
-      "kind": "github-skill",
-      "repo": "addyosmani/agent-skills",
-      "commit": "aeac41d4d005999432bb7312f7ff06383a91d59d",
-      "license": "MIT",
-      "trustLevel": "reviewed-inert-engineering-advisory",
-      "namespace": "addy",
-      "vendorPaths": [
-        "LICENSE",
-        "skills/using-agent-skills/SKILL.md",
-        "skills/planning-and-task-breakdown/SKILL.md",
-        "skills/incremental-implementation/SKILL.md",
-        "skills/test-driven-development/SKILL.md",
-        "skills/code-review-and-quality/SKILL.md",
-        "skills/git-workflow-and-versioning/SKILL.md",
-        "skills/ci-cd-and-automation/SKILL.md",
-        "references/definition-of-done.md"
       ]
     }
   ]

@@ -22,3 +22,19 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* #773: coarse-pointer form controls share the existing touch token, without
+   stretching native checkbox, radio, range or hidden affordances. */
+@media (max-width: 760px) and (pointer: coarse) {
+  :where(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="range"]), select, textarea) {
+    min-height: var(--cg-v-control-touch);
+  }
+}
+
+/* OS high-contrast palettes own the focus indicator color; keep the
+   existing visible-focus geometry and semantic theme/token authority. */
+@media (forced-colors: active) {
+  :where(button,a[href],input,select,textarea,[role="button"],[role="menuitem"],[role="tab"],[tabindex]):focus-visible {
+    outline-color: Highlight;
+  }
+}

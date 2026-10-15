@@ -1,0 +1,399 @@
+# #760 CRM — Domain integrity foundation (partial implementation)
+
+**Status:** implementation increment, not a deployed CRM. **SOURCE_REUSE=NONE**. Existing `Client` is the only canonical customer master; the future quote lifecycle belongs to ticket #753 and is not implemented by this increment. No new tables, endpoints, routes, migrations, seed data, fiscal/accounting logic or application UI are introduced here.
+
+## Implemented source contract
+
+- `backend/src/modules/crm/crm-domain.mjs` (pure, side-effect-free): conservative RIF/email normalization, unique and tenant-specific active Client candidate IDs, explicit human/API review classification, legal stage edges, exact-decimal (18,2) money and currency-separated deterministic weighted pipeline summaries.
+- `tests/crm_domain_issue_760.test.mjs`: Node 22 regression tests cover cross-tenant inference denial, ambiguous identity, disabled auto conversion, negative and malformed amounts, invalid stages, multi-currency grouping, and precision at 16-digit integer boundaries.
+
+## Trust and authority model
+
+- **No client writes:** finding one match returns `REVIEW_EXISTING`, not a new Client. Multiple matches return `BLOCKED`; no RIF returns `CLIENT_RIF_REQUIRED`. Caller must enforce session, RBAC, server-derived tenant, and atomic uniqueness/reconciliation against the real `Client` table before making any persistent change. Duplicate candidate matching is a **hint**, not an idempotent conversion transaction.
+- **No cross-tenant queries:** callers must provide tenant-scoped candidates; detection filters by exact tenant. Forecast rejects all rows with a foreign tenant, rather than silently omitting them.
+- **No automated IA score:** the probability must be an explicit integer supplied by approved business rules/user, never LLM output. The currency is not converted or added across FX contexts. Monetary inputs are fixed-point strings; aggregation uses `BigInt` minor units; rounded expected values are analytical only, never an accounting/ledger posting authority.
+- **No PII in conversion verdict:** only Client IDs and reason codes, never copied emails/RIF/phone. A future endpoint still requires access logs without sensitive payloads.
+- **No queue or task clone:** activity timeline in a later slice must reuse core Tasks/Outbox (#853) instead of creating duplicate worker authority.
+
+## Next required implementation owners
+
+1. **#760**: explicit `Lead`/`Opportunity` persistence with Prisma migration and tenant-first indexes, RBAC, server-side validation and atomic idempotency on conversion to canonical `Client`.
+2. **#760 + #753**: only canonical quote authority may materialize opportunity quotes. No independent invoice/billing engine.
+3. **#760 + #770**: bounded import/export with ownership and audit. Stage actions and metrics need tenant-sourced SQL, predictable pagination, Cg* UI and responsive browser tests.
+4. **QA**: Node syntax/contract tests for this source increment; subsequent PostgreSQL17 isolated migration/integration, concurrency and cross-tenant negatives, browser Playwright, typecheck, lint and accessibility for the actual runtime feature. The user can perform additional manual acceptance at the end; do not substitute it for data-safety verification.
+
+## Usage and rollback
+
+From repo root: `node --check backend/src/modules/crm/crm-domain.mjs` and `node --test tests/crm_domain_issue_760.test.mjs`. No packages required. This helper is **not mounted** and should not be advertised as a finished CRM pipeline. Delete these three new files to roll back; no database or production changes.
+
+## 2026-10-15 · Opportunity stage change / event intent (increment #760)
+
+`planOpportunityStageChange()` is a **pure, non-persisting** contract for an authorized CRM stage change. The API caller must derive `tenantId` and `actorId` from a verified server session; the client must not choose these. It demands an exact optimistic `expectedVersion`, valid UUIDs for opportunity/actor/event, an unambiguous server-generated UTC timestamp, allowed state transitions, and replay rejection (UUID comparison case-insensitive). It emits a frozen next revision plus a compact event receipt with no lead/customer PII.
+
+**Persistence requirements before activation:** introduce a dedicated tenant-scoped `Opportunity` and append-only activity/event table, or another explicitly approved CRM persistence authority. The eventual handler must check `sales.manage` (or approved CRM permission), use a tenant-scoped `UPDATE ... WHERE version = expectedVersion` compare-and-swap, enforce a unique tenant/opportunity/event ID constraint, and write the resulting activity **in the same database transaction**. Unique keys in PostgreSQL, not `seenEventIds` in an API request, are authoritative for replay/idempotency. A version mismatch should return a conflict without side effects; never let browser-provided timestamps or actor IDs become authoritative. Plan-only results are **not** proof of a completed event.
+
+Tests now exercise valid transitions, immutable and privacy-minimal receipts, stale revisions, cross-tenant input, terminal-state rewrites, malformed IDs/timestamps and case-insensitive replay. No persisted activities, quote binding, API writes, row locks or app UI are claimed in this increment. The existing rollback guidance for initial groundwork remains historical; revert the specific stage-planning change to undo this increment.
+
+## 2026-10-15 · Legal-identity mismatch on email matches
+
+Client identity is legally grounded in **tenant + RIF**, not email address. An email
+is contact metadata that may be shared by several tax entities. A prospect with
+valid RIF `J...` must **not** be reconciled into a Client with a different valid
+RIF `V...` merely because the emails match. This applies even if there is only
+one same-email candidate and also when another Client has an exact RIF match.
+
+The pure `assessClientConversion()` verdict now returns
+`{status:'BLOCKED',reason:'CONFLICTING_RIF_EMAIL',candidates:[opaque IDs]}`
+for same-tenant, active cross-RIF email collisions. It avoids leaking email/RIF
+values in the verdict. Same-RIF Client records with changed email still return
+`REVIEW_EXISTING` for authorized human reconciliation. Inactive or other-tenant
+records are never included in a prospect's decision.
+
+**Important:** these are advisory pre-conversion rules. No automatic Client
+creation, merged fiscal identity, mutation, import, quote or data migration was
+implemented. Final authority remains the canonical `Client` table, server
+tenant context, RBAC and database uniqueness/atomic transaction. A later
+transactional converter must re-run and enforce this conflict rule against
+fresh tenant-scoped data, never trust a stale or client-supplied candidate list.
+
+
+## 2026-10-15 · Canonical Client matching preflight API (partial CRM #760)
+
+**Live mounted endpoint:** `POST /api/v1/clients/preflight` (same existing `/clients` route authority, not a second CRM module). Requires a verified tenant and the existing `clients.manage` permission plus the existing licence guard. Request body is strict JSON with `rif` and/or `email`. Unknown keys and malformed supplied identities are rejected. Tenant/user are taken from the server session, never from body or headers in production.
+
+The handler queries **only the existing Prisma Client model** and is deliberately read-only. Query predicates include tenantId, active clients, exact-case-insensitive normalized RIF variants or email, a bounded 201-row read (200 maximum results), and a minimal field selection. More than 200 matches returns `BLOCKED/CANDIDATE_LIMIT_EXCEEDED` with no candidate IDs. Database errors do not become authorization to convert. The verdict always contains `reviewOnly:true` and `conversionAuthorized:false`; it exposes only opaque Client IDs, no client emails/RIF/contact fields.
+
+This is a **heuristic review aid**, not a comprehensive fiscal uniqueness check: legacy Client RIF punctuation variants beyond the three enumerated spellings may not match. An empty result does **not** prove that no client already exists. The eventual persistent conversion must re-query canonical Client under tenant-scoped locks/unique RIF rules, apply RBAC, and atomically reconcile. Email addresses are not legal taxpayer identities; cross-RIF same-email candidates are blocked.
+
+Regression command (repository root): `node --test tests/crm_client_preflight_v760.test.mjs`; wired into `backend npm test`. The isolated suite uses an injected fake Prisma reader, not a real PostgreSQL instance. Route HTTP / auth / PG17 / E2E tests and full backend typecheck/build remain pending before treating the entire CRM as production-ready; #760 stays OPEN.
+
+No Lead/Opportunity DDL, quote link, conversion mutation, FX/accounting, provider notification, frontend UI or migration is delivered by this slice. Revert the isolated endpoint, runner hook and helper to roll back without data loss.
+
+## 2026-10-15 · Historical taxpayer identity and preflight response hardening
+
+The canonical Client preflight remains **read-only and non-authorizing**. It now
+enumerates the exact legacy RIF spelling `J-12.345.678-9` in addition to
+`J123456789`, `J-123456789` and `J-12345678-9` (and corresponding prefixes).
+The match is still strict and bounded, not an unrestricted substring search.
+Other irregular legacy spellings may exist and still need data cleanup or a
+transactional canonical-RIF index before reliable no-match conclusions.
+
+When a valid lead RIF shares an email with an active same-tenant Client whose
+historical RIF cannot be parsed, the verdict becomes `BLOCKED` with reason
+`UNVERIFIABLE_CLIENT_RIF`, revealing only opaque IDs. An unknown fiscal identity
+must never be treated as proof that the lead belongs to the same taxpayer.
+Multiple candidates retain the preexisting `AMBIGUOUS_CLIENT_MATCH` contract.
+Inactive and foreign-tenant records remain excluded from decisions.
+
+The endpoint now sets `Cache-Control: private, no-store` before parsing the body,
+to discourage browser/proxy caching of sensitive lookup verdicts. These rules
+do not create, merge, or update a Client and do not replace tenant-bound
+Prisma/PG constraints, RBAC or a real end-to-end session/HTTP/DB test.
+
+Rollback is a source-only revert of the helper, domain verdict, route header,
+and regression updates. Ticket #760 stays open until transactional CRM and UI.
+
+## 2026-10-15 · Canonical Client preflight query budget (increment #760)
+
+The sensitive `POST /api/v1/clients/preflight` now reuses the **existing**
+`expensiveOperationRateLimit` from the core security middleware, in addition
+to the application's global and mutation limits. The shared operation gate
+currently enforces 12 requests/min in production and 60/min in non-production
+per middleware key (IP by default); this is a local process/window throttle,
+**not** a distributed tenant quota, durable anti-abuse ledger, or user permission.
+The existing `requireTenant` and `clients.manage` license/RBAC gate executes
+first, so unauthorized requests never reach the preflight-specific budget.
+Only the `/preflight` POST subroute consumes this additional tier: ordinary
+`Client` CRUD remains on the existing canonical limits. `Cache-Control:
+private, no-store` and `reviewOnly:true` / `conversionAuthorized:false` are
+unchanged. This addition performs no new Client writes or queries.
+
+Regression: `node --test tests/crm_client_preflight_v760.test.mjs` covers the
+exact middleware import, routing order, one preflight mount, no accidental
+router-wide limiter, and continued `no-store`. Source contract coverage
+is not a real HTTP burst test: full app + security/session + PostgreSQL 17
++ distributed rate-limit behavior need integration acceptance before a
+production-complete CRM verdict. No new packages, workflows or env secrets.
+
+## 2026-10-15 · Clientes UX connection to canonical preflight
+
+The existing `clientes` page now calls `BackendApi.post('/clients/preflight',
+{rif,email})` **before** `SupabaseSyncService.createClient` can be invoked.
+`BackendApi` remains the single session/cookie/CSRF and API-base authority.
+The page shows a live `role=status`/`aria-live=polite` review message; decision
+copy uses fixed local reason-code mapping and never renders candidate Client
+IDs, RIFs, emails or backend exception internals.
+
+Only the exact `REVIEW_NEW/NO_EXISTING_CLIENT_MATCH` advisory verdict with
+`reviewOnly:true`, `conversionAuthorized:false` and an empty candidates
+array allows a subsequent **independent** canonical Client create API call.
+`REVIEW_EXISTING`, fiscal-conflict, candidate overflow, unknown response,
+network/auth/429/503 and server errors block the create attempt. The
+existing local-only offline Client fallback was removed specifically from
+the Clients form, because creating an unsynchronized customer record after
+a failed canonical server write can produce duplicate identities on retry.
+The UI is not a replacement for server transaction uniqueness or RBAC.
+
+Acceptance command from repo root:
+`node --test tests/client_preflight_ui_v760.test.mjs`.
+This is a source contract and isolated verdict-policy suite, not browser
+E2E or live PostgreSQL. Before certifying production CRM, test signed
+cookies/CSRF, permissions and cross-tenant responses in a real HTTP stack
+with an isolated DB and verify race/duplicate behavior under concurrent
+creates. No DB migrations, new UI route, secondary customer master,
+local data sync or automatic quote generation were introduced.
+
+## 2026-10-15 · Primera persistencia funcional de leads (slice #760)
+
+The initial CRM lead capture/list endpoint is **`POST/GET /api/v1/modules/crm/leads`**.
+It is mounted under the existing `modules` router without adding a 52nd route
+to the architecture manifest. Permissions differ by method: `sales.manage`
+for creation and `sales.view` for a paginated list; both require server-verified
+tenant. Creation additionally requires a signed actor ID in requestContext.
+
+To avoid an unsafe, unverified Prisma migration while existing PostgreSQL is
+unavailable in this execution, lead drafts temporarily use the already deployed
+`ModuleRecord` model with a single reserved `moduleSlug='crm-leads'`. The record
+contains **prospect data only**, not a second Client/customer authority.
+Creation and its privacy-minimal `AuditLog` entry run inside the same Prisma
+`$transaction` callback; a failed audit aborts the lead write. Tenant and
+actor fields are server-owned; request schemas are strict and accept only
+name, RIF/email, phone, notes and optional nextActionAt.
+
+Queries filter `tenantId` and exact moduleSlug in Prisma, exclude archived
+records, sort deterministically and allow 1–100 rows per page, with bounded
+skip. The helper rejects leaked rows from a broken reader before serializing.
+Responses set `Cache-Control: private, no-store`. Invalid client identity is
+rejected, but email-only leads are permitted as unconverted prospects.
+
+**Limits/DoD:** this is working CRUD only for lead CREATE/LIST; it does not
+provide lead update/delete, opportunity lifecycle, pipeline metrics, Client
+conversion, quote #753, import/export, activity timeline, UI or production
+QA. Generic ModuleRecord payload is a transitional single lead authority,
+not a replacement for the future dedicated tenant-first schema, explicit
+indexes, unique event constraints and PostgreSQL idempotency. Each POST requires an **`Idempotency-Key` UUIDv4**: a deterministic SHA-256-derived
+UUIDv5-shaped primary key is scoped to the tenant and stored in the existing
+`ModuleRecord.id`. Concurrent or repeated requests with the same key cannot
+create two leads (database PK); Prisma unique conflicts return HTTP **409**.
+A retry with a new key may still create a second prospect: this is request
+idempotency, **not** semantic customer de-duplication. The generic module
+record endpoint does not accept this slug; the CRM route owns its data.
+Clients continue to be mastered exclusively in `Client`; no conversion or
+automatic customer write is attempted.
+
+Test from repository root: `node --test tests/crm_lead_capture_v760.test.mjs`
+(also included in backend `npm test`). Isolated fake transaction tests
+characterize atomic audit, tenant/actor scope, validation, bounded query and
+route contracts, not real DB/HTTP operation. Before the lead API can be
+certified for production, execute full backend TypeScript build and a
+PostgreSQL 17 transaction/rollback + RLS isolation drill with real signed
+sessions and HTTP permissions. Run Playwright after adding a CRM page.
+Rollback is source-only as there is no migration, but any real
+`crm-leads` ModuleRecords created while deployed must be preserved and
+reconciled during a later dedicated-schema migration.
+
+## 2026-10-15 · UI de prospectos conectada a la API CRM #760
+
+La página existente `clientes` incorpora secciones **Registrar prospecto** y
+**Últimos prospectos**, sin crear una segunda ruta protegida ni un segundo
+maestro Client. El listado se consulta con `GET /modules/crm/leads?take=50&skip=0`
+y muestra datos de la API canonica con escape HTML. El formulario crea con
+`BackendApi.request('/modules/crm/leads', {method:'POST', body,
+headers:{'Idempotency-Key':uuidV4}})`, reutilizando cookies, CSRF y refresh
+de sesión ya gestionados por BackendApi, nunca enviando tenant/actor locales.
+
+`crmLeadService.mjs` valida el nombre y un contacto fiscal/email, limita
+los campos admitidos y omite otros atributos (por ejemplo owner/tenant/status).
+Usa `crypto.randomUUID()` como generador seguro de UUIDv4; si no está
+disponible no envía la solicitud. Reintentos manuales con los mismos datos
+normalizados reutilizan la clave previa ante caídas de red, HTTP 409 o
+respuesta incierta. Una escritura confirmada reinicia la clave. Cambiar
+los datos inicia un intento nuevo. Ningún lead se guarda en Store/localStorage
+ni se convierte automáticamente a Client/quote.
+
+Mensajes de error para usuarios ocultan detalles privados del backend; el
+formulario desactiva temporalmente el botón, dispone de mensaje `role=status`
+y consulta nuevamente el listado tras un POST confirmado. El acceso a
+los prospectos exige `sales.view`/`sales.manage` en el servidor, aunque
+la vista Clientes ya tenga permisos de lectura comercial. Si carece de
+autorización, la solicitud falla cerrada; no existe bypass de permisos.
+
+Verificación: `node --test tests/crm_leads_ui_v760.test.mjs` se enlaza al
+`npm test` principal. Los tests de servicio, claves y contratos de la vista
+no sustituyen un flujo HTTP/Playwright con cookie/CSRF ni PG17 real.
+El CRM completo sigue pendiente: actualización, oportunidades, cotizaciones,
+métricas, Client conversion atómica, import/export, permisos E2E y QA.
+
+## 2026-10-15 · Actualización transaccional de etapa de prospectos
+
+`PATCH /api/v1/modules/crm/leads/:id/stage` permite mover un lead
+`new → qualified / lost` o `qualified → lost`. Requiere el permiso
+`sales.manage`, actor y tenant autorizados en sesión, un ID de lead UUID
+y un cuerpo estricto `{nextStage,expectedUpdatedAt}` con revisión UTC
+milisegundos obtenida del listado. No permite `proposal`, `won` ni reabrir
+`lost`: pertenecen al ciclo de Opportunity y/o Quote #753 futuro.
+
+El servicio `crm-lead-stage.mjs` realiza dentro de **una transacción Prisma**:
+(1) buscar por `id + tenantId + moduleSlug=crm-leads`; (2) validar
+etapa y revisión; (3) `updateMany` con comparación atómica de
+`id+tenantId+moduleSlug+status+updatedAt`, exigiendo exactamente una fila;
+(4) insertar AuditLog de etapas sin RIF/correo ni payload PII;
+(5) releer por alcance de empresa y devolver `{id,stage,updatedAt}`.
+Cuando otra transacción modificó el prospecto, responde HTTP 409, sin
+sobrescribir ni generar auditoría. Lead ajeno responde 404. Un fallo de
+auditoría o fallo de lectura final revierte toda la transacción.
+
+La fecha `updatedAt` sirve como token de concurrencia del modelo legado;
+una columna entera `version` y un histórico inmutable de eventos siguen
+siendo los contratos recomendados para el esquema CRM definitivo. No
+se crea cliente, documento comercial, ingreso ni puntuación de IA.
+El nuevo `.mjs` se copia al `dist` compilado mediante el script
+`copy-runtime-assets.mjs`; su regresión está incluida en backend `npm test`.
+
+Verificación: `node --test tests/crm_lead_stage_v760.test.mjs` con Prisma
+simulado para casos de CAS, rollback, bloqueo de etapas, aislamiento y
+rutas, sin afirmar que sustituye pruebas de transacción PostgreSQL 17.
+Pendientes: tests HTTP con JWT/CSRF/RBAC, PG17 multi-tenant, navegación
+de la UI hacia el PATCH y browser E2E. El ticket #760 permanece ABIERTO
+hasta completar Opportunity/Quote y conversión transaccional a Client.
+
+## 2026-10-15 · Cambiar etapa del lead desde Clientes
+
+El directorio **Últimos prospectos** ahora muestra acciones Calificar
+y Descartar solo para etapas admitidas. Los botones usan `ErpButton`
+canónico y almacenan exclusivamente ID y destino; el cliente recupera
+`updatedAt` de la última consulta autorizada al servidor para formar
+`PATCH /modules/crm/leads/:id/stage` con `{nextStage,expectedUpdatedAt}`.
+
+El servicio `crmLeadService.mjs` valida UUID de lead, sello UTC exacto
+y grafo permitido antes de contactar con BackendApi; la sesión y CSRF
+se suministran por el transporte común. El botón se deshabilita mientras
+hay una petición y un guard evita doble submit. En éxito, error o HTTP
+409, el listado se vuelve a solicitar en vez de modificar `Store`
+anticipadamente. Los mensajes accesibles no exponen PII del servidor.
+Los prospectos descartados no ofrecen acciones y los calificados
+solo permiten Descartar: una venta ganada no existe en el modelo Lead.
+
+La suite `tests/crm_leads_ui_v760.test.mjs`, ya conectada al root npm test,
+verifica permisos implícitos de servicio, validación de revisión y etapa,
+no reintento del PATCH 409 y binding de botones en la vista. Aún falta
+QA de navegador y PostgreSQL17 con modificaciones concurrentes reales.
+
+El issue CRM #760 continúa abierto para Opportunities y Quote #753,
+conversión Client atómica, métricas de pipeline, timeline, import/export
+y certificación de producción.
+
+## 2026-10-15 · Opportunity draft desde un prospecto calificado
+
+**Nuevas rutas**: `POST /api/v1/modules/crm/opportunities/from-lead/:leadId`
+(`sales.manage`) y `GET /api/v1/modules/crm/opportunities` (`sales.view`).
+Reutilizan el router `/modules` y el modelo operacional temporal
+`ModuleRecord` con slug reservado `crm-opportunities` (no está en Stitch).
+No se crea una segunda tabla `Client`, cotización, factura, ledger ni
+migración, y se mantiene el mismo aislamiento del servidor por tenant.
+
+El POST exige un `Lead` de ese tenant con etapa `qualified` y revisión
+`expectedLeadUpdatedAt` UTC exacta, y un cuerpo estricto con `title`,
+`currency` (tres letras ISO), `expectedValue` decimal positivo de
+precisión fija (18,2) y `probability` entera 0–100. Los importes se
+normalizan como cadenas con cálculo BigInt; son **previsiones**, no
+autoridad fiscal, financiera ni equivalencias FX. La nueva oportunidad
+nace en `qualified` sin confirmar propuesta, venta ni conversión Cliente.
+
+El `ModuleRecord.id` de oportunidad deriva de SHA-256(tenant + lead UUID
++ separador de dominio) con forma UUIDv5. El mismo lead del mismo tenant
+no puede abrir dos oportunidades iniciales; PK duplicada devuelve 409.
+Dentro de la **misma transacción Prisma**, se comprueba el Lead calificado,
+se hace CAS `updateMany` de id+tenant+slug+status+updatedAt con count=1
+y `data:{status:'qualified'}` (toca su revisión), se inserta Opportunity
+y un AuditLog mínimo. Esta revisión optimista serializa el alta frente
+a `qualified→lost`; si el Lead cambió, responde 409. Una pérdida
+de conexión después del commit no genera otra oportunidad al reintentar
+con el mismo lead. El backend omite RIF, correo, notas y valores
+económicos de la auditoría.
+
+Listado limitado a 100 filas, ordenado y filtrado en Prisma por empresa
+y slug. La API no promete una conversión a `Client` ni un pipeline
+de Opportunity completo: todavía faltan edición, CAS/versionado real
+por oportunidad, registro duradero de eventos, métricas y gráficos
+con multi-moneda sin mezclas, integración de Quote #753, import/export
+y UX operativa. El modelo `ModuleRecord` sigue siendo transitorio;
+la futura migración debe preservar Lead y Opportunity existentes.
+
+QA: `node --test tests/crm_opportunity_capture_v760.test.mjs`, incorporado
+a backend npm test. El ensayo aislado con una transacción simulada
+NO sustituye PostgreSQL17 con restricciones, locks y RLS reales.
+Se requiere también TypeScript build, HTTP autenticado/CSRF/RBAC y E2E.
+El ticket #760 permanece abierto hasta verificar el CRM completo.
+
+## 2026-10-15 · Interfaz para abrir y listar oportunidades comerciales
+
+La pantalla existente **Clientes** integra ahora el formulario **Oportunidades
+CRM** y el listado **Últimas oportunidades** sin añadir rutas, CSS, permisos
+alternativos ni un nuevo maestro `Client`.
+
+Desde un Lead `qualified` obtenido de la API, el usuario selecciona
+`Abrir oportunidad` y captura título, moneda ISO, monto positivo de
+dos decimales y probabilidad entera 0–100. El servicio
+`crmOpportunityService.mjs` verifica el ID del lead y la revisión
+`updatedAt` canónica y envía `POST /modules/crm/opportunities/from-lead/:id`
+con `expectedLeadUpdatedAt`. No envía tenant/actor/clientId desde
+el navegador: `BackendApi` conserva cookies y CSRF, mientras el
+backend impone tenant y RBAC `sales.manage`.
+
+La interfaz no registra ingresos ni reconoce ventas, cotizaciones
+o equivalencias de monedas; presenta la previsión como `monto moneda`
+sin sumas que mezclen USD, VES u otras divisas. El listado
+`GET /modules/crm/opportunities?take=50&skip=0` está limitado,
+resuelve datos del servidor y escapa todo contenido HTML.
+
+Ante fallo o conflicto 409, la pantalla refresca oportunidades y leads
+sin crear registros locales ni reintentar automáticamente con otro ID.
+Tras alta confirmada se refrescan ambas listas (el CAS transaccional
+cambió la revisión del lead) y se limpia la selección.
+Los avisos accesibles `role=status` y los errores genéricos no exponen
+detalles privados del backend.
+
+Regresión `node --test tests/crm_opportunities_ui_v760.test.mjs`,
+incluida en root `npm test`: validación, llamada API, conflicto,
+contratos de UI y ausencia de persistencia paralela.
+Faltan aún Browser/Playwright, TypeScript/Vite build, PostgreSQL17
+con RLS/locks y un flujo firmado HTTP real antes de certificar el
+CRM en producción. #760 permanece OPEN mientras no estén completas
+Opportunity lifecycle, Quote #753, conversión Client y los demás DoD.
+
+## 2026-10-15 · Cierre negativo auditable de Opportunity
+
+Las oportunidades existentes incorporan ahora la transición
+`qualified → lost` mediante `PATCH /api/v1/modules/crm/opportunities/:id/lost`.
+Este es **el único** cambio de etapa permitido hasta disponer de
+autoridad Quote #753 y evidencias para Proposal/Won; no se reconoce
+venta, dinero ni movimiento contable al descartar.
+
+El endpoint exige sesión con actor, tenant autorizado, permiso
+`sales.manage`, UUID válido y cuerpo estricto
+`{expectedUpdatedAt}` con sello ISO UTC milisegundos. Se comprueba
+`id+tenantId+moduleSlug`, estado calificado y revisión exacta.
+Dentro de una **única transacción Prisma** se hace CAS
+`updateMany({where:{id,tenantId,moduleSlug,status,updatedAt},
+data:{status:'lost'}})` con count=1, luego AuditLog de etapas
+sin datos de contacto ni dinero y lectura final de mismo tenant.
+Una revisión obsoleta responde 409, oportunidad ajena 404;
+estado terminal o propuesta no verificada devuelve 409.
+Un fallo de auditoría o de la lectura final revierte el cambio.
+
+En la sección **Últimas oportunidades** de Clientes, solo
+oportunidades calificadas muestran `Descartar oportunidad`.
+El servicio frontend toma ID+revisión de la última lectura autorizada,
+hace PATCH con el transporte BackendApi (cookie/CSRF) y vuelve a
+consultar el servidor tras éxito, 409 u otro error, sin modificar
+`Store` o crear una oportunidad local alternativa.
+
+Tests añadidos/extendidos:
+`tests/crm_opportunity_stage_v760.test.mjs` está en backend npm test
+y `tests/crm_opportunities_ui_v760.test.mjs` continúa en root npm test.
+La ejecución aislada de lógica CAS/contratos y servicios
+no equivale a PostgreSQL 17 real, TypeScript completo, Auth/HTTP
+o navegador Playwright: esas verificaciones siguen obligatorias
+para la Definition of Done del #760. El modelo ModuleRecord
+permanece provisional y no se altera su esquema ni se pierden datos.

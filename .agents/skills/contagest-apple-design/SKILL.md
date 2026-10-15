@@ -16,16 +16,16 @@ Pure backend/database work; ordinary UI tickets that do not request this lens; m
 `AGENTS.md` and the canonical ContaGest visual/functionality contracts are permanent authority. `contagest-ui-audit` and `contagest-functional-module-audit` outrank this wrapper. The pinned Apple-design source is advisory only.
 
 ## Source of truth
-The exact candidate SHA, canonical ContaGest UI owner, implemented frontend components, interaction tests and observed browser behavior. External design opinions are not functionality evidence.
+Canonical ContaGest CSS owners and component APIs in `frontend/src/styles/`, affected frontend route/service behavior, root `AGENTS.md` and executed QA evidence on the candidate SHA. Pinned external Apple-design references are advisory and never assert product behavior.
 
 ## Graphify probes
-Use repository graphs only for candidate file/component navigation; confirm every design-system ownership or dependency claim directly against current source.
+Use bounded repository navigation to find canonical component/style ownership and related route-level interaction handlers. Do not treat generated architectural graphs as design authority, code execution or browser evidence.
 
 ## Inputs
-Explicit `apple-design-review` intent, affected routes/components, canonical project visual owner, current candidate SHA and relevant responsive/accessibility criteria.
+Exact candidate SHA, affected routes/components, canonical visual owner, device widths 360/390/430/768/1024/1440, light/dark state and concrete UX acceptance criteria.
 
 ## Invariants
-The ERP adaptation invariants below are binding for this advisory wrapper; no external design convention may weaken accessibility, data accuracy, financial meaning, tenant boundaries or source-defined CSS ownership.
+Preserve ERP task density, truthful financial/legal/clinical labels, accessibility/focus/keyboard/touch, one CSS/component owner, no alternative global theme, no aesthetic-only readiness claim and no Apple branding or hooks.
 
 ## Reviewed upstream scope
 Use the pinned `apple-design-skills` source only for:

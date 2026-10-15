@@ -14,6 +14,7 @@ npm run verify:local -- --profile frontend
 npm run verify:local -- --profile database
 npm run verify:local -- --profile financial
 npm run verify:local -- --profile ui
+npm run verify:local -- --profile docs
 npm run verify:local -- --profile changed --base main
 npm run verify:local -- --profile full
 ```
@@ -26,10 +27,11 @@ Use `--expected-sha=<40-char-sha>` whenever the candidate SHA is known. A mismat
 
 - `backend`: backend typecheck, authoritative tests/contracts and backend build.
 - `frontend`: frontend build plus the current visual contract suite.
+- `docs`: #667 risk contract + #666 documentation fixture suite and read-only reference audit; no database, browser or destructive commands.
 - `database`: #626 migration from-zero, supported upgrades, physical manifest, DB authority and raw-SQL security.
 - `financial`: real PostgreSQL financial/fiscal/idempotency regressions plus Decimal, ledger, typecheck and backend build.
 - `ui`: frontend build, the current `qa:ui:58` authority plus explicit Chromium functional, accessibility and contrast gates. The superseded/broken `qa:ui` chain is not selected.
-- `changed`: asks `agent:gates` for the changed boundaries and maps only affected boundaries to the profiles above; it never invents a second routing catalog.
+- `changed`: classifies the exact Git diff through #667 and selects the minimum executable profiles, with human-reviewed overrides for any gate reduction; agent routing metadata does not substitute for verification.
 - `full`: de-duplicates the authoritative commands from the profiles above; it does not enumerate historical workflows.
 
 ## PostgreSQL safety
@@ -76,6 +78,7 @@ Credential-bearing URLs and token-like metadata are redacted before persistence.
 | --- | --- |
 | backend/API/auth | `backend` |
 | frontend source without browser risk | `frontend` |
+| docs and operator runbooks | `docs` |
 | Prisma/migrations/schema | `database` |
 | accounting/fiscal/banking/payroll money flows | `financial` |
 | component/layout/theme/accessibility/browser flow | `ui` |

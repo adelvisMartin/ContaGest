@@ -128,7 +128,7 @@ Los comandos raíz de QA UI se documentan en `package.json` (`qa:ui`, `qa:ui:dee
 
 ## 9. QA de sistema
 
-- [`SYSTEM_QA_CAMPAIGN_V155.md`](SYSTEM_QA_CAMPAIGN_V155.md) — campaña de QA de sistema vinculada al issue #155.
+- [`ERP-SYSTEM-CAMPAIGN-155-V3.md`](qa/ERP-SYSTEM-CAMPAIGN-155-V3.md) — campaña de QA de sistema vinculada al issue #155.
 - `tests/`, `qa/` y los scripts `qa:*`/`test:*` de los workspaces forman la autoridad ejecutable.
 
 No se permite convertir un bloqueo de infraestructura en PASS funcional. Un job sin runner/steps/logs es evidencia de infraestructura, no de que el código haya fallado o pasado.

@@ -1,0 +1,41 @@
+name: Benchmark provenance #764
+
+on:
+  pull_request:
+    paths:
+      - 'config/competitive-benchmark-v764.json'
+      - 'scripts/verify-competitive-benchmark-v764.mjs'
+      - 'tests/competitive_benchmark_v764.test.mjs'
+      - 'docs/COMPETITIVE_BENCHMARK_V764.md'
+      - '.github/workflows/benchmark-provenance-v764.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-v764-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark-contract:
+    name: Benchmark manifest / license policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout exact PR commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax verification
+        run: |
+          node --check scripts/verify-competitive-benchmark-v764.mjs
+          node --check tests/competitive_benchmark_v764.test.mjs
+      - name: Validate matrix and negative tests
+        run: |
+          node scripts/verify-competitive-benchmark-v764.mjs
+          node --test tests/competitive_benchmark_v764.test.mjs

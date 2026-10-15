@@ -31,11 +31,11 @@ Unique issue claim/window ID, baseline SHA, dependencies, affected paths, select
 - Never call a third-party installer/hook or change permissions as a skill side effect.
 
 ## Workflow
-1. PLAN: select pinned `planning-and-task-breakdown`, verify issue/claims/dependencies.
-2. BUILD: `incremental-implementation`, preserve UI → API → domain → PostgreSQL and errors.
-3. VERIFY: targeted `test-driven-development`, characterization and risk-proportional exact-SHA gates.
+1. PLAN: follow reviewed Addy planning guidance under the project's existing pinned source, verify issue/claims/dependencies.
+2. BUILD: incremental implementation, preserve UI → API → domain → PostgreSQL and errors.
+3. VERIFY: reviewed test-driven-development principles, characterization and risk-proportional exact-SHA gates.
 4. REVIEW: `code-review-and-quality` for diff, finance, tenant/auth, QA and secrets.
-5. SHIP: `git-workflow-and-versioning`, `ci-cd-and-automation` when relevant; commit/push/PR.
+5. SHIP: reviewed Git and CI workflow practices when relevant; commit/push/PR.
 6. Coordinator checks current HEAD, serially merges only verified PRs, confirms merge SHA and closes only completed issues.
 
 ## Negative tests
@@ -51,4 +51,4 @@ Run project-required v3 routing and meaningful unit/integration/DB/browser/secur
 Window/issue; baseline and candidate SHA; file list; executed test evidence; PR and CI; final merge/issue status and follow-ups.
 
 ## References
-`AGENTS.md`, `.agents/TICKET_EXECUTION_POLICY.md`, `docs/FOUR_WINDOW_TICKET_PROTOCOL_2026-10-14.md`, `agent-skills.lock.json` source `addy-agent-skills`.
+`AGENTS.md`, `.agents/TICKET_EXECUTION_POLICY.md`, `docs/FOUR_WINDOW_TICKET_PROTOCOL_2026-10-14.md`, `agent-skills.lock.json` source `addy-osmani-engineering`.
