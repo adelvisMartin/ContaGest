@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import { validateIsolatedDatabaseUrl } from '../backend/scripts/hipico-report-share-rls-v1000.mjs';
 
 const phrase='ephemeral-local-postgres17-hipico-share-rls';
@@ -33,4 +34,25 @@ test('guarded CLI must fail without consent BEFORE importing PG and cannot expos
 });
 test('script disallows accidental production without even a configured database',()=>{
   assert.throws(()=>validateIsolatedDatabaseUrl(undefined,phrase),/INVALID_URL/);
+});
+
+test('adversarial PG suite exercises lock contention and recovery rather than just storing a token',()=>{
+  const src=fs.readFileSync(new URL('../backend/scripts/hipico-report-share-rls-v1000.mjs',import.meta.url),'utf8');
+  const names=[
+    'EXPIRED_AND_REVOKED_CAPABILITIES_ARE_INACTIVE',
+    'ONLY_ACTIVE_GROUP_CAPABILITY_ELIGIBLE',
+    'ACTIVE_TOKEN_ROW_LOCK_ACQUIRED',
+    'CONCURRENT_REVOKE_BLOCKED_BY_REPORT_READER',
+    'REVOKE_VISIBLE_ON_NEXT_TRANSACTION',
+    'TRANSACTION_LOCAL_OWNER_RESET',
+    'FOREIGN_OWNER_INSERT_DENIED',
+    'FOREIGN_OWNER_REVOKE_DENIED'
+  ];
+  for (const name of names) assert.match(src,new RegExp('pass\\(\\\''+name+'\\\''),name);
+  assert.match(src,/FOR SHARE/);
+  assert.match(src,/lock_timeout='300ms'/);
+  assert.match(src,/code==='55P03'/);
+  assert.match(src,/await admin\.query\('ROLLBACK'\)/);
+  assert.match(src,/await runtime\.query\('ROLLBACK'\)/);
+  assert.doesNotMatch(src,/UPDATE public\.hipico_money_ledger_entries|DELETE FROM public\.hipico_money_ledger_entries/);
 });
