@@ -122,6 +122,55 @@ export async function runIsolatedRlsSuite(env=process.env){
       const rows=await runtime.query('SELECT id FROM public.hipico_report_share_links');
       pass('OWNER_B_CANNOT_SEE_OWNER_A',rows.rowCount===1 && rows.rows[0].id===shares[2].id);
     });
+    // Expiration and revocation fields exist for every capability; never treat
+    // an expired or revoked link as an active authorization. Financial data in
+    // the ledger is never modified to make either check pass.
+    const expiredId=crypto.randomUUID(),revokedId=crypto.randomUUID();
+    await admin.query(`INSERT INTO public.hipico_report_share_links
+      (id,owner_id,group_key,audience,token_hash,expires_at,revoked_at)
+      VALUES
+      ($1,$3,'triple-c','group',$4,now()-interval '1 second',NULL),
+      ($2,$3,'triple-c','group',$5,now()+interval '1 day',now())`,
+      [expiredId,revokedId,owner,'e'.repeat(64),'f'.repeat(64)]);
+    await withRole(runtime,owner,async()=>{
+      const state=await runtime.query(`SELECT id,
+        (revoked_at IS NULL AND expires_at>now()) AS active
+        FROM public.hipico_report_share_links
+        WHERE id=$1 OR id=$2 ORDER BY id`,[expiredId,revokedId]);
+      pass('EXPIRED_AND_REVOKED_CAPABILITIES_ARE_INACTIVE',
+        state.rowCount===2 && state.rows.every(row=>row.active===false));
+      const active=await scalar(runtime,`SELECT count(*)::int AS n FROM public.hipico_report_share_links
+        WHERE group_key='triple-c' AND revoked_at IS NULL AND expires_at>now()`);
+      pass('ONLY_ACTIVE_GROUP_CAPABILITY_ELIGIBLE',active.n===1);
+    });
+    // A valid token read locks its capability row FOR SHARE inside the same
+    // read transaction. A concurrent revoke must wait/fail at lock timeout,
+    // rather than becoming visible mid-report.
+    await runtime.query('BEGIN');
+    let revokeBlocked=false;
+    try{
+      await runtime.query('SET LOCAL ROLE contagest_runtime');
+      await runtime.query("SELECT set_config('hipico.report_owner_id',$1,true)",[owner]);
+      const claimed=await runtime.query(`SELECT id FROM public.hipico_report_share_links
+        WHERE id=$1 FOR SHARE`,[shares[0].id]);
+      pass('ACTIVE_TOKEN_ROW_LOCK_ACQUIRED',claimed.rowCount===1);
+      await admin.query('BEGIN');
+      try{
+        await admin.query("SET LOCAL lock_timeout='300ms'");
+        try{
+          await admin.query('UPDATE public.hipico_report_share_links SET revoked_at=now() WHERE id=$1',[shares[0].id]);
+        }catch(error){revokeBlocked=error?.code==='55P03';}
+      }finally{await admin.query('ROLLBACK');}
+    }finally{await runtime.query('ROLLBACK');}
+    pass('CONCURRENT_REVOKE_BLOCKED_BY_REPORT_READER',revokeBlocked);
+    // After the read releases its lock, revocation becomes durable; a new
+    // reader may not mistake the same capability for active.
+    await admin.query('UPDATE public.hipico_report_share_links SET revoked_at=now() WHERE id=$1',[shares[0].id]);
+    await withRole(runtime,owner,async()=>{
+      const row=await scalar(runtime,`SELECT revoked_at IS NOT NULL AS revoked
+        FROM public.hipico_report_share_links WHERE id=$1`,[shares[0].id]);
+      pass('REVOKE_VISIBLE_ON_NEXT_TRANSACTION',row?.revoked===true);
+    });
     const guc=await scalar(runtime,"SELECT nullif(current_setting('hipico.report_owner_id',true),'') AS owner");
     pass('TRANSACTION_LOCAL_OWNER_RESET',guc.owner===null);
     return {status:'PASS',checks:recorded,checksPassed:recorded.length,
