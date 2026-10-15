@@ -120,3 +120,124 @@ export async function readHipicoReportLink(ownerId: string, token: string, date:
     };
   });
 }
+
+
+const CONSOLIDATED_PAGE_SIZE = 21;
+
+function startOfCaracasWeek(date: string) {
+  const day = new Date(date + 'T12:00:00.000Z');
+  const daysAfterMonday = (day.getUTCDay() + 6) % 7;
+  day.setUTCDate(day.getUTCDate() - daysAfterMonday);
+  return new Date(day.toISOString().slice(0, 10) + 'T04:00:00.000Z');
+}
+
+type ConsolidatedRow = {
+  participantCode: string;
+  currency: string;
+  balanceMinor: string;
+  daySettlementMinor: string;
+  weekSettlementMinor: string;
+};
+type ConsolidatedTotal = { currency: string; balanceMinor: string };
+type ConsolidatedCount = { participants: number };
+
+/**
+ * Public consolidated view is intentionally LESS expressive than the internal
+ * PWA view. A ledger entry is bet/settlement/adjustment/reversal only; source
+ * does not encode deposit, withdrawal, aval, transfer or refund semantics.
+ *
+ * Never fill a missing financial column with fabricated 0.
+ * Only group audience tokens may access this aggregate.
+ */
+export async function readHipicoConsolidatedShare(
+  ownerId: string,
+  token: string,
+  date: string,
+  page: number,
+  search = '',
+  now = new Date()
+) {
+  const hash = hashReportToken(token);
+  const { until, from } = dateWindowCaracas(date);
+  const weekFrom = startOfCaracasWeek(date);
+  const offset = (page - 1) * CONSOLIDATED_PAGE_SIZE;
+  return ownerTransaction(ownerId, async (tx) => {
+    const shares = await tx.$queryRaw<Share[]>`
+      SELECT id::text, owner_id::text AS "ownerId", group_key AS "groupKey",
+             audience, participant_code AS "participantCode",
+             expires_at AS "expiresAt", revoked_at AS "revokedAt"
+      FROM public.hipico_report_share_links
+      WHERE owner_id=${ownerId}::uuid AND token_hash=${hash}
+      LIMIT 1 FOR SHARE
+    `;
+    const share = shares[0];
+    if (!share || !shareAllowed(share, now) || share.audience !== 'group') return null;
+    const groupKey = share.groupKey;
+    const needle = search.toLocaleLowerCase('es-VE');
+    const groupCount = await tx.$queryRaw<ConsolidatedCount[]>`
+      SELECT COUNT(DISTINCT participant_code)::int AS participants
+      FROM public.hipico_money_ledger_entries
+      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND created_at < ${until}
+    `;
+    const matchedCount = await tx.$queryRaw<ConsolidatedCount[]>`
+      SELECT COUNT(DISTINCT participant_code)::int AS participants
+      FROM public.hipico_money_ledger_entries
+      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND created_at < ${until}
+        AND (${needle}='' OR position(${needle} in lower(participant_code)) > 0)
+    `;
+    const rows = await tx.$queryRaw<ConsolidatedRow[]>`
+      WITH participant_page AS (
+        SELECT participant_code
+        FROM public.hipico_money_ledger_entries
+        WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND created_at < ${until}
+          AND (${needle}='' OR position(${needle} in lower(participant_code)) > 0)
+        GROUP BY participant_code
+        ORDER BY participant_code
+        LIMIT ${CONSOLIDATED_PAGE_SIZE} OFFSET ${offset}
+      )
+      SELECT e.participant_code AS "participantCode",e.currency,
+        SUM(e.amount_minor)::text AS "balanceMinor",
+        COALESCE(SUM(e.amount_minor) FILTER (
+          WHERE e.entry_type='settlement' AND e.created_at >= ${from}
+        ),0)::text AS "daySettlementMinor",
+        COALESCE(SUM(e.amount_minor) FILTER (
+          WHERE e.entry_type='settlement' AND e.created_at >= ${weekFrom}
+        ),0)::text AS "weekSettlementMinor"
+      FROM public.hipico_money_ledger_entries e
+      JOIN participant_page p ON p.participant_code=e.participant_code
+      WHERE e.owner_id=${ownerId}::uuid AND e.group_key=${groupKey}
+        AND e.created_at < ${until}
+      GROUP BY e.participant_code,e.currency
+      ORDER BY e.participant_code,e.currency
+    `;
+    const groupTotals = await tx.$queryRaw<ConsolidatedTotal[]>`
+      SELECT currency,SUM(amount_minor)::text AS "balanceMinor"
+      FROM public.hipico_money_ledger_entries
+      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND created_at < ${until}
+      GROUP BY currency ORDER BY currency
+    `;
+    const filteredTotals = await tx.$queryRaw<ConsolidatedTotal[]>`
+      SELECT currency,SUM(amount_minor)::text AS "balanceMinor"
+      FROM public.hipico_money_ledger_entries
+      WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey} AND created_at < ${until}
+        AND (${needle}='' OR position(${needle} in lower(participant_code)) > 0)
+      GROUP BY currency ORDER BY currency
+    `;
+    const participants = Math.max(0,Number(matchedCount[0]?.participants || 0));
+    const totalParticipants = Math.max(0,Number(groupCount[0]?.participants || 0));
+    return {
+      scope: 'group' as const,
+      source: 'canonical-postgresql-ledger' as const,
+      groupKey,date,
+      timezone: 'America/Caracas' as const,
+      page,pageSize:CONSOLIDATED_PAGE_SIZE,
+      totalParticipants,matchedParticipants:participants,
+      pages:Math.max(1,Math.ceil(participants/CONSOLIDATED_PAGE_SIZE)),
+      search,rows,groupTotals,filteredTotals,
+      // Do not pretend ledger has a source for the other Websimproco columns.
+      unavailableColumns: ['available','refund','deposit','withdrawal','transfer','aval'] as const,
+      amountUnit: 'minor' as const,balancesAsOf:until.toISOString(),
+      expiresAt:share.expiresAt.toISOString()
+    };
+  });
+}
