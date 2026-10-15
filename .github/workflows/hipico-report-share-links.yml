@@ -7,6 +7,9 @@ on:
       - 'backend/src/app.ts'
       - 'backend/prisma/migrations/20261015035000_hipico_report_share_links/**'
       - 'docs/hipico/SECURE_REPORT_LINKS_2026-10-15.md'
+      - 'tools/hipico-cli/report-shares.mjs'
+      - 'tests/hipico_report_share_cli_contract.test.mjs'
+      - 'tests/hipico_report_share_schema_contract.test.mjs'
       - '.github/workflows/hipico-report-share-links.yml'
   workflow_dispatch:
 
@@ -36,3 +39,5 @@ jobs:
         run: npx --no-install tsx --test backend/src/modules/hipico/report-share.routes.test.ts
       - name: Static migration safety contract
         run: node --test tests/hipico_report_share_schema_contract.test.mjs
+      - name: CLI owner-scope and network-safety contracts
+        run: node --test tests/hipico_report_share_cli_contract.test.mjs
