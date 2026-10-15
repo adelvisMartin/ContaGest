@@ -90,7 +90,8 @@ function renderAccount(model) {
   return `<section class="card reference-report__balance">
     <div class="card__head"><div><h3>${label(model.participant.code)} — ${label(model.participant.name)}</h3><small>Consulta privada de movimientos existentes</small></div></div>
     <div class="card__body reference-report__kpis">
-      <div><small>Saldo al iniciar el día</small><strong>${quoteMoney(model.opening, currency)}</strong></div>
+      <div><small>Saldo inicial del día</small><strong>${quoteMoney(model.opening, currency)}</strong></div>
+      <div><small>Saldo final sin aval</small><strong>${quoteMoney(model.closing, currency)}</strong></div>
       <div><small>Resultado del día</small><strong class="${model.dayResult < 0 ? 'amount-negative' : 'amount-positive'}">${quoteMoney(model.dayResult, currency)}</strong></div>
       <div><small>Disponible con aval</small><strong>${quoteMoney(model.available, currency)}</strong></div>
     </div></section>
@@ -99,7 +100,7 @@ function renderAccount(model) {
       <div class="card__body"><div class="responsive-records">${model.weekly.map(r =>
         `<article><strong>${label(r.date)}</strong><span class="${r.amount < 0 ? 'amount-negative' : 'amount-positive'}">${quoteMoney(r.amount, currency)}</span></article>`
       ).join('')}</div></div></section>
-    <section><h3 class="reference-report__section">Apuestas por carrera · ${count(model.races.length)}</h3>
+    <section><div class="reference-report__race-count"><h3 class="reference-report__section">Apuestas por carrera · ${count(model.races.length)}</h3><strong>Resultado liquidado en carreras: ${quoteMoney(model.settledRaceTotal, currency)}</strong></div>
       ${model.races.map(r=>raceCard(r,currency,model.participant.id)).join('') ||
        '<p class="muted">No existen jugadas de este participante para esta fecha.</p>'}
     </section>
