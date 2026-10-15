@@ -361,3 +361,39 @@ Faltan aún Browser/Playwright, TypeScript/Vite build, PostgreSQL17
 con RLS/locks y un flujo firmado HTTP real antes de certificar el
 CRM en producción. #760 permanece OPEN mientras no estén completas
 Opportunity lifecycle, Quote #753, conversión Client y los demás DoD.
+
+## 2026-10-15 · Cierre negativo auditable de Opportunity
+
+Las oportunidades existentes incorporan ahora la transición
+`qualified → lost` mediante `PATCH /api/v1/modules/crm/opportunities/:id/lost`.
+Este es **el único** cambio de etapa permitido hasta disponer de
+autoridad Quote #753 y evidencias para Proposal/Won; no se reconoce
+venta, dinero ni movimiento contable al descartar.
+
+El endpoint exige sesión con actor, tenant autorizado, permiso
+`sales.manage`, UUID válido y cuerpo estricto
+`{expectedUpdatedAt}` con sello ISO UTC milisegundos. Se comprueba
+`id+tenantId+moduleSlug`, estado calificado y revisión exacta.
+Dentro de una **única transacción Prisma** se hace CAS
+`updateMany({where:{id,tenantId,moduleSlug,status,updatedAt},
+data:{status:'lost'}})` con count=1, luego AuditLog de etapas
+sin datos de contacto ni dinero y lectura final de mismo tenant.
+Una revisión obsoleta responde 409, oportunidad ajena 404;
+estado terminal o propuesta no verificada devuelve 409.
+Un fallo de auditoría o de la lectura final revierte el cambio.
+
+En la sección **Últimas oportunidades** de Clientes, solo
+oportunidades calificadas muestran `Descartar oportunidad`.
+El servicio frontend toma ID+revisión de la última lectura autorizada,
+hace PATCH con el transporte BackendApi (cookie/CSRF) y vuelve a
+consultar el servidor tras éxito, 409 u otro error, sin modificar
+`Store` o crear una oportunidad local alternativa.
+
+Tests añadidos/extendidos:
+`tests/crm_opportunity_stage_v760.test.mjs` está en backend npm test
+y `tests/crm_opportunities_ui_v760.test.mjs` continúa en root npm test.
+La ejecución aislada de lógica CAS/contratos y servicios
+no equivale a PostgreSQL 17 real, TypeScript completo, Auth/HTTP
+o navegador Playwright: esas verificaciones siguen obligatorias
+para la Definition of Done del #760. El modelo ModuleRecord
+permanece provisional y no se altera su esquema ni se pierden datos.

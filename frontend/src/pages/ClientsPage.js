@@ -57,6 +57,8 @@ export const ClientsPage = {
     const opportunityStatus = document.getElementById('crmOpportunityStatus');
     const opportunityResults = document.getElementById('crmOpportunityResults');
     let selectedOpportunityLead = null;
+    let loadedCrmOpportunities = [];
+    let opportunityLossInFlight = false;
     const status = document.getElementById('crmLeadStatus');
     const results = document.getElementById('crmLeadResults');
     let loadedCrmLeads = [];
@@ -154,10 +156,12 @@ export const ClientsPage = {
       } finally { submit?.removeAttribute('disabled'); }
     });
     const refreshCrmOpportunities=async()=>{
+      loadedCrmOpportunities = [];
       if (!opportunityResults) return;
       opportunityResults.textContent='Consultando oportunidades…';
       try {
         const rows=await crmOpportunities.list();
+        loadedCrmOpportunities=rows;
         if(!rows.length){
           opportunityResults.textContent='Todavía no hay oportunidades registradas para esta empresa.';
           return;
@@ -169,13 +173,41 @@ export const ClientsPage = {
             {key:'stage',label:'Etapa',render:item=>safe(item.stage)},
             {key:'expectedValue',label:'Previsión',render:item=>safe(item.expectedValue)+' '+safe(item.currency)},
             {key:'probability',label:'Probabilidad',render:item=>safe(item.probability)+'%'},
-            {key:'createdAt',label:'Registrada',render:item=>safe(item.createdAt?new Date(item.createdAt).toLocaleDateString('es-VE'):'')}
+            {key:'createdAt',label:'Registrada',render:item=>safe(item.createdAt?new Date(item.createdAt).toLocaleDateString('es-VE'):'' )},
+            {key:'actions',label:'Acciones',render:item=>item.stage==='qualified'
+              ? ErpButton('Descartar oportunidad',{variant:'danger',data:{'crm-opportunity-loss-id':item.id}})
+              : Badge('Sin acción disponible','neutral')}
           ],rows
         });
       } catch(_error){
         opportunityResults.textContent='No se pudieron consultar las oportunidades. Comprueba la sesión y vuelve a intentar.';
       }
     };
+    opportunityResults?.addEventListener('click',async(event)=>{
+      const button=event.target?.closest?.('[data-crm-opportunity-loss-id]');
+      if(!button || opportunityLossInFlight) return;
+      const opportunity=loadedCrmOpportunities.find(row=>
+        row.id===button.dataset.crmOpportunityLossId && row.stage==='qualified'
+      );
+      if(!opportunity) return;
+      opportunityLossInFlight=true;
+      button.setAttribute('disabled','disabled');
+      if(opportunityStatus) opportunityStatus.textContent='Descartando oportunidad en el servidor…';
+      try {
+        await crmOpportunities.markLost(opportunity);
+        if(opportunityStatus) opportunityStatus.textContent='Oportunidad descartada y auditada; no afecta facturas.';
+        Toast.show('Oportunidad descartada.', 'success');
+      } catch(error) {
+        if(opportunityStatus) opportunityStatus.textContent=error?.status===409
+          ? 'La oportunidad cambió desde tu última consulta. Listado actualizado.'
+          : 'No se confirmó el cambio. No se guardó información local.';
+        Toast.show('No se confirmó el cambio de oportunidad.', 'warning');
+      } finally {
+        button.removeAttribute('disabled');
+        opportunityLossInFlight=false;
+        await refreshCrmOpportunities();
+      }
+    });
     document.getElementById('crmOpportunityRefresh')?.addEventListener('click',()=>{void refreshCrmOpportunities()});
     mountSubmit('#crmOpportunityForm',async(data,form)=>{
       const submit=form.querySelector('button[type="submit"]');
