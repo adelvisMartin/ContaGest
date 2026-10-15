@@ -26,10 +26,11 @@ test('#688 Zod errors always map to 422 / validation and redact field-level mess
   assert.equal(publicBody.correlationId, 'corr-688');
   assert.equal(publicBody.requestId, 'req-688');
   assert.equal(publicBody.ok, false);
-  assert.ok(Array.isArray(publicBody.details), 'safe validation details should exist');
-  assert.equal(publicBody.details.length >= 1, true);
+  const details = publicBody.details;
+  assert.ok(Array.isArray(details), 'safe validation details should exist');
+  assert.ok(details.length >= 1, 'at least one redacted issue is required');
   assert.ok(!JSON.stringify(publicBody).includes('FAKE_SENSITIVE_PASSWORD_688'));
-  for (const issue of publicBody.details as Array<Record<string, unknown>>) {
+  for (const issue of details as Array<Record<string, unknown>>) {
     assert.equal(issue.message, '[REDACTED]', 'raw Zod error messages cannot be disclosed');
   }
 });
