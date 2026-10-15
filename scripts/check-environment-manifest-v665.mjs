@@ -30,6 +30,26 @@ export function parseTemplateInventory(source){
 }
 
 const URL_SCHEMES=new Set(['http:','https:','postgres:','postgresql:','mysql:','mongodb:','mongodb+srv:','redis:','rediss:']);
+// Never permit opaque credentials in public frontend URLs. Inspect only
+// parameter *names*, not values, so findings cannot leak sensitive content.
+// Preserve marketing navigation parameters and server-only database URLs.
+const PUBLIC_URL_SECRET_KEYS=new Set([
+ 'accesstoken','refreshtoken','apikey','xapikey','clientsecret',
+ 'servicerolekey','password','passwd','authorization','jwt',
+ 'secret','token','auth','idtoken','sessiontoken','clienttoken'
+]);
+function frontendUrlHasCredentials(value){
+ try{
+  const url=new URL(value,'https://config.invalid');
+  const hash=url.hash.slice(1);
+  const fragmentParams=hash.includes('?')?hash.slice(hash.indexOf('?')+1):hash;
+  const params=[...url.searchParams,...new URLSearchParams(fragmentParams)];
+  return Boolean(url.username||url.password)||
+    params.some(([key])=>PUBLIC_URL_SECRET_KEYS.has(
+      key.toLowerCase().replace(/[^a-z0-9]/g,'')));
+ }catch{return true;}
+}
+
 function sampleMatchesDeclaredType(value,record,owner){
  // Empty string/URL/secret placeholders are intentional, but typed control
  // switches, counts and enums cannot silently become unset in required samples.
@@ -45,13 +65,14 @@ function sampleMatchesDeclaredType(value,record,owner){
    // become a relative marketing route or a PostgreSQL connection string.
    if(record.allowRelative===true&&owner==='frontend'&&
       value.startsWith('/')&&!value.startsWith('//'))
-     return !/[\s\\]/.test(value);
+     return !/[\s\\]/.test(value)&&!frontendUrlHasCredentials(value);
    const normalized=value.replace(/\[[A-Za-z0-9_-]+\]/g,'example');
    try{
      const url=new URL(normalized);
      return Array.isArray(record.allowedSchemes)&&record.allowedSchemes.includes(url.protocol)&&
        URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname)&&
-       (!['http:','https:'].includes(url.protocol)||(!url.username&&!url.password));
+       (!['http:','https:'].includes(url.protocol)||(!url.username&&!url.password))&&
+       (owner!=='frontend'||!frontendUrlHasCredentials(normalized));
    }catch{return false;}
   }
   default:return true;
