@@ -1,6 +1,6 @@
 import { prisma } from '../../database/prisma.js';
 import {
-  createReportToken, dateWindowUtc, expiryDate, hashReportToken, shareAllowed
+  createReportToken, dateWindowCaracas, expiryDate, hashReportToken, shareAllowed
 } from './report-share-policy.js';
 
 type NewShare = { ownerId: string; groupKey: string; audience: 'participant' | 'group'; participantCode?: string; hours: number };
@@ -26,14 +26,37 @@ export async function issueHipicoReportLink(input: NewShare, now = new Date()) {
   const tokenHash = hashReportToken(token);
   const expiresAt = expiryDate(input.hours, now);
   const participant = input.audience === 'participant' ? input.participantCode! : null;
-  const created = await ownerTransaction(input.ownerId, async (tx) => tx.$queryRaw<Array<{ id: string; expiresAt: Date }>>`
-    INSERT INTO public.hipico_report_share_links(owner_id,group_key,audience,participant_code,token_hash,expires_at)
-    VALUES (${input.ownerId}::uuid,${input.groupKey},${input.audience},${participant},${tokenHash},${expiresAt})
-    RETURNING id::text, expires_at AS "expiresAt"
-  `);
+  const created = await ownerTransaction(input.ownerId, async (tx) => {
+    const exists = await tx.$queryRaw<Array<{ found: boolean }>>`
+      SELECT true AS "found"
+      FROM public.hipico_money_ledger_entries
+      WHERE owner_id=${input.ownerId}::uuid AND group_key=${input.groupKey}
+        AND (${participant}::text IS NULL OR participant_code=${participant})
+      LIMIT 1
+    `;
+    if (!exists[0]?.found) throw new Error('HIPICO_REPORT_LEDGER_SCOPE_NOT_FOUND');
+    return tx.$queryRaw<Array<{ id: string; expiresAt: Date }>>`
+      INSERT INTO public.hipico_report_share_links(owner_id,group_key,audience,participant_code,token_hash,expires_at)
+      VALUES (${input.ownerId}::uuid,${input.groupKey},${input.audience},${participant},${tokenHash},${expiresAt})
+      RETURNING id::text, expires_at AS "expiresAt"
+    `;
+  });
   if (!created[0]) throw new Error('HIPICO_REPORT_ISSUE_UNAVAILABLE');
   // Caller sees the raw token exactly once, only through the authenticated issuance response.
   return { id: created[0].id, token, expiresAt: created[0].expiresAt };
+}
+
+export async function listHipicoReportLinks(ownerId: string, groupKey: string) {
+  return ownerTransaction(ownerId, async (tx) => tx.$queryRaw<Array<{
+    id: string; groupKey: string; audience: string; participantCode: string | null;
+    createdAt: Date; expiresAt: Date; revokedAt: Date | null;
+  }>>`
+    SELECT id::text,group_key AS "groupKey",audience,participant_code AS "participantCode",
+           created_at AS "createdAt",expires_at AS "expiresAt",revoked_at AS "revokedAt"
+    FROM public.hipico_report_share_links
+    WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
+    ORDER BY created_at DESC LIMIT 100
+  `);
 }
 
 export async function revokeHipicoReportLink(ownerId: string, id: string) {
@@ -48,7 +71,7 @@ export async function revokeHipicoReportLink(ownerId: string, id: string) {
 
 export async function readHipicoReportLink(ownerId: string, token: string, date: string, now = new Date()) {
   const hash = hashReportToken(token);
-  const { from, until } = dateWindowUtc(date);
+  const { from, until } = dateWindowCaracas(date);
   return ownerTransaction(ownerId, async (tx) => {
     const shares = await tx.$queryRaw<Share[]>`
       SELECT id::text,owner_id::text AS "ownerId",group_key AS "groupKey",
