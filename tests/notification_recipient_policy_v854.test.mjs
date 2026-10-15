@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateNotificationRecipientPolicy } from '../backend/src/modules/notifications/notification-recipient-policy.ts';
+import { listNotificationTemplateDescriptors } from '../backend/src/modules/notifications/notification-template-catalog.ts';
+import { readFileSync } from 'node:fs';
 
 const baseline = Object.freeze({
   requestTenantId: 'tenant-A', recipientTenantId: 'tenant-A', recipientActive: true,
@@ -59,4 +61,27 @@ test('#854: unknown template class or malformed evidence suppresses and never em
   assert.equal(evaluateNotificationRecipientPolicy([]).decision, 'SUPPRESS');
   const privateTenant='SECRET_TENANT_ID';
   assert.equal(JSON.stringify(decision({ recipientTenantId: privateTenant })).includes(privateTenant), false);
+});
+
+test('#854: static catalog metadata is immutable, versioned and contains no payload or destination', () => {
+  const list = listNotificationTemplateDescriptors();
+  assert.equal(list.length, 2);
+  assert.ok(Object.isFrozen(list));
+  assert.deepEqual(list.map((item) => item.key), ['operational.notice', 'sales.order-status']);
+  assert.equal(list[0].version, 1);
+  assert.deepEqual(list[0].slots, ['title', 'detail']);
+  assert.deepEqual(list[0].locales, ['es-VE', 'en-US']);
+  assert.ok(list.every((item) => Object.isFrozen(item) && Object.isFrozen(item.slots)));
+  assert.ok(list.every((item) => !('recipient' in item || 'message' in item || 'secret' in item)));
+  assert.throws(() => list.push({ key: 'malicious' }), TypeError);
+});
+
+test('#854: catalog route is RBAC/tenant-scoped read-only, not a delivery endpoint', () => {
+  const source = readFileSync(new URL('../backend/src/modules/notifications/notifications.routes.ts', import.meta.url), 'utf8');
+  assert.match(source, /router\.use\(requireTenant\)/);
+  const route = source.match(/router\.get\('\/templates', requirePermission\('sales\.manage'\), asyncHandler\([\s\S]*?\n\}\)\);/);
+  assert.ok(route, 'missing protected metadata route');
+  assert.match(route[0], /listNotificationTemplateDescriptors\(\)/);
+  assert.match(route[0], /queueReady: false/);
+  assert.doesNotMatch(route[0], /sendWhatsAppCloud|\.create\(|\.update\(|\.delete\(|fetch\(/);
 });
