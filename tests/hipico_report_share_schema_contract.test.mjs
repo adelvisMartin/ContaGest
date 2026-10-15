@@ -47,3 +47,29 @@ test('express mounts link endpoint before operator-only canonical Hípico router
   assert.ok(share>0&&canonical>share);
   assert.match(app,/authRateLimit, mutationRateLimit, hipicoReportShareRoutes/);
 });
+
+
+test('consolidated group ledger never manufactures absent financial categories',()=>{
+  assert.match(store,/export async function readHipicoConsolidatedShare\(/);
+  assert.match(store,/share\.audience !== 'group'/);
+  assert.match(store,/LIMIT \$\{CONSOLIDATED_PAGE_SIZE\} OFFSET \$\{offset\}/);
+  assert.match(store,/COUNT\(DISTINCT participant_code\)/);
+  assert.match(store,/position\(\$\{needle\} in lower\(participant_code\)\) > 0/);
+  assert.match(store,/entry_type='settlement'/);
+  assert.match(store,/original\.entry_type='settlement'/);
+  assert.match(store,/original\.owner_id=e\.owner_id/);
+  assert.match(store,/unavailableColumns: \['available','refund','deposit','withdrawal','transfer','aval'\]/);
+  assert.match(store,/amountUnit: 'minor'/);
+  assert.match(store,/isolationLevel: 'RepeatableRead'/);
+  assert.equal((store.match(/LIMIT 1 FOR SHARE/g)||[]).length,2,'both report paths must lock capability before ledger projection');
+});
+
+test('new public consolidation view fails closed on malformed scope and preserves no-cache CSP',()=>{
+  assert.match(routes,/view !== undefined && view !== 'consolidated'/);
+  assert.match(routes,/consolidatedQuerySchema\.safeParse/);
+  assert.match(routes,/if \(!data\) return publicFailure\(res\)/);
+  assert.match(routes,/htmlConsolidated\(data,nonce,token\)/);
+  assert.match(routes,/style-src 'nonce-/);
+  assert.match(routes,/No disponible|no disponibles en este ledger/);
+  assert.doesNotMatch(routes,/\beval\s*\(/);
+});
