@@ -1552,3 +1552,55 @@ test('inbox rejects an existing POSIX AES key readable by other users without de
   assert.equal((await recovered.read(MESSAGE))?.messageId,MESSAGE);
   await recovered.close();
 });
+
+
+test('inbox repairs a preexisting permissive LAB root before creating a secret key on POSIX',async t=>{
+  if(process.platform==='win32')return;
+  const f=await harness(t);
+  // No key or ciphertext exists when the empty fixture directory is exposed.
+  await fs.chmod(f.rootDir,0o755);
+  const inbox=f.create();
+  await inbox.initialize();
+  assert.equal((await fs.lstat(f.rootDir)).mode & 0o077,0,
+    'LAB inbox root must not be accessible by another group or user');
+  assert.equal((await fs.lstat(path.join(f.rootDir,'inbox.key'))).mode & 0o077,0);
+  await inbox.close();
+});
+
+test('inbox refuses unsafe directory mode after chmod fails or a symlink swap occurs',async()=>{
+  const source=await fs.readFile(new URL('../src/lab-pending-query-inbox.mjs',import.meta.url),'utf8');
+  const begin=source.indexOf('  async function safeRoot(){');
+  const end=source.indexOf('  async function loadKey(){',begin);
+  assert.ok(begin>=0 && end>begin,'canonical root security implementation is missing');
+  const section=source.slice(begin,end);
+  const {runInNewContext}=await import('node:vm');
+  const run=async({platform,startingMode,chmodFails=false,swapToSymlink=false})=>{
+    let lstatCalls=0;
+    let mode=startingMode;
+    const stat=()=>{
+      lstatCalls++;
+      const link=swapToSymlink && lstatCalls===2;
+      return {isDirectory:()=>!link,isSymbolicLink:()=>link,mode};
+    };
+    const fakeFs={
+      mkdir:async()=>{},
+      lstat:async()=>stat(),
+      chmod:async()=>{if(chmodFails)throw new Error('synthetic EACCES');mode=0o40700;}
+    };
+    const safeRoot=runInNewContext('(()=>{'+section+'return safeRoot;})()',{
+      root:'/synthetic/lab-inbox',fs:fakeFs,process:{platform}
+    });
+    return {result:await safeRoot().then(()=>null,e=>String(e.message)),lstatCalls};
+  };
+  const unsafe=await run({platform:'linux',startingMode:0o40755,chmodFails:true});
+  assert.equal(unsafe.result,'LAB_PENDING_ROOT_PERMISSIONS_UNSAFE');
+  assert.equal(unsafe.lstatCalls,2,'permissions must be checked after chmod');
+  const privateRoot=await run({platform:'linux',startingMode:0o40700,chmodFails:true});
+  assert.equal(privateRoot.result,null,'verified private root may remain usable after chmod failure');
+  const repaired=await run({platform:'linux',startingMode:0o40777});
+  assert.equal(repaired.result,null,'successful chmod repairs a permissive root');
+  const swapped=await run({platform:'linux',startingMode:0o40700,swapToSymlink:true});
+  assert.equal(swapped.result,'LAB_PENDING_ROOT_UNSAFE');
+  const windows=await run({platform:'win32',startingMode:0o40777,chmodFails:true});
+  assert.equal(windows.result,null,'POSIX permission modes cannot certify NTFS ACLs');
+});
