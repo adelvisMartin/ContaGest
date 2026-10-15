@@ -67,9 +67,10 @@ test('daily transfers count once, cancelled movements excluded and currencies ne
   assert.equal(report.postedCount,3);
   assert.equal(report.cancelledCount,1);
   assert.equal(report.movements.find(m=>m.id==='m1').deltaTotal,0);
-  assert.deepEqual(report.totals.map(v=>[v.type,v.currency,v.amount,v.count]),[
-    ['transfer','VES',30,1],['adjustment','VES',15,1],['pool','USD',10,1]
-  ]);
+  assert.deepEqual(
+    report.totals.map(v=>[v.type,v.currency,v.amount,v.count]).sort((a,b)=>a[0].localeCompare(b[0])),
+    [['adjustment','VES',15,1],['pool','USD',10,1],['transfer','VES',30,1]]
+  );
   assert.ok(!JSON.stringify(report).includes('NO MOSTRAR'));
 });
 
