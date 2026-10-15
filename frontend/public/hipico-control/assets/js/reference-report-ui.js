@@ -139,9 +139,14 @@ function participantOutcome(model, race) {
   ).join('')}</div>`;
 }
 function movementBadges(model) {
-  return `<div class="reference-report__movement-badges" aria-label="Resumen de operaciones">${model.totals
-    .filter(row => ['deposit','withdrawal','transfer'].includes(row.type))
-    .map(row => `<span class="badge">${label(movementTypes[row.type])}: ${count(row.count)} · ${label(row.currency)} ${label(number(row.amount))}</span>`).join('')}
+  const categories = ['deposit','withdrawal','transfer'];
+  const summaries = categories.flatMap(type => {
+    const rows = model.totals.filter(row => row.type === type);
+    if (!rows.length) return [`<span class="badge">${label(movementTypes[type])}: 0 operaciones</span>`];
+    return rows.map(row => `<span class="badge">${label(movementTypes[type])}: ${count(row.count)} · ${label(row.currency)} ${label(number(row.amount))}</span>`);
+  });
+  return `<div class="reference-report__movement-badges" aria-label="Resumen de operaciones">
+    ${summaries.join('')}
     <span class="badge">Operaciones: ${count(model.movementCount)}</span>
     <span class="badge">Carreras: ${count(model.raceCount)}</span></div>`;
 }
