@@ -2,6 +2,10 @@
 
 **Alcance:** crear y listar proyectos de una empresa usando almacenamiento PostgreSQL existente (`ModuleRecord`) con auditoría transaccional (`AuditLog`), sin modificar el schema ni introducir un motor alternativo de facturación.
 
+## Activación controlada (fail-closed)
+
+La ruta está **DESACTIVADA por defecto**; devuelve HTTP 503 aunque el servidor esté funcionando. Sólo una configuración explícita `CONTAGEST_PROJECTS_V761_ENABLE=true` habilita la API. Mantener la variable ausente o `false` en producción hasta completar una ejecución exact-SHA de PostgreSQL 17 con tenant A/B, sesión/licencia/RBAC, reintentos, rollback, contrato HTTP y revisión de seguridad. La bandera se evalúa en cada petición; no crea una dependencia externa ni altera el arranque general. No debe activarse sólo por tener el PR mergeado.
+
 ## API (requiere sesión, licencia y permiso `modules.manage`)
 
 - `POST /api/v1/modules/projects` con `Idempotency-Key: <UUIDv4>` y JSON **estricto** `{ "name":"...", "clientId":"<UUID>", "description":"..." }`.
