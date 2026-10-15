@@ -5,7 +5,7 @@ import {
   caracasToday, caracasClock, projectOperationsDesk, projectRaceResults, raceCopyText
 } from '../frontend/public/hipico-control/assets/js/reference-report-operations.js';
 import { projectParticipantAccount } from '../frontend/public/hipico-control/assets/js/reference-report-projections.js';
-import { renderReferenceReport } from '../frontend/public/hipico-control/assets/js/reference-report-ui.js';
+import { renderReferenceReport, referenceReportLines } from '../frontend/public/hipico-control/assets/js/reference-report-ui.js';
 
 function workspace() {
   return {
@@ -185,6 +185,17 @@ test('all 3 report views render observed controls and state without leaking trus
   assert.match(personal,/Resultado liquidado en carreras/);
   assert.match(personal,/data-action="reference-report-copy-race"/);
   assert.ok(!personal.includes('SECRET TRACK'));
+});
+
+test('summary copy and PDF content preserve both operational columns without duplicating transfers', () => {
+  const text = referenceReportLines(workspace(), { ...scope,type:'race-history' }).join('\n');
+  assert.match(text,/HISTORIAL DE TRANSACCIONES/);
+  assert.match(text,/Transferencia CANITA → PACO VES/);
+  assert.equal((text.match(/Transferencia CANITA → PACO/g)||[]).length,1);
+  assert.match(text,/Charles Town/);
+  assert.match(text,/Resultados liquidados/);
+  assert.match(text,/PACO.*-500/);
+  assert.doesNotMatch(text,/SECRET TRACK/);
 });
 
 test('offline precache and Android packaging require all three read-only modules', () => {
