@@ -125,7 +125,8 @@
     "test:hipico:reference": "node --test tests/hipico_reference_report_projections.test.mjs tests/hipico_reference_report_operations.test.mjs tests/hipico_reference_report_consolidator.test.mjs",
     "hipico:report-links": "node tools/hipico-cli/report-shares.mjs",
     "test:hipico:share:offline": "node --test tests/hipico_report_share_schema_contract.test.mjs tests/hipico_report_share_cli_contract.test.mjs tests/hipico_report_share_rls_guard_v1000.test.mjs",
-    "test:hipico:share:postgres": "node backend/scripts/hipico-report-share-rls-v1000.mjs"
+    "test:hipico:share:postgres": "node backend/scripts/hipico-report-share-rls-v1000.mjs",
+    "test:hipico:ledger:reconcile": "node --test tests/hipico_money_ledger_orphan_reconciliation_v1018.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.0"
