@@ -47,7 +47,7 @@ test('#646 stages require both canonical migrations, a fault injection and verif
   const plan=stagePlan();
   assert.deepEqual(plan,['prerequisites','migrate-source','seed-source','rls-source',
     'fixtures','backup','fault-injection','migrate-target','rls-target',
-    'restore','integrity','cleanup']);
+    'restore','api-smoke','integrity','cleanup']);
   assert.equal(new Set(plan).size,plan.length);
 });
 
