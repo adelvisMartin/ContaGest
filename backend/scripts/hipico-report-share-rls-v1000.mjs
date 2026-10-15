@@ -64,6 +64,10 @@ export async function runIsolatedRlsSuite(env=process.env){
     await admin.query('GRANT USAGE ON SCHEMA public TO contagest_runtime');
     await admin.query(await fs.readFile(ledgerSql,'utf8'));
     await admin.query(await fs.readFile(capabilitySql,'utf8'));
+    // The initial append-only ledger migration does not itself grant runtime
+    // read access. This is an ISOLATED TEST FIXTURE permission, not production
+    // migration policy. Review real production grants separately.
+    await admin.query('GRANT SELECT ON TABLE public.hipico_money_ledger_entries TO contagest_runtime');
     const rls=await scalar(admin,`SELECT relrowsecurity AS enabled,relforcerowsecurity AS forced
       FROM pg_class WHERE oid='public.hipico_report_share_links'::regclass`);
     pass('FORCED_RLS',rls.enabled===true&&rls.forced===true);
