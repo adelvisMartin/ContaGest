@@ -9,6 +9,11 @@ export const WHATSAPP_POLICY_REVIEW_1011 = Object.freeze({
   status: 'NO_GO',
   sourceAutomatedWrites: 'NO_GO',
   officialPolicyChecked: true,
+  // The September 23 policy has narrow country-scoped promotion exceptions.
+  // These facts are advisory; they do not unlock the existing SOURCE group.
+  onlineGamblingPromotionCountries: Object.freeze(['AU', 'JP', 'CO', 'MX', 'PE']),
+  onlineGamblingPromotionException: 'COUNTRY_AGE_LICENSE_META_PERMISSION_REQUIRED',
+  onlineGamblingPromotionInVenezuela: 'NOT_ALLOWED_COUNTRY',
   groupApiAccountEligibility: 'NOT_VERIFIED',
   officialGroupsApiDetails: 'NOT_VERIFIED_RATE_LIMITED',
   merchantAndTerritoryReview: 'NOT_VERIFIED',
