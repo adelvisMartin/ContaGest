@@ -238,6 +238,8 @@ export function referenceReportLines(workspace, filter) {
   if(filter.type==='personal'){
     lines.push('Participante: '+model.participant.code+' / '+model.participant.name,
       'Saldo inicial del día: '+signedMoney(model.opening,curr),
+      'Saldo final sin aval: '+signedMoney(model.closing,curr),
+      'Total liquidado en carreras: '+signedMoney(model.settledRaceTotal,curr),
       'Resultado del día: '+signedMoney(model.dayResult,curr),
       'Disponible: '+signedMoney(model.available,curr),'Resumen semanal:');
     for(const row of model.weekly)lines.push(row.date+' · '+signedMoney(row.amount,curr));
@@ -246,12 +248,25 @@ export function referenceReportLines(workspace, filter) {
       ' '+m.participant.code+(m.counterparty?' → '+m.counterparty.code:'')+' '+
       m.currency+' '+number(m.amount)+' · '+(statusName[m.status]||m.status));
   }
+  if(filter.type==='race-history'){
+    lines.push('','HISTORIAL DE TRANSACCIONES (operaciones únicas, no dos veces cada transferencia)');
+    for(const m of model.movements) lines.push(
+      m.date+' '+caracasClock(m.time)+' '+(movementTypes[m.type]||m.type)+' '+
+      m.participant.code+(m.counterparty?' → '+m.counterparty.code:'')+' '+
+      m.currency+' '+number(m.amount)+' · '+(statusName[m.status]||m.status)
+    );
+  }
   const races=filter.type==='personal'?model.races:filter.type==='race-history'?model.races:[];
   for(const r of races){
     lines.push('',r.racetrack+' · '+r.number+'ª carrera · Pizarra: '+(r.board||'No registrada'));
     for(const b of r.bets)lines.push(b.play+' '+b.horse+' '+number(b.amount)+' · '+
       b.player.code+' '+(b.status==='cancelled'?'Anulada':b.playerResult===null?'Pendiente':signedMoney(b.playerResult,curr))+
       (b.receiver?' / '+b.receiver.code+' '+(b.status==='cancelled'?'Anulada':b.receiverResult===null?'Pendiente':signedMoney(b.receiverResult,curr)):''));
+    if(filter.type==='race-history') {
+      lines.push('Resultados liquidados (participantes, no resultado del club):');
+      for(const result of r.participantResults)lines.push(result.code+' '+signedMoney(result.amount,curr));
+      if(!r.participantResults.length)lines.push('Sin liquidaciones confirmadas.');
+    }
   }
   if(model.invalidReferences)lines.push('ADVERTENCIA: '+model.invalidReferences+' referencias no conciliadas.');
   return lines;
