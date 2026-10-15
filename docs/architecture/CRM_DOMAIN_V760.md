@@ -68,3 +68,27 @@ This is a **heuristic review aid**, not a comprehensive fiscal uniqueness check:
 Regression command (repository root): `node --test tests/crm_client_preflight_v760.test.mjs`; wired into `backend npm test`. The isolated suite uses an injected fake Prisma reader, not a real PostgreSQL instance. Route HTTP / auth / PG17 / E2E tests and full backend typecheck/build remain pending before treating the entire CRM as production-ready; #760 stays OPEN.
 
 No Lead/Opportunity DDL, quote link, conversion mutation, FX/accounting, provider notification, frontend UI or migration is delivered by this slice. Revert the isolated endpoint, runner hook and helper to roll back without data loss.
+
+## 2026-10-15 · Historical taxpayer identity and preflight response hardening
+
+The canonical Client preflight remains **read-only and non-authorizing**. It now
+enumerates the exact legacy RIF spelling `J-12.345.678-9` in addition to
+`J123456789`, `J-123456789` and `J-12345678-9` (and corresponding prefixes).
+The match is still strict and bounded, not an unrestricted substring search.
+Other irregular legacy spellings may exist and still need data cleanup or a
+transactional canonical-RIF index before reliable no-match conclusions.
+
+When a valid lead RIF shares an email with an active same-tenant Client whose
+historical RIF cannot be parsed, the verdict becomes `BLOCKED` with reason
+`UNVERIFIABLE_CLIENT_RIF`, revealing only opaque IDs. An unknown fiscal identity
+must never be treated as proof that the lead belongs to the same taxpayer.
+Multiple candidates retain the preexisting `AMBIGUOUS_CLIENT_MATCH` contract.
+Inactive and foreign-tenant records remain excluded from decisions.
+
+The endpoint now sets `Cache-Control: private, no-store` before parsing the body,
+to discourage browser/proxy caching of sensitive lookup verdicts. These rules
+do not create, merge, or update a Client and do not replace tenant-bound
+Prisma/PG constraints, RBAC or a real end-to-end session/HTTP/DB test.
+
+Rollback is a source-only revert of the helper, domain verdict, route header,
+and regression updates. Ticket #760 stays open until transactional CRM and UI.
