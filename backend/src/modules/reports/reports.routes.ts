@@ -49,7 +49,7 @@ router.get('/operational/sales', asyncHandler(async (req, res) => {
   if (!query.success) throw new HttpError(400, 'Filtros de KPI de ventas inválidos.', { code: 'SALES_KPI_QUERY_INVALID' });
   const ctx = context(req);
   const { period, currency, take, skip } = query.data;
-  const where = {
+  const where: Prisma.SalesInvoiceWhereInput = {
     tenantId: ctx.tenantId,
     fiscalPeriod: period,
     status: { in: [...SALES_KPI_STATUSES] },
