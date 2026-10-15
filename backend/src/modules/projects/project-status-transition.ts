@@ -17,7 +17,7 @@ export class ProjectStatusTransitionRejected extends Error {
 }
 
 /** The caller supplies the authenticated server context, never browser-owned IDs. */
-export function planProjectStatusChange(from, to, expectedUpdatedAt){
+export function planProjectStatusChange(from: 'planning'|'active'|'archived', to: 'active'|'archived', expectedUpdatedAt: string){
   if(typeof expectedUpdatedAt!=='string'||!CANONICAL_UTC.test(expectedUpdatedAt)||
      !Number.isFinite(Date.parse(expectedUpdatedAt))||
      new Date(expectedUpdatedAt).toISOString()!==expectedUpdatedAt){
@@ -36,7 +36,11 @@ export function planProjectStatusChange(from, to, expectedUpdatedAt){
  * No timesheet, invoice or ledger write is performed.
  */
 export async function transitionProjectStatus({db,tenantId,actorId,projectId,nextStatus,
-  expectedUpdatedAt,ipAddress,userAgent}){
+  expectedUpdatedAt,ipAddress,userAgent}: {
+  db:any;tenantId:string;actorId:string;projectId:string;
+  nextStatus:'active'|'archived';expectedUpdatedAt:string;
+  ipAddress?:string;userAgent?:string|string[];
+}){
   if(typeof tenantId!=='string'||!tenantId.trim()||tenantId.length>128){
     throw new TypeError('PROJECT_STATUS_TENANT_REQUIRED');
   }
@@ -52,7 +56,7 @@ export async function transitionProjectStatus({db,tenantId,actorId,projectId,nex
   // Parse the canonical timestamp before acquiring a database connection.
   planProjectStatusChange(nextStatus==='active'?'planning':'active',nextStatus,expectedUpdatedAt);
   if(!db||typeof db.$transaction!=='function')throw new TypeError('PROJECT_STATUS_TRANSACTION_REQUIRED');
-  return db.$transaction(async tx=>{
+  return db.$transaction(async (tx:any)=>{
     if(!tx.moduleRecord?.findFirst||!tx.moduleRecord?.updateMany||
        !tx.userProfile?.findFirst||!tx.auditLog?.create){
       throw new TypeError('PROJECT_STATUS_AUTHORITY_REQUIRED');
