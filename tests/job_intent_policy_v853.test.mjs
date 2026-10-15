@@ -47,7 +47,10 @@ test('migration retains atomic claim, tenant RLS, dedupe and bounded lease', () 
   const sql = readFileSync(new URL('../backend/prisma/migrations/20261015114500_issue_853_job_intent_foundation/migration.sql', import.meta.url), 'utf8');
   assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
   assert.match(sql, /FORCE ROW LEVEL SECURITY/);
-  assert.match(sql, /private\.contagest_runtime_tenant_id\(\)/);
+  // The canonical sidecar provisions the tenant policy after Prisma deploy.
+  // The table must deny runtime access until that sidecar actually runs.
+  assert.doesNotMatch(sql, /\bCREATE\s+POLICY\b/i);
+  assert.match(sql, /No policy here: the v845 sidecar/);
   assert.match(sql, /UNIQUE\s*\("tenantId",\s*"effectKey"\)/);
   assert.match(sql, /CHECK\s*\("maxAttempts" BETWEEN 1 AND 20\)/);
 });
@@ -57,7 +60,27 @@ test('service requires an existing transaction and keeps CAS/atomic claim guards
   assert.match(code, /enqueueAsyncJobIntent\(tx: Prisma\.TransactionClient/);
   assert.match(code, /FOR UPDATE SKIP LOCKED/);
   assert.match(code, /"tenantId" = \$\{tenantId\}/);
-  assert.match(code, /"leaseOwner" = \$\{workerId\}/);
+  assert.match(code, /"leaseOwner" = \$\{leaseToken\}/);
   assert.match(code, /"leaseUntil" > \$\{now\}/);
+  assert.match(code, /"leaseOwner"=\$\{workerId\} \|\| '\:' \|\| gen_random_uuid\(\)::text/);
+  assert.match(code, /quarantineExhaustedAsyncJobLeases\(/);
+  assert.match(code, /"attempts" >= "maxAttempts"/);
   assert.match(code, /ON CONFLICT \("tenantId", "effectKey"\)/);
+});
+
+
+test('fencing tokens are unique per claim and cannot be reused by a restarted worker name', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  assert.match(code, /"leaseOwner"=\$\{workerId\} \|\| ':' \|\| gen_random_uuid\(\)::text/);
+  assert.match(code, /RETURNING j\."id".+j\."leaseOwner"/);
+  assert.match(code, /"leaseOwner"=\$\{leaseToken\}/);
+  assert.match(code, /JOB_LEASE_TOKEN_INVALID/);
+});
+
+test('last-attempt expired leases transition to dead-letter only under tenant scope', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  assert.match(code, /export async function quarantineExhaustedAsyncJobLeases/);
+  assert.match(code, /"leaseUntil" <= \$\{now\} AND "attempts" >= "maxAttempts"/);
+  assert.match(code, /"lastErrorCode"='JOB_LEASE_EXHAUSTED'/);
+  assert.match(code, /j\."tenantId"=\$\{tenantId\}/);
 });
