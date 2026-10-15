@@ -18,7 +18,8 @@
     "preview": "vite preview --host 0.0.0.0 --port 8080",
     "test:pos:cart": "node --test ../tests/pos_cart_policy_v765.test.mjs",
     "test:pos:order": "node --test ../tests/pos_counter_order_commit_v765.test.mjs",
-    "test:pos:sales": "node --test ../tests/pos_sales_draft_cart_v765.test.mjs"
+    "test:pos:sales": "node --test ../tests/pos_sales_draft_cart_v765.test.mjs",
+    "test:pos:quantity": "node --test ../tests/pos_sales_quantity_controls_v765.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

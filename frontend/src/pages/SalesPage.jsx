@@ -7,7 +7,7 @@ import {
 import { shortDate } from '../core/formatters.js';
 import { BackendApi } from '../services/backendApi.js';
 import { matchPosDraftProduct } from '../services/posProductLookup.mjs';
-import { addPosCartItem, removePosCartItem } from '../services/posCartPolicy.mjs';
+import { addPosCartItem, decrementPosCartItem, removePosCartItem, setPosCartQuantity } from '../services/posCartPolicy.mjs';
 import { today } from '../utils/dom.js';
 
 const rows=(value)=>Array.isArray(value)?value:[];
@@ -38,6 +38,7 @@ function SalesWorkspace({state,context}){
   const [posDraftError,setPosDraftError]=useState('');
   const [posCart,setPosCart]=useState([]);
   const [posNames,setPosNames]=useState({});
+  const [posQuantityInputs,setPosQuantityInputs]=useState({});
   const posCartRef=useRef([]);
   const posBusyRef=useRef(false);
   const posTenantId=BackendApi.tenantId;
@@ -48,6 +49,7 @@ function SalesWorkspace({state,context}){
     posCartRef.current=[];
     setPosCart([]);
     setPosNames({});
+    setPosQuantityInputs({});
     setPosCode('');
     setPosDraftError('');
   },[posTenantId]);
@@ -153,6 +155,7 @@ function SalesWorkspace({state,context}){
       const next=addPosCartItem(posCartRef.current,decision.product.id);
       posCartRef.current=next;
       setPosCart(next);
+      setPosQuantityInputs((current)=>({...current,[decision.product.id]:next.find((line)=>line.productId===decision.product.id).quantity}));
       setPosNames((current)=>({...current,[decision.product.id]:{
         sku:decision.product.sku,name:decision.product.name
       }}));
@@ -166,10 +169,46 @@ function SalesWorkspace({state,context}){
     }
   }
 
-  function removePosDraftProduct(productId){
-    const next=removePosCartItem(posCartRef.current,productId);
+  function commitPosDraftCart(next,productId){
     posCartRef.current=next;
     setPosCart(next);
+    setPosQuantityInputs((current)=>{
+      const updated={...current};
+      const line=next.find((candidate)=>candidate.productId===productId);
+      if(line)updated[productId]=line.quantity;
+      else delete updated[productId];
+      return updated;
+    });
+    setPosDraftError('');
+  }
+
+  function removePosDraftProduct(productId){
+    if(posTenantRef.current!==BackendApi.tenantId)return;
+    commitPosDraftCart(removePosCartItem(posCartRef.current,productId),productId);
+  }
+
+  function stepPosDraftQuantity(productId,direction){
+    if(posTenantRef.current!==BackendApi.tenantId)return;
+    try{
+      const next=direction===1
+        ?addPosCartItem(posCartRef.current,productId,'1.000')
+        :decrementPosCartItem(posCartRef.current,productId);
+      commitPosDraftCart(next,productId);
+    }catch{
+      setPosDraftError('No se pudo ajustar la cantidad. Comprueba sus límites.');
+    }
+  }
+
+  function applyPosDraftQuantity(productId){
+    if(posTenantRef.current!==BackendApi.tenantId)return;
+    try{
+      const existing=posCartRef.current.find((line)=>line.productId===productId);
+      if(!existing)return;
+      const proposed=posQuantityInputs[productId]??existing.quantity;
+      commitPosDraftCart(setPosCartQuantity(posCartRef.current,productId,proposed),productId);
+    }catch{
+      setPosDraftError('Cantidad inválida: utiliza un valor mayor que cero y hasta tres decimales.');
+    }
   }
 
   const columns=[
@@ -222,7 +261,7 @@ function SalesWorkspace({state,context}){
           {posLoading?'Consultando…':'Agregar al borrador'}
         </CgButton>
       </Box>
-      {posDraftError?<CgState severity="warning" title="Producto no añadido">{posDraftError}</CgState>:null}
+      {posDraftError?<CgState severity="warning" title="Carrito no actualizado">{posDraftError}</CgState>:null}
       <Typography variant="caption" color="text.secondary" role="status" aria-live="polite" sx={{display:'block',mt:1}}>
         {visiblePosCart.length} productos distintos · Sin total fiscal ni cobro confirmado
       </Typography>
@@ -232,8 +271,20 @@ function SalesWorkspace({state,context}){
             columns={[
               {key:'sku',label:'SKU'},
               {key:'name',label:'Producto'},
-              {key:'quantity',label:'Cantidad'},
-              {key:'actions',label:'Acciones',render:(line)=><CgButton size="small" variant="outlined" onClick={()=>removePosDraftProduct(line.productId)}>Quitar</CgButton>}
+              {key:'quantity',label:'Cantidad',render:(line)=><Box sx={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:1,minWidth:280}}>
+                <CgButton type="button" size="small" variant="outlined" aria-label={`Disminuir una unidad de ${line.name}`}
+                  disabled={posLoading} onClick={()=>stepPosDraftQuantity(line.productId,-1)} sx={{minWidth:44,minHeight:44}}>−1</CgButton>
+                <CgTextField size="small" label={`Cantidad de ${line.sku}`} inputProps={{inputMode:'decimal'}}
+                  value={posQuantityInputs[line.productId]??line.quantity}
+                  onChange={(event)=>setPosQuantityInputs((current)=>({...current,[line.productId]:event.target.value}))}
+                  disabled={posLoading} sx={{width:148}}/>
+                <CgButton type="button" size="small" variant="outlined" aria-label={`Aumentar una unidad de ${line.name}`}
+                  disabled={posLoading} onClick={()=>stepPosDraftQuantity(line.productId,1)} sx={{minWidth:44,minHeight:44}}>+1</CgButton>
+                <CgButton type="button" size="small" variant="outlined" disabled={posLoading}
+                  onClick={()=>applyPosDraftQuantity(line.productId)} sx={{minHeight:44}}>Aplicar</CgButton>
+              </Box>},
+              {key:'actions',label:'Acciones',render:(line)=><CgButton type="button" size="small" variant="outlined"
+                disabled={posLoading} onClick={()=>removePosDraftProduct(line.productId)} sx={{minHeight:44}}>Quitar</CgButton>}
             ]}/>
         </Box>
         :<CgState severity="info" title="Carrito vacío">Escanea o escribe un código para preparar líneas de venta sin efectos financieros.</CgState>}

@@ -89,6 +89,26 @@ export function setPosCartQuantity(cart, productId, quantity) {
   return immutable(updated);
 }
 
+/**
+ * Decrease exactly one unit, respecting fractional quantities. A quantity of
+ * 1.000 or below is removed rather than producing an invalid zero/negative
+ * draft line. This is only an operator-side draft action, not stock movement.
+ * @param {unknown} cart
+ * @param {unknown} productId
+ * @returns {readonly PosCartLine[]}
+ */
+export function decrementPosCartItem(cart, productId) {
+  const lines = validatedCart(cart);
+  const id = canonicalId(productId);
+  const index = lines.findIndex((line) => line.productId === id);
+  if (index === -1) throw new PosCartError('UNKNOWN_PRODUCT');
+  const quantity = milli(lines[index].quantity);
+  if (quantity <= 1000n) return immutable(lines.filter((line) => line.productId !== id));
+  const updated = [...lines];
+  updated[index] = { productId: id, quantity: format(quantity - 1000n) };
+  return immutable(updated);
+}
+
 /** Removal is idempotent; call it explicitly instead of setting quantity zero. */
 /** @param {unknown} cart @param {unknown} productId @returns {readonly PosCartLine[]} */
 export function removePosCartItem(cart, productId) {
