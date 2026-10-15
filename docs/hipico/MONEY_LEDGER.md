@@ -40,6 +40,14 @@ La migración `20260827212500_hipico_money_ledger` instala un trigger que rechaz
 
 `reconcileHipicoLedger(ownerId, groupKey)` compara por participante/moneda el saldo materializado contra la suma del journal. Cualquier `matches=false` es finding P0 y bloquea promoción.
 
+**Hardening #1018 (15/10/2026):** el reconciliador debe consultar **ambas tablas** con filtro independiente de propietario y grupo y cruzarlas por `participant_code + currency` mediante `FULL OUTER JOIN`. Un `LEFT JOIN` que comience por `hipico_money_accounts` puede ocultar un asiento sin cuenta materializada y producir un falso «sin diferencias». Los campos de diagnóstico `accountPresent` y `ledgerPresent` indican qué lado está ausente. Cuando `accountPresent=false`, `balanceMinor="0"` es exclusivamente un valor de comparación (no acredita existencia de una cuenta); `matches=false` es obligatorio. Una cuenta materializada con saldo cero y sin ningún asiento sigue siendo compatible con el comportamiento previo (`matches=true`); una cuenta sin asientos con saldo distinto de cero es discrepancia.
+
+Los importes son `NUMERIC(30,0)` (unidad menor), no números de punto flotante. No se mezclan monedas ni propietarios/grupos; los reversos son filas con signo y se incluyen en `SUM(amount_minor)`. La comprobación es **estrictamente de lectura**, no permite crear cuentas faltantes ni reescribir el ledger para «arreglar» el hallazgo.
+
+**Pruebas de regresión sin gasto de Actions:** `npm run test:hipico:ledger:reconcile`; caracteriza asiento huérfano, cuenta huérfana, moneda, owner/grupo, magnitud de enteros grandes y reversos. Se ha ejecutado una comprobación JavaScript independiente del código y sus fixtures, **no** una prueba PostgreSQL real. Verificar SQL/RLS en PG17 aislado sigue siendo obligatorio antes de declarar la convergencia productiva en [#1018](https://github.com/adelvisMartin/ContaGest/issues/1018).
+
+**Alcance separado:** esto concilia dos representaciones del **mismo backend**, no demuestra que el `workspace` offline de PWA y el ledger PostgreSQL tengan los mismos campos, tipos ni reglas; la conciliación entre ambos permanece abierta en #1018.
+
 ## Límites
 
 Snapshots/balances históricos de WhatsApp son evidencia y **no** deben usarse como seed automático del saldo vigente. La conexión de state machine/eventos de #107 con este ledger debe pasar una idempotency key estable y sólo escribir cuando la operación esté autorizada; shadow nunca modifica saldo real.
