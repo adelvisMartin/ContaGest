@@ -20,6 +20,10 @@ const assets = [
   {
     source: 'src/modules/crm/crm-lead-store.mjs',
     target: 'dist/src/modules/crm/crm-lead-store.mjs'
+  },
+  {
+    source: 'src/modules/crm/crm-lead-stage.mjs',
+    target: 'dist/src/modules/crm/crm-lead-stage.mjs'
   }
 ];
 
