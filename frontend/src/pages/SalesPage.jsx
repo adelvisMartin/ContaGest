@@ -42,6 +42,7 @@ function SalesWorkspace({state,context}){
   const posBusyRef=useRef(false);
   const posTenantId=BackendApi.tenantId;
   const posTenantRef=useRef(posTenantId);
+  const visiblePosCart=posTenantRef.current===posTenantId?posCart:[];
   React.useEffect(()=>{
     posTenantRef.current=posTenantId;
     posCartRef.current=[];
@@ -223,11 +224,11 @@ function SalesWorkspace({state,context}){
       </Box>
       {posDraftError?<CgState severity="warning" title="Producto no añadido">{posDraftError}</CgState>:null}
       <Typography variant="caption" color="text.secondary" role="status" aria-live="polite" sx={{display:'block',mt:1}}>
-        {posCart.length} productos distintos · Sin total fiscal ni cobro confirmado
+        {visiblePosCart.length} productos distintos · Sin total fiscal ni cobro confirmado
       </Typography>
-      {posCart.length?
+      {visiblePosCart.length?
         <Box sx={{mt:1,maxWidth:'100%',overflowX:'auto'}}>
-          <CgDataTable rows={posCart.map((line)=>({...line,...(posNames[line.productId]||{sku:'—',name:'Producto en revisión'})}))}
+          <CgDataTable rows={visiblePosCart.map((line)=>({...line,...(posNames[line.productId]||{sku:'—',name:'Producto en revisión'})}))}
             columns={[
               {key:'sku',label:'SKU'},
               {key:'name',label:'Producto'},
