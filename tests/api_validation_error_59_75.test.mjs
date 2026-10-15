@@ -16,7 +16,12 @@ test('59/75 API validation delegates Zod to the canonical v2 normalizer and retu
   assert.match(contract,/const status = dependency \? 503 : validation \? 422 : explicitStatus \|\| 500/);
   assert.match(contract,/if \(validation\) return 'La solicitud contiene datos inválidos\.'/);
   assert.match(contract,/redactTelemetryValue\(validation \? source\.issues : source\?\.details\)/);
-  assert.match(redaction,/SENSITIVE_FIELD\.test\(key\) \? REDACTION_CENSOR : visit\(nested, depth \+ 1\)/);
+  // Structured telemetry must redact normal sensitive keys AND the short-lived
+  // Hípico capability key "t" when an already-parsed query object is logged.
+  assert.match(redaction,/SENSITIVE_FIELD\.test\(key\) \|\| key\.toLowerCase\(\) === 't'/);
+  assert.match(redaction,/\? REDACTION_CENSOR : visit\(nested, depth \+ 1\)/);
+  assert.match(redaction,/SIGNED_QUERY_PARAM\.test\(key\)/);
+  assert.match(redaction,/\bt\s*\[:=\]/, 'standalone short-link parameters must remain redacted');
   assert.match(contract,/errorEnvelopeVersion:\s*2/);
   assert.doesNotMatch(middleware,/res\.status\(422\)\.json\(error\)|error\.issues\s*\)/,
     'the middleware must never expose raw Zod issues');
