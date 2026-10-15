@@ -93,7 +93,8 @@ test('light dark and system themes use canonical profile, normalized preference 
   assert.match(app, /resolveThemeMode\(normalized,Boolean\(systemThemeQuery\?\.matches\)\)/);
   assert.match(app, /SYSTEM_THEME_QUERY/);
   assert.match(runtime, /resolveThemeMode/);
-  assert.match(runtime, /addEventListener\('change'/);
+  assert.match(runtime, /addEventListener\?\.\('change'/);
+  assert.match(runtime, /removeEventListener\?\.\('change'/);
 });
 
 test('Hípico consumes shared primitives and derives its documented equestrian variant from the same canonical source', () => {
