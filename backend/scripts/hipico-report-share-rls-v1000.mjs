@@ -9,9 +9,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import pg from 'pg';
-
-const { Client } = pg;
+// Defer pg dependency until AFTER strict local-only preflight; guard tests run offline.
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const ledgerSql=path.join(root,'prisma/migrations/20260827212500_hipico_money_ledger/migration.sql');
 const capabilitySql=path.join(root,'prisma/migrations/20261015035000_hipico_report_share_links/migration.sql');
@@ -41,6 +39,9 @@ async function withRole(client,owner,run){
 }
 export async function runIsolatedRlsSuite(env=process.env){
   const url=validateIsolatedDatabaseUrl(env.HIPICO_SHARE_RLS_DATABASE_URL||'',env.HIPICO_SHARE_RLS_CONSENT);
+  recorded.length=0;
+  const {default: pg}=await import('pg');
+  const {Client}=pg;
   const admin=new Client({connectionString:url});
   const runtime=new Client({connectionString:url});
   try{
