@@ -131,3 +131,10 @@ test('production asset copy contains actual CRM ESM lead store',()=>{
   assert.match(asset,/src\/modules\/crm\/crm-lead-store\.mjs/);
   assert.match(asset,/dist\/src\/modules\/crm\/crm-lead-store\.mjs/);
 });
+
+test('CRM lead storage namespace cannot be reached through generic Stitch records',()=>{
+  const registry=JSON.parse(readFileSync(new URL('../backend/src/modules/modules/module-registry.json',import.meta.url),'utf8'));
+  assert.equal(registry.some(item=>item.slug===CRM_LEAD_MODULE),false);
+  const source=readFileSync(new URL('../backend/src/modules/modules/modules.routes.ts',import.meta.url),'utf8');
+  assert.match(source,/if \(!allowed\.has\(req\.params\.slug\)\)/);
+});
