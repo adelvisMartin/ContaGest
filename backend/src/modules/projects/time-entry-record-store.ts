@@ -98,6 +98,37 @@ export function serializeTimeEntry(row:any,tenantId:string,projectId:string,task
     createdAt:row.createdAt,updatedAt:row.updatedAt});
 }
 
+/**
+ * Predicate used inside the same SERIALIZABLE transaction as the INSERT.
+ * PostgreSQL JSONB string comparisons are valid for canonical, fixed-width UTC
+ * timestamps (ISO 8601); two half-open windows overlap iff start < otherEnd
+ * AND end > otherStart. Scope by MEMBER, not only task/project, so the same
+ * worker cannot book overlapping minutes on two different client projects.
+ * Only one matching row is needed: no unbounded application-side history scan.
+ * Rows of every status are considered, including future approved/invoiced ones.
+ */
+export function memberTimeOverlapQuery(tenantId: string, memberId: string,
+  startUtc: string, endUtc: string) {
+  id(tenantId,'PROJECT_TIME_ENTRY_TENANT_INVALID');
+  id(memberId,'PROJECT_TIME_ENTRY_ACTOR_INVALID');
+  for (const value of [startUtc,endUtc]) {
+    if (!UTC.test(value) || !Number.isFinite(Date.parse(value)) ||
+        new Date(value).toISOString()!==value) {
+      throw new TypeError('PROJECT_TIME_ENTRY_OVERLAP_TIMESTAMP_INVALID');
+    }
+  }
+  if (startUtc>=endUtc) throw new TypeError('PROJECT_TIME_ENTRY_OVERLAP_INTERVAL_INVALID');
+  return {
+    where:{tenantId,moduleSlug:PROJECT_TIME_ENTRY_SLUG,
+      AND:[
+        {payload:{path:['memberId'],equals:memberId}},
+        {payload:{path:['startedAtUtc'],lt:endUtc}},
+        {payload:{path:['endedAtUtc'],gt:startUtc}}
+      ]},
+    select:{id:true},take:1
+  };
+}
+
 /** Only the authenticated active task assignee can persist personal MANUAL time. */
 export async function createTimeEntryDraft({db,tenantId,actorId,projectId,taskId,
   idempotencyKey,draft,ipAddress,userAgent}: {
@@ -110,7 +141,7 @@ export async function createTimeEntryDraft({db,tenantId,actorId,projectId,taskId
   if (typeof db?.$transaction!=='function') throw new TypeError('PROJECT_TIME_ENTRY_TX_REQUIRED');
   try {
     return await db.$transaction(async (tx:any)=>{
-      if (!tx.moduleRecord?.findFirst || !tx.moduleRecord?.create ||
+      if (!tx.moduleRecord?.findFirst || !tx.moduleRecord?.findMany || !tx.moduleRecord?.create ||
           !tx.userProfile?.findFirst || !tx.client?.findFirst || !tx.auditLog?.create) {
         throw new TypeError('PROJECT_TIME_ENTRY_DB_AUTHORITY_REQUIRED');
       }
@@ -126,6 +157,14 @@ export async function createTimeEntryDraft({db,tenantId,actorId,projectId,taskId
       const time=normalizeProjectTimePeriod({tenantId,clientId,memberId:actorId,
         project:{id:projectId,tenantId,clientId},task:{id:taskId,tenantId,projectId},
         ...proposed});
+      // Serializable predicate read + insert makes concurrent cross-task overlap
+      // attempts conflict. A P2034 serialization failure maps to 409 below.
+      const conflicts=await tx.moduleRecord.findMany(memberTimeOverlapQuery(
+        tenantId,actorId,time.startedAtUtc,time.endedAtUtc));
+      if (!Array.isArray(conflicts) || conflicts.length>1) {
+        throw new TypeError('PROJECT_TIME_ENTRY_OVERLAP_QUERY_INVALID');
+      }
+      if (conflicts.length>0) throw new ProjectTimeEntryConflict();
       const saved=await tx.moduleRecord.create({data:{id:recordId,tenantId,
         moduleSlug:PROJECT_TIME_ENTRY_SLUG,title:'Registro horario',status:'draft',
         payload:{schemaVersion:1,projectId,taskId,clientId,memberId:actorId,
