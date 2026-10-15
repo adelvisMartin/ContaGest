@@ -191,3 +191,35 @@ sessions and HTTP permissions. Run Playwright after adding a CRM page.
 Rollback is source-only as there is no migration, but any real
 `crm-leads` ModuleRecords created while deployed must be preserved and
 reconciled during a later dedicated-schema migration.
+
+## 2026-10-15 · UI de prospectos conectada a la API CRM #760
+
+La página existente `clientes` incorpora secciones **Registrar prospecto** y
+**Últimos prospectos**, sin crear una segunda ruta protegida ni un segundo
+maestro Client. El listado se consulta con `GET /modules/crm/leads?take=50&skip=0`
+y muestra datos de la API canonica con escape HTML. El formulario crea con
+`BackendApi.request('/modules/crm/leads', {method:'POST', body,
+headers:{'Idempotency-Key':uuidV4}})`, reutilizando cookies, CSRF y refresh
+de sesión ya gestionados por BackendApi, nunca enviando tenant/actor locales.
+
+`crmLeadService.mjs` valida el nombre y un contacto fiscal/email, limita
+los campos admitidos y omite otros atributos (por ejemplo owner/tenant/status).
+Usa `crypto.randomUUID()` como generador seguro de UUIDv4; si no está
+disponible no envía la solicitud. Reintentos manuales con los mismos datos
+normalizados reutilizan la clave previa ante caídas de red, HTTP 409 o
+respuesta incierta. Una escritura confirmada reinicia la clave. Cambiar
+los datos inicia un intento nuevo. Ningún lead se guarda en Store/localStorage
+ni se convierte automáticamente a Client/quote.
+
+Mensajes de error para usuarios ocultan detalles privados del backend; el
+formulario desactiva temporalmente el botón, dispone de mensaje `role=status`
+y consulta nuevamente el listado tras un POST confirmado. El acceso a
+los prospectos exige `sales.view`/`sales.manage` en el servidor, aunque
+la vista Clientes ya tenga permisos de lectura comercial. Si carece de
+autorización, la solicitud falla cerrada; no existe bypass de permisos.
+
+Verificación: `node --test tests/crm_leads_ui_v760.test.mjs` se enlaza al
+`npm test` principal. Los tests de servicio, claves y contratos de la vista
+no sustituyen un flujo HTTP/Playwright con cookie/CSRF ni PG17 real.
+El CRM completo sigue pendiente: actualización, oportunidades, cotizaciones,
+métricas, Client conversion atómica, import/export, permisos E2E y QA.
