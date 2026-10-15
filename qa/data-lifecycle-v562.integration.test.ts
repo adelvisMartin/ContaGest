@@ -219,8 +219,6 @@ test('legal hold activated after claim blocks the destructive job and preserves 
 test('purge failure after DELETE rolls back rows, evidence and cursor; retry is safe', async () => {
   const eventId = randomUUID();
   const idempotencyKey = `rollback-v658-${eventId}`;
-  const functionName = 'qa_lifecycle_v658_injected_evidence_failure';
-  const triggerName = 'qa_lifecycle_v658_injected_evidence_failure_trg';
   let triggerInstalled = false;
   let functionInstalled = false;
   await prisma.$executeRawUnsafe(
@@ -233,18 +231,18 @@ test('purge failure after DELETE rolls back rows, evidence and cursor; retry is 
       authorizationRef: 'qa-rollback-658', batchSize: 1
     });
     await prisma.$executeRawUnsafe(`
-      CREATE FUNCTION public.${functionName}() RETURNS trigger
+      CREATE FUNCTION public.qa_lifecycle_v658_injected_evidence_failure() RETURNS trigger
       LANGUAGE plpgsql AS $function$
       BEGIN RAISE EXCEPTION 'QA_658_INJECTED_EVIDENCE_FAILURE'; END
       $function$
     `);
     functionInstalled = true;
-    // The job UUID is generated locally, never derived from user input.
+    // This synthetic trigger is scoped to this isolated PG17 test process.
     await prisma.$executeRawUnsafe(`
-      CREATE TRIGGER ${triggerName}
+      CREATE TRIGGER qa_lifecycle_v658_injected_evidence_failure_trg
       BEFORE INSERT ON public."DataLifecycleEvidence"
-      FOR EACH ROW WHEN (NEW."jobId" = '${job.id}'::uuid)
-      EXECUTE FUNCTION public.${functionName}()
+      FOR EACH ROW
+      EXECUTE FUNCTION public.qa_lifecycle_v658_injected_evidence_failure()
     `);
     triggerInstalled = true;
     await assert.rejects(
@@ -269,9 +267,9 @@ test('purge failure after DELETE rolls back rows, evidence and cursor; retry is 
     assert.equal(evidenceRows[0].count, 0, 'failed batch cannot leave phantom evidence');
     assert.equal(jobRows[0].status, 'failed');
     assert.equal(jobRows[0].lastError, 'PURGE_BATCH_FAILED');
-    await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS ${triggerName} ON public."DataLifecycleEvidence"`);
+    await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS qa_lifecycle_v658_injected_evidence_failure_trg ON public."DataLifecycleEvidence"`);
     triggerInstalled = false;
-    await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public.${functionName}()`);
+    await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public.qa_lifecycle_v658_injected_evidence_failure()`);
     functionInstalled = false;
 
     const resumed = await executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize: 1 });
@@ -284,8 +282,8 @@ test('purge failure after DELETE rolls back rows, evidence and cursor; retry is 
     );
     assert.equal(finalRows[0].count, 0);
   } finally {
-    if (triggerInstalled) await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS ${triggerName} ON public."DataLifecycleEvidence"`);
-    if (functionInstalled) await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public.${functionName}()`);
+    if (triggerInstalled) await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS qa_lifecycle_v658_injected_evidence_failure_trg ON public."DataLifecycleEvidence"`);
+    if (functionInstalled) await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public.qa_lifecycle_v658_injected_evidence_failure()`);
     await prisma.$executeRawUnsafe(
       'DELETE FROM public."AnalyticsEvent" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
       eventId, tenantA,
