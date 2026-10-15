@@ -78,3 +78,35 @@ npm --workspace backend run prisma:deploy   # migración autorizada, en entorno 
 Los tests HTTP de `report-share.routes.test.ts` son sintéticos con store simulado; no prueban la política RLS en un PostgreSQL real. Por ello se exige integración PostgreSQL, comprobación efectiva del rol runtime y E2E navegador antes de distribuir enlaces con datos reales.
 
 **Estado:** no se ha desplegado la migración en producción, creado ningún enlace real, expuesto dinero de clientes ni activado WhatsApp. La interfaz pública es de lectura exclusiva. Para rollback deshabilitar el montaje del router; conservar registros de revocación en BD hasta el período de retención correspondiente. Ningún rollback borra el ledger.
+
+
+## Consolidación por grupo sin inventar saldos (extensión 15/10/2026)
+
+La tercera referencia observada en el documento del propietario describe un consolidador de 42 cuentas / 21 filas visibles, con saldo, apuestas y movimientos categorizados. En esta implementación **solo se usan campos realmente presentes en** `public.hipico_money_ledger_entries` (`bet, settlement, adjustment, reversal`). La PWA privada de PR #999 tiene columnas adicionales derivadas de su `workspace`, pero no se replican como si el ledger PostgreSQL pudiera certificarlas.
+
+**Acceso:** únicamente un token con `audience: "group"` permite `GET /api/v1/hipico/report-shares/public?t=<TOKEN>&view=consolidated`. Los enlaces personales retornan 404 indistinguible de una credencial inválida. La emisión de un enlace de grupo entrega `consolidatedRelativeUrl` además del enlace básico, una única vez y bajo autenticación del operador. La CLI presenta los dos enlaces y advierte expresamente que el consolidador puede exponer múltiples cuentas. Ninguna credencial se guarda en la lista de enlaces emitidos.
+
+**Campos con autoridad verificada:**
+
+| Dato mostrado | SQL realmente disponible |
+|---|---|
+| Participante | `participant_code` del owner+group autorizado, **no nombre ni teléfono** |
+| Moneda | `currency` del asiento, sin sumar USD y VES |
+| Saldo histórico | `SUM(amount_minor)` hasta el final de la fecha operativa Caracas |
+| Liquidaciones día/semana | `settlement` más los `reversal` asociados a liquidaciones del mismo owner, grupo, código y moneda |
+| Disponible con aval, devolución, depósitos, retiros, transferencias, aval | **NO DISPONIBLES** (no se interpretan `adjustment` ni `reversal` como esos tipos) |
+
+**Consulta:** fecha ISO, búsqueda por código, paginación de **21 códigos únicos por página** (varias monedas por participante aparecen en filas separadas), tope de página 500, conteo de participantes del grupo y del conjunto buscado. Los totales del **grupo completo** y de la **búsqueda** se calculan por separado y siempre se etiquetan en su moneda, nunca como total global inventado. La fuente y la marca `balancesAsOf` figuran en JSON y la vista HTML incluye una nota de columnas no disponibles. No hay export ni envío automático desde la página compartida. La cabecera HTTP conserva `no-store`, `no-referrer`, CSP con nonce, `noindex` y ausencia de assets externos.
+
+**Consistencia y revocación:** cada consulta se ejecuta en transacción PostgreSQL `RepeatableRead`, ajusta el owner local de RLS y bloquea `FOR SHARE` la fila del token antes de leer dinero; el revocado no puede atravesar el control, y las lecturas iniciadas antes del revocado terminan contra el snapshot anterior sin cruzarse con la actualización de revocación. No se altera dinero ni se emite un segundo token.
+
+**Evidencia:**
+```bash
+npm --workspace backend run typecheck
+npx --no-install tsx --test backend/src/modules/hipico/report-share.routes.test.ts
+node --test tests/hipico_report_share_schema_contract.test.mjs
+node --test tests/hipico_report_share_cli_contract.test.mjs
+```
+El workflow del PR corre estas pruebas sobre el SHA candidato. HTTP usa store falso: **no equivale a un test PostgreSQL/RLS ejecutado**. Antes de dar un enlace real se exige migración revisada en staging, RLS con rol `contagest_runtime`, validación de `FOR SHARE` y `RepeatableRead`, carga de 42+ cuentas y redacción de query strings del ingress/CDN. No poner token de clientes en issues o mensajes públicos.
+
+**Dependencia:** el PR #1000 fue creado sobre una revisión anterior del #999. Reconciliar ambos y `main` antes del merge; este cambio solo extiende #1000, no modifica la PWA ni recrea su base financiera.
