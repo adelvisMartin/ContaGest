@@ -9,6 +9,7 @@ import {
   summarizeInventoryStockHealth
 } from '../../shared/services/inventory-stock-health.service.js';
 import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRows } from './sales-kpi.js';
+import { summarizeInvoicedUnitActivity } from './invoiced-unit-activity.js';
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
 import { deriveReorderCandidates } from './replenishment-candidates.js';
 import { parseReorderScanQuery, reorderScanPageMeta } from './reorder-scan-page.js';
@@ -178,6 +179,75 @@ router.get('/inventory', (_req, res) => {
 // Estimate only: FIFO cohorts are inferred from complete physical-movement
 // history and cannot be used as physical lot provenance or inventory valuation.
 const stockAgeingQuery = z.object({ productId: z.string().uuid(), bucketDays: z.string().optional() }).strict();
+// Commercial activity is sourced from actual issued/paid/overdue invoice lines.
+// It is not physical stock movement, estimated demand or approval to purchase.
+const invoiceActivityInteger = z.string()
+  .regex(/^(0|[1-9]\d*)$/)
+  .refine(value => Number.isSafeInteger(Number(value)))
+  .transform(value => Number(value));
+const invoiceActivityQuery = z.object({
+  productId: z.string().uuid(),
+  windowDays: invoiceActivityInteger.refine(value => value >= 1 && value <= 365).default('90'),
+  take: invoiceActivityInteger.refine(value => value >= 1 && value <= 100).default('25'),
+  skip: invoiceActivityInteger.refine(value => value >= 0 && value <= 1_000_000).default('0')
+}).strict();
+
+router.get('/inventory/invoiced-activity', asyncHandler(async (req, res) => {
+  const parsed = invoiceActivityQuery.safeParse(req.query);
+  if (!parsed.success)
+    throw new HttpError(400, 'Filtros de actividad facturada inválidos.', { code: 'INVOICED_UNIT_QUERY_INVALID' });
+  const ctx = context(req);
+  const asOf = new Date();
+  const { productId, windowDays, take, skip } = parsed.data;
+  const since = new Date(asOf.getTime() - windowDays * 86_400_000);
+  const output = await prisma.$transaction(async tx => {
+    const product = await tx.product.findFirst({
+      where: { id: productId, tenantId: ctx.tenantId, active: true },
+      select: { id: true, sku: true, name: true, unit: true }
+    });
+    if (!product)
+      throw new HttpError(404, 'Producto no encontrado.', { code: 'INVOICED_PRODUCT_NOT_FOUND' });
+    const where: Prisma.SalesInvoiceLineWhereInput = {
+      productId: product.id,
+      invoice: {
+        is: {
+          tenantId: ctx.tenantId,
+          status: { in: [...SALES_KPI_STATUSES] },
+          issueDate: { gte: since, lte: asOf }
+        }
+      }
+    };
+    const [aggregate, invoiceLines] = await Promise.all([
+      tx.salesInvoiceLine.aggregate({
+        where,
+        _sum: { quantity: true },
+        _count: { _all: true }
+      }),
+      tx.salesInvoiceLine.findMany({
+        where,
+        select: {
+          id: true, quantity: true,
+          invoice: { select: { id: true, number: true, issueDate: true, status: true, currency: true } }
+        },
+        orderBy: [{ invoice: { issueDate: 'desc' } }, { id: 'desc' }],
+        take,
+        skip
+      })
+    ]);
+    return {
+      product,
+      observedSales: summarizeInvoicedUnitActivity({
+        totalQuantity: aggregate._sum.quantity,
+        lineCount: aggregate._count._all,
+        rows: invoiceLines,
+        take, skip, windowDays, asOf
+      })
+    };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  res.setHeader('cache-control', 'no-store');
+  ok(res, output);
+}));
+
 router.get('/inventory/ageing', asyncHandler(async (req, res) => {
   const query = stockAgeingQuery.safeParse(req.query);
   if (!query.success) throw new HttpError(400, 'productId UUID es obligatorio.', { code: 'AGEING_QUERY_INVALID' });
