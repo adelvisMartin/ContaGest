@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {canonicalClientPreflight, canonicalRifVariants, CLIENT_PREFLIGHT_MAX_CANDIDATES} from '../backend/src/modules/crm/client-match-preflight.mjs';
 
 const lead={rif:'J-12345678-9',email:' TEAM@EXAMPLE.COM '};
@@ -86,4 +89,26 @@ test('client route composition preserves existing CRUD without extending archite
  assert.match(manifest,/clientRouter\.use\(crmClientPreflightRoutes\)/);
  assert.match(manifest,/id: 'clients'.+router: clientRouter/);
  assert.doesNotMatch(manifest,/id: 'crm',/);
+});
+
+test('compiled-backend asset copy includes CRM ESM imports and preserves bytes',()=>{
+ const work=fs.mkdtempSync(path.join(os.tmpdir(),'cg-crm-asset-'));
+ try {
+  const assets=['src/shared/contracts/accessManifestRuntime.js','src/modules/crm/crm-domain.mjs','src/modules/crm/client-match-preflight.mjs'];
+  const copySource=fs.readFileSync(new URL('../backend/scripts/copy-runtime-assets.mjs',import.meta.url),'utf8');
+  for(const asset of assets){
+   assert.ok(copySource.includes(asset), asset);
+   const location=path.join(work,asset);
+   fs.mkdirSync(path.dirname(location),{recursive:true});
+   fs.writeFileSync(location,asset.endsWith('accessManifestRuntime.js')?'export const test=true;':fs.readFileSync(new URL('../backend/'+asset,import.meta.url)));
+  }
+  fs.mkdirSync(path.join(work,'scripts'),{recursive:true});
+  const script=path.join(work,'scripts','copy-runtime-assets.mjs');
+  fs.writeFileSync(script,copySource);
+  const result=spawnSync(process.execPath,[script],{encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+  for(const asset of assets){
+   assert.deepEqual(fs.readFileSync(path.join(work,'dist',asset)),fs.readFileSync(path.join(work,asset)));
+  }
+ } finally { fs.rmSync(work,{recursive:true,force:true}); }
 });
