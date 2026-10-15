@@ -37,6 +37,7 @@ export function buildSmokeSteps() {
     { id: 'migrations', command: 'npm', args: ['--workspace', 'backend', 'run', 'migration:test:from-zero'] },
     { id: 'seed', command: 'npm', args: ['--workspace', 'backend', 'run', 'seed'] },
     { id: 'rls', command: 'npm', args: ['--workspace', 'backend', 'run', 'db:rls'] },
+    { id: 'api-crud', command: 'npm', args: ['--workspace', 'backend', 'exec', '--', 'tsx', '--test', '../qa/erp-operational-crud-v664.test.ts'] },
     { id: 'api-finance', command: 'npm', args: ['--workspace', 'backend', 'exec', '--', 'tsx', '--test', '../qa/erp-operational-financial-v664.test.ts'] },
     { id: 'chromium-erp', command: 'node', args: ['scripts/erp-real-browser-postgres-v5875.mjs'] }
   ];
