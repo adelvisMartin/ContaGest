@@ -7,6 +7,8 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { createProjectRecord, listProjectRecords, ProjectOwnerNotFound, ProjectReplayConflict } from './project-record-store.js';
 import { transitionProjectStatus, ProjectStatusNotFound, ProjectStatusConflict,
   ProjectStatusForbidden, ProjectStatusTransitionRejected } from './project-status-transition.js';
+import { createProjectTask, listProjectTasks, ProjectTaskNotFound, ProjectTaskForbidden,
+  ProjectTaskConflict } from './project-task-store.js';
 
 const router=Router();
 router.use(requireTenant);
@@ -87,6 +89,60 @@ router.patch('/:id/status',requirePermission('modules.manage'),validateBody(proj
       if(error instanceof TypeError&&[
         'PROJECT_STATUS_REVISION_REQUIRED','PROJECT_STATUS_ID_INVALID'
       ].includes(error.message))throw new HttpError(400,'Identificador o revisión de proyecto inválidos.');
+      throw error;
+    }
+  }));
+
+
+const taskDraftSchema=z.object({
+  title:z.string().trim().min(3).max(160),
+  assigneeId:z.string().uuid(),
+  description:z.string().trim().max(2000).optional()
+}).strict();
+
+// Both routes inherit the default-OFF feature flag and trusted request tenant.
+// A successful task write cannot authorize timesheets, billing or posting.
+router.get('/:projectId/tasks',requirePermission('modules.manage'),asyncHandler(async(req,res)=>{
+  const page=pageSchema.safeParse(req.query);
+  if(!page.success)throw new HttpError(400,'Paginación de tareas inválida.');
+  const ctx=(req as any).context as {tenantId:string};
+  try{
+    const result=await listProjectTasks({
+      db:prisma,tenantId:ctx.tenantId,projectId:req.params.projectId,...page.data
+    });
+    res.setHeader('Cache-Control','private, no-store');
+    ok(res,result);
+  }catch(error){
+    if(error instanceof ProjectTaskNotFound)throw new HttpError(404,'Proyecto no encontrado.');
+    if(error instanceof TypeError&&[
+      'PROJECT_TASK_PROJECT_ID_INVALID','PROJECT_TASK_PAGE_INVALID'
+    ].includes(error.message))throw new HttpError(400,'Identificador o paginación inválidos.');
+    throw error;
+  }
+}));
+
+router.post('/:projectId/tasks',requirePermission('modules.manage'),validateBody(taskDraftSchema),
+  asyncHandler(async(req,res)=>{
+    const ctx=(req as any).context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
+    if(!ctx.userId)throw new HttpError(403,'Se requiere usuario autenticado.');
+    try{
+      const result=await createProjectTask({
+        db:prisma,tenantId:ctx.tenantId,actorId:ctx.userId,
+        projectId:req.params.projectId,idempotencyKey:String(req.header('Idempotency-Key')||''),
+        draft:req.body,ipAddress:ctx.ip,userAgent:ctx.userAgent
+      });
+      res.setHeader('Cache-Control','private, no-store');
+      ok(res,result,201);
+    }catch(error){
+      if(error instanceof ProjectTaskForbidden)throw new HttpError(403,'Solo el responsable activo del proyecto puede asignar tareas.');
+      if(error instanceof ProjectTaskNotFound)throw new HttpError(404,'Proyecto, usuario o cliente no disponible en esta empresa.');
+      if(error instanceof ProjectTaskConflict)throw new HttpError(409,'Proyecto modificado o intento de tarea ya procesado.');
+      if(error instanceof TypeError&&[
+        'PROJECT_TASK_TENANT_INVALID','PROJECT_TASK_ACTOR_INVALID','PROJECT_TASK_PROJECT_ID_INVALID',
+        'PROJECT_TASK_IDEMPOTENCY_KEY_INVALID','PROJECT_TASK_DRAFT_INVALID',
+        'PROJECT_TASK_FIELD_NOT_ALLOWED','PROJECT_TASK_TITLE_INVALID',
+        'PROJECT_TASK_ASSIGNEE_INVALID','PROJECT_TASK_DESCRIPTION_INVALID'
+      ].includes(error.message))throw new HttpError(400,'Identificador, clave de intento o datos de tarea inválidos.');
       throw error;
     }
   }));
