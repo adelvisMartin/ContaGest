@@ -158,3 +158,11 @@ Estos controles son **pruebas PostgreSQL ejecutables**, no evidencia de que se h
 **Importante:** `FOR SHARE` solo garantiza el orden transaccional; no convierte por sí solo un token en autorización para conocer otros grupos. `owner_id`, `group_key`, audiencia y plazo siguen siendo filtros obligatorios en el store. El propio ledger de dinero no adquiere RLS nuevo como efecto de este test. Antes de desplegar debe confirmarse el privilegio real del rol runtime, sin tomar el `GRANT SELECT` exclusivo de la fixture como autorización productiva.
 
 **Coste CI:** el workflow especializado de este módulo sigue manual (`workflow_dispatch`). No se desactivan validaciones del repositorio ni se ejecutan acciones sobre bases reales. `HIPICO_REPORT_SHARES_ENABLED` continúa desactivado por defecto; #1018 permanece abierto hasta la ejecución aislada y las verificaciones en staging.
+
+Para ejecutar desde un checkout local donde Node 22 y dependencias estén disponibles:
+```bash
+npm run test:hipico:share:offline
+# postgres:17 efímero, base hipico_share_test_* nueva y aprobación explícita:
+npm run test:hipico:share:postgres
+```
+Un fallo por falta de PostgreSQL o consentimiento conserva el estado `NOT_EXECUTED` o `BLOCKED`; no es un resultado PASS. Tras cada intento, destruir solamente la base efímera autorizada y revocar los secretos temporales del runner.
