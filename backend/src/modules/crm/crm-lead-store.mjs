@@ -1,7 +1,28 @@
+import { createHash } from 'node:crypto';
 import { normalizeLeadIdentity } from './crm-domain.mjs';
 
 export const CRM_LEAD_MODULE = 'crm-leads';
 export const CRM_LEAD_MAX_PAGE = 100;
+
+const KEY_UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export class CrmLeadReplayError extends Error {
+  constructor() { super('CRM_LEAD_REPLAY_BLOCKED'); }
+}
+
+/**
+ * One tenant-scoped key maps to one UUID primary key; concurrent retries race
+ * on the existing ModuleRecord PK. The loser sees 409, never a second lead.
+ */
+export function deterministicLeadId(tenantId,key) {
+  if (typeof tenantId !== 'string' || !tenantId.trim()) throw new TypeError('CRM_TENANT_REQUIRED');
+  if (typeof key !== 'string' || !KEY_UUID_V4.test(key)) throw new TypeError('CRM_IDEMPOTENCY_KEY_REQUIRED');
+  const bytes = createHash('sha256').update('contagest:crm-lead:v1\0').update(tenantId).update('\0').update(key.toLowerCase()).digest().subarray(0,16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const h = bytes.toString('hex');
+  return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20);
+}
 
 function boundedText(value, label, min, max) {
   if (typeof value !== 'string') throw new TypeError('INVALID_CRM_LEAD_' + label);
@@ -45,16 +66,19 @@ export function serializeCrmLead(record) {
  * Real transaction: lead insert and audit insert commit or roll back together.
  * No Client table or customer-master mutation occurs.
  */
-export async function createCrmLead({db,tenantId,actorId,draft,ipAddress,userAgent}) {
+export async function createCrmLead({db,tenantId,actorId,idempotencyKey,draft,ipAddress,userAgent}) {
   if (typeof tenantId !== 'string' || !tenantId.trim()) throw new TypeError('CRM_TENANT_REQUIRED');
   if (typeof actorId !== 'string' || !actorId.trim()) throw new TypeError('CRM_ACTOR_REQUIRED');
   if (!db || typeof db.$transaction !== 'function') throw new TypeError('CRM_TRANSACTION_REQUIRED');
+  const id = deterministicLeadId(tenantId,idempotencyKey);
   const input = validateCrmLeadDraft(draft);
-  const record = await db.$transaction(async tx => {
+  let record;
+  try {
+    record = await db.$transaction(async tx => {
     if (!tx.moduleRecord?.create || !tx.auditLog?.create) throw new TypeError('CRM_AUDIT_AUTHORITY_REQUIRED');
     const saved = await tx.moduleRecord.create({
       data:{
-        tenantId, moduleSlug:CRM_LEAD_MODULE,
+        id, tenantId, moduleSlug:CRM_LEAD_MODULE,
         title:input.name, status:'new',
         payload:{
           schemaVersion:1, rif:input.rif, email:input.email,
@@ -71,7 +95,12 @@ export async function createCrmLead({db,tenantId,actorId,draft,ipAddress,userAge
       }
     });
     return saved;
-  });
+    });
+  } catch (error) {
+    // Existing ModuleRecord primary key rejects a duplicate attempt.
+    if (error?.code === 'P2002') throw new CrmLeadReplayError();
+    throw error;
+  }
   return serializeCrmLead(record);
 }
 
