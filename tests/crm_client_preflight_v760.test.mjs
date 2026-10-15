@@ -12,7 +12,7 @@ const db=(rows,spy)=>({findMany:async args=>{spy?.(args);return rows}});
 const inspect=async(rows,opts={})=>canonicalClientPreflight({tenantId:'tenant-a',lead,clientReader:db(rows,opts.spy)});
 
 test('normalizes RIF variant spellings without widening to fuzzy search',()=>{
- assert.deepEqual([...canonicalRifVariants('J123456789')],['J123456789','J-123456789','J-12345678-9']);
+ assert.deepEqual([...canonicalRifVariants('J123456789')],['J123456789','J-123456789','J-12345678-9','J-12.345.678-9']);
  assert.deepEqual(canonicalRifVariants('Jbad'),[]);
 });
 test('always pushes tenant, active, exact RIF or email, selected fields and cap to Prisma',async()=>{
@@ -21,7 +21,7 @@ test('always pushes tenant, active, exact RIF or email, selected fields and cap 
  assert.deepEqual(query.where.tenantId,'tenant-a');
  assert.equal(query.where.active,true);
  assert.deepEqual(query.where.OR,[
-  {rif:{in:['J123456789','J-123456789','J-12345678-9'],mode:'insensitive'}},
+  {rif:{in:['J123456789','J-123456789','J-12345678-9','J-12.345.678-9'],mode:'insensitive'}},
   {email:{equals:'team@example.com',mode:'insensitive'}}
  ]);
  assert.deepEqual(query.select,{id:true,tenantId:true,active:true,rif:true,email:true});
@@ -111,4 +111,35 @@ test('compiled-backend asset copy includes CRM ESM imports and preserves bytes',
    assert.deepEqual(fs.readFileSync(path.join(work,'dist',asset)),fs.readFileSync(path.join(work,asset)));
   }
  } finally { fs.rmSync(work,{recursive:true,force:true}); }
+});
+
+
+test('exact dotted RIF matches canonical taxpayer, no fuzzy inference or auto-conversion', async()=>{
+ let variants=[];
+ const out=await canonicalClientPreflight({
+  tenantId:'tenant-a',lead:{rif:'J-12345678-9'},
+  clientReader:{findMany:async query=>{
+   variants=query.where.OR[0].rif.in;
+   return variants.includes('J-12.345.678-9')
+    ? [client({rif:'J-12.345.678-9',email:'different@example.com'})]
+    : [];
+  }}
+ });
+ assert.ok(variants.includes('J-12.345.678-9'));
+ assert.equal(out.status,'REVIEW_EXISTING');
+ assert.equal(out.conversionAuthorized,false);
+});
+
+test('canonical preflight blocks malformed legacy fiscal identity on same-email Client',async()=>{
+ const out=await inspect([client({rif:'NOT_A_RIF',email:'team@example.com'})]);
+ assert.deepEqual(out,{
+   status:'BLOCKED', reason:'UNVERIFIABLE_CLIENT_RIF',candidates:['client-a'],
+   reviewOnly:true,conversionAuthorized:false
+ });
+ assert.doesNotMatch(JSON.stringify(out),/NOT_A_RIF|team@example/);
+});
+
+test('preflight HTTP verdict disables intermediary and private-browser caching',()=>{
+ const route=fs.readFileSync(new URL('../backend/src/modules/crm/crm.routes.ts',import.meta.url),'utf8');
+ assert.match(route,/res\.setHeader\('Cache-Control', 'private, no-store'\)/);
 });

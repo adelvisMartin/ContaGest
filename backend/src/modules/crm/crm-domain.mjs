@@ -54,10 +54,23 @@ export function assessClientConversion({tenantId, lead, clients}) {
   const candidates = findClientDuplicateCandidates({tenantId, lead, clients});
   // Preserve the historical contract for multiple Client candidates.
   if (candidates.length > 1) return Object.freeze({status:'BLOCKED', reason:'AMBIGUOUS_CLIENT_MATCH', candidates});
-  // RIF is the legal identity authority. Matching an email cannot reconcile a
-  // prospect against a different taxpayer, even with only one Client candidate.
+  // RIF is the legal identity authority. An email-only match with an
+  // unreadable historical Client RIF must also fail closed: absence of a
+  // *valid* existing RIF is not evidence of the same taxpayer.
   // This is advisory only: actual conversion still needs tenant RBAC + DB CAS.
   if (identity.rif && identity.email) {
+    const unverifiable = clients.filter(client => {
+      if (!client || client.tenantId !== tenantId || client.active === false ||
+          typeof client.id !== 'string' || !client.id) return false;
+      const existing = normalizeLeadIdentity(client);
+      return existing.email === identity.email && existing.rif === null;
+    }).map(client => client.id);
+    if (unverifiable.length) {
+      return Object.freeze({
+        status:'BLOCKED', reason:'UNVERIFIABLE_CLIENT_RIF',
+        candidates:Object.freeze([...new Set([...candidates, ...unverifiable])].sort())
+      });
+    }
     const conflicting = clients.filter(client => {
       if (!client || client.tenantId !== tenantId || client.active === false ||
           typeof client.id !== 'string' || !client.id) return false;
