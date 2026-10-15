@@ -64,6 +64,7 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SMOKE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@v4
