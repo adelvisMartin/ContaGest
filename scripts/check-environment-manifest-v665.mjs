@@ -50,7 +50,8 @@ function sampleMatchesDeclaredType(value,record,owner){
    try{
      const url=new URL(normalized);
      return Array.isArray(record.allowedSchemes)&&record.allowedSchemes.includes(url.protocol)&&
-       URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname);
+       URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname)&&
+       (!['http:','https:'].includes(url.protocol)||(!url.username&&!url.password));
    }catch{return false;}
   }
   default:return true;
@@ -82,7 +83,8 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
    if(!meta||typeof meta!=='object'||Array.isArray(meta)||meta.examplePath!==path)
      add('MANIFEST_SURFACE_PATH_INVALID',owner,'examplePath');
    const registered=Object.hasOwn(registry.variables,owner)?registry.variables[owner]:undefined;
-   if(!registered||typeof registered!=='object'||Array.isArray(registered))
+   if(!registered||typeof registered!=='object'||Array.isArray(registered)||
+      Object.keys(registered).length===0)
      add('MANIFEST_SURFACE_CATALOG_MISSING',owner,'variables');
  }
  for(const owner of Object.keys(registry.surfaces))
@@ -101,6 +103,12 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
   for(const line of parsed.invalidLines)add('MANIFEST_INVALID_SAMPLE_LINE',owner,'line '+line);
   for(const key of parsed.duplicates)add('DUPLICATE_SAMPLE_KEY',owner,key);
   for(const [key,record] of Object.entries(catalog)){
+   // Corrupt per-key entries must produce safe diagnostics, not TypeErrors.
+   // The diagnostic contains an owner/key only, never the supplied value.
+   if(!record||typeof record!=='object'||Array.isArray(record)){
+    add('MANIFEST_INVALID_ENTRY',owner,key);
+    continue;
+   }
    if(!VALID_TYPES.has(record.type)||!VALID_VISIBILITY.has(record.visibility)||
       !VALID_REQUIRED.has(record.requiredWhen)||!VALID_SAMPLE.has(record.sample)||
       typeof record.sensitive!=='boolean')add('MANIFEST_INVALID_ENTRY',owner,key);
@@ -148,9 +156,10 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
 }
 
 export function loadVersionedSamples(){
- return Object.fromEntries(Object.entries(CONFIG_MANIFEST_V665.surfaces)
-  .filter(([,meta])=>meta.examplePath)
-  .map(([owner,meta])=>[owner,readFileSync(resolve(repositoryRoot,meta.examplePath),'utf8')]));
+ // A modified manifest must not redirect this loader to a private path.
+ return Object.fromEntries(Object.entries(REQUIRED_SURFACES)
+  .filter(([,path])=>path)
+  .map(([owner,path])=>[owner,readFileSync(resolve(repositoryRoot,path),'utf8')]));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const report=checkEnvironmentManifest(loadVersionedSamples());
