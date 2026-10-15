@@ -147,3 +147,33 @@ test('#658 protected entities and purge adapters cannot drift from retention mat
     !row.deleteSemantics.includes('immutable') || row.purgeable === false),
     'immutable retention class can never authorize generic purge');
 });
+
+test('#658 policy edits, legal holds and purge share tenant serialization; stale errors cannot overwrite a newer batch', () => {
+  const policyWrite = service.slice(
+    service.indexOf('export async function createRetentionPolicyVersion'),
+    service.indexOf('export async function listRetentionPolicies')
+  );
+  const legalHoldWrite = service.slice(
+    service.indexOf('export async function createLegalHold'),
+    service.indexOf('export async function listLegalHolds')
+  );
+  const purge = service.slice(
+    service.indexOf('export async function executePurgeBatch'),
+    service.indexOf('export async function registerStorageObject')
+  );
+  const tenantLock = /pg_advisory_xact_lock\(hashtextextended\(\$\{input\.tenantId\}, 562\)\)/;
+  for (const [name, scope] of [
+    ['retention policy version', policyWrite],
+    ['legal hold', legalHoldWrite],
+    ['purge batch', purge]
+  ]) {
+    assert.match(scope, tenantLock, `${name} must acquire the tenant advisory lock`);
+  }
+  assert.match(purge, /FOR UPDATE/, 'purge must also serialize concurrent jobs');
+  assert.match(purge, /"attempts" = \$\{observedAttempts\}/,
+    'failed older jobs cannot overwrite a newer successful job status');
+  assert.match(purge, /persistLifecycleEvidence\(tx,/, 'audit evidence must use the same transaction');
+  assert.match(purge, /deletePurgeableRows\(tx,/, 'DELETE must use the same transaction');
+  assert.match(purge, /"lastError" = \$\{blocked \? 'LEGAL_HOLD_ACTIVE' : 'PURGE_BATCH_FAILED'\}/,
+    'DB/provider messages cannot be persisted verbatim');
+});
