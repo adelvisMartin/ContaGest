@@ -13,6 +13,7 @@ import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from '
 import { deriveReorderCandidates } from './replenishment-candidates.js';
 import { parseReorderScanQuery, reorderScanPageMeta } from './reorder-scan-page.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
+import { parseAgeingCutoffs } from './configurable-ageing.js';
 import { LOT_EXPIRY_RISK_VERSION, expiryUtcBounds, projectLotExpiryRisk } from './lot-expiry-risk.js';
 import { summarizePhysicalOutbound } from './stock-movement-activity.js';
 import { calculateObservedStockCoverage } from './stock-coverage.js';
@@ -176,10 +177,16 @@ router.get('/inventory', (_req, res) => {
 
 // Estimate only: FIFO cohorts are inferred from complete physical-movement
 // history and cannot be used as physical lot provenance or inventory valuation.
-const stockAgeingQuery = z.object({ productId: z.string().uuid() }).strict();
+const stockAgeingQuery = z.object({ productId: z.string().uuid(), bucketDays: z.string().optional() }).strict();
 router.get('/inventory/ageing', asyncHandler(async (req, res) => {
   const query = stockAgeingQuery.safeParse(req.query);
   if (!query.success) throw new HttpError(400, 'productId UUID es obligatorio.', { code: 'AGEING_QUERY_INVALID' });
+  let bucketCutoffs;
+  try {
+    bucketCutoffs = parseAgeingCutoffs(query.data.bucketDays);
+  } catch {
+    throw new HttpError(400, 'Intervalos de antigüedad inválidos: use tres días crecientes.', { code: 'AGEING_BUCKET_QUERY_INVALID' });
+  }
   const ctx = context(req);
   const asOf = new Date();
   try {
@@ -199,7 +206,7 @@ router.get('/inventory/ageing', asyncHandler(async (req, res) => {
         throw new HttpError(409, 'Historial de movimientos supera el límite del cálculo.', { code: 'AGEING_HISTORY_LIMIT' });
       return {
         product: { id: product.id, sku: product.sku, name: product.name, unit: product.unit },
-        stockAgeing: calculateStockAgeing({ movements, stockExact: product.stock, asOf })
+        stockAgeing: calculateStockAgeing({ movements, stockExact: product.stock, asOf, bucketCutoffs })
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     ok(res, result);
