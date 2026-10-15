@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { normalizeGroupId, extractGroupIds } from './group-identity.mjs';
@@ -105,7 +106,16 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     await fs.mkdir(root,{recursive:true,mode:0o700});
     const stat=await fs.lstat(root);
     if(!stat.isDirectory()||stat.isSymbolicLink())throw new Error('LAB_PENDING_ROOT_UNSAFE');
+    // chmod may fail for an existing directory. Never assume that an
+    // attempted permission repair made encrypted LAB storage private.
+    // Re-lstat after chmod also rejects a replaced/symlinked root path.
     await fs.chmod(root,0o700).catch(()=>{});
+    const sealed=await fs.lstat(root);
+    if(!sealed.isDirectory()||sealed.isSymbolicLink())throw new Error('LAB_PENDING_ROOT_UNSAFE');
+    // NTFS ACLs must be checked on Windows; POSIX mode bits are not evidence there.
+    if(process.platform!=='win32' && (sealed.mode & 0o077)!==0){
+      throw new Error('LAB_PENDING_ROOT_PERMISSIONS_UNSAFE');
+    }
   }
   async function loadKey(){
     // The owner lock MUST already be held. Never publish a partially written
@@ -147,7 +157,37 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     }
     const stat=await fs.lstat(keyFile);
     if(!stat.isFile()||stat.isSymbolicLink()||stat.size!==32)throw new Error('LAB_PENDING_KEY_INVALID');
-    return await fs.readFile(keyFile);
+    if(process.platform!=='win32' && (stat.mode & 0o077)!==0){
+      throw new Error('LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
+    }
+    // The previous path lstat cannot authorize a second read by pathname:
+    // another process could replace inbox.key between the check and read.
+    // Pin the actual opened file, reject symlinks on POSIX and validate its
+    // identity/permissions using the opened descriptor before reading bytes.
+    let handle;
+    try{
+      const flags=fsConstants.O_RDONLY |
+        (process.platform==='win32'?0:fsConstants.O_NOFOLLOW);
+      try{handle=await fs.open(keyFile,flags);}
+      catch(error){
+        if(error?.code==='ELOOP')throw new Error('LAB_PENDING_KEY_INVALID');
+        throw error;
+      }
+      const opened=await handle.stat();
+      if(!opened.isFile()||opened.size!==32||
+         (process.platform!=='win32'&&(opened.dev!==stat.dev||opened.ino!==stat.ino))){
+        throw new Error('LAB_PENDING_KEY_INVALID');
+      }
+      // Windows mode bits are not NTFS ACLs; verify those during physical QA.
+      if(process.platform!=='win32' && (opened.mode & 0o077)!==0){
+        throw new Error('LAB_PENDING_KEY_PERMISSIONS_UNSAFE');
+      }
+      const bytes=await handle.readFile();
+      if(bytes.length!==32)throw new Error('LAB_PENDING_KEY_INVALID');
+      return bytes;
+    }finally{
+      await handle?.close();
+    }
   }
   async function lockOwner(){
     const myToken=crypto.randomUUID();
