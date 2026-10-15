@@ -15,6 +15,44 @@ export type AsyncJobHandlerRegistry = Readonly<{
   assertAllowed: (handlerKey: string, payload: unknown) => void;
 }>;
 
+// Validators run on a detached, frozen JSON snapshot. Running a validator on the
+// caller object first and comparing JSON afterwards would still allow side effects
+// (including mutations on a rejected request and getter invocation).
+function immutableJsonSnapshot(value: unknown, depth = 0, active = new Set<object>()): unknown {
+  if (depth > 12) throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'object') throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+  if (active.has(value)) throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+  const array = Array.isArray(value);
+  if (Object.getPrototypeOf(value) !== (array ? Array.prototype : Object.prototype)) {
+    throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+  }
+  active.add(value);
+  const snapshot: Record<string, unknown> | unknown[] = array ? [] : {};
+  try {
+    const keys = Reflect.ownKeys(value);
+    if (array && keys.length !== value.length + 1) throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+    for (const key of keys) {
+      if (array && key === 'length') continue;
+      if (typeof key !== 'string' || (array && !/^(0|[1-9][0-9]*)$/.test(key))) {
+        throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+        throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+      }
+      Object.defineProperty(snapshot, key, {
+        value: immutableJsonSnapshot(descriptor.value, depth + 1, active),
+        enumerable: true, configurable: false, writable: false,
+      });
+    }
+    return Object.freeze(snapshot);
+  } finally {
+    active.delete(value);
+  }
+}
+
 // A structural lookalike cannot authorize an enqueue.
 const issuedRegistries = new WeakSet<AsyncJobHandlerRegistry>();
 
@@ -36,10 +74,12 @@ export function createAsyncJobHandlerRegistry(entries: readonly AsyncJobHandlerP
       const validate = validators.get(handlerKey);
       if (!validate) throw new Error('ASYNC_HANDLER_NOT_REGISTERED');
       try {
-        // The validator must be a pure check, never a normalization step.
-        // A mutated value could approve a different payload than was hashed.
-        const snapshot = JSON.stringify(payload);
-        if (validate(payload) !== true || JSON.stringify(payload) !== snapshot) {
+        if (!payload || Array.isArray(payload) || Object.getPrototypeOf(payload) !== Object.prototype) {
+          throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
+        }
+        const snapshot = immutableJsonSnapshot(payload);
+        const serialized = JSON.stringify(snapshot);
+        if (new TextEncoder().encode(serialized).byteLength > 16 * 1024 || validate(snapshot) !== true) {
           throw new Error('ASYNC_HANDLER_PAYLOAD_INVALID');
         }
       } catch {

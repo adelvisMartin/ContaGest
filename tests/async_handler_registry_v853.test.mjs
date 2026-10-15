@@ -55,3 +55,43 @@ test('schema validators cannot silently mutate the payload to approve a differen
   const payload = {reportId:'untrusted'};
   assert.throws(() => assertApprovedAsyncJobHandler(registry,key,payload), /ASYNC_HANDLER_PAYLOAD_INVALID/);
 });
+
+test('rejected validator cannot mutate caller input, including nested state', () => {
+  const registry = createAsyncJobHandlerRegistry([{
+    handlerKey:key, effectGuard:'compare-and-set',
+    validatePayload(p) { p.nested.value='malicious'; return true; },
+  }]);
+  const payload = {nested:{value:'original'}};
+  assert.throws(() => assertApprovedAsyncJobHandler(registry,key,payload), /ASYNC_HANDLER_PAYLOAD_INVALID/);
+  assert.deepEqual(payload,{nested:{value:'original'}});
+});
+
+test('accessor and non-JSON payloads are rejected without invoking getters or leaking details', () => {
+  let getterCalls = 0;
+  const payload = { get secret() { getterCalls++; return 'raw-secret'; } };
+  const registry = createAsyncJobHandlerRegistry([{
+    handlerKey:key, effectGuard:'effect-ledger', validatePayload() { return true; },
+  }]);
+  assert.throws(() => assertApprovedAsyncJobHandler(registry,key,payload), (e) => e.message === 'ASYNC_HANDLER_PAYLOAD_INVALID');
+  assert.equal(getterCalls, 0);
+  const cycle = {}; cycle.self = cycle;
+  for (const invalid of [cycle, {nested: undefined}, {nested:Infinity}, {nested:new Date()}, {nested:BigInt(42)}, {'big':'🚀'.repeat(5000)}]) {
+    assert.throws(() => assertApprovedAsyncJobHandler(registry,key,invalid), (e) => e.message === 'ASYNC_HANDLER_PAYLOAD_INVALID');
+  }
+});
+
+test('validator receives deeply immutable detached JSON but original remains mutable', () => {
+  const registry = createAsyncJobHandlerRegistry([{
+    handlerKey:key, effectGuard:'compare-and-set',
+    validatePayload(p) {
+      assert.ok(Object.isFrozen(p) && Object.isFrozen(p.nested) && Object.isFrozen(p.nested.ids));
+      assert.notEqual(p, original);
+      assert.equal(p.nested.ids[0], 42);
+      return true;
+    },
+  }]);
+  const original = {nested:{ids:[42]}};
+  assert.doesNotThrow(() => assertApprovedAsyncJobHandler(registry,key,original));
+  original.nested.ids.push(43);
+  assert.deepEqual(original.nested.ids,[42,43]);
+});
