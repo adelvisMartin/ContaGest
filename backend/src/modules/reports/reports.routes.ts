@@ -12,6 +12,7 @@ import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRo
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
 import { deriveReorderCandidates } from './replenishment-candidates.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
+import { LOT_EXPIRY_RISK_VERSION, expiryUtcBounds, projectLotExpiryRisk } from './lot-expiry-risk.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('reports.view'));
@@ -204,6 +205,61 @@ router.get('/inventory/ageing', asyncHandler(async (req, res) => {
       throw new HttpError(409, 'La antigüedad de stock no se puede reconciliar; se omitió la estimación.', { code: error.code });
     throw error;
   }
+}));
+
+// Catalog-only alert. No claim about actual lot balance or FEFO allocation:
+// physical lot/location authority and reservation linkage are pending #755.
+const lotExpiryQuery = z.object({
+  daysAhead: z.coerce.number().int().min(0).max(365).default(30),
+  includeExpired: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
+  take: z.coerce.number().int().min(1).max(100).default(25),
+  skip: z.coerce.number().int().min(0).max(1_000_000).default(0)
+}).strict();
+router.get('/inventory/expiry', asyncHandler(async (req, res) => {
+  const parsed = lotExpiryQuery.safeParse(req.query);
+  if (!parsed.success) throw new HttpError(400, 'Filtros de vencimiento inválidos.', { code: 'EXPIRY_QUERY_INVALID' });
+  const ctx = context(req);
+  const { daysAhead, includeExpired, take, skip } = parsed.data;
+  const asOf = new Date();
+  const window = expiryUtcBounds(asOf, daysAhead, includeExpired);
+  const lots = await prisma.inventoryLot.findMany({
+    where: {
+      tenantId: ctx.tenantId,
+      active: true,
+      product: { tenantId: ctx.tenantId, active: true },
+      expiresAt: {
+        not: null,
+        lt: window.endExclusive,
+        ...(window.start ? { gte: window.start } : {})
+      }
+    },
+    select: {
+      id: true, productId: true, lotNumber: true, receivedAt: true, expiresAt: true,
+      product: { select: { sku: true, name: true, unit: true } }
+    },
+    orderBy: [{ expiresAt: 'asc' }, { id: 'asc' }],
+    take: take + 1,
+    skip
+  });
+  const hasMore = lots.length > take;
+  // expiresAt is guaranteed not null by the query predicate.
+  const rows = projectLotExpiryRisk(
+    lots.slice(0, take).map(lot => ({ ...lot, expiresAt: lot.expiresAt! })),
+    asOf,
+    daysAhead
+  );
+  res.setHeader('cache-control', 'no-store');
+  ok(res, {
+    version: LOT_EXPIRY_RISK_VERSION,
+    authority: 'InventoryLot.expiresAt',
+    mode: 'REVIEW_ONLY',
+    stockEvidence: 'NOT_AVAILABLE_WITHOUT_LOT_ALLOCATION_AUTHORITY',
+    datePolicy: 'UTC_CALENDAR_DATE',
+    asOfUtcDay: window.today.toISOString().slice(0, 10),
+    filters: { daysAhead, includeExpired, take, skip },
+    rows,
+    pagination: { hasMore, nextSkip: hasMore ? skip + take : null }
+  });
 }));
 
 router.get('/inventory/reorder', asyncHandler(async (req, res) => {
