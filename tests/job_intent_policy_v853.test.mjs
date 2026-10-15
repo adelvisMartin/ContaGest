@@ -115,7 +115,7 @@ test('retry deadlines and audit timestamps are chosen by PostgreSQL, not worker 
 test('heartbeats are fenced by tenant, job ID, unique claim token and live database lease', () => {
   const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
   const start = code.indexOf('export async function heartbeatClaimedAsyncJob(');
-  const end = code.indexOf('// Expired last-attempt claims', start);
+  const end = code.indexOf('// Read-only reconciler view', start);
   assert.ok(start > 0 && end > start);
   const heartbeat = code.slice(start, end);
   assert.match(heartbeat, /assertAsyncJobTenantId\(tenantId\)/);
@@ -131,10 +131,27 @@ test('heartbeats are fenced by tenant, job ID, unique claim token and live datab
 
 test('heartbeat cannot extend beyond bounded SQL lease interval or trust worker clock', () => {
   const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
-  const heartbeat = code.split('export async function heartbeatClaimedAsyncJob(')[1]?.split('// Expired last-attempt claims')[0];
+  const heartbeat = code.split('export async function heartbeatClaimedAsyncJob(')[1]?.split('// Read-only reconciler view')[0];
   assert.ok(heartbeat);
   assert.match(heartbeat, /leaseSeconds < 15 \|\| leaseSeconds > 900/);
   assert.match(heartbeat, /"leaseUntil"=GREATEST\("leaseUntil", clock_timestamp\(\) \+ \(\$\{leaseSeconds\} \* INTERVAL '1 second'\)\)/);
   assert.match(heartbeat, /RETURNING "id", "leaseUntil"/);
   assert.doesNotMatch(heartbeat, /\$\{now\}/);
+});
+
+
+test('read-only tenant job health exposes bounded fields without payload, PII or cross-tenant sums', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  const begin = code.indexOf('export async function inspectTenantAsyncJobHealth(');
+  const finish = code.indexOf('// Expired last-attempt claims', begin);
+  assert.ok(begin >= 0 && finish > begin);
+  const health = code.slice(begin, finish);
+  assert.match(health, /assertAsyncJobTenantId\(input\.tenantId\)/);
+  assert.match(health, /WHERE "tenantId"=\$\{tenantId\}/);
+  assert.match(health, /"staleRunning"/);
+  assert.match(health, /"exhaustedRunning"/);
+  assert.match(health, /"oldestDueAt"/);
+  assert.match(health, /statement_timestamp\(\)/);
+  assert.match(health, /::text AS "queued"/);
+  assert.doesNotMatch(health, /RETURNING|\bUPDATE\b|\bDELETE\b|"payload"|"lastErrorCode"/);
 });
