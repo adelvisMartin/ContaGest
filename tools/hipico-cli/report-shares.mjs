@@ -73,6 +73,13 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     const relative = String(payload.data.relativeUrl || '');
     if (!relative.startsWith('/api/v1/hipico/report-shares/public?t=')) throw new Error('HIPICO_REPORT_LINK_RESPONSE_INVALID');
     process.stdout.write('Enlace privado (compartir solo con el destinatario autorizado):\n' + new URL(relative, origin).toString() + '\n');
+    if (op.audience === 'group' && payload.data.consolidatedRelativeUrl) {
+      const consolidated = String(payload.data.consolidatedRelativeUrl);
+      if (!consolidated.startsWith('/api/v1/hipico/report-shares/public?t=') ||
+          !consolidated.endsWith('&view=consolidated')) throw new Error('HIPICO_REPORT_CONSOLIDATED_URL_INVALID');
+      process.stdout.write('Consolidador privado del grupo (contiene saldos de múltiples cuentas):\n' +
+        new URL(consolidated, origin).toString() + '\n');
+    }
   } else {
     // JSON link listing must not contain bearer token material.
     process.stdout.write(JSON.stringify(payload.data, null, 2) + '\n');
