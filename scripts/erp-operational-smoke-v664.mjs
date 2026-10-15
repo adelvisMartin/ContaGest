@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // #664. Local, disposable operational smoke; no production or shared database writes.
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -101,7 +101,7 @@ export async function runOperationalSmoke({ env = process.env, candidateSha, erp
         if (result.status !== 'PASS') throw new Error('SMOKE_STEP_FAILED');
       }
       // Prisma generators must not silently change source after the SHA was captured.
-      resolveGitContext({ cwd: process.cwd(), expectedSha: candidateSha, baseRef: 'main' });
+      resolveGitContext({ cwd: process.cwd(), expectedSha: candidateSha, baseRef: env.SMOKE_BASE_SHA || 'origin/main' });
     });
 
     if (!erpOnly) {
@@ -132,7 +132,7 @@ async function main() {
   if (args.some(x => x !== '--erp-only')) throw new Error('SMOKE_ARGUMENT_UNKNOWN');
   const { candidateSha } = resolveGitContext({
     cwd: process.cwd(),
-    baseRef: 'main',
+    baseRef: process.env.SMOKE_BASE_SHA || 'origin/main',
     expectedSha: process.env.CANDIDATE_SHA || ''
   });
   const report = await runOperationalSmoke({
