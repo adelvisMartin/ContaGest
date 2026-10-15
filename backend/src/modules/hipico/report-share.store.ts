@@ -17,9 +17,10 @@ type BalanceRow = { participantCode: string; currency: string; amountMinor: stri
 
 async function ownerTransaction<T>(ownerId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
   return prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('hipico.report_owner_id', ${ownerId}, true)`;
+    // Scope survives only on this transaction, including under PgBouncer.
+    await tx.$queryRaw`SELECT set_config('hipico.report_owner_id', ${ownerId}, true)`;
     return fn(tx);
-  });
+  }, { isolationLevel: 'RepeatableRead' });
 }
 
 export async function issueHipicoReportLink(input: NewShare, now = new Date()) {
@@ -80,7 +81,7 @@ export async function readHipicoReportLink(ownerId: string, token: string, date:
              revoked_at AS "revokedAt"
       FROM public.hipico_report_share_links
       WHERE owner_id=${ownerId}::uuid AND token_hash=${hash}
-      LIMIT 1
+      LIMIT 1 FOR SHARE
     `;
     const share = shares[0];
     if (!share || !shareAllowed(share, now)) return null;
