@@ -1,0 +1,290 @@
+{
+  "schemaVersion": 1,
+  "issue": 653,
+  "source": "current main (not release-ready claim)",
+  "contexts": [
+    {
+      "id": "auth",
+      "domain": "platform",
+      "owner": "backend/src/modules/auth",
+      "contract": "backend/src/modules/auth/auth.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [],
+      "forbiddenShortcut": "UI state cannot authorize API requests",
+      "gate": "tests/auth_boundary_issue_636.test.mjs"
+    },
+    {
+      "id": "tenancy",
+      "domain": "platform",
+      "owner": "backend/src/modules/tenants",
+      "contract": "backend/src/modules/tenants/tenants.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [],
+      "forbiddenShortcut": "Do not trust supplied tenant IDs",
+      "gate": "tests/tenant_isolation_adversarial_issue_641.test.mjs"
+    },
+    {
+      "id": "rbac",
+      "domain": "platform",
+      "owner": "backend/src/modules/rbac",
+      "contract": "backend/src/modules/rbac/rbac.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "auth",
+        "tenancy"
+      ],
+      "forbiddenShortcut": "Server-side permissions required",
+      "gate": "tests/auth_boundary_issue_636.test.mjs"
+    },
+    {
+      "id": "schema",
+      "domain": "platform",
+      "owner": "backend/prisma/schema.prisma",
+      "contract": "backend/prisma/schema.prisma",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [],
+      "forbiddenShortcut": "No production reset or db push",
+      "gate": "tests/prisma_ephemeral_baseline_contract.test.mjs"
+    },
+    {
+      "id": "sales",
+      "domain": "commercial",
+      "owner": "backend/src/modules/sales",
+      "contract": "backend/src/modules/sales/sales.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "tenancy"
+      ],
+      "forbiddenShortcut": "No off-ledger financial posting",
+      "gate": "tests/architecture_boundaries_v1.test.mjs"
+    },
+    {
+      "id": "purchases",
+      "domain": "commercial",
+      "owner": "backend/src/modules/purchases",
+      "contract": "backend/src/modules/purchases/purchases.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "tenancy"
+      ],
+      "forbiddenShortcut": "No bypass of supplier tenant scope",
+      "gate": "tests/architecture_boundaries_v1.test.mjs"
+    },
+    {
+      "id": "ledger",
+      "domain": "financial",
+      "owner": "backend/src/modules/accounting",
+      "contract": "backend/src/modules/accounting/accounting.service.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "tenancy"
+      ],
+      "forbiddenShortcut": "Never mutate posted records",
+      "gate": "tests/financial_reconciliation_v559_contract.test.mjs"
+    },
+    {
+      "id": "fiscal",
+      "domain": "financial",
+      "owner": "backend/src/modules/fiscal",
+      "contract": "backend/src/modules/fiscal/fiscal.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "tenancy"
+      ],
+      "forbiddenShortcut": "Never invent tax rates",
+      "gate": "tests/fiscal_authority_v561_contract.test.mjs"
+    },
+    {
+      "id": "fx",
+      "domain": "financial",
+      "owner": "backend/src/modules/currency",
+      "contract": "backend/src/modules/currency/currency.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "tenancy"
+      ],
+      "forbiddenShortcut": "No floating-point ledger authority",
+      "gate": "tests/financial_fx_v560_contract.test.mjs"
+    },
+    {
+      "id": "banking",
+      "domain": "financial",
+      "owner": "backend/src/modules/bank-reconciliation",
+      "contract": "backend/src/modules/bank-reconciliation/bank-reconciliation.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "tenancy"
+      ],
+      "forbiddenShortcut": "No unmatched reconciliation",
+      "gate": "tests/financial_reconciliation_v559_contract.test.mjs"
+    },
+    {
+      "id": "payables",
+      "domain": "financial",
+      "owner": "backend/src/modules/payables",
+      "contract": "backend/src/modules/payables/payables.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "tenancy"
+      ],
+      "forbiddenShortcut": "No bypass of payment approvals",
+      "gate": "tests/architecture_boundaries_v1.test.mjs"
+    },
+    {
+      "id": "payroll",
+      "domain": "financial",
+      "owner": "backend/src/modules/payroll",
+      "contract": "backend/src/modules/payroll/payroll.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "tenancy"
+      ],
+      "forbiddenShortcut": "No undocumented statutory rates",
+      "gate": "tests/architecture_boundaries_v1.test.mjs"
+    },
+    {
+      "id": "inventory",
+      "domain": "operations",
+      "owner": "backend/src/modules/inventory",
+      "contract": "backend/src/modules/inventory/inventory.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "tenancy"
+      ],
+      "forbiddenShortcut": "Canonical movements own stock",
+      "gate": "tests/architecture_boundaries_v1.test.mjs"
+    },
+    {
+      "id": "imports",
+      "domain": "operations",
+      "owner": "backend/src/modules/imports",
+      "contract": "backend/src/modules/imports/imports.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "tenancy"
+      ],
+      "forbiddenShortcut": "Untrusted imports cannot set tenant authority",
+      "gate": "tests/architecture_boundaries_v1.test.mjs"
+    },
+    {
+      "id": "verticals",
+      "domain": "vertical",
+      "owner": "backend/src/modules/verticals",
+      "contract": "backend/src/modules/verticals/verticals.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [],
+      "forbiddenShortcut": "No direct imports of ERP implementations",
+      "gate": "tests/vertical_schema_authority_67_75.test.mjs"
+    },
+    {
+      "id": "hipico-api",
+      "domain": "vertical",
+      "owner": "backend/src/modules/hipico",
+      "contract": "backend/src/modules/hipico/hipico-system.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [],
+      "forbiddenShortcut": "No cross-product RBAC shortcut",
+      "gate": "tests/hipico_release_hardening_290_contract.test.mjs"
+    },
+    {
+      "id": "hipico-bridge",
+      "domain": "vertical",
+      "owner": "backend/src/modules/hipico-bot",
+      "contract": "backend/src/modules/hipico-bot/hipico-canonical.routes.ts",
+      "persistence": "backend/prisma/schema.prisma",
+      "dependencies": [
+        "hipico-api"
+      ],
+      "forbiddenShortcut": "Bridge cannot act as domain authority",
+      "gate": "tests/hipico_release_hardening_290_contract.test.mjs"
+    },
+    {
+      "id": "hipico-pwa",
+      "domain": "frontend",
+      "owner": "frontend/public/hipico-control",
+      "contract": "frontend/public/hipico-control/STYLE-GUIDE.md",
+      "persistence": "NONE",
+      "dependencies": [],
+      "forbiddenShortcut": "No cross-product service worker scope",
+      "gate": "tests/hipico_release_hardening_290_contract.test.mjs"
+    },
+    {
+      "id": "ui-components",
+      "domain": "frontend",
+      "owner": "frontend/src/components/ui",
+      "contract": "frontend/src/components/ui/kit.js",
+      "persistence": "NONE",
+      "dependencies": [],
+      "forbiddenShortcut": "No second component authority",
+      "gate": "tests/design_system_single_owner_v6975.test.mjs"
+    },
+    {
+      "id": "ui-tokens",
+      "domain": "frontend",
+      "owner": "frontend/src/styles/contagest-visual-system-v12.css",
+      "contract": "frontend/src/styles/contagest-visual-system-v12.css",
+      "persistence": "NONE",
+      "dependencies": [],
+      "forbiddenShortcut": "No duplicate global CSS token authority",
+      "gate": "tests/design_system_single_owner_v6975.test.mjs"
+    },
+    {
+      "id": "browser-qa",
+      "domain": "quality",
+      "owner": "qa/support/full-route-browser-contract-v640.mjs",
+      "contract": "qa/support/full-route-browser-contract-v640.mjs",
+      "persistence": "NONE",
+      "dependencies": [],
+      "forbiddenShortcut": "Source tests do not prove browser E2E",
+      "gate": "tests/full_route_browser_matrix_issue_640.test.mjs"
+    },
+    {
+      "id": "release-evidence",
+      "domain": "quality",
+      "owner": "scripts/local-verification-runner-v630.mjs",
+      "contract": "scripts/local-verification-runner-v630.mjs",
+      "persistence": "NONE",
+      "dependencies": [
+        "browser-qa"
+      ],
+      "forbiddenShortcut": "No evidence transfer between SHAs",
+      "gate": "tests/local_verification_runner_v630.test.mjs"
+    },
+    {
+      "id": "observability",
+      "domain": "infrastructure",
+      "owner": "backend/src/shared/observability",
+      "contract": "backend/src/shared/observability",
+      "persistence": "NONE",
+      "dependencies": [],
+      "forbiddenShortcut": "Never log secrets or personal data",
+      "gate": "tests/architecture_boundaries_v1.test.mjs"
+    },
+    {
+      "id": "release-ops",
+      "domain": "infrastructure",
+      "owner": "ops/release",
+      "contract": "ops/release/production-config-v566.json",
+      "persistence": "NONE",
+      "dependencies": [
+        "release-evidence"
+      ],
+      "forbiddenShortcut": "No deployment promotion without SHA evidence",
+      "gate": "tests/production_ops_v566_contract.test.mjs"
+    }
+  ],
+  "deprecations": [
+    {
+      "owner": "frontend/src/components/enterprise.js",
+      "status": "removed",
+      "replacements": [
+        "frontend/src/components/ui/kit.js",
+        "frontend/src/components/ui/erp.js",
+        "frontend/src/components/vnext/index.js"
+      ],
+      "consumerProof": "tests/clean_code_refactor_authority_issue_622.test.mjs",
+      "consumers": 0,
+      "issue": 622
+    }
+  ]
+}
