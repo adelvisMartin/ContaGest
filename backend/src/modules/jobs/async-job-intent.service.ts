@@ -105,6 +105,34 @@ export async function failClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
   return rows[0];
 }
 
+// Heartbeat is a fenced compare-and-set extension, NOT a lease transfer.
+// A restarted worker has a fresh claim token and cannot revive its predecessor.
+// PostgreSQL clock prevents caller skew from reviving already expired claims.
+export async function heartbeatClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
+  tenantId: string; id: string; leaseToken: string; leaseSeconds: number;
+}) {
+  const { tenantId, id, leaseToken, leaseSeconds } = input;
+  assertAsyncJobTenantId(tenantId);
+  if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    throw new Error('JOB_ID_INVALID');
+  }
+  if (!/^[a-zA-Z0-9:_-]{1,120}:[0-9a-f-]{36}$/.test(leaseToken)) throw new Error('JOB_LEASE_TOKEN_INVALID');
+  if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 15 || leaseSeconds > 900) {
+    throw new Error('JOB_LEASE_INVALID');
+  }
+  const rows = await tx.$queryRaw<Array<{id: string; leaseUntil: Date}>>(Prisma.sql`
+    UPDATE public."AsyncJobIntent"
+    SET "leaseUntil"=GREATEST("leaseUntil", clock_timestamp() + (${leaseSeconds} * INTERVAL '1 second')),
+        "updatedAt"=clock_timestamp()
+    WHERE "tenantId"=${tenantId} AND "id"=${id}
+      AND "status"='running' AND "leaseOwner"=${leaseToken}
+      AND "leaseUntil">clock_timestamp()
+    RETURNING "id", "leaseUntil"
+  `);
+  if (rows.length !== 1) throw new Error('ASYNC_JOB_LEASE_LOST');
+  return rows[0];
+}
+
 // Expired last-attempt claims must not remain permanently stuck as running.
 // A future tenant-scoped reconciler should run this periodically after binding tenant RLS.
 export async function quarantineExhaustedAsyncJobLeases(tx: Prisma.TransactionClient, input: {
