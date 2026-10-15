@@ -74,3 +74,46 @@ test('#664 missing local PostgreSQL or Hípico URL cannot yield fake PASS', asyn
   assert.equal(absentHipico.status, 'BLOCKED');
   assert.equal(absentHipico.stages[0].code, 'SMOKE_HIPICO_BASE_URL_REQUIRED');
 });
+
+test('#664 Hípico NOT_EXECUTED or invalid status never becomes a green combined smoke', async () => {
+  const env = { LOCAL_VERIFY_DATABASE_ADMIN_URL: ADMIN, HIPICO_SMOKE_BASE_URL: 'http://127.0.0.1:8090/' };
+  const stubs = {
+    env, candidateSha: SHA, erpOnly: false,
+    postgresProbe: () => ({ major: 17 }),
+    withDatabase: async (_context, fn) => fn({ DATABASE_URL: 'postgresql://local:pass@127.0.0.1:5432/contagest_fake_e2e' }, {
+      databaseUrl: 'postgresql://local:pass@127.0.0.1:5432/contagest_fake_e2e'
+    }),
+    execute: async step => ({ id: step.id, status: 'PASS' }),
+    gitContext: () => ({ candidateSha: SHA })
+  };
+
+  const missing = await runOperationalSmoke({
+    ...stubs,
+    hipicoSmoke: async () => ({ status: 'NOT_EXECUTED', checks: [] })
+  });
+  assert.equal(missing.status, 'BLOCKED');
+  assert.equal(missing.stages.at(-1).status, 'NOT_EXECUTED');
+
+  const invalid = await runOperationalSmoke({
+    ...stubs,
+    hipicoSmoke: async () => ({ status: 'UNKNOWN', checks: [] })
+  });
+  assert.equal(invalid.status, 'FAIL');
+  assert.equal(invalid.stages.at(-1).status, 'UNKNOWN');
+
+  const blocked = await runOperationalSmoke({
+    ...stubs,
+    hipicoSmoke: async () => ({ status: 'BLOCKED', checks: [] })
+  });
+  assert.equal(blocked.status, 'BLOCKED');
+
+  const good = await runOperationalSmoke({
+    ...stubs,
+    hipicoSmoke: async () => ({ status: 'PASS', checks: [] })
+  });
+  assert.equal(good.status, 'PASS');
+
+  const focused = await runOperationalSmoke({ ...stubs, erpOnly: true });
+  assert.equal(focused.status, 'PASS');
+  assert.equal(focused.stages.at(-1).status, 'NOT_APPLICABLE');
+});
