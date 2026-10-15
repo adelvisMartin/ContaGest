@@ -30,6 +30,26 @@ export function parseTemplateInventory(source){
 }
 
 const URL_SCHEMES=new Set(['http:','https:','postgres:','postgresql:','mysql:','mongodb:','mongodb+srv:','redis:','rediss:']);
+// Never permit opaque credentials in public frontend URLs. Inspect only
+// parameter *names*, not values, so findings cannot leak sensitive content.
+// Preserve marketing navigation parameters and server-only database URLs.
+const PUBLIC_URL_SECRET_KEYS=new Set([
+ 'accesstoken','refreshtoken','apikey','xapikey','clientsecret',
+ 'servicerolekey','password','passwd','authorization','jwt',
+ 'secret','token','auth','idtoken','sessiontoken','clienttoken'
+]);
+function frontendUrlHasCredentials(value){
+ try{
+  const url=new URL(value,'https://config.invalid');
+  const hash=url.hash.slice(1);
+  const fragmentParams=hash.includes('?')?hash.slice(hash.indexOf('?')+1):hash;
+  const params=[...url.searchParams,...new URLSearchParams(fragmentParams)];
+  return Boolean(url.username||url.password)||
+    params.some(([key])=>PUBLIC_URL_SECRET_KEYS.has(
+      key.toLowerCase().replace(/[^a-z0-9]/g,'')));
+ }catch{return true;}
+}
+
 function sampleMatchesDeclaredType(value,record,owner){
  // Empty string/URL/secret placeholders are intentional, but typed control
  // switches, counts and enums cannot silently become unset in required samples.
@@ -45,12 +65,14 @@ function sampleMatchesDeclaredType(value,record,owner){
    // become a relative marketing route or a PostgreSQL connection string.
    if(record.allowRelative===true&&owner==='frontend'&&
       value.startsWith('/')&&!value.startsWith('//'))
-     return !/[\s\\]/.test(value);
+     return !/[\s\\]/.test(value)&&!frontendUrlHasCredentials(value);
    const normalized=value.replace(/\[[A-Za-z0-9_-]+\]/g,'example');
    try{
      const url=new URL(normalized);
      return Array.isArray(record.allowedSchemes)&&record.allowedSchemes.includes(url.protocol)&&
-       URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname);
+       URL_SCHEMES.has(url.protocol)&&Boolean(url.hostname)&&
+       (!['http:','https:'].includes(url.protocol)||(!url.username&&!url.password))&&
+       (owner!=='frontend'||!frontendUrlHasCredentials(normalized));
    }catch{return false;}
   }
   default:return true;
@@ -82,7 +104,8 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
    if(!meta||typeof meta!=='object'||Array.isArray(meta)||meta.examplePath!==path)
      add('MANIFEST_SURFACE_PATH_INVALID',owner,'examplePath');
    const registered=Object.hasOwn(registry.variables,owner)?registry.variables[owner]:undefined;
-   if(!registered||typeof registered!=='object'||Array.isArray(registered))
+   if(!registered||typeof registered!=='object'||Array.isArray(registered)||
+      Object.keys(registered).length===0)
      add('MANIFEST_SURFACE_CATALOG_MISSING',owner,'variables');
  }
  for(const owner of Object.keys(registry.surfaces))
@@ -101,6 +124,12 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
   for(const line of parsed.invalidLines)add('MANIFEST_INVALID_SAMPLE_LINE',owner,'line '+line);
   for(const key of parsed.duplicates)add('DUPLICATE_SAMPLE_KEY',owner,key);
   for(const [key,record] of Object.entries(catalog)){
+   // Corrupt per-key entries must produce safe diagnostics, not TypeErrors.
+   // The diagnostic contains an owner/key only, never the supplied value.
+   if(!record||typeof record!=='object'||Array.isArray(record)){
+    add('MANIFEST_INVALID_ENTRY',owner,key);
+    continue;
+   }
    if(!VALID_TYPES.has(record.type)||!VALID_VISIBILITY.has(record.visibility)||
       !VALID_REQUIRED.has(record.requiredWhen)||!VALID_SAMPLE.has(record.sample)||
       typeof record.sensitive!=='boolean')add('MANIFEST_INVALID_ENTRY',owner,key);
@@ -148,9 +177,10 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
 }
 
 export function loadVersionedSamples(){
- return Object.fromEntries(Object.entries(CONFIG_MANIFEST_V665.surfaces)
-  .filter(([,meta])=>meta.examplePath)
-  .map(([owner,meta])=>[owner,readFileSync(resolve(repositoryRoot,meta.examplePath),'utf8')]));
+ // A modified manifest must not redirect this loader to a private path.
+ return Object.fromEntries(Object.entries(REQUIRED_SURFACES)
+  .filter(([,path])=>path)
+  .map(([owner,path])=>[owner,readFileSync(resolve(repositoryRoot,path),'utf8')]));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const report=checkEnvironmentManifest(loadVersionedSamples());

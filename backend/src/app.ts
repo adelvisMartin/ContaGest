@@ -10,6 +10,7 @@ import hipicoRaceRoutes from './modules/hipico/race.routes.js';
 import hipicoAgentRoutes from './modules/hipico/agent.routes.js';
 import hipicoCommandCenterRoutes from './modules/hipico/command-center.routes.js';
 import hipicoOperatorReadRoutes from './modules/hipico/operator-read.routes.js';
+import hipicoReportShareRoutes from './modules/hipico/report-share.routes.js';
 import veterinaryGuardianPortalPublicRoutes from './modules/verticals/veterinary-guardian-portal.public.routes.js';
 import hipicoWebhookRoutes from './modules/hipico-bot/hipico-webhook.routes.js';
 import hipicoBridgeRoutes from './modules/hipico-bot/hipico-bridge.routes.js';
@@ -97,6 +98,7 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   // Raw PDF upload/list/reprocess has its own explicit boundary and shares the
   // same token/scope policy as the remaining canonical Hípico APIs.
   app.use('/api/v1/hipico/documents', authRateLimit, mutationRateLimit, hipicoDocumentRoutes);
+  app.use('/api/v1/hipico/report-shares', authRateLimit, mutationRateLimit, hipicoReportShareRoutes);
 
   // One canonical limiter chain avoids counting a request repeatedly while it
   // traverses sibling routers. mutationRateLimit skips GET/HEAD/OPTIONS.

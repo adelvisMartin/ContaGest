@@ -14,7 +14,7 @@ const verticalRoutes=MODULE_VISUAL_CATALOG
 const criticalRoutes=[...new Set([...CRITICAL_VISUAL_ROUTES,...verticalRoutes])];
 const routes=scope==='full'?MODULE_VISUAL_CATALOG.map((item)=>item.route):criticalRoutes;
 
-if(MODULE_VISUAL_CATALOG.length!==58)throw new Error(`63/75 catalog drift: expected 58 routes, received ${MODULE_VISUAL_CATALOG.length}`);
+if(MODULE_VISUAL_CATALOG.length!==60)throw new Error(`63/75 catalog drift: expected 60 routes, received ${MODULE_VISUAL_CATALOG.length}`);
 if(!routes.length)throw new Error('63/75 resolved an empty compatibility route set');
 
 const grep=`^(?:${routes.join('|')}) · deep desktop/mobile light/dark audit$`;

@@ -196,3 +196,98 @@ test('#665 malformed top-level manifest returns safe codes, never a bypass or ex
    assert.equal(JSON.stringify(result).includes('SUPABASE_SERVICE_ROLE_KEY='),false);
  }
 });
+
+test('#665 sample loader cannot be redirected by mutable manifest metadata',()=>{
+ const previous=MANIFEST.surfaces.frontend.examplePath;
+ try{
+  // Swap to another *public versioned* sample, never a private credential file.
+  MANIFEST.surfaces.frontend.examplePath='backend/.env.example';
+  assert.deepEqual(loadVersionedSamples(),samples);
+ }finally{
+  MANIFEST.surfaces.frontend.examplePath=previous;
+ }
+});
+
+test('#665 empty mandatory owner catalog fails instead of silently skipping checks',()=>{
+ for(const owner of ['backend','frontend','bridge','build']){
+  const altered=structuredClone(MANIFEST);
+  altered.variables[owner]={};
+  const report=checkEnvironmentManifest(samples,altered);
+  assert.equal(report.status,'FAIL',owner);
+  assert.ok(report.findings.some(f=>f.code==='MANIFEST_SURFACE_CATALOG_MISSING'&&f.owner===owner),owner);
+ }
+});
+
+test('#665 HTTP(S) template URLs cannot embed usernames or passwords',()=>{
+ for(const [owner,key,bad] of [
+  ['frontend','VITE_API_BASE_URL','https://synthetic-user:synthetic-pass@api.example.test/v1'],
+  ['frontend','VITE_MARKETING_DEMO_URL','https://synthetic-user@site.example.test/landing'],
+  ['backend','APP_URL','https://synthetic-user:synthetic-pass@site.example.test/'],
+  ['backend','SECURITY_ALERT_WEBHOOK_URL','https://synthetic-user@hooks.example.test/'],
+  ['bridge','HIPICO_INGEST_URL','https://synthetic-user:synthetic-pass@bridge.example.test/events'],
+  ['bridge','HIPICO_BRIDGE_HEALTH_URL','http://synthetic-user@127.0.0.1:3000/health']
+ ]){
+  const expression=new RegExp('^'+key+'=.*$','m');
+  assert.match(samples[owner],expression);
+  const report=check({[owner]:samples[owner].replace(expression,key+'='+bad)});
+  assert.ok(report.findings.some(f=>f.code==='MANIFEST_SAMPLE_TYPE_INVALID'&&f.owner===owner&&f.key===key),owner+'/'+key);
+  assert.equal(JSON.stringify(report).includes('synthetic-user'),false);
+  assert.equal(JSON.stringify(report).includes('synthetic-pass'),false);
+ }
+});
+
+test('#665 authenticated PostgreSQL connections remain server-only valid samples',()=>{
+ const updated=samples.backend.replace(/^DATABASE_RUNTIME_URL=.*$/m,
+  'DATABASE_RUNTIME_URL=postgresql://synthetic-user:synthetic-pass@db.example.test:5432/fixture');
+ assert.ok(updated!==samples.backend);
+ const report=check({backend:updated});
+ assert.equal(report.status,'PASS',JSON.stringify(report.findings));
+ assert.equal(MANIFEST.variables.backend.DATABASE_RUNTIME_URL.visibility,'server');
+ assert.equal(MANIFEST.variables.backend.DATABASE_RUNTIME_URL.sensitive,true);
+});
+
+test('#665 malformed per-key metadata fails closed without TypeError or disclosure',()=>{
+ for(const [owner,key] of [
+  ['backend','PORT'],
+  ['frontend','VITE_API_BASE_URL'],
+  ['bridge','HIPICO_INGEST_URL'],
+  ['build','GITHUB_SHA']
+ ]){
+  for(const malformed of [null,false,42,[], 'synthetic-private-value']){
+   const corrupted=structuredClone(MANIFEST);
+   corrupted.variables[owner][key]=malformed;
+   const report=checkEnvironmentManifest(samples,corrupted);
+   assert.equal(report.status,'FAIL',owner+'/'+key);
+   assert.ok(report.findings.some(f=>
+    f.code==='MANIFEST_INVALID_ENTRY'&&f.owner===owner&&f.key===key
+   ),owner+'/'+key);
+   assert.equal(JSON.stringify(report).includes('synthetic-private-value'),false);
+  }
+ }
+});
+
+test('#665 public frontend URL query and fragments never carry credential parameters',()=>{
+ for(const [key, url] of [
+  ['VITE_API_BASE_URL','https://api.example.test/v1?access_token=synthetic-private-query'],
+  ['VITE_SUPABASE_URL','https://supabase.example.test/?client_secret=synthetic-private-query'],
+  ['VITE_API_BASE_URL','http://localhost:3030/api?api_key=synthetic-private-query'],
+  ['VITE_MARKETING_DEMO_URL','/?module=login&token=synthetic-private-query'],
+  ['VITE_MARKETING_DEMO_URL','/?module=login#access_token=synthetic-private-fragment'],
+  ['VITE_MARKETING_DEMO_URL','/#/welcome?service_role_key=synthetic-private-fragment'],
+  ['VITE_MARKETING_DEMO_URL','https://public.example.test/?utm_campaign=demo#/?jwt=synthetic-private-fragment']
+ ]){
+  const altered=samples.frontend.replace(new RegExp('^'+key+'=.*$','m'),key+'='+url);
+  const report=check({frontend:altered});
+  assert.ok(report.findings.some(f=>f.code==='MANIFEST_SAMPLE_TYPE_INVALID'&&
+    f.owner==='frontend'&&f.key===key),key);
+  assert.equal(JSON.stringify(report).includes('synthetic-private-'),false);
+ }
+ // Marketing navigation is still permitted, including safe query/hash routes.
+ const safe=samples.frontend.replace(/^VITE_MARKETING_DEMO_URL=.*$/m,
+   'VITE_MARKETING_DEMO_URL=/?module=login&utm_source=home#screen?tab=sales');
+ assert.equal(check({frontend:safe}).status,'PASS');
+ // Database credentials remain valid in a backend-only connection URL.
+ const db=samples.backend.replace(/^DATABASE_RUNTIME_URL=.*$/m,
+  'DATABASE_RUNTIME_URL=postgresql://synthetic-user:synthetic-pass@db.example.test:5432/fixture');
+ assert.equal(check({backend:db}).status,'PASS');
+});
