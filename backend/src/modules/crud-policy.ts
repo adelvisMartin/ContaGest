@@ -45,9 +45,11 @@ const LIST_QUERY_FIELDS = new Set(['take', 'skip', 'q']);
 const NON_DELETABLE_MODELS = new Set<CrudModel>(['bankAccount', 'taxPeriod']);
 
 export class CrudPolicyError extends Error {
-  constructor(message: string, public readonly status = 422) {
+  readonly status: number;
+  constructor(message: string, status = 422) {
     super(message);
     this.name = 'CrudPolicyError';
+    this.status = status;
   }
 }
 
