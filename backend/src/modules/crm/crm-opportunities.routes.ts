@@ -9,6 +9,7 @@ import {
   CrmOpportunityConflictError, CrmOpportunityLeadNotFoundError
 } from './crm-opportunity-store.mjs';
 import { markCrmOpportunityLost, CrmOpportunityNotFoundError, CrmOpportunityStaleError, CrmOpportunityStageError } from './crm-opportunity-stage.mjs';
+import { summarizeCrmForecast, CrmForecastLimitError } from './crm-forecast.mjs';
 
 const router=Router();
 router.use(requireTenant);
@@ -25,6 +26,20 @@ const pageSchema=z.object({
   take:z.coerce.number().int().min(1).max(100).default(50),
   skip:z.coerce.number().int().min(0).max(10000).default(0)
 }).strict();
+
+
+router.get('/forecast',requirePermission('sales.view'),asyncHandler(async(req,res)=>{
+  const ctx=(req as any).context as {tenantId:string};
+  try {
+    const data=await summarizeCrmForecast({db:prisma,tenantId:ctx.tenantId});
+    res.setHeader('Cache-Control','private, no-store');
+    ok(res,data);
+  } catch(error) {
+    if(error instanceof CrmForecastLimitError)
+      throw new HttpError(503,'El informe supera el límite seguro; aplica una solución de agregación dedicada.');
+    throw error;
+  }
+}));
 
 router.get('/', requirePermission('sales.view'), asyncHandler(async(req,res)=>{
   const page=pageSchema.safeParse(req.query);

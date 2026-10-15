@@ -397,3 +397,40 @@ no equivale a PostgreSQL 17 real, TypeScript completo, Auth/HTTP
 o navegador Playwright: esas verificaciones siguen obligatorias
 para la Definition of Done del #760. El modelo ModuleRecord
 permanece provisional y no se altera su esquema ni se pierden datos.
+
+## 2026-10-15 · Resumen ponderado completo del pipeline por moneda
+
+GET /api/v1/modules/crm/opportunities/forecast requiere tenant y
+sales.view. Consulta oportunidades de la empresa en una sola
+transacción Prisma con isolationLevel RepeatableRead, usando paginación
+por cursor ID (250 filas por consulta). Nunca usa solamente la primera
+página como total. Se aceptan hasta 10.000 filas completas;
+si hay una 10.001, la API devuelve 503 sin cifras parciales.
+
+El servicio crm-forecast.mjs verifica el tenant, el moduleSlug,
+el orden del cursor, etapas qualified/lost y datos monetarios.
+Reutiliza forecastByCurrency del dominio CRM: BigInt en céntimos,
+redondeo una vez por moneda después de sumar, jamás conversión FX.
+Las lost se cuentan aparte (excludedLostCount) y se excluyen
+de gross y weighted; proposal/won no se admiten sin Quote #753.
+
+Contrato: policy, evaluatedCount, excludedLostCount y currencyTotals
+con entradas currency/count/gross/weighted, sin RIF/email/PII.
+Respuestas Cache-Control private, no-store. Son previsiones comerciales,
+NO ingresos reales, asientos contables, facturas ni cotizaciones.
+
+Clientes muestra una tabla informativa por moneda y botón
+Actualizar previsión; al crear o descartar oportunidades actualiza
+el resumen. Un error oculta resultados incompletos y no usa Store.
+
+Regresión: node --test tests/crm_forecast_report_v760.test.mjs
+(añadida al backend npm test): 501 filas, 10.000 y 10.001,
+divisas separadas, 0.01 ponderado, filtro de tenant, cursor
+monótono, datos incorrectos y lectura RepeatableRead. El root
+npm test ya contiene tests/crm_opportunities_ui_v760.test.mjs
+ampliada para validar el resumen y su interfaz.
+
+Persisten como NOT_EXECUTED las pruebas en PostgreSQL17 real,
+RLS, HTTP JWT/CSRF, build backend+Vite y browser Playwright.
+Issue #760 OPEN hasta completar Opportunity/Quote, conversión Client,
+schema dedicado y QA integral.

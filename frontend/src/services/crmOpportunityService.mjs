@@ -52,6 +52,30 @@ export function createCrmOpportunityService({api}) {
   if(!api || typeof api.get !== 'function' || typeof api.request !== 'function')
     throw new TypeError('CRM_OPPORTUNITY_API_REQUIRED');
   return Object.freeze({
+    async forecast() {
+      const result=await api.get(CRM_OPPORTUNITY_ENDPOINT+'/forecast');
+      if(!result || result.policy!=='crm-qualified-forecast-v1' ||
+        !Number.isSafeInteger(result.evaluatedCount) || result.evaluatedCount<0 ||
+        !Number.isSafeInteger(result.excludedLostCount) || result.excludedLostCount<0 ||
+        result.excludedLostCount>result.evaluatedCount ||
+        !Array.isArray(result.currencyTotals)) throw new TypeError('CRM_FORECAST_RESPONSE_INVALID');
+      const money=/^(?:0|[1-9]\d{0,15})\.\d{2}$/;
+      let active=0,prior='';
+      for(const row of result.currencyTotals){
+        if(!row || typeof row.currency!=='string' ||
+          !/^[A-Z]{3}$/.test(row.currency) || row.currency<=prior ||
+          !Number.isSafeInteger(row.count) || row.count<1 ||
+          typeof row.gross!=='string' || !money.test(row.gross) ||
+          typeof row.weighted!=='string' || !money.test(row.weighted)) {
+          throw new TypeError('CRM_FORECAST_RESPONSE_INVALID');
+        }
+        active+=row.count;
+        prior=row.currency;
+      }
+      if(active+result.excludedLostCount!==result.evaluatedCount)
+        throw new TypeError('CRM_FORECAST_RESPONSE_INVALID');
+      return result;
+    },
     async markLost(opportunity) {
       const {id,expectedUpdatedAt}=validateOpportunityLossAction(opportunity);
       const result=await api.request(CRM_OPPORTUNITY_ENDPOINT+'/'+id+'/lost',{
