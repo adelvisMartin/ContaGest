@@ -4,7 +4,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
-import { createCrmLead, listCrmLeads } from './crm-lead-store.mjs';
+import { createCrmLead, listCrmLeads, CrmLeadReplayError } from './crm-lead-store.mjs';
 
 const router = Router();
 router.use(requireTenant);
@@ -36,10 +36,18 @@ router.post('/',requirePermission('sales.manage'),validateBody(leadDraftSchema),
   const ctx = (req as any).context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
   if (!ctx.userId) throw new HttpError(403,'Se requiere identidad de usuario verificada.');
   // User and tenant always come from server requestContext, never the body.
-  const lead = await createCrmLead({
-    db:prisma, tenantId:ctx.tenantId, actorId:ctx.userId,
-    draft:req.body, ipAddress:ctx.ip, userAgent:ctx.userAgent
-  });
+  const idempotencyKey = String(req.header('Idempotency-Key') || '');
+  let lead;
+  try {
+    lead = await createCrmLead({
+      db:prisma, tenantId:ctx.tenantId, actorId:ctx.userId, idempotencyKey,
+      draft:req.body, ipAddress:ctx.ip, userAgent:ctx.userAgent
+    });
+  } catch (error) {
+    if (error instanceof CrmLeadReplayError) throw new HttpError(409,'Este intento de alta CRM ya fue procesado. Consulta el listado antes de repetir.');
+    if (error instanceof TypeError) throw new HttpError(400,'Identidad o clave de intento CRM inválida.');
+    throw error;
+  }
   res.setHeader('Cache-Control','private, no-store');
   ok(res,lead,201);
 }));
