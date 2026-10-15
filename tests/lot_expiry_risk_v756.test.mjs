@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { LOT_EXPIRY_RISK_VERSION, LOT_EXPIRY_MAX_DAYS, expiryUtcBounds, projectLotExpiryRisk } from '../backend/src/modules/reports/lot-expiry-risk.ts';
 
 const time = new Date('2026-10-15T23:50:00-05:00'); // UTC date is 2026-10-16
@@ -68,7 +69,7 @@ test('rejects incomplete identity, no silent invalid rows',()=>{
 });
 
 test('real report route requires tenant and permission and never assumes lot allocations',()=>{
-  const routes = (await import('node:fs')).readFileSync(
+  const routes = readFileSync(
     new URL('../backend/src/modules/reports/reports.routes.ts', import.meta.url),'utf8');
   assert.match(routes,/router\.use\(requireTenant, requirePermission\('reports.view'\)\)/);
   assert.match(routes,/router\.get\('\/inventory\/expiry'/);
