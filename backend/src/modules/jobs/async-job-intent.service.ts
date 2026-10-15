@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import { prepareAsyncJobIntent, planAsyncJobFailure, assertAsyncJobTenantId } from './job-intent-policy.js';
+import { prepareAsyncJobIntent, planAsyncJobFailure, assertAsyncJobTenantId, assertAsyncJobId, assertAsyncJobLeaseToken } from './job-intent-policy.js';
 
 // Caller MUST already be inside its business transaction and authenticated tenant context.
 // No implicit second transaction and no network/provider work before business COMMIT.
@@ -65,7 +65,8 @@ export async function completeClaimedAsyncJob(tx: Prisma.TransactionClient, inpu
 }) {
   const { tenantId, id, leaseToken, now } = input;
   assertAsyncJobTenantId(tenantId);
-  if (!/^[a-zA-Z0-9:_-]{1,120}:[0-9a-f-]{36}$/.test(leaseToken)) throw new Error('JOB_LEASE_TOKEN_INVALID');
+  assertAsyncJobId(id);
+  assertAsyncJobLeaseToken(leaseToken);
   const rows = await tx.$queryRaw<Array<{id: string}>>(Prisma.sql`
     UPDATE public."AsyncJobIntent"
     SET "status"='completed', "leaseOwner"=NULL, "leaseUntil"=NULL, "updatedAt"=clock_timestamp()
@@ -83,7 +84,8 @@ export async function failClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
 }) {
   const { tenantId, id, leaseToken, now, attempts, maxAttempts, retryable, safeErrorCode } = input;
   assertAsyncJobTenantId(tenantId);
-  if (!/^[a-zA-Z0-9:_-]{1,120}:[0-9a-f-]{36}$/.test(leaseToken)) throw new Error('JOB_LEASE_TOKEN_INVALID');
+  assertAsyncJobId(id);
+  assertAsyncJobLeaseToken(leaseToken);
   if (!/^[A-Z0-9_]{1,100}$/.test(safeErrorCode)) throw new Error('JOB_ERROR_CODE_INVALID');
   const decision = planAsyncJobFailure({attempts,maxAttempts,retryable,now});
   // Compute only the bounded delay from the policy; the actual retry instant is
@@ -113,10 +115,8 @@ export async function heartbeatClaimedAsyncJob(tx: Prisma.TransactionClient, inp
 }) {
   const { tenantId, id, leaseToken, leaseSeconds } = input;
   assertAsyncJobTenantId(tenantId);
-  if (typeof id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
-    throw new Error('JOB_ID_INVALID');
-  }
-  if (!/^[a-zA-Z0-9:_-]{1,120}:[0-9a-f-]{36}$/.test(leaseToken)) throw new Error('JOB_LEASE_TOKEN_INVALID');
+  assertAsyncJobId(id);
+  assertAsyncJobLeaseToken(leaseToken);
   if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 15 || leaseSeconds > 900) {
     throw new Error('JOB_LEASE_INVALID');
   }
