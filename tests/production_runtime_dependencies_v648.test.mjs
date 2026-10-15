@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const dockerfile = readFileSync(new URL('../ops/docker/Dockerfile.api', import.meta.url), 'utf8');
+const workspacePackage = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 function verifyProductionInstall(source) {
   const productionDeps = source.split('FROM build AS production-deps\n')[1]?.split('\nFROM ')[0];
@@ -21,6 +22,11 @@ function verifyProductionInstall(source) {
 
 test('la imagen de la API sólo copia dependencias runtime depuradas', () => {
   verifyProductionInstall(dockerfile);
+});
+
+test('la regresión se ejecuta desde el comando de pruebas estándar', () => {
+  assert.equal(workspacePackage.scripts['test:docker:runtime'], 'node --test tests/production_runtime_dependencies_v648.test.mjs');
+  assert.match(workspacePackage.scripts.test, /&& npm run test:docker:runtime$/);
 });
 
 test('la imagen conserva esquema Prisma y scripts de migración', () => {
