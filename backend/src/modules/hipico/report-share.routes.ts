@@ -20,7 +20,7 @@ export type ReportShareStore = {
   list: typeof listHipicoReportLinks;
   consolidated: typeof readHipicoConsolidatedShare;
 };
-type RouterOptions = { ownerId?: () => string; validateOperator?: (value: string | undefined) => boolean; store?: ReportShareStore; now?: () => Date };
+type RouterOptions = { ownerId?: () => string; validateOperator?: (value: string | undefined) => boolean; store?: ReportShareStore; now?: () => Date; enabled?: () => boolean };
 function ownerFromEnvironment() {
   const id = uuid.safeParse(String(process.env.HIPICO_OWNER_ID || '').trim());
   if (!id.success) throw new Error('HIPICO_REPORT_OWNER_NOT_CONFIGURED');
@@ -164,7 +164,14 @@ export function createHipicoReportShareRouter(options: RouterOptions = {}) {
   };
   const operatorAuthorized = options.validateOperator || operatorTokenValid;
   const now = options.now || (() => new Date());
-  router.use((_req, res, next) => { setPrivateHeaders(res); next(); });
+  const isEnabled = options.enabled || (() => process.env.HIPICO_REPORT_SHARES_ENABLED === 'true');
+  // The feature is off by default, even after migrations. No token read, write
+  // or issuance until staging RLS/security checks and gateway redaction exist.
+  router.use((_req, res, next) => {
+    setPrivateHeaders(res);
+    if (!isEnabled()) return res.status(503).json({ok:false,code:'HIPICO_REPORT_SHARES_DISABLED'});
+    next();
+  });
 
   router.get('/public', async (req: Request, res: Response) => {
     const token = validateReportToken(req.query.t);
