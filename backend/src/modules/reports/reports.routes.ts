@@ -9,6 +9,7 @@ import {
   summarizeInventoryStockHealth
 } from '../../shared/services/inventory-stock-health.service.js';
 import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRows } from './sales-kpi.js';
+import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('reports.view'));
@@ -44,6 +45,57 @@ const salesKpiQuery = z.object({
 // Dedicated versioned analytics read: no fabricated report totals, no
 // cross-currency arithmetic and no separately persisted aggregates.
 // Each summary and drill-down page shares one repeatable-read PG snapshot.
+router.get('/operational/purchases', asyncHandler(async (req, res) => {
+  const parsed = salesKpiQuery.safeParse(req.query);
+  if (!parsed.success) throw new HttpError(400, 'Filtros de KPI de compras inválidos.', { code: 'PURCHASE_KPI_QUERY_INVALID' });
+  const ctx = context(req);
+  const { period, currency, take, skip } = parsed.data;
+  const where: Prisma.PurchaseInvoiceWhereInput = {
+    tenantId: ctx.tenantId,
+    fiscalPeriod: period,
+    status: { in: [...SALES_KPI_STATUSES] },
+    ...(currency ? { currency } : {})
+  };
+  const [groups, documents] = await prisma.$transaction(async tx => Promise.all([
+    tx.purchaseInvoice.groupBy({
+      by: ['currency', 'status'],
+      where,
+      _sum: { subtotal: true, iva: true, igtf: true, retiva: true, total: true },
+      _count: { _all: true },
+      orderBy: [{ currency: 'asc' }, { status: 'asc' }]
+    }),
+    tx.purchaseInvoice.findMany({
+      where,
+      select: {
+        id: true, number: true, issueDate: true, fiscalPeriod: true,
+        currency: true, status: true, subtotal: true, iva: true,
+        igtf: true, retiva: true, total: true
+      },
+      orderBy: [{ issueDate: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      skip
+    })
+  ]), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  const hasMore = documents.length > take;
+  ok(res, {
+    version: PURCHASE_KPI_VERSION,
+    sourceAuthority: 'PurchaseInvoice',
+    definition: {
+      statuses: SALES_KPI_STATUSES,
+      period: 'fiscalPeriod',
+      monetaryUnit: 'original-currency',
+      fxConversion: 'NONE',
+      excludes: ['draft', 'cancelled'],
+      liabilityOrCashPaymentKpi: false,
+      isolation: 'repeatable-read'
+    },
+    filters: { period, currency: currency ?? null, take, skip },
+    summary: purchaseKpiRows(groups),
+    rows: purchaseKpiDocumentRows(documents.slice(0, take)),
+    pagination: { hasMore, nextSkip: hasMore ? skip + take : null }
+  });
+}));
+
 router.get('/operational/sales', asyncHandler(async (req, res) => {
   const query = salesKpiQuery.safeParse(req.query);
   if (!query.success) throw new HttpError(400, 'Filtros de KPI de ventas inválidos.', { code: 'SALES_KPI_QUERY_INVALID' });
