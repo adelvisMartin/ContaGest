@@ -2,10 +2,13 @@ import { BET_OPTIONS, calculateJugarDisponible, calculatePolla, calculateRaceSum
 import { csvEscape, generateBalancesWhatsappText, generateBetReceiptText, generateDailySummaryText, generateWhatsappText, money, number, shortDate } from "./format.js";
 import { createBlankWorkspace } from "./seed.js";
 import { backupFilename, deliverJsonBackup, serializeWorkspaceBackup } from "./backup.js";
-import { clearLocalWorkspace, createSnapshot, downloadFile, enqueueOutbox, flushWorkspaceWrites, getAppMode, initializeStorage, listOutbox, listSnapshots, loadLocalWorkspace, queueWorkspaceSave, removeOutbox, requestPersistentStorage, restoreSnapshot, saveLocalWorkspace, setAppMode, storageDiagnostics } from "./store.js";
+import { clearLocalWorkspace, createSnapshot, downloadBlob, downloadFile, enqueueOutbox, flushWorkspaceWrites, getAppMode, initializeStorage, listOutbox, listSnapshots, loadLocalWorkspace, queueWorkspaceSave, removeOutbox, requestPersistentStorage, restoreSnapshot, saveLocalWorkspace, setAppMode, storageDiagnostics } from "./store.js";
 import { downloadPdf, downloadXlsx, fixedWidthTable } from "./reports.js";
 import { assertReportDate } from "./reference-report-projections.js";
 import { renderReferenceReport, referenceReportLines } from "./reference-report-ui.js";
+import { projectConsolidatedBalances, consolidateFilterDefaults, moveConsolidatorColumn } from "./reference-report-consolidator.js";
+import { renderConsolidator, consolidatedVisibleText, consolidatedVisibleMatrix, consolidatedVisiblePdfLines } from "./reference-report-consolidator-ui.js";
+import { consolidatedPngBlob } from "./reference-report-consolidator-image.js";
 import { caracasToday, raceCopyText } from "./reference-report-operations.js";
 import { mergeWorkspaces, shouldMergeCloud } from "./sync.js";
 import { appendCloudAudit, currentSession, currentUserSummary, fetchCloudAccess, fetchCloudProfile, fetchCloudWorkspace, fetchRecentShadowEvaluations, initializeCloudSession, isTransientCloudError, isVersionConflict, saveCloudWorkspace, signIn, signOut, signUp } from "./supabase.js";
@@ -22,6 +25,7 @@ let raceTab = new URLSearchParams(location.search).get("tab") || "capture";
 let reportTab = "daily";
 let referenceReportDate = caracasToday();
 let referenceReportParticipantId = "";
+let consolidatedFilters = consolidateFilterDefaults();
 let referenceReportRefresh = { busy: false, checkedAt: null, status: "Datos del espacio de trabajo local (no sincronización en vivo)." };
 let modal = null;
 let cloudWorkspaceId = null;
@@ -619,7 +623,7 @@ function renderParticipants() { const rows = currentBalanceRows(); return `<sect
 function historyRows() { const rows = []; for (const race of groupItems(workspace.races)) for (const b of race.bets || []) { const base = { id: b.id, group: activeCompany(), date: race.date, racetrack: race.racetrack, race: race.number, description: `${b.play} (${String(b.horse).replace(/\*/g, "x")}) con ${number(b.amount)}`, type: b.source === "advanced" ? "Adelantada" : "Carrera", play: b.play, status: b.status }; if (b.playerId) rows.push({ ...base, role: "Juega", participantId: b.playerId, balanceBs: b.settlement?.playerAmount ?? 0, auxiliary: b.settlement?.code ?? "", rate: race.exchangeRate || workspaceRateForDate(race.date), balanceUsd: toUsd(b.settlement?.playerAmount ?? 0, race.date) }); if (b.receiverId) rows.push({ ...base, role: "Consigue", participantId: b.receiverId, balanceBs: b.settlement?.receiverAmount ?? 0, auxiliary: b.settlement?.code ?? "", rate: race.exchangeRate || workspaceRateForDate(race.date), balanceUsd: toUsd(b.settlement?.receiverAmount ?? 0, race.date) }); } return rows; }
 function filteredHistory() { return historyRows().filter((r) => (!historyFilter.from || r.date >= historyFilter.from) && (!historyFilter.to || r.date <= historyFilter.to) && (!historyFilter.track || r.racetrack.toLowerCase().includes(historyFilter.track.toLowerCase())) && (!historyFilter.participant || r.participantId === historyFilter.participant) && (!historyFilter.type || r.play === historyFilter.type) && (!historyFilter.status || r.status === historyFilter.status)); }
 function renderHistory() { const rows = filteredHistory(); return `<section class="page-head"><div><h2>Historial de jugadas</h2><p>${escapeHtml(activeGroup().name)} · filtros y cortes sin tablas cortadas en móvil.</p></div><div class="page-actions"><button class="button" data-action="history-this-week">Esta semana</button><button class="button" data-action="export-history">Exportar CSV</button></div></section><details class="card filter-card" open><summary>Filtros</summary><form id="history-filter-form"><div class="card__body filter-grid">${dateField("from", historyFilter.from || today(), "Desde")}${dateField("to", historyFilter.to || today(), "Hasta")}<input class="input" name="track" placeholder="Hipódromo" value="${escapeHtml(historyFilter.track)}"><select class="select" name="participant"><option value="">Todos los tercios</option>${participantOptions(historyFilter.participant)}</select><select class="select" name="type"><option value="">Todas las jugadas</option>${BET_OPTIONS.map((x) => `<option ${historyFilter.type === x ? "selected" : ""}>${x}</option>`).join("")}</select><select class="select" name="status"><option value="">Todos los estados</option><option value="pending" ${historyFilter.status === "pending" ? "selected" : ""}>Pendiente</option><option value="settled" ${historyFilter.status === "settled" ? "selected" : ""}>Liquidada</option><option value="cancelled" ${historyFilter.status === "cancelled" ? "selected" : ""}>Anulada</option></select><button class="button button--primary">Aplicar</button></div></form></details><section class="card section-gap"><div class="card__head"><h3>${rows.length} movimientos</h3><span class="badge">${escapeHtml(activeCurrency())} + conversión</span></div><div class="card__body"><div class="history-mobile-list">${rows.map((r) => `<article class="history-card"><header><strong>${escapeHtml(pCode(r.participantId))}</strong><span class="badge">${escapeHtml(r.role)}</span></header><h4>${escapeHtml(r.description)}</h4><p>${escapeHtml(r.racetrack)} · ${r.race}ª · ${escapeHtml(r.date)}</p><div><span>Saldo</span><b>${money(r.balanceBs, activeCurrency(), true)}</b></div><div><span>USD</span><b>${number(r.balanceUsd)}</b></div></article>`).join("") || empty("Sin movimientos", "Ajusta los filtros o registra apuestas.")}</div><div class="table-wrap history-desktop-table"><table class="summary-table history-table"><thead><tr><th>Fecha</th><th>Hipódromo</th><th>Carr.</th><th>Descripción</th><th>Tipo</th><th>Tercio</th><th>Saldo</th><th>Dólar</th><th>USD</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${r.date}</td><td>${escapeHtml(r.racetrack)}</td><td>${r.race}</td><td>${escapeHtml(r.description)}</td><td>${escapeHtml(r.role)}</td><td>${escapeHtml(pCode(r.participantId))}</td><td>${number(r.balanceBs)}</td><td>${number(r.rate)}</td><td>${number(r.balanceUsd)}</td></tr>`).join("")}</tbody></table></div></div></section>`; }
-function renderReports() { const tabs = [["daily", "Cierre diario"], ["personal", "Estado personal"], ["daily-movements", "Movimientos del día"], ["race-history", "Carreras y resultados"], ["week", "Semana anterior"], ["balances", "Disponibles"], ["movements", "Movimientos"], ["audit", "Auditoría"]]; return `<section class="more-dashboard"><button data-view="advanced">${icon("plus")}<span>Adelantadas</span></button><button data-view="history">${icon("report")}<span>Historial</span></button><button data-view="polla">${icon("check")}<span>POLLA</span></button><button data-view="settings">${icon("settings")}<span>Configuración</span></button><button data-action="toggle-theme">${icon(workspace.config.theme === "dark" ? "sun" : "moon")}<span>Modo ${workspace.config.theme === "dark" ? "claro" : "oscuro"}</span></button><button class="is-danger" data-action="logout">${icon("logout")}<span>Cerrar sesión</span></button></section><section class="page-head"><div><h2>Cierres y saldos</h2><p>${escapeHtml(activeCompany())} · control diario y semanal.</p></div><div class="page-actions"><button class="button" data-action="new-movement">Movimiento</button><button class="button button--primary" data-action="close-day">Cerrar jornada</button></div></section><div class="tabs tabs--scroll">${tabs.map(([id, l]) => `<button class="tab ${reportTab === id ? "is-active" : ""}" data-report-tab="${id}">${l}</button>`).join("")}</div><div class="section-gap">${reportTab === "week" ? renderWeek() : reportTab === "balances" ? renderBalances() : reportTab === "movements" ? renderMovements() : reportTab === "audit" ? renderAudit() : ["personal", "daily-movements", "race-history"].includes(reportTab) ? renderInternalReferenceReport() : renderDaily()}</div>`; }
+function renderReports() { const tabs = [["daily", "Cierre diario"], ["personal", "Estado personal"], ["consolidator", "Consolidador"], ["daily-movements", "Movimientos del día"], ["race-history", "Carreras y resultados"], ["week", "Semana anterior"], ["balances", "Disponibles"], ["movements", "Movimientos"], ["audit", "Auditoría"]]; return `<section class="more-dashboard"><button data-view="advanced">${icon("plus")}<span>Adelantadas</span></button><button data-view="history">${icon("report")}<span>Historial</span></button><button data-view="polla">${icon("check")}<span>POLLA</span></button><button data-view="settings">${icon("settings")}<span>Configuración</span></button><button data-action="toggle-theme">${icon(workspace.config.theme === "dark" ? "sun" : "moon")}<span>Modo ${workspace.config.theme === "dark" ? "claro" : "oscuro"}</span></button><button class="is-danger" data-action="logout">${icon("logout")}<span>Cerrar sesión</span></button></section><section class="page-head"><div><h2>Cierres y saldos</h2><p>${escapeHtml(activeCompany())} · control diario y semanal.</p></div><div class="page-actions"><button class="button" data-action="new-movement">Movimiento</button><button class="button button--primary" data-action="close-day">Cerrar jornada</button></div></section><div class="tabs tabs--scroll">${tabs.map(([id, l]) => `<button class="tab ${reportTab === id ? "is-active" : ""}" data-report-tab="${id}">${l}</button>`).join("")}</div><div class="section-gap">${reportTab === "week" ? renderWeek() : reportTab === "balances" ? renderBalances() : reportTab === "movements" ? renderMovements() : reportTab === "audit" ? renderAudit() : reportTab === "consolidator" ? renderInternalConsolidator() : ["personal", "daily-movements", "race-history"].includes(reportTab) ? renderInternalReferenceReport() : renderDaily()}</div>`; }
 function referenceReportFilter() {
   // Source is the operator's already-unlocked workspace, never a URL token.
   const groupId = activeGroupId();
@@ -629,6 +633,17 @@ function referenceReportFilter() {
   );
   const member = members.find((p) => p.id === referenceReportParticipantId) || members[0];
   return { type: reportTab, date: referenceReportDate, groupId, participantId: member?.id || "" };
+}
+function currentConsolidator() {
+  return projectConsolidatedBalances(workspace, {
+    ...consolidatedFilters,
+    groupId: activeGroupId(),
+    date: referenceReportDate
+  });
+}
+function renderInternalConsolidator() {
+  try { return renderConsolidator(currentConsolidator(), referenceReportRefresh); }
+  catch (error) { return '<section class="notice" role="alert">No se puede calcular el consolidador: ' + escapeHtml(error.message) + '</section>'; }
 }
 function renderInternalReferenceReport() {
   const filter = referenceReportFilter();
@@ -711,7 +726,7 @@ root.addEventListener("click", async (event) => {
         }
         if (action === "reference-report-refresh") {
             if (referenceReportRefresh.busy) return;
-            const input = root.querySelector("#reference-report-date");
+            const input = root.querySelector("#reference-report-date, #hc-cons-date");
             if (input?.value) referenceReportDate = assertReportDate(input.value);
             referenceReportRefresh.busy = true;
             referenceReportRefresh.status = "Consultando los datos disponibles…";
@@ -748,6 +763,48 @@ root.addEventListener("click", async (event) => {
             } finally {
                 referenceReportRefresh.busy = false;
                 render();
+            }
+            return;
+        }
+        if (action === "consolidator-today") {
+            referenceReportDate = caracasToday();
+            consolidatedFilters.page = 1;
+            referenceReportRefresh.checkedAt = null;
+            render();
+            return;
+        }
+        if (action === "consolidator-clear") {
+            consolidatedFilters = consolidateFilterDefaults();
+            referenceReportRefresh.checkedAt = null;
+            render();
+            return;
+        }
+        if (action === "consolidator-page") {
+            const page = Number(el.dataset.page);
+            if (!Number.isSafeInteger(page) || page < 1 || page > currentConsolidator().pages) return;
+            consolidatedFilters.page = page;
+            render();
+            return;
+        }
+        if (action === "consolidator-move-column") {
+            const step = Number(el.dataset.step);
+            consolidatedFilters.columnOrder = moveConsolidatorColumn(
+                consolidatedFilters.columnOrder, String(el.dataset.id || ""), step);
+            render();
+            return;
+        }
+        if (["consolidator-copy","consolidator-xlsx","consolidator-pdf","consolidator-png"].includes(action)) {
+            const model = currentConsolidator();
+            const safeName = String(model.groupId).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 70);
+            const stem = "hipico-consolidado-" + safeName + "-" + model.date + "-p" + model.page;
+            if (action === "consolidator-copy") {
+                await copyText(consolidatedVisibleText(model), "Página del consolidador copiada para Excel.");
+            } else if (action === "consolidator-xlsx") {
+                downloadXlsx(stem + ".xlsx", [{name:"Consolidado",rows:consolidatedVisibleMatrix(model)}]);
+            } else if (action === "consolidator-pdf") {
+                downloadPdf(stem + ".pdf", "Control Hípico · Consolidador", consolidatedVisiblePdfLines(model));
+            } else {
+                downloadBlob(stem + ".png", await consolidatedPngBlob(model));
             }
             return;
         }
@@ -1178,6 +1235,23 @@ root.addEventListener("submit", async (event) => {
     const formId = form.getAttribute("id");
     const data = new FormData(form);
     try {
+        if (formId === "consolidator-filter-form") {
+            const nextDate = assertReportDate(String(data.get("date") || ""));
+            if (nextDate !== referenceReportDate) referenceReportRefresh.checkedAt = null;
+            referenceReportDate = nextDate;
+            consolidatedFilters = {
+                ...consolidatedFilters,
+                search: String(data.get("search") || ""),
+                signColumn: String(data.get("signColumn") || "available"),
+                sign: String(data.get("sign") || "all"),
+                sortColumn: String(data.get("sortColumn") || "participant"),
+                sortDirection: String(data.get("sortDirection") || "asc"),
+                hideInactive: data.has("hideInactive"),
+                page: 1
+            };
+            render();
+            return;
+        }
         if (formId === "reference-report-filter-form") {
             const selectedReportDate = assertReportDate(String(data.get("date") || ""));
             if (selectedReportDate !== referenceReportDate) referenceReportRefresh.checkedAt = null;
