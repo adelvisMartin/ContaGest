@@ -204,7 +204,7 @@ test('offline precache and Android packaging require all three read-only modules
   const sw=read('frontend/public/hipico-control/sw.js');
   const android=read('android/hipico-control-v1130/scripts/sync-web.mjs');
   const app=read('frontend/public/hipico-control/assets/js/app.js');
-  assert.match(sw,/shell-r37-operations-desk-v4-1-3/);
+  assert.match(sw,/shell-r38-consolidator-v4-1-3/);
   for(const name of ['reference-report-operations.js','reference-report-projections.js','reference-report-ui.js']){
     assert.ok(sw.includes("'./assets/js/"+name+"'"),name+' missing PWA cache');
     assert.ok(android.includes("'assets/js/"+name+"'"),name+' missing Android parity');
