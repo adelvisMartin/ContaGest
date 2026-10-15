@@ -142,3 +142,52 @@ cookies/CSRF, permissions and cross-tenant responses in a real HTTP stack
 with an isolated DB and verify race/duplicate behavior under concurrent
 creates. No DB migrations, new UI route, secondary customer master,
 local data sync or automatic quote generation were introduced.
+
+## 2026-10-15 · Primera persistencia funcional de leads (slice #760)
+
+The initial CRM lead capture/list endpoint is **`POST/GET /api/v1/modules/crm/leads`**.
+It is mounted under the existing `modules` router without adding a 52nd route
+to the architecture manifest. Permissions differ by method: `sales.manage`
+for creation and `sales.view` for a paginated list; both require server-verified
+tenant. Creation additionally requires a signed actor ID in requestContext.
+
+To avoid an unsafe, unverified Prisma migration while existing PostgreSQL is
+unavailable in this execution, lead drafts temporarily use the already deployed
+`ModuleRecord` model with a single reserved `moduleSlug='crm-leads'`. The record
+contains **prospect data only**, not a second Client/customer authority.
+Creation and its privacy-minimal `AuditLog` entry run inside the same Prisma
+`$transaction` callback; a failed audit aborts the lead write. Tenant and
+actor fields are server-owned; request schemas are strict and accept only
+name, RIF/email, phone, notes and optional nextActionAt.
+
+Queries filter `tenantId` and exact moduleSlug in Prisma, exclude archived
+records, sort deterministically and allow 1–100 rows per page, with bounded
+skip. The helper rejects leaked rows from a broken reader before serializing.
+Responses set `Cache-Control: private, no-store`. Invalid client identity is
+rejected, but email-only leads are permitted as unconverted prospects.
+
+**Limits/DoD:** this is working CRUD only for lead CREATE/LIST; it does not
+provide lead update/delete, opportunity lifecycle, pipeline metrics, Client
+conversion, quote #753, import/export, activity timeline, UI or production
+QA. Generic ModuleRecord payload is a transitional single lead authority,
+not a replacement for the future dedicated tenant-first schema, explicit
+indexes, unique event constraints and PostgreSQL idempotency. Each POST requires an **`Idempotency-Key` UUIDv4**: a deterministic SHA-256-derived
+UUIDv5-shaped primary key is scoped to the tenant and stored in the existing
+`ModuleRecord.id`. Concurrent or repeated requests with the same key cannot
+create two leads (database PK); Prisma unique conflicts return HTTP **409**.
+A retry with a new key may still create a second prospect: this is request
+idempotency, **not** semantic customer de-duplication. The generic module
+record endpoint does not accept this slug; the CRM route owns its data.
+Clients continue to be mastered exclusively in `Client`; no conversion or
+automatic customer write is attempted.
+
+Test from repository root: `node --test tests/crm_lead_capture_v760.test.mjs`
+(also included in backend `npm test`). Isolated fake transaction tests
+characterize atomic audit, tenant/actor scope, validation, bounded query and
+route contracts, not real DB/HTTP operation. Before the lead API can be
+certified for production, execute full backend TypeScript build and a
+PostgreSQL 17 transaction/rollback + RLS isolation drill with real signed
+sessions and HTTP permissions. Run Playwright after adding a CRM page.
+Rollback is source-only as there is no migration, but any real
+`crm-leads` ModuleRecords created while deployed must be preserved and
+reconciled during a later dedicated-schema migration.
