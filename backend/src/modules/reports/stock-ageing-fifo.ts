@@ -1,3 +1,4 @@
+import { projectConfigurableAgeBuckets, type AgeCutoffs } from './configurable-ageing.js';
 /**
  * Read-only, FIFO-assumed cohort ageing over complete physical movement history.
  * This is NOT actual lot allocation or a financial inventory-valuation model.
@@ -45,6 +46,7 @@ export function calculateStockAgeing(input: {
   movements: readonly AgeingMovement[];
   stockExact: DecimalText;
   asOf: Date;
+  bucketCutoffs?: AgeCutoffs | null;
 }) {
   const snapshot = input.asOf.getTime();
   if (!Number.isFinite(snapshot) || input.movements.length > STOCK_AGEING_MAX_MOVEMENTS) {
@@ -111,6 +113,7 @@ export function calculateStockAgeing(input: {
     stockExact: formatted(onHand),
     movementCount: input.movements.length,
     activeCohortCount: activeCohorts.length,
+    ...(input.bucketCutoffs ? { customBuckets: projectConfigurableAgeBuckets(activeCohorts, input.asOf, input.bucketCutoffs) } : {}),
     buckets: {
       day0to30Exact: formatted(buckets[0]),
       day31to90Exact: formatted(buckets[1]),

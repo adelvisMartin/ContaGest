@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
+import { expensiveOperationRateLimit } from '../../shared/middleware/security.js';
 import { canonicalClientPreflight } from './client-match-preflight.mjs';
 
 const router = Router();
@@ -13,7 +14,7 @@ const preflightSchema = z.object({
   email: z.string().trim().email().max(254).optional()
 }).strict().refine(input => !!input.rif || !!input.email);
 
-router.post('/preflight', asyncHandler(async (req, res) => {
+router.post('/preflight', expensiveOperationRateLimit, asyncHandler(async (req, res) => {
   // Even review-only preflight reveals Client identifiers: never cache responses.
   res.setHeader('Cache-Control', 'private, no-store');
   const parsed = preflightSchema.safeParse(req.body);

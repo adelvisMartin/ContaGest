@@ -92,3 +92,25 @@ Prisma/PG constraints, RBAC or a real end-to-end session/HTTP/DB test.
 
 Rollback is a source-only revert of the helper, domain verdict, route header,
 and regression updates. Ticket #760 stays open until transactional CRM and UI.
+
+## 2026-10-15 · Canonical Client preflight query budget (increment #760)
+
+The sensitive `POST /api/v1/clients/preflight` now reuses the **existing**
+`expensiveOperationRateLimit` from the core security middleware, in addition
+to the application's global and mutation limits. The shared operation gate
+currently enforces 12 requests/min in production and 60/min in non-production
+per middleware key (IP by default); this is a local process/window throttle,
+**not** a distributed tenant quota, durable anti-abuse ledger, or user permission.
+The existing `requireTenant` and `clients.manage` license/RBAC gate executes
+first, so unauthorized requests never reach the preflight-specific budget.
+Only the `/preflight` POST subroute consumes this additional tier: ordinary
+`Client` CRUD remains on the existing canonical limits. `Cache-Control:
+private, no-store` and `reviewOnly:true` / `conversionAuthorized:false` are
+unchanged. This addition performs no new Client writes or queries.
+
+Regression: `node --test tests/crm_client_preflight_v760.test.mjs` covers the
+exact middleware import, routing order, one preflight mount, no accidental
+router-wide limiter, and continued `no-store`. Source contract coverage
+is not a real HTTP burst test: full app + security/session + PostgreSQL 17
++ distributed rate-limit behavior need integration acceptance before a
+production-complete CRM verdict. No new packages, workflows or env secrets.
