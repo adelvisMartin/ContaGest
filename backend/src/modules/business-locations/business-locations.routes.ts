@@ -5,6 +5,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { resolveLocalWallClock, WallClockError } from '../scheduling/wall-clock.js';
 import { assertIanaTimezone, normalizeBusinessLocationCode, normalizeOptionalContact } from './business-location.policy.js';
 
 const router=Router();
@@ -24,6 +25,10 @@ const updateSchema=z.object({
   phone:z.string().max(80).optional().nullable(),
   email:z.string().email().max(160).optional().nullable(),
   confirmTimezoneChange:z.boolean().optional()
+}).strict();
+const resolveTimeQuerySchema=z.object({
+  localDateTime:z.string().min(16).max(19),
+  disambiguation:z.enum(['reject','earlier','later']).optional()
 }).strict();
 const listStatuses=new Set(['active','inactive','closed']);
 
@@ -58,6 +63,22 @@ router.get('/',asyncHandler(async(req,res)=>{
 }));
 
 router.get('/:id',asyncHandler(async(req,res)=>ok(res,await getOwned(context(req).tenantId,req.params.id))));
+
+// Read-only preview. Booking writers must revalidate slots/resources atomically in PostgreSQL.
+// Location/timezone come exclusively from tenant-owned server data, never from the query.
+router.get('/:id/time/resolve',asyncHandler(async(req,res)=>{
+  const {localDateTime,disambiguation}=resolveTimeQuerySchema.parse(req.query);
+  const location=await getOwned(context(req).tenantId,req.params.id);
+  try {
+    ok(res,resolveLocalWallClock({timezone:location.timezone,localDateTime,disambiguation}));
+  } catch (error) {
+    if (error instanceof WallClockError) {
+      const conflict=error.code==='SCHEDULING_LOCAL_TIME_NONEXISTENT'||error.code==='SCHEDULING_LOCAL_TIME_AMBIGUOUS';
+      throw new HttpError(conflict?409:400,conflict?'Hora local no disponible o ambigua.':'Fecha u hora local inválida.',{code: error.code});
+    }
+    throw error;
+  }
+}));
 
 router.post('/',requirePermission('admin.manage'),validateBody(createSchema),asyncHandler(async(req,res)=>{
   const ctx=context(req);
