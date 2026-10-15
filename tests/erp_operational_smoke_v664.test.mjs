@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  assertSmokeEnvironment, buildSmokeSteps, isolatedSmokeEnvironment
+  assertSmokeEnvironment, buildSmokeSteps, isolatedSmokeEnvironment, runOperationalSmoke
 } from '../scripts/erp-operational-smoke-v664.mjs';
 
 const SHA = 'a'.repeat(40);
@@ -58,4 +58,17 @@ test('#664 child environment uses only disposable DB and removes remote provider
   assert.match(child.LICENSE_HASH_SECRET, /^[0-9a-f]{64}$/);
   assert.notEqual(child.JWT_SECRET, child.LICENSE_HASH_SECRET);
   assert.equal(original.DATABASE_URL.includes('production.invalid'), true, 'source config must not be mutated');
+});
+
+test('#664 missing local PostgreSQL or Hípico URL cannot yield fake PASS', async () => {
+  const absentPg = await runOperationalSmoke({ env: {}, candidateSha: SHA, erpOnly: true });
+  assert.equal(absentPg.status, 'BLOCKED');
+  assert.deepEqual(absentPg.stages.map(x => x.status), ['BLOCKED']);
+  assert.equal(absentPg.stages[0].code, 'SMOKE_LOCAL_POSTGRES_ADMIN_REQUIRED');
+
+  const absentHipico = await runOperationalSmoke({
+    env: { LOCAL_VERIFY_DATABASE_ADMIN_URL: ADMIN }, candidateSha: SHA
+  });
+  assert.equal(absentHipico.status, 'BLOCKED');
+  assert.equal(absentHipico.stages[0].code, 'SMOKE_HIPICO_BASE_URL_REQUIRED');
 });
