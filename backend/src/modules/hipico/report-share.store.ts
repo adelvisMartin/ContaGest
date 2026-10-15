@@ -1,4 +1,5 @@
 import { prisma } from '../../database/prisma.js';
+import type { Prisma } from '@prisma/client';
 import {
   createReportToken, dateWindowCaracas, expiryDate, hashReportToken, shareAllowed
 } from './report-share-policy.js';
@@ -14,7 +15,7 @@ type LedgerRow = {
 };
 type BalanceRow = { participantCode: string; currency: string; amountMinor: string };
 
-async function ownerTransaction<T>(ownerId: string, fn: (tx: any) => Promise<T>): Promise<T> {
+async function ownerTransaction<T>(ownerId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('hipico.report_owner_id', ${ownerId}, true)`;
     return fn(tx);
