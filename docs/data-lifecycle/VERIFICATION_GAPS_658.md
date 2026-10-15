@@ -38,14 +38,18 @@ inventario de objetos huérfanos, exportaciones y restauración.
 
 ### Riesgos para investigar (no afirmar como explotación probada)
 
-- `executePurgeBatch` adquiere el lock de `resumeLifecycleJob` dentro de una
-  transacción que finaliza antes del borrado y la persistencia de evidencia.
-  Caracterizar con pruebas simultáneas y fallos inducidos antes de modificar
-  transacciones, leases o locks.
-- El DELETE, la fila de evidencia y el estado del job se realizan en
-  operaciones independientes. Verificar recuperación ante interrupciones
-  después de DELETE y antes de escribir evidencia para impedir pérdida de
-  trazabilidad por una falla parcial.
+- **Corrección candidata #658:** `executePurgeBatch` ahora exige el lock
+  PostgreSQL del job y el advisory lock tenant-scoped dentro de la **misma
+  transacción** que elimina, escribe evidencia hash y actualiza cursor/estado.
+  `createLegalHold` usa el mismo lock para no insertar un hold entre la
+  evaluación de política y el commit destructivo. Los errores del job guardan
+  códigos acotados, no textos crudos de PostgreSQL.
+- **Regresiones candidatas #658:** test PG17 con dos workers concurrentes,
+  inyección de excepción en `DataLifecycleEvidence` después del DELETE (rollback
+  atómico), reintento, aislamiento A/B, conflicto de idempotencia y legal hold
+  posterior al claim. **No afirmar PASS hasta obtener resultado del workflow
+  del SHA exacto**. Aún debe verificarse timing de holds, más de un job en paralelo
+  y restart/restore en el entorno operativo real.
 - El API tenant-export actual devuelve un **manifiesto de conteos**, no una
   exportación de payload; no presentarlo como portabilidad completa.
 
