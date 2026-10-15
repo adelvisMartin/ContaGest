@@ -62,6 +62,15 @@ export type StorageObjectRow = {
 
 const PROTECTED_ENTITIES = new Set(['AuditLog', 'LedgerEntry', 'FiscalDocument', 'FiscalCloseEvidence', 'ClinicalMediaObject', 'CarePatient']);
 const PURGE_ADAPTER_ENTITIES = new Set(['AnalyticsEvent', 'ImportBatch', 'NotificationLog', 'AddressGeocode']);
+// Fail closed before a destructive SQL statement. PostgreSQL LIMIT must never
+// receive NaN/fractions/unsafe numbers, even if a caller bypasses HTTP validation.
+function normalizePurgeBatchSize(value: number | undefined): number {
+  if (value === undefined) return 250;
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new HttpError(422, 'batchSize de purge debe ser un entero positivo.', { code: 'PURGE_BATCH_SIZE_INVALID' });
+  }
+  return Math.min(value, 1000);
+}
 
 function canonicalize(value: unknown): unknown {
   if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return value;
@@ -332,7 +341,7 @@ export async function requestPurgeJob(input: {
     throw new HttpError(422, 'La política vigente no autoriza purge o no define retentionDays.', { code: 'RETENTION_NOT_CONFIGURED', entityType: input.entityType });
   }
   await assertNoLegalHold(input.tenantId, input.entityType);
-  const batchSize = Math.min(Math.max(Number(input.batchSize || 250), 1), 1000);
+  const batchSize = normalizePurgeBatchSize(input.batchSize);
   return claimLifecycleJob({
     tenantId: input.tenantId,
     operation: 'purge',
@@ -435,7 +444,7 @@ async function persistLifecycleEvidence(tx: Prisma.TransactionClient, input: {
 export async function executePurgeBatch(input: { tenantId: string; jobId: string; batchSize?: number }) {
   // A transaction is the deletion authority: DELETE, hashed evidence and
   // job progress either all commit, or none of them do.
-  const batchSize = Math.min(Math.max(Number(input.batchSize || 250), 1), 1000);
+  const batchSize = normalizePurgeBatchSize(input.batchSize);
   let executionAuthorized = false;
   let observedAttempts: number | null = null;
   try {
