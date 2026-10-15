@@ -55,7 +55,7 @@ test('backend, QA, review and Hípico specialist routing is active and risk-boun
   const qa=routeTask({risk:'P2',type:'audit',domains:['qa']});
   assert.ok(qa.agents.includes('ci-triage'));
   assert.ok(qa.skills.includes('contagest-ci-triage'));
-  const arch=routeTask({risk:'P2',type:'refactor',domains:['architecture']});
+  const arch=routeTask({risk:'P2',type:'refactor',domains:['architecture'],intents:['code-review']});
   assert.ok(arch.skills.includes('contagest-code-review-quality'));
   const lab=routeTask({risk:'P1',type:'feature',domains:['hipico']});
   assert.ok(lab.agents.includes('hipico-lab-operations'));
