@@ -299,3 +299,9 @@ Red-team review is independent and non-destructive.
 - never claim legal/SENIAT/clinical compliance without professional scope and evidence.
 
 Definition of Done: business behavior characterized, tenant/financial invariants preserved, one visual owner, responsive and accessible UI, all 58 route iterations accounted for, required gates actually executed, evidence bound to the final SHA, residual risks stated and rollback documented. Provider-blocked evidence remains separate and never upgrades itself to PASS.
+
+## Optional agent context helpers (developer workflow only)
+
+For ticket continuation across Codex/ChatGPT windows, follow `.agents/skills/codex-project-memory/SKILL.md`; for large developer-tool summaries use `.agents/skills/headroom/SKILL.md`; for reviewed post-task skill-improvement proposals use `.agents/skills/task-observer/SKILL.md`. Read `docs/AGENT_CONTEXT_TOOLING_REVIEW_2026-10-14.md` for provenance and constraints.
+
+These are **advisory process helpers**, not new domain authority or mandatory v3 ACTIVE skill slots. Do not replace 2–4 routed domain/risk skills; do not enable external hooks, memory daemons or transparent compression proxies; do not automatically capture conversation/tenant/financial/clinical/WhatsApp payloads. Raw exact-SHA CI, security and release evidence remains complete and authoritative. Parallel windows use separate branch/issue ownership and handoffs; live GitHub state always wins over remembered notes.
