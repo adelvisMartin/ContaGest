@@ -35,11 +35,11 @@ For a **focused ERP-only** verification, use `node scripts/erp-operational-smoke
 
 1. Fail closed on stale/dirty SHA, production environment, remote PostgreSQL, wrong admin DB or server version other than PostgreSQL 17.
 2. Create an ephemeral local PostgreSQL database using #630; strip remote DB/provider credentials, override runtime/direct DB URLs, and generate fresh local signing secrets.
-3. Generate Prisma, deploy **existing** migrations (no reset or forced migration), seed QA-only actors, and apply canonical RLS.
+3. Generate Prisma; run the canonical **from-zero migration chain** (#626), which prepares the supported historical baseline before deploying existing migrations on the disposable database; seed QA-only actors and apply canonical RLS.
 4. Execute `qa/erp-operational-financial-v664.test.ts`: real backend liveness/readiness **exact-SHA**, authenticated tenant-scoped trial-balance read, unauthorized negative, deliberately unbalanced posting rejected with 422 and ledger unchanged.
 5. Execute `scripts/erp-real-browser-postgres-v5875.mjs`: start the actual backend plus Playwright Chromium frontend; login with cookies, cross-tenant denial and UI create/read/persistence checks across dental, vet and gym. Fixtures are run-prefixed and cleaned by the existing #58/75 runner.
-6. After the PostgreSQL database has been dropped, run `runHipicoSmoke()`: read-only GET of Hípico bounded status and actual PWA entrypoint; **no** WhatsApp sending, provider writes or financial mutation.
-7. Store stage statuses, exact candidate SHA and elapsed time under `artifacts/operational-smoke/<SHA>/report.json`. **No credentials, PII or database URL** belong in the report.
+7. After the PostgreSQL database has been dropped, run `runHipicoSmoke()`: read-only GET of Hípico bounded status and actual PWA entrypoint; **no** WhatsApp sending, provider writes or financial mutation.
+8. Store stage statuses, exact candidate SHA and elapsed time under `artifacts/operational-smoke/<SHA>/report.json`. **No credentials, PII or database URL** belong in the report.
 
 All mandatory stages fail closed. `FAIL`, `BLOCKED` and `NOT_EXECUTED` are never reported as `PASS`. Provider CI/deploy and **manual QA** are separately `NOT_EXECUTED` unless separately evidenced.
 
@@ -51,7 +51,7 @@ node --test tests/erp_operational_smoke_v664.test.mjs
 node scripts/erp-operational-smoke-v664.mjs
 ```
 
-The focused Node test checks unsafe PostgreSQL targets, exact-SHA guards, no hidden skips/forced commands and remote credential removal. The real integration test and Chromium are executed only by the full runner on PostgreSQL 17, **not** by the pure Node contract test.
+The focused Node test checks unsafe PostgreSQL targets, exact-SHA guards, no hidden skips/forced commands and remote credential removal. The dedicated workflow \`operational-smoke-v664.yml\` runs this contract plus a PostgreSQL 17/Chromium **ERP-only** execution on an exact candidate SHA; the combined Hípico check remains a distinct prerequisite. The real integration test and Chromium are executed only by the full runner on PostgreSQL 17, **not** by the pure Node contract test.
 
 ## Limitations / follow-ups
 
