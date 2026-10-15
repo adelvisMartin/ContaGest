@@ -143,3 +143,15 @@ test('preflight HTTP verdict disables intermediary and private-browser caching',
  const route=fs.readFileSync(new URL('../backend/src/modules/crm/crm.routes.ts',import.meta.url),'utf8');
  assert.match(route,/res\.setHeader\('Cache-Control', 'private, no-store'\)/);
 });
+
+
+test('sensitive CRM preflight reuses the central expensive rate limiter after RBAC',()=>{
+ const route=fs.readFileSync(new URL('../backend/src/modules/crm/crm.routes.ts',import.meta.url),'utf8');
+ assert.match(route,/import \{ expensiveOperationRateLimit \} from '\.\.\/\.\.\/shared\/middleware\/security\.js';/);
+ const auth=route.indexOf("router.use(requireTenant, requirePermission('clients.manage'))");
+ const preflight=route.indexOf("router.post('/preflight', expensiveOperationRateLimit, asyncHandler(");
+ assert.ok(auth>=0 && preflight>auth, 'tenant and RBAC middleware must precede preflight limiter');
+ assert.equal((route.match(/router\.post\('\/preflight'/g)||[]).length,1);
+ assert.doesNotMatch(route,/router\.use\(expensiveOperationRateLimit\)/);
+ assert.match(route,/res\.setHeader\('Cache-Control', 'private, no-store'\)/);
+});
