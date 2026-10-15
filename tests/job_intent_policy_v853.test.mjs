@@ -189,3 +189,18 @@ test('atomic enqueue requires trusted, versioned handler allowlist before databa
   assert.ok(enqueue.indexOf('assertApprovedAsyncJobHandler(') < enqueue.indexOf('tx.$queryRaw'));
   assert.match(code, /from '\.\/async-handler-registry\.js'/);
 });
+
+test('failure persistence depends on central safe classification', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  const start = code.indexOf('export async function failClaimedAsyncJob(');
+  const end = code.indexOf('// Heartbeat is a fenced', start);
+  assert.ok(start > 0 && end > start);
+  const failure = code.slice(start, end);
+  assert.ok(failure.includes('failure: unknown; idempotentRetryVerified: boolean;'));
+  assert.ok(failure.includes('classifyAsyncJobFailure(failure, { idempotentRetryVerified })'));
+  assert.ok(failure.includes('retryable:failureDecision.retryable'));
+  assert.ok(failure.includes('"lastErrorCode"=${failureDecision.safeErrorCode}'));
+  assert.ok(failure.indexOf('classifyAsyncJobFailure(') < failure.indexOf('tx.$queryRaw'));
+  assert.ok(!failure.includes('retryable: boolean; safeErrorCode: string;'));
+  assert.ok(code.includes("from './async-failure-policy.js'"));
+});
