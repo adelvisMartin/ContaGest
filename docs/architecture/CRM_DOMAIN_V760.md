@@ -1,6 +1,6 @@
 # #760 CRM — Domain integrity foundation (partial implementation)
 
-**Status:** implementation increment, not a deployed CRM. **SOURCE_REUSE=NONE**. Existing `Client` is the only canonical customer master; `SalesQuote` / #753 remain the sales contract authorities. No new tables, endpoints, routes, migrations, seed data, fiscal/accounting logic or application UI are introduced here.
+**Status:** implementation increment, not a deployed CRM. **SOURCE_REUSE=NONE**. Existing `Client` is the only canonical customer master; the future quote lifecycle belongs to ticket #753 and is not implemented by this increment. No new tables, endpoints, routes, migrations, seed data, fiscal/accounting logic or application UI are introduced here.
 
 ## Implemented source contract
 
