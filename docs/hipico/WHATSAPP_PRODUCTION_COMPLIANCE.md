@@ -3,6 +3,8 @@
 **Revisión:** 2026-09-29  
 **Decisión actual:** **NO-GO para escritura automatizada al grupo real SOURCE**.
 
+> **Revalidación 2026-10-15 (#1011):** [matriz oficial por caso de uso y estado de verificación](WHATSAPP_ELIGIBILITY_REVIEW_2026-10-15.md). El NO-GO permanece vigente. Los requisitos de Groups API y la elegibilidad de la cuenta/grupo no se han verificado; no considerar la existencia de una API como autorización de apuestas ni de envío al grupo real. Esta revisión añade transparencia, no permisos de escritura.
+
 ## Qué está demostrado
 
 La revisión fue renovada después de la entrada en vigencia de los términos anunciados para el 2026-09-23. Las fuentes oficiales vigentes de WhatsApp/Meta continúan tratando los servicios de apuestas/juegos de azar con dinero real como una categoría restringida/prohibida para el uso comercial automatizado aplicable a este caso.
