@@ -36,12 +36,12 @@ export async function claimDueAsyncJobs(tx: Prisma.TransactionClient, input: {
 }) {
   const { tenantId, workerId, now, leaseSeconds, limit } = input;
   if (!/^[0-9a-f-]{36}$/i.test(tenantId)) throw new Error('JOB_TENANT_INVALID');
-  if (!/^[a-zA-Z0-9:_-]{1,160}$/.test(workerId)) throw new Error('JOB_WORKER_INVALID');
+  if (!/^[a-zA-Z0-9:_-]{1,120}$/.test(workerId)) throw new Error('JOB_WORKER_INVALID');
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new Error('JOB_CLOCK_INVALID');
   if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 15 || leaseSeconds > 900) throw new Error('JOB_LEASE_INVALID');
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 25) throw new Error('JOB_BATCH_INVALID');
   const leaseUntil = new Date(now.getTime() + leaseSeconds * 1000);
-  return tx.$queryRaw<Array<{id: string; handlerKey: string; payload: unknown; attempts: number; maxAttempts: number}>>(Prisma.sql`
+  return tx.$queryRaw<Array<{id: string; handlerKey: string; payload: unknown; attempts: number; maxAttempts: number; leaseOwner: string}>>(Prisma.sql`
     WITH due AS (
       SELECT "id" FROM public."AsyncJobIntent"
       WHERE "tenantId" = ${tenantId}
@@ -52,22 +52,23 @@ export async function claimDueAsyncJobs(tx: Prisma.TransactionClient, input: {
       FOR UPDATE SKIP LOCKED LIMIT ${limit}
     )
     UPDATE public."AsyncJobIntent" AS j
-    SET "status"='running', "leaseOwner"=${workerId}, "leaseUntil"=${leaseUntil},
+    SET "status"='running', "leaseOwner"=${workerId} || ':' || gen_random_uuid()::text, "leaseUntil"=${leaseUntil},
         "attempts"=j."attempts"+1, "updatedAt"=${now}
     FROM due WHERE j."id"=due."id" AND j."tenantId"=${tenantId}
-    RETURNING j."id", j."handlerKey", j."payload", j."attempts", j."maxAttempts"
+    RETURNING j."id", j."handlerKey", j."payload", j."attempts", j."maxAttempts", j."leaseOwner"
   `);
 }
 
 export async function completeClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
-  tenantId: string; id: string; workerId: string; now: Date;
+  tenantId: string; id: string; leaseToken: string; now: Date;
 }) {
-  const { tenantId, id, workerId, now } = input;
+  const { tenantId, id, leaseToken, now } = input;
+  if (!/^[a-zA-Z0-9:_-]{1,120}:[0-9a-f-]{36}$/.test(leaseToken)) throw new Error('JOB_LEASE_TOKEN_INVALID');
   const rows = await tx.$queryRaw<Array<{id: string}>>(Prisma.sql`
     UPDATE public."AsyncJobIntent"
     SET "status"='completed', "leaseOwner"=NULL, "leaseUntil"=NULL, "updatedAt"=${now}
     WHERE "tenantId" = ${tenantId} AND "id" = ${id}
-      AND "status"='running' AND "leaseOwner" = ${workerId} AND "leaseUntil" > ${now}
+      AND "status"='running' AND "leaseOwner" = ${leaseToken} AND "leaseUntil" > ${now}
     RETURNING "id"
   `);
   if (rows.length !== 1) throw new Error('ASYNC_JOB_LEASE_LOST');
@@ -75,10 +76,11 @@ export async function completeClaimedAsyncJob(tx: Prisma.TransactionClient, inpu
 }
 
 export async function failClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
-  tenantId: string; id: string; workerId: string; now: Date;
+  tenantId: string; id: string; leaseToken: string; now: Date;
   attempts: number; maxAttempts: number; retryable: boolean; safeErrorCode: string;
 }) {
-  const { tenantId, id, workerId, now, attempts, maxAttempts, retryable, safeErrorCode } = input;
+  const { tenantId, id, leaseToken, now, attempts, maxAttempts, retryable, safeErrorCode } = input;
+  if (!/^[a-zA-Z0-9:_-]{1,120}:[0-9a-f-]{36}$/.test(leaseToken)) throw new Error('JOB_LEASE_TOKEN_INVALID');
   if (!/^[A-Z0-9_]{1,100}$/.test(safeErrorCode)) throw new Error('JOB_ERROR_CODE_INVALID');
   const decision = planAsyncJobFailure({attempts,maxAttempts,retryable,now});
   const rows = await tx.$queryRaw<Array<{id: string; status: string}>>(Prisma.sql`
@@ -86,7 +88,7 @@ export async function failClaimedAsyncJob(tx: Prisma.TransactionClient, input: {
     SET "status"=${decision.status}, "runAt"=COALESCE(${decision.runAt}, "runAt"),
         "leaseOwner"=NULL, "leaseUntil"=NULL, "lastErrorCode"=${safeErrorCode}, "updatedAt"=${now}
     WHERE "tenantId"=${tenantId} AND "id"=${id}
-      AND "status"='running' AND "leaseOwner"=${workerId} AND "leaseUntil">${now}
+      AND "status"='running' AND "leaseOwner"=${leaseToken} AND "leaseUntil">${now}
       AND "attempts"=${attempts} AND "maxAttempts"=${maxAttempts}
     RETURNING "id", "status"
   `);
