@@ -118,6 +118,24 @@ export function projectConsolidatedBalances(workspace,options={}) {
   const groupParticipants=scopeItems(workspace,workspace?.participants||[],groupId);
   const raceList=scopeItems(workspace,workspace?.races||[],groupId);
   const moved=scopeItems(workspace,workspace?.movements||[],groupId);
+  const memberIds=new Set(groupParticipants.map(p=>String(p.id)));
+  const everyMemberId=(workspace.participants||[]).map(p=>String(p.id));
+  if(new Set(everyMemberId).size!==everyMemberId.length)
+    throw new Error('Existen IDs de participante repetidos entre grupos. Corrige antes de consolidar.');
+  // The historical balance replays ALL rows through the cutoff; validating
+  // only the selected day would silently incorporate foreign-group old money.
+  for(const race of raceList.filter(r=>String(r.date||'')<=date)){
+    for(const bet of race.bets||[]){
+      if(!memberIds.has(String(bet.playerId)) ||
+        (bet.receiverId&&!memberIds.has(String(bet.receiverId))))
+        throw new Error('Hay apuestas históricas fuera del grupo; no es seguro calcular el saldo.');
+    }
+  }
+  for(const m of moved.filter(m=>String(m.date||'')<=date)){
+    if(!memberIds.has(String(m.participantId)) ||
+      (m.type==='transfer'&&!memberIds.has(String(m.counterpartyId))))
+      throw new Error('Hay movimientos históricos fuera del grupo; no es seguro calcular el saldo.');
+  }
   const from=weekStart(date);
   const raceWeek=raceList.filter(r=>r.date>=from && r.date<=date);
   const byParticipant=new Map(groupParticipants.map(p=>[String(p.id),{
