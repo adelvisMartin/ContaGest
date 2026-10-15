@@ -12,6 +12,15 @@ export function caracasToday(clock = new Date()) {
   }).format(date);
 }
 
+export function caracasClock(value) {
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.valueOf())) return '—';
+  return new Intl.DateTimeFormat('es-VE', {
+    timeZone: 'America/Caracas', hourCycle: 'h23',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  }).format(parsed);
+}
+
 function toMinor(value) {
   const rounded = Math.round(Number(value) * 100);
   if (!Number.isSafeInteger(rounded)) throw new Error('Monto fuera de precisión permitida.');
