@@ -5,6 +5,9 @@ import {
   CgButton, CgDataTable, CgMoney, CgPageHeader, CgProvider, CgSelect, CgState, CgStatusChip, CgTextField
 } from '../components/ui/cg/CgPrimitives.jsx';
 import { shortDate } from '../core/formatters.js';
+import { BackendApi } from '../services/backendApi.js';
+import { matchPosDraftProduct } from '../services/posProductLookup.mjs';
+import { addPosCartItem, removePosCartItem } from '../services/posCartPolicy.mjs';
 import { today } from '../utils/dom.js';
 
 const rows=(value)=>Array.isArray(value)?value:[];
@@ -30,6 +33,23 @@ function SalesWorkspace({state,context}){
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
   const clientRef=useRef(null);
+  const [posCode,setPosCode]=useState('');
+  const [posLoading,setPosLoading]=useState(false);
+  const [posDraftError,setPosDraftError]=useState('');
+  const [posCart,setPosCart]=useState([]);
+  const [posNames,setPosNames]=useState({});
+  const posCartRef=useRef([]);
+  const posBusyRef=useRef(false);
+  const posTenantId=BackendApi.tenantId;
+  const posTenantRef=useRef(posTenantId);
+  React.useEffect(()=>{
+    posTenantRef.current=posTenantId;
+    posCartRef.current=[];
+    setPosCart([]);
+    setPosNames({});
+    setPosCode('');
+    setPosDraftError('');
+  },[posTenantId]);
   const saleSaveInFlight=useRef(false);
   const [form,setForm]=useState({
     date:today(),
@@ -102,6 +122,55 @@ function SalesWorkspace({state,context}){
     navigate('cotizacion');
   }
 
+
+  // Draft only: every lookup is authenticated by the existing products API.
+  // The client never authorizes a sale, calculates IVA or posts stock/payments.
+  async function addPosDraftProduct(event){
+    event.preventDefault();
+    if(posBusyRef.current)return;
+    posBusyRef.current=true;
+    setPosLoading(true);
+    setPosDraftError('');
+    const tenantAtStart=BackendApi.tenantId;
+    try{
+      const products=await BackendApi.list('products');
+      if(tenantAtStart!==BackendApi.tenantId || posTenantRef.current!==tenantAtStart){
+        setPosDraftError('Cambió la empresa activa. Vuelve a consultar los productos.');
+        return;
+      }
+      const decision=matchPosDraftProduct(products,posCode);
+      if(decision.kind!=='found'){
+        const descriptions={
+          invalid:'Escribe un SKU o código válido (máximo 64 caracteres).',
+          not_found:'No hay coincidencias en el catálogo consultado. Verifica el SKU o código.',
+          ambiguous:'Código ambiguo entre productos. No se añadió nada al carrito.',
+          invalid_catalog:'El catálogo recibido no es válido para una selección segura.'
+        };
+        setPosDraftError(descriptions[decision.kind]||'No se pudo seleccionar el producto.');
+        return;
+      }
+      const next=addPosCartItem(posCartRef.current,decision.product.id);
+      posCartRef.current=next;
+      setPosCart(next);
+      setPosNames((current)=>({...current,[decision.product.id]:{
+        sku:decision.product.sku,name:decision.product.name
+      }}));
+      setPosCode('');
+      notify('Producto agregado al borrador. La venta aún no está confirmada.','success');
+    }catch{
+      setPosDraftError('No se pudo consultar el catálogo. Comprueba la conexión y tus permisos.');
+    }finally{
+      posBusyRef.current=false;
+      setPosLoading(false);
+    }
+  }
+
+  function removePosDraftProduct(productId){
+    const next=removePosCartItem(posCartRef.current,productId);
+    posCartRef.current=next;
+    setPosCart(next);
+  }
+
   const columns=[
     {key:'invoice',label:'Factura',render:(sale)=>sale.invoice||sale.id},
     {key:'date',label:'Fecha',render:(sale)=>shortDate(sale.date)},
@@ -132,6 +201,45 @@ function SalesWorkspace({state,context}){
       <Metric label="Cobranza pendiente" value={<CgMoney value={pendingAmount} currency="VES"/>} tone={pendingAmount?'warning':'success'}/>
       <Metric label="Ticket promedio" value={<CgMoney value={total/Math.max(sales.length,1)} currency="VES"/>} tone="primary"/>
     </Box>
+
+    <Paper component="section" variant="outlined" aria-label="Carrito POS de borrador" sx={{p:1.5}}>
+      <Typography variant="h6">Venta rápida · carrito en preparación</Typography>
+      <Typography variant="caption" color="text.secondary">
+        Consulta productos del servidor por SKU o código de barras. Este carrito no crea facturas, no reserva inventario y no procesa cobros.
+      </Typography>
+      <Box component="form" onSubmit={addPosDraftProduct} sx={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:1,mt:1.25}}>
+        <CgTextField
+          size="small"
+          label="SKU o código de barras"
+          placeholder="Ej. 000123456789"
+          value={posCode}
+          onChange={(event)=>setPosCode(event.target.value)}
+          disabled={posLoading}
+          sx={{flex:'1 1 220px'}}
+        />
+        <CgButton type="submit" disabled={posLoading||!posCode.trim()} sx={{minHeight:44}}>
+          {posLoading?'Consultando…':'Agregar al borrador'}
+        </CgButton>
+      </Box>
+      {posDraftError?<CgState severity="warning" title="Producto no añadido">{posDraftError}</CgState>:null}
+      <Typography variant="caption" color="text.secondary" role="status" aria-live="polite" sx={{display:'block',mt:1}}>
+        {posCart.length} productos distintos · Sin total fiscal ni cobro confirmado
+      </Typography>
+      {posCart.length?
+        <Box sx={{mt:1,maxWidth:'100%',overflowX:'auto'}}>
+          <CgDataTable rows={posCart.map((line)=>({...line,...(posNames[line.productId]||{sku:'—',name:'Producto en revisión'})}))}
+            columns={[
+              {key:'sku',label:'SKU'},
+              {key:'name',label:'Producto'},
+              {key:'quantity',label:'Cantidad'},
+              {key:'actions',label:'Acciones',render:(line)=><CgButton size="small" variant="outlined" onClick={()=>removePosDraftProduct(line.productId)}>Quitar</CgButton>}
+            ]}/>
+        </Box>
+        :<CgState severity="info" title="Carrito vacío">Escanea o escribe un código para preparar líneas de venta sin efectos financieros.</CgState>}
+      <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:1}}>
+        La confirmación de la venta y los impuestos requieren el servicio de ventas y las validaciones de caja e inventario.
+      </Typography>
+    </Paper>
 
     <Paper component="form" onSubmit={submit} variant="outlined" sx={{p:1.5}}>
       <Typography variant="h6">Registrar venta</Typography>
