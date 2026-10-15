@@ -1,5 +1,11 @@
 # ContaGest VE · Agent Engineering Contract v16.7
 
+## FIRST READ — new ChatGPT chat / agent / reviewer
+
+Before any code, ticket selection, merge or release claim, read **[`docs/PROJECT_START_HERE.md`](docs/PROJECT_START_HERE.md)** and its linked **[full Staff+/Principal audit (2026-10-15)](docs/audits/AUDITORIA_STAFF_CONTAGEST_CONTROL_HIPICO_2026-10-15.md)**. That onboarding guide records the two-product boundaries, Hípico LAB priority, SOURCE no-send policy, existing owners, verification matrix and safe multi-window sequence. Treat its dated SHA/PR/issue statuses as **historical only**: refresh live GitHub `main`, owners/claims, issues, dependencies and PRs before work.
+
+This file **remains the authoritative engineering contract**. The onboarding/audit documents are navigational/contextual and cannot override current code, tickets, security, release gates or exact-SHA evidence.
+
 ## Mission
 ContaGest is a Venezuelan multi-tenant horizontal ERP with optional vertical packs. Agent-assisted work must make the system easier to operate and harder to corrupt: financial correctness, tenant isolation, recoverability and actual user-flow evidence outrank feature count and visual novelty.
 
