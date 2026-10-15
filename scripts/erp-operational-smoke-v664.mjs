@@ -94,7 +94,7 @@ export async function runOperationalSmoke({ env = process.env, candidateSha, erp
     report.postgresMajor = version.major;
 
     await withDatabase({ candidateSha, env }, async (databaseEnv, db) => {
-      const safeEnv = isolatedSmokeEnvironment(databaseEnv, db.databaseUrl);
+      const safeEnv = isolatedSmokeEnvironment({ ...databaseEnv, GIT_COMMIT_SHA: candidateSha }, db.databaseUrl);
       for (const step of buildSmokeSteps()) {
         const result = await execute(step, safeEnv);
         report.stages.push(result);
