@@ -171,8 +171,13 @@ provide lead update/delete, opportunity lifecycle, pipeline metrics, Client
 conversion, quote #753, import/export, activity timeline, UI or production
 QA. Generic ModuleRecord payload is a transitional single lead authority,
 not a replacement for the future dedicated tenant-first schema, explicit
-indexes, unique event constraints and PostgreSQL idempotency. Repeated POST
-requests may create multiple lead drafts: the endpoint is **not idempotent**.
+indexes, unique event constraints and PostgreSQL idempotency. Each POST requires an **`Idempotency-Key` UUIDv4**: a deterministic SHA-256-derived
+UUIDv5-shaped primary key is scoped to the tenant and stored in the existing
+`ModuleRecord.id`. Concurrent or repeated requests with the same key cannot
+create two leads (database PK); Prisma unique conflicts return HTTP **409**.
+A retry with a new key may still create a second prospect: this is request
+idempotency, **not** semantic customer de-duplication. The generic module
+record endpoint does not accept this slug; the CRM route owns its data.
 Clients continue to be mastered exclusively in `Client`; no conversion or
 automatic customer write is attempted.
 
