@@ -62,7 +62,7 @@
       "sourceUrl": "https://www.sumeria.org.ve/sac/",
       "license": "UNVERIFIED_RESTRICTED",
       "licenseEvidenceUrl": null,
-      "sourceLevel": "SECONDARY",
+      "sourceLevel": "OFFICIAL",
       "kind": "PRODUCT",
       "sourceReuse": "NONE"
     },
@@ -150,7 +150,9 @@
       "assessment": "Backlog comercial #753/#757/#755; verificar runtime",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://www.miprofit.com/productos/"
     },
     {
       "id": "VEOSS-002",
@@ -164,7 +166,9 @@
       "assessment": "#751/#717; no derivar reglas fiscales de competidor",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://www.miprofit.com/"
     },
     {
       "id": "VEOSS-003",
@@ -178,7 +182,9 @@
       "assessment": "#753/#754 definen transitions y reservas",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://www.valery.com/valery-pro.html"
     },
     {
       "id": "VEOSS-004",
@@ -192,7 +198,9 @@
       "assessment": "#755 owner de lote/almacén",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://www.valery.com/valery-pro.html"
     },
     {
       "id": "VEOSS-005",
@@ -206,7 +214,9 @@
       "assessment": "#775/#782; sólo fuente fiscal primaria para tasas",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://galac.com/producto/administrativo-sac-emprendedor-persona-natural/"
     },
     {
       "id": "VEOSS-006",
@@ -220,7 +230,9 @@
       "assessment": "#755 asignaciones/lotes",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://galac.com/productos/administrativo/"
     },
     {
       "id": "VEOSS-007",
@@ -234,7 +246,9 @@
       "assessment": "#771 drill-down sin KPIs decorativos",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://galac.com/productos/administrativo/"
     },
     {
       "id": "VEOSS-008",
@@ -248,7 +262,9 @@
       "assessment": "Identidad pendiente; no asignar gap ni API ficticia",
       "assessmentLevel": "UNRESOLVED_REFERENCE",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "UNRESOLVED",
+      "referenceEvidenceUrl": null
     },
     {
       "id": "VEOSS-009",
@@ -262,7 +278,9 @@
       "assessment": "#717/#751 autoridad normativa independiente de vendors",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "PROVISIONAL",
+      "referenceEvidenceUrl": null
     },
     {
       "id": "VEOSS-010",
@@ -276,7 +294,9 @@
       "assessment": "Sumeria es referencia secundaria; #641 aislamiento tenant",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://www.sumeria.org.ve/sac/"
     },
     {
       "id": "VEOSS-011",
@@ -290,7 +310,9 @@
       "assessment": "Patrón de categoría; no producto/SDK específico",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "PROVISIONAL",
+      "referenceEvidenceUrl": null
     },
     {
       "id": "VEOSS-012",
@@ -304,7 +326,9 @@
       "assessment": "#756 demand/reorder owner",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://www.finapartner.com/funcionalidades/programa-para-inventarios/"
     },
     {
       "id": "VEOSS-013",
@@ -318,7 +342,9 @@
       "assessment": "#743 autoridad bancaria",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "PROVISIONAL",
+      "referenceEvidenceUrl": null
     },
     {
       "id": "VEOSS-014",
@@ -332,7 +358,9 @@
       "assessment": "#759 owner de ciclo de vida",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://docs.frappe.io/erpnext/assets/introduction"
     },
     {
       "id": "VEOSS-015",
@@ -346,7 +374,9 @@
       "assessment": "#753/#754/#769 sin ledger paralelo",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "DOCUMENTED",
+      "referenceEvidenceUrl": "https://docs.frappe.io/erpnext/selling"
     },
     {
       "id": "VEOSS-016",
@@ -360,7 +390,9 @@
       "assessment": "#760 reporta ausencia en su baseline anterior; revalidar antes de ejecutar",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "PROVISIONAL",
+      "referenceEvidenceUrl": null
     },
     {
       "id": "VEOSS-017",
@@ -374,7 +406,9 @@
       "assessment": "#757 authority procurement",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "PROVISIONAL",
+      "referenceEvidenceUrl": null
     },
     {
       "id": "VEOSS-018",
@@ -388,7 +422,9 @@
       "assessment": "#744 AR/AP; #637 posting canónico",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "PROVISIONAL",
+      "referenceEvidenceUrl": null
     },
     {
       "id": "VEOSS-019",
@@ -402,13 +438,15 @@
       "assessment": "#653 ownership map, sin trasplantar código GPL",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "PROVISIONAL",
+      "referenceEvidenceUrl": null
     },
     {
       "id": "VEOSS-020",
       "productId": "invoice-ninja",
       "module": "projects",
-      "referenceFeature": "Horas/proyectos→factura con idempotencia",
+      "referenceFeature": "Horas/proyectos→factura (idempotencia exigida a ContaGest, no atribuida al proveedor)",
       "pattern": "FLOW",
       "status": "MISSING",
       "priority": "P2",
@@ -416,7 +454,9 @@
       "assessment": "#761 confirma falta de autoridad Project/TimeEntry en baseline",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "PROVISIONAL",
+      "referenceEvidenceUrl": null
     },
     {
       "id": "VEOSS-021",
@@ -430,7 +470,9 @@
       "assessment": "#769 posted-doc lifecycle; portal sólo después de RBAC",
       "assessmentLevel": "INFERRED_FROM_BACKLOG",
       "strategy": "DESIGN_FROM_BEHAVIOR_ONLY",
-      "sourceReuse": "NONE"
+      "sourceReuse": "NONE",
+      "referenceEvidenceLevel": "PROVISIONAL",
+      "referenceEvidenceUrl": null
     }
   ]
 }
