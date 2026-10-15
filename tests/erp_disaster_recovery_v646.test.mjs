@@ -19,6 +19,7 @@ test('#646 rejects missing, production and remote/shared PostgreSQL admin target
   ])assert.throws(()=>checkAdmin({LOCAL_VERIFY_DATABASE_ADMIN_URL:url}));
   for(const config of [
     {},{LOCAL_VERIFY_DATABASE_ADMIN_URL:ADMIN,NODE_ENV:'production'},
+    {LOCAL_VERIFY_DATABASE_ADMIN_URL:ADMIN,NODE_ENV:'preview'},
     {LOCAL_VERIFY_DATABASE_ADMIN_URL:ADMIN,VERCEL_ENV:'preview'},
     {LOCAL_VERIFY_DATABASE_ADMIN_URL:ADMIN,CI_PRODUCTION:'true'}
   ])assert.throws(()=>checkAdmin(config));
