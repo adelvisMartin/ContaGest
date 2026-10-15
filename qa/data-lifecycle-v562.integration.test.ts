@@ -327,3 +327,32 @@ test('two simultaneous workers serialize one tenant purge job without double del
   );
   assert.equal(remaining[0].count, 0);
 });
+
+
+test('future-dated analytics cannot be purged by a zero-day policy', async () => {
+  const id = randomUUID();
+  const key = `future-retention-v658-${id}`;
+  await prisma.$executeRawUnsafe(
+    'INSERT INTO public."AnalyticsEvent" ("id","tenantId","sessionId","type","payload","createdAt") VALUES ($1::uuid,$2::uuid,$3,$4,\'{}\'::jsonb,$5)',
+    id, tenantA, key, 'v658-retention-boundary', new Date('2099-01-01T00:00:00Z'),
+  );
+  try {
+    const job = await requestPurgeJob({
+      tenantId: tenantA, entityType: 'AnalyticsEvent', idempotencyKey: key,
+      authorizationRef: 'qa-retention-boundary-658', batchSize: 100
+    });
+    const terminal = await executePurgeBatch({ tenantId: tenantA, jobId: job.id, batchSize: 100 });
+    assert.equal(terminal.status, 'completed');
+    assert.equal((terminal.result as Record<string, unknown>).deletedCount, 0);
+    const rows = await prisma.$queryRawUnsafe<Array<{ count: number }>>(
+      'SELECT count(*)::int AS count FROM public."AnalyticsEvent" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
+      id, tenantA,
+    );
+    assert.equal(rows[0].count, 1, 'a future record must survive cutoff comparison');
+  } finally {
+    await prisma.$executeRawUnsafe(
+      'DELETE FROM public."AnalyticsEvent" WHERE "id"=$1::uuid AND "tenantId"=$2::uuid',
+      id, tenantA,
+    );
+  }
+});
