@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
 
+export function reportSharingEnabled(env: NodeJS.ProcessEnv = process.env) {
+  return env.HIPICO_REPORT_SHARES_ENABLED === 'true';
+}
+
 export const reportGroupKey = z.string().trim().min(1).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 export const reportParticipantCode = z.string().trim().min(1).max(120).regex(/^[A-Za-z0-9._:-]+$/);
 export const reportDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
