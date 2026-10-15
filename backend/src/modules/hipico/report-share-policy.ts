@@ -7,6 +7,15 @@ export const reportDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value)
   const date = new Date(value + 'T12:00:00.000Z');
   return Number.isFinite(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }, 'Fecha calendario inválida');
+// Public group consolidation is intentionally narrower than authenticated
+// operations: code-only search and bounded pagination; no user-supplied SQL.
+export const consolidatedQuerySchema = z.object({
+  view: z.literal('consolidated'),
+  date: reportDate.optional(),
+  page: z.coerce.number().int().min(1).max(500).default(1),
+  search: z.string().trim().max(120).default('')
+}).strict();
+
 export const createShareSchema = z.object({
   groupKey: reportGroupKey,
   audience: z.enum(['participant', 'group']),
