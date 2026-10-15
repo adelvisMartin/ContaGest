@@ -105,7 +105,16 @@ export function createLabPendingQueryInbox({rootDir,labGroupId,sourceGroupId,now
     await fs.mkdir(root,{recursive:true,mode:0o700});
     const stat=await fs.lstat(root);
     if(!stat.isDirectory()||stat.isSymbolicLink())throw new Error('LAB_PENDING_ROOT_UNSAFE');
+    // chmod may fail for an existing directory. Never assume that an
+    // attempted permission repair made encrypted LAB storage private.
+    // Re-lstat after chmod also rejects a replaced/symlinked root path.
     await fs.chmod(root,0o700).catch(()=>{});
+    const sealed=await fs.lstat(root);
+    if(!sealed.isDirectory()||sealed.isSymbolicLink())throw new Error('LAB_PENDING_ROOT_UNSAFE');
+    // NTFS ACLs must be checked on Windows; POSIX mode bits are not evidence there.
+    if(process.platform!=='win32' && (sealed.mode & 0o077)!==0){
+      throw new Error('LAB_PENDING_ROOT_PERMISSIONS_UNSAFE');
+    }
   }
   async function loadKey(){
     // The owner lock MUST already be held. Never publish a partially written
