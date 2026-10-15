@@ -685,6 +685,7 @@ root.addEventListener("click", async (event) => {
         const action = el.dataset.action;
         if (action === "reference-report-today") {
             referenceReportDate = caracasToday();
+            referenceReportRefresh.checkedAt = null;
             referenceReportRefresh.status = "Vista de hoy en el dispositivo (no implica sincronización).";
             render();
             return;
@@ -693,7 +694,10 @@ root.addEventListener("click", async (event) => {
             const target = String(el.dataset.target || "");
             if (!["race-history", "daily-movements"].includes(target)) throw new Error("Vista de informe no permitida.");
             const input = root.querySelector("#reference-report-date");
-            if (input?.value) referenceReportDate = assertReportDate(input.value);
+            if (input?.value && input.value !== referenceReportDate) {
+                referenceReportDate = assertReportDate(input.value);
+                referenceReportRefresh.checkedAt = null;
+            }
             reportTab = target;
             render();
             return;
@@ -1175,7 +1179,9 @@ root.addEventListener("submit", async (event) => {
     const data = new FormData(form);
     try {
         if (formId === "reference-report-filter-form") {
-            referenceReportDate = assertReportDate(String(data.get("date") || ""));
+            const selectedReportDate = assertReportDate(String(data.get("date") || ""));
+            if (selectedReportDate !== referenceReportDate) referenceReportRefresh.checkedAt = null;
+            referenceReportDate = selectedReportDate;
             if (reportTab === "personal") {
                 const selected = String(data.get("participantId") || "");
                 const members = (workspace.participants || []).filter((p) =>
