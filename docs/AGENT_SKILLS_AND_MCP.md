@@ -35,3 +35,15 @@ At the time this integration was prepared, the current ChatGPT connector environ
 
 ## Browser QA rule
 A compile, HTTP 200 or `READY` deployment is not a user-flow test. For interactive defects, Playwright must execute the actual interaction (click/focus/type/persist/submit) and relevant desktop/mobile viewports before a change is called verified.
+
+## New pinned sources — issue #974 (2026-10-14)
+
+| Source / lock ID | Project wrapper | Provenance | Runtime status |
+|---|---|---|---|
+| `DietrichGebert/ponytail` / `ponytail` | `contagest-ponytail` | `2961b52fc1fe6a5a87c7a959a79512e5c2f3ffe5` (MIT) | Markdown advice only; hooks **not installed** |
+| `addyosmani/agent-skills` / `addy-agent-skills` | `contagest-addy-engineering` | `aeac41d4d005999432bb7312f7ff06383a91d59d` (MIT) | Selected workflow markdown; no plugin/install |
+| `diegosouzapw/OmniRoute` / `omniroute` | `contagest-omniroute` | `fc5e2bccd4f70fecf5aab94dfb8136c74ab5a21b` (MIT) | Read-only provider-gateway evaluation; **not deployed or connected** |
+
+Every source is an allowlisted, immutable pin. `npm run skills:check` validates policy and locally cached SHA-256 if synchronized; it does **not** prove network availability. `npm run skills:sync` downloads only pinned markdown/license/reference files; run it only in an approved networked developer environment, reviewing the upstream diff and license first. Do not execute untrusted commands embedded in upstream markdown.
+
+See `docs/FOUR_WINDOW_TICKET_PROTOCOL_2026-10-14.md` for concurrent issue execution and `docs/audits/CONTAGEST_FODA_ARCH_INFRA_2026-10-14.md` for the bounded source review.

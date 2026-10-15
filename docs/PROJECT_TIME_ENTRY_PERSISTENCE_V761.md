@@ -14,9 +14,44 @@ Bajo la ruta existente `/api/v1/modules/projects`, ambas operaciones **heredan l
 
 ## Restricciones contables y de seguridad
 
-El estado persistido es **siempre `draft` y `billable:false`**, revisión 1, `linkedInvoiceId:null`, sin revisor ni fecha de aprobación. El resultado no tiene importe, tarifa, número de factura ni asiento contable. No existe todavía aprobación persistente, edición/corrección auditada, timer real, verificación de sesiones de temporizador, control de solapamiento de períodos diferentes ni autorización para facturar. Un segundo intento con **otra** clave de idempotencia puede producir horas solapadas; no generar facturas a partir de estos borradores hasta implementar controles de superposición/doble facturación, aprobación CAS y política fiscal explícita. `source:timer` se rechaza porque un cliente no puede probar haber ejecutado un temporizador confiable.
+El estado persistido es **siempre `draft` y `billable:false`**, revisión 1, `linkedInvoiceId:null`, sin revisor ni fecha de aprobación. El resultado no tiene importe, tarifa, número de factura ni asiento contable. No existe todavía aprobación persistente, edición/corrección auditada, timer real, verificación de sesiones de temporizador, ni autorización para facturar. El prechequeo de solapamiento por empleado ahora se ejecuta en la misma transacción serializable que el insert; sigue pendiente su validación contra PostgreSQL 17 con concurrencia real y restricciones definitivas. No generar facturas a partir de estos borradores hasta implementar controles transaccionales verificados, aprobación CAS y política fiscal explícita. `source:timer` se rechaza porque un cliente no puede probar haber ejecutado un temporizador confiable.
 
 El namespace no pertenece al registro Stitch del CRUD genérico y no se permite modificarlo por esa vía. El listado valida la empresa, el cliente, el proyecto, la tarea, el miembro y la coherencia de timestamps/duración incluso frente a filas corruptas o mal escopadas.
+
+## Prechequeo de solapamientos de horas (incremento posterior)
+
+Antes de insertar un borrador, la misma transacción `Serializable` de Prisma
+consulta `ModuleRecord` del **mismo tenant y miembro autenticado**, en todas
+las tareas/proyectos y sin filtrar por estado. Sólo consulta la presencia de
+**una fila** mediante tres filtros PostgreSQL JSONB combinados por `AND`:
+`payload.memberId = actorId`,
+`payload.startedAtUtc < newEndUtc` y
+`payload.endedAtUtc > newStartUtc`.
+Las fechas se normalizan primero al formato UTC fijo `YYYY-MM-DDTHH:mm:ss.sssZ`
+y por eso la comparación de cadenas mantiene el orden cronológico. El
+intervalo es semiabierto `[inicio, fin)`: dos períodos contiguos no colisionan,
+pero una superposición parcial, total o entre proyectos distintos **se rechaza**
+con HTTP 409. Una consulta que devuelva datos imposibles falla cerrada;
+`P2034` de serialización también se trata como conflicto 409. Un fallo
+al registrar auditoría cancela toda la creación.
+
+**Alcance de la prueba:** `tests/project_time_overlap_v761.test.mjs`
+contiene regresiones con un simulador de predicados JSON y transacciones
+simuladas; se ejecuta con la suite previa:
+
+```bash
+cd backend
+npx tsx --test ../tests/project_time_entry_store_v761.test.mjs ../tests/project_time_overlap_v761.test.mjs
+```
+
+El simulador **no** prueba que Prisma/PostgreSQL 17 filtre los JSONB como se
+espera ni las anomalías SSI en carreras de dos escritores. No hay constraint
+`EXCLUDE` a nivel de base de datos ni índice temporal específico en
+`ModuleRecord`. Antes de encender la bandera se requieren pruebas PG17
+con sesiones paralelas que creen **distintas claves de intento** sobre la
+misma persona; debe confirmar que no puedan confirmarse dos filas que se
+solapen. Si falla la prueba o no se puede ejecutarla, mantener
+`CONTAGEST_PROJECTS_V761_ENABLE` **OFF** y no facturar esas horas.
 
 ## Reproducir evidencia local
 
