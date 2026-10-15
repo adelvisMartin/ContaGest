@@ -54,3 +54,27 @@ relativa del frontend, mediante `allowRelative:true`.
 Este control evita confundir una URL de base de datos con un endpoint público
 o aceptar `/api` como URL absoluta de Supabase. No lee credenciales reales,
 no migrará PostgreSQL y no sustituye el auditor de secretos del frontend.
+
+## Reconciliación de guards apilados (#964 → #665)
+
+Una aprobación o merge de un PR apilado sobre otra rama no implica que su
+diff se encuentre en `main`. Este incremento reinstala en `main` tres
+protecciones de contrato pendientes de incorporar:
+
+- `loadVersionedSamples()` lee únicamente las tres rutas fijadas por código
+  en `REQUIRED_SURFACES`, ignorando rutas alteradas del manifiesto.
+  No lee `.env` privados.
+- Si algún catálogo obligatorio de backend, frontend, Bridge o build queda
+  vacío, `MANIFEST_SURFACE_CATALOG_MISSING` impide un falso PASS.
+- Los ejemplos de URL HTTP(S) rechazan `userinfo` (usuario/contraseña
+  embebidos), y devuelven `MANIFEST_SAMPLE_TYPE_INVALID` sin registrar URL,
+  usuario o contraseña. Las credenciales en URL PostgreSQL siguen permitidas
+  **únicamente** para las variables de base de datos del servidor.
+
+Las regresiones usan valores sintéticos y cubren redirección del loader,
+catálogos vacíos, URLs HTTP(S) credencializadas y compatibilidad PostgreSQL.
+Comprobar con `npm run test:config:manifest` sobre el SHA final.
+
+**No demostrado aquí:** los validadores de todos los procesos en ejecución,
+bundles reales de proveedores, Docker y E2E. Esos criterios de #665 continúan
+abiertos hasta verificarse materialmente.
