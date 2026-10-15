@@ -141,3 +141,20 @@ El guard prohíbe nombres de base que no empiecen por `hipico_share_test_`, host
 
 **Criterio de salida:** que `git` y GitHub indiquen PR integrable no reemplaza test PostgreSQL, revisión de cambios y prueba de proxy que elimine `t` de logs. El QA físico del sistema completo puede posponerse, pero no deben distribuirse enlaces financieros mientras los gates de seguridad no tengan evidencia.
 
+
+
+## Extensión de seguridad #1018 — concurrencia de revocación y caducidad
+
+El test aislado `backend/scripts/hipico-report-share-rls-v1000.mjs` ahora incluye cinco aserciones adversariales adicionales, sin escribir en ninguna tabla de negocio ni conectarse al servidor real:
+
+1. Enlaces caducados y ya revocados permanecen **inactivos** para el filtro de autorización.
+2. El conteo de capacidades del grupo omite los enlaces inactivos, incluso cuando sus filas siguen presentes para auditoría.
+3. Una lectura `SELECT ... FOR SHARE` adquiere el bloqueo sobre la fila de la capacidad.
+4. Una sesión distinta intenta revocar esa misma fila con `lock_timeout='300ms'` y debe obtener SQLSTATE `55P03` antes de que termine la lectura.
+5. Después del `ROLLBACK` del lector, la revocación se persiste y la siguiente transacción ve `revoked_at` de forma inequívoca.
+
+Estos controles son **pruebas PostgreSQL ejecutables**, no evidencia de que se hayan corrido aún. El test estático `tests/hipico_report_share_rls_guard_v1000.test.mjs` exige que dichas aserciones no desaparezcan accidentalmente.
+
+**Importante:** `FOR SHARE` solo garantiza el orden transaccional; no convierte por sí solo un token en autorización para conocer otros grupos. `owner_id`, `group_key`, audiencia y plazo siguen siendo filtros obligatorios en el store. El propio ledger de dinero no adquiere RLS nuevo como efecto de este test. Antes de desplegar debe confirmarse el privilegio real del rol runtime, sin tomar el `GRANT SELECT` exclusivo de la fixture como autorización productiva.
+
+**Coste CI:** el workflow especializado de este módulo sigue manual (`workflow_dispatch`). No se desactivan validaciones del repositorio ni se ejecutan acciones sobre bases reales. `HIPICO_REPORT_SHARES_ENABLED` continúa desactivado por defecto; #1018 permanece abierto hasta la ejecución aislada y las verificaciones en staging.
