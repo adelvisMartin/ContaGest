@@ -95,7 +95,7 @@ test('lease deadlines use database clock rather than caller time', () => {
 
 test('all worker entrypoints enforce the canonical tenant UUID guard', () => {
   const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
-  assert.equal((code.match(/assertAsyncJobTenantId\(tenantId\);/g) || []).length, 4);
+  assert.equal((code.match(/assertAsyncJobTenantId\(tenantId\);/g) || []).length, 5);
   for (const invalid of [undefined, null, '', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'not-a-tenant']) {
     assert.throws(() => assertAsyncJobTenantId(invalid), /JOB_TENANT_INVALID/);
   }
@@ -109,4 +109,32 @@ test('retry deadlines and audit timestamps are chosen by PostgreSQL, not worker 
   assert.doesNotMatch(code, /COALESCE\(\$\{decision\.runAt\}/);
   assert.doesNotMatch(code, /"updatedAt"=\$\{now\}/);
   assert.match(code, /"updatedAt"=clock_timestamp\(\)/);
+});
+
+
+test('heartbeats are fenced by tenant, job ID, unique claim token and live database lease', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  const start = code.indexOf('export async function heartbeatClaimedAsyncJob(');
+  const end = code.indexOf('// Expired last-attempt claims', start);
+  assert.ok(start > 0 && end > start);
+  const heartbeat = code.slice(start, end);
+  assert.match(heartbeat, /assertAsyncJobTenantId\(tenantId\)/);
+  assert.match(heartbeat, /JOB_ID_INVALID/);
+  assert.match(heartbeat, /JOB_LEASE_TOKEN_INVALID/);
+  assert.match(heartbeat, /JOB_LEASE_INVALID/);
+  assert.match(heartbeat, /"tenantId"=\$\{tenantId\} AND "id"=\$\{id\}/);
+  assert.match(heartbeat, /"status"='running' AND "leaseOwner"=\$\{leaseToken\}/);
+  assert.match(heartbeat, /"leaseUntil">clock_timestamp\(\)/);
+  assert.match(heartbeat, /ASYNC_JOB_LEASE_LOST/);
+  assert.doesNotMatch(heartbeat, /"status"='queued'/);
+});
+
+test('heartbeat cannot extend beyond bounded SQL lease interval or trust worker clock', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  const heartbeat = code.split('export async function heartbeatClaimedAsyncJob(')[1]?.split('// Expired last-attempt claims')[0];
+  assert.ok(heartbeat);
+  assert.match(heartbeat, /leaseSeconds < 15 \|\| leaseSeconds > 900/);
+  assert.match(heartbeat, /"leaseUntil"=GREATEST\("leaseUntil", clock_timestamp\(\) \+ \(\$\{leaseSeconds\} \* INTERVAL '1 second'\)\)/);
+  assert.match(heartbeat, /RETURNING "id", "leaseUntil"/);
+  assert.doesNotMatch(heartbeat, /\$\{now\}/);
 });
