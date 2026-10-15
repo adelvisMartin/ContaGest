@@ -176,9 +176,14 @@ export function projectParticipantAccount(workspace, { groupId, date, participan
   const members = scopedParticipants(workspace, cx.groupId);
   const participant = members.find((item) => item.id === participantId && groupMember(workspace, item, cx.groupId));
   if (!participant) throw new Error('Participante no encontrado en el grupo seleccionado.');
-  const statement = participantStatement(workspace, participant.id, cx.date);
   const history = projectRaceHistory(workspace, cx);
   const daily = projectDailyMovements(workspace, cx);
+  // The canonical balance would otherwise count a foreign-group reference
+  // that was intentionally excluded from report rows. Refuse that mismatch.
+  if (history.invalidReferences || daily.invalidReferences) {
+    throw new Error('El informe personal tiene referencias no conciliadas; revisa los datos del grupo.');
+  }
+  const statement = participantStatement(workspace, participant.id, cx.date);
   const races = history.races.map((race) => ({
     ...race,
     bets: race.bets.filter((bet) => bet.player.id === participant.id || bet.receiver?.id === participant.id),
