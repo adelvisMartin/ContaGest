@@ -10,6 +10,7 @@ import { createHipicoReportShareRouter, readableMinor } from './report-share.rou
 
 const owner = 'bcd37f4a-4a85-4014-b6f3-0d390471eae1';
 const token = createReportToken();
+const groupToken = createReportToken();
 const now = new Date('2026-10-15T02:00:00.000Z');
 const state = { revoked: false };
 const sample = {
@@ -26,7 +27,20 @@ const fakeStore = {
     candidate === token && !state.revoked ? { ...sample, date } : null,
   revoke: async (_owner: string, id: string) => id === owner ? (state.revoked = true) : false,
   list: async (_owner: string, group: string) => [{ id:owner, groupKey:group,
-    audience:'participant',participantCode:'PERSONA-1',expiresAt:expiryDate(24,now),revokedAt:state.revoked ? now : null }]
+    audience:'participant',participantCode:'PERSONA-1',expiresAt:expiryDate(24,now),revokedAt:state.revoked ? now : null }],
+  consolidated: async (_owner: string, candidate: string, date: string, page: number, search: string) =>
+    candidate === groupToken && !state.revoked
+      ? {
+          scope:'group',source:'canonical-postgresql-ledger',groupKey:'triple-c',date,
+          timezone:'America/Caracas',page,pageSize:21,totalParticipants:42,
+          matchedParticipants:search?1:42,pages:search?1:2,search,
+          expiresAt:'2026-10-17T00:00:00.000Z',amountUnit:'minor',balancesAsOf:'2026-10-15T04:00:00.000Z',
+          rows:[{participantCode:'<script>alert(1)</script>',currency:'USD',
+            balanceMinor:'100500',daySettlementMinor:'2500',weekSettlementMinor:'2600'}],
+          groupTotals:[{currency:'USD',balanceMinor:'995000'}],
+          filteredTotals:[{currency:'USD',balanceMinor:search?'100500':'995000'}],
+          unavailableColumns:['available','refund','deposit','withdrawal','transfer','aval']
+        } : null
 };
 async function api(t: any) {
   const app = express();
@@ -129,4 +143,59 @@ test('reject invalid token and date uniformly without hitting ledger or disclosi
     const body=await response.json() as any;
     assert.equal(body.code,'REPORT_NOT_FOUND');
   }
+});
+
+
+test('shared group capability reads only the authorized consolidated view with correct pagination metadata',async(t)=>{
+  state.revoked=false;
+  const base=await api(t);
+  const r=await fetch(base+'/public?t='+groupToken+'&view=consolidated&date=2026-10-14&page=2&search=TEST',{headers:{accept:'application/json'}});
+  assert.equal(r.status,200);
+  const payload=await r.json() as any;
+  assert.equal(payload.data.page,2);
+  assert.equal(payload.data.pageSize,21);
+  assert.equal(payload.data.matchedParticipants,1);
+  assert.equal(payload.data.groupKey,'triple-c');
+  assert.equal(payload.data.rows[0].balanceMinor,'100500');
+  assert.deepEqual(payload.data.unavailableColumns,['available','refund','deposit','withdrawal','transfer','aval']);
+  assert.ok(!JSON.stringify(payload).includes(groupToken));
+});
+
+test('personal report token cannot view group consolidation, including HTML and negative cases',async(t)=>{
+  state.revoked=false;
+  const base=await api(t);
+  const denied=await fetch(base+'/public?t='+token+'&view=consolidated&date=2026-10-14');
+  assert.equal(denied.status,404);
+  for(const suffix of [
+    '&view=consolidated&date=2026-10-14&page=0',
+    '&view=consolidated&date=2026-10-14&page=501',
+    '&view=consolidated&date=2026-02-30',
+    '&view=unknown'
+  ]){
+    assert.equal((await fetch(base+'/public?t='+groupToken+suffix)).status,404);
+  }
+});
+
+test('group consolidation HTML escapes hostile ledger references, redacts unsupported columns and preserves no-cache CSP',async(t)=>{
+  state.revoked=false;
+  const base=await api(t);
+  const r=await fetch(base+'/public?t='+groupToken+'&view=consolidated&date=2026-10-14',{headers:{accept:'text/html'}});
+  const html=await r.text();
+  assert.equal(r.status,200);
+  assert.match(r.headers.get('cache-control')||'',/no-store/);
+  assert.equal(r.headers.get('referrer-policy'),'no-referrer');
+  assert.match(r.headers.get('content-security-policy')||'',/style-src 'nonce-/);
+  assert.ok(html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+  assert.ok(!html.includes('<script>alert(1)</script>'));
+  assert.match(html,/Grupo completo/);
+  assert.match(html,/1.005,00/);
+  assert.match(html,/no disponibles en este ledger/);
+  assert.match(html,/Siguiente/);
+  assert.ok(!html.includes('x-hipico-operator-token'));
+});
+
+test('revoked group capability never grants consolidated access',async(t)=>{
+  state.revoked=true;
+  const base=await api(t);
+  assert.equal((await fetch(base+'/public?t='+groupToken+'&view=consolidated')).status,404);
 });
