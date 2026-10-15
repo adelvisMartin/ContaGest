@@ -1,0 +1,38 @@
+name: Backlog reconciliation v661
+on:
+  pull_request:
+    paths:
+      - 'scripts/reconcile-backlog-v661.mjs'
+      - 'tests/backlog_reconciliation_issue_661.test.mjs'
+      - 'config/backlog-reconciliation-v661-snapshot.json'
+      - 'docs/qa/backlog-reconciliation-v661.md'
+      - '.github/workflows/backlog-reconciliation-v661.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify read-only reconciliation contracts
+        run: node --test tests/backlog_reconciliation_issue_661.test.mjs
+      - name: Produce exact-candidate reconciliation report
+        run: |
+          set -euo pipefail
+          HEAD="$(git rev-parse HEAD)"
+          BASE="$(git merge-base origin/main HEAD)"
+          node scripts/reconcile-backlog-v661.mjs config/backlog-reconciliation-v661-snapshot.json "$HEAD" "$BASE" "artifacts/qa/backlog-reconciliation/$HEAD/report.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reconciliation-v661-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/qa/backlog-reconciliation/
+          if-no-files-found: warn

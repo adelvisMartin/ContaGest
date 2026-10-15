@@ -220,6 +220,34 @@
         "skills/apple-design-tactics/SKILL.md",
         "skills/apple-design-tactics/references/accessibility-inclusive.md"
       ]
+    },
+    {
+      "id": "addy-osmani-engineering",
+      "kind": "github-skill",
+      "repo": "addyosmani/agent-skills",
+      "commit": "aeac41d4d005999432bb7312f7ff06383a91d59d",
+      "license": "MIT",
+      "trustLevel": "reviewed-advisory-engineering",
+      "namespace": "addy-engineering",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/api-and-interface-design/SKILL.md",
+        "skills/code-review-and-quality/SKILL.md",
+        "skills/ci-cd-and-automation/SKILL.md"
+      ]
+    },
+    {
+      "id": "ponytail",
+      "kind": "github-skill",
+      "repo": "DietrichGebert/ponytail",
+      "commit": "84740e3d344b69b4a133201fa519eb37a62a2b2a",
+      "license": "MIT",
+      "trustLevel": "reviewed-advisory-simplicity",
+      "namespace": "ponytail",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/ponytail/SKILL.md"
+      ]
     }
   ]
 }

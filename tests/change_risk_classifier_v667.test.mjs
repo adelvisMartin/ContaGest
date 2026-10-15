@@ -116,7 +116,11 @@ function dryRunFor(file) {
 test('real git diff -> local runner dry-run: documentation only stays lightweight', () => {
   const actual = dryRunFor('docs/qa/change.md');
   assert.deepEqual(actual.derivedProfiles, ['docs']);
-  assert.deepEqual(actual.gates.map(({ command }) => command), ['node --test tests/change_risk_classifier_v667.test.mjs']);
+  assert.deepEqual(actual.gates.map(({ command }) => command), [
+    'node --test tests/change_risk_classifier_v667.test.mjs',
+    'npm run test:docs:integrity',
+    'npm run audit:docs:integrity',
+  ]);
   assert.equal(actual.riskDecision.override.requiresReview, false);
   assert.equal(actual.gates[0].status, 'NOT_EXECUTED');
 });

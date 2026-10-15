@@ -50,9 +50,18 @@ test('57/75 unknown modes fail to the administrative experience without widening
 test('57/75 auth sessions expose the canonical experience profile and frontend persists it',()=>{
   const auth=read('backend/src/modules/auth/auth.routes.ts');
   const service=read('frontend/src/services/authService.js');
-  assert.match(auth,/experienceProfileForMode/);
-  assert.match(auth,/experienceProfile,/);
-  assert.match(auth,/experienceProfile:experienceProfileForMode\(license\?\.businessSector\|\|role\)/);
+  const session=auth.slice(auth.indexOf('async function sessionPayload('),
+    auth.indexOf('async function authenticatedSession('));
+  assert.ok(session.length>200,'session payload authority must exist');
+  assert.match(session,/const safeLicense=publicLicense\(effectiveLicense\)/,
+    'session profile must use sanitized, server-validated license data');
+  assert.match(session,/const experienceProfile=experienceProfileForMode\(safeLicense\?\.businessSector\|\|identity\.role\)/,
+    'session profile is derived from server-owned license sector and role, not request input');
+  assert.match(session,/experienceProfile,/,'session response must expose the canonical experience profile');
+  assert.doesNotMatch(session,/req\.body\.(?:experienceProfile|businessSector|role)/,
+    'caller must never supply the active experience profile or privileged role');
+  assert.match(auth,/experienceProfile:experienceProfileForMode\(current\.license\?\.businessSector\|\|current\.role\)/,
+    'authenticated /me must reconstruct the experience profile from current server permissions');
   assert.match(service,/experienceProfile:payload\.experienceProfile\|\|null/);
 });
 

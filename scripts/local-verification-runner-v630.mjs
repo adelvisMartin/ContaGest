@@ -30,6 +30,10 @@ export const PROFILE_GATES = Object.freeze({
     gate('infra-build','npm run build'),
     gate('infra-contracts','npm run test:contracts:current'),
   ]),
+  'test-ownership':Object.freeze([
+    gate('test-pyramid-manifest-v655','node scripts/test-pyramid-audit-v655.mjs'),
+    gate('test-pyramid-negative-fixtures-v655','node --test tests/test_pyramid_issue_655.test.mjs'),
+  ]),
   backend:Object.freeze([
     gate('backend-typecheck','npm run typecheck'),
     gate('backend-tests','npm test'),
@@ -78,7 +82,7 @@ function dedupeGates(gates){
 
 export function buildProfilePlan(profile){
   if(profile==='full') return dedupeGates([
-    ...PROFILE_GATES.backend,...PROFILE_GATES.frontend,...PROFILE_GATES.database,...PROFILE_GATES.financial,...PROFILE_GATES.ui,...PROFILE_GATES['ui-routes'],
+    ...PROFILE_GATES['test-ownership'],...PROFILE_GATES.backend,...PROFILE_GATES.frontend,...PROFILE_GATES.database,...PROFILE_GATES.financial,...PROFILE_GATES.ui,...PROFILE_GATES['ui-routes'],
   ]);
   const plan=PROFILE_GATES[profile];
   if(!plan) throw new Error(`VERIFY_PROFILE_UNKNOWN:${profile}`);
@@ -225,11 +229,12 @@ function parseArgs(argv){
   return out;
 }
 
-function changedPlan({cwd,baseRef,addProfiles=[],removeProfiles=[],overrideReason=''}) {
+export function changedPlan({cwd,baseRef,addProfiles=[],removeProfiles=[],overrideReason=''}) {
   const files=git(cwd,['diff','--name-only',`${baseRef}...HEAD`]).split(/\r?\n/).filter(Boolean);
   const risk=classifyChangeRisk(files,{addProfiles,removeProfiles,reason:overrideReason});
   const profiles=risk.profiles;
-  return {files,profiles,risk,plan:dedupeGates(profiles.flatMap((profile)=>buildProfilePlan(profile)))};
+  const ownershipChanged=files.some((file)=>/^(?:qa\/|tests\/|backend\/src\/|tools\/hipico-whatsapp-(?:web-)?bridge\/|config\/test-pyramid-v655\.json$|scripts\/test-pyramid-audit-v655\.mjs$|scripts\/local-verification-runner-v630\.mjs$)/.test(file));
+  return {files,profiles,risk,plan:dedupeGates([...(ownershipChanged?PROFILE_GATES['test-ownership']:[]),...profiles.flatMap((profile)=>buildProfilePlan(profile))])};
 }
 
 async function cli(){
