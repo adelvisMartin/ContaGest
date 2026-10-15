@@ -16,6 +16,8 @@ function fixture() {
     <label for="option">Filtrar</label><select id="option"><option>Todos</option></select>
     <label for="description">Descripción</label><textarea id="description"></textarea>
     <label for="checkbox">Aceptar</label><input type="checkbox" id="checkbox"/>
+    <label for="radio">Elegir</label><input type="radio" id="radio"/>
+    <label for="range">Rango</label><input type="range" id="range"/>
     <input type="hidden" id="hidden"/>
   </body></html>`;
 }
@@ -28,19 +30,34 @@ for (const width of [360, 390, 430]) {
       await page.setContent(fixture());
       expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
       const controls = await page.evaluate(() => Object.fromEntries(
-        ['action','date','text','option','description','checkbox']
+        ['action','date','text','option','description','checkbox','radio','range']
           .map(id => [id, document.getElementById(id).getBoundingClientRect().height])
       ));
       for (const id of ['action','date','text','option','description']) {
         expect(controls[id], `${id} at ${width}px`).toBeGreaterThanOrEqual(44);
       }
-      expect(controls.checkbox).toBeLessThan(44); // native checkbox is deliberately not stretched
+      for (const id of ['checkbox','radio','range']) {
+        expect(controls[id], `native ${id} must keep browser affordance`).toBeLessThan(44);
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     } finally {
       await context.close();
     }
   });
 }
+
+test('#773 narrow fine-pointer desktop does not get mobile input inflation', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 780 }, isMobile: false, hasTouch: false });
+  try {
+    const page = await context.newPage();
+    await page.setContent(fixture());
+    expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(false);
+    const height = await page.locator('#text').evaluate(el => el.getBoundingClientRect().height);
+    expect(height).toBeLessThan(44);
+  } finally {
+    await context.close();
+  }
+});
 
 test('#773 keyboard focus remains visible in forced-colors mode', async ({ page }) => {
   await page.setContent(fixture());
