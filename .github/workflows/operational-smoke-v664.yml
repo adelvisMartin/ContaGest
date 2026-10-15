@@ -1,0 +1,96 @@
+name: Operational Smoke #664 (PG17 + Chromium)
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'scripts/erp-operational-smoke-v664.mjs'
+      - 'qa/erp-operational-financial-v664.test.ts'
+      - 'tests/erp_operational_smoke_v664.test.mjs'
+      - 'docs/qa/erp-operational-smoke-v664.md'
+      - '.github/workflows/operational-smoke-v664.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operational-smoke-664-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Node 22 / smoke contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Smoke contract and negative guards
+        run: node --test tests/erp_operational_smoke_v664.test.mjs
+
+  postgres-chromium:
+    name: PG17 real API + Chromium / ERP only
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      LOCAL_VERIFY_DATABASE_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      DIRECT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: PostgreSQL 17 client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-17
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Exact-SHA ERP smoke (isolated DB; no live Hípico)
+        run: node scripts/erp-operational-smoke-v664.mjs --erp-only
+      - name: Upload smoke diagnostics and Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: operational-smoke-v664-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/operational-smoke/
+            artifacts/migration-chain-v626/
+            playwright-report/
+            test-results/
+          if-no-files-found: warn
