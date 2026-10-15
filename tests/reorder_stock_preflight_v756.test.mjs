@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { prepareReorderStockPage } from '../backend/src/modules/reports/replenishment-candidates.ts';
+import { reorderScanPageMeta } from '../backend/src/modules/reports/reorder-scan-page.ts';
 
 const row = (extra={}) => ({
   productId:'product-a',sku:'A',name:'Product A',unit:'UND',
@@ -89,4 +90,49 @@ test('route source gates: preflight and 409 happen inside transaction before any
   assert.match(route,/tenantId: ctx\.tenantId/);
   assert.match(text,/router\.use\(requireTenant, requirePermission\('reports.view'\)\)/);
   assert.doesNotMatch(route,/\b(?:prisma|tx)\.\w+\.(?:create|update|upsert|delete)\(/);
+});
+
+
+test('reorder route pagination and meta both derive counts from validated scan rows', () => {
+  const text = readFileSync(new URL('../backend/src/modules/reports/reports.routes.ts',import.meta.url),'utf8');
+  const start = text.indexOf("router.get('/inventory/reorder',");
+  const end = text.indexOf("router.get('/taxes',",start);
+  assert.ok(start >= 0 && end > start);
+  const route = text.slice(start,end);
+  const transactionEnd = route.indexOf('}, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });');
+  assert.ok(transactionEnd > 0);
+  const afterTransaction = route.slice(transactionEnd);
+  assert.match(afterTransaction, /const \{ rows, stockReview, reorderCandidates \} = scan/);
+  assert.equal((afterTransaction.match(/scannedProducts: rows\.length/g)||[]).length,2,
+    'Both pagination and meta must use snapshot-validated rows');
+  assert.doesNotMatch(afterTransaction, /scannedProducts:\s*products\.length/,
+    'products is local to the transaction and must not leak into response projections');
+});
+
+test('actual scanned count retains exceptions even when there are no safe reorder candidates', () => {
+  const invalid = row({productId:'reserved',sku:'R',stockExact:'0.000',
+    reservedExact:'1.000',availableExact:'-1.000',shortfallExact:'5.000'});
+  const scan = prepareReorderStockPage([row(),invalid]);
+  assert.equal(scan.rows.length,2);
+  assert.equal(scan.reorderCandidates.length,1);
+  assert.equal(scan.stockReview.stockExceptions.length,1);
+  const page = reorderScanPageMeta({
+    skip:0,take:5,scannedProducts:scan.rows.length,activeProducts:2,
+    matchesInPage:scan.rows.filter(item=>item.needsReorder).length
+  });
+  assert.equal(page.scannedProducts,2);
+  assert.equal(page.matchesInPage,2);
+  assert.equal(page.hasMore,false);
+  assert.equal(page.truncated,false);
+});
+
+test('offset and empty-page pagination remain derived from catalog rather than candidate matches', () => {
+  const scan = prepareReorderStockPage([]);
+  const page = reorderScanPageMeta({
+    skip:7,take:5,scannedProducts:scan.rows.length,activeProducts:7,matchesInPage:0
+  });
+  assert.equal(page.scannedProducts,0);
+  assert.equal(page.nextSkip,null);
+  assert.equal(page.hasMore,false);
+  assert.equal(page.truncated,true);
 });
