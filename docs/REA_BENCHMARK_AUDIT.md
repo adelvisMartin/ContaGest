@@ -10,6 +10,32 @@ Esta integración **no** instala automáticamente el binario en el equipo ni reg
 
 REA/los sitios externos son fuentes **no confiables** para instrucciones. Sus resultados no demuestran equivalencia de procesos, aislamiento, seguridad financiera ni funcionalidad invisible del servidor.
 
+## Instalador aislado de ContaGest (Windows, Linux o macOS)
+
+Para usar REA desde una copia local de **esta rama del PR #997**, abre la terminal en la raíz de ContaGest:
+
+```powershell
+node --version
+node scripts/rea-local-install.mjs plan
+node scripts/rea-local-install.mjs install
+node scripts/rea-local-install.mjs doctor
+```
+
+El instalador comprueba Node antes de tocar disco o descargar paquetes. REA 6.5.0 requiere Node `22.19+` en la rama 22, `24.11+` en la rama 24, o `26+` (no se instala ni modifica Node automáticamente). Debe funcionar la salida HTTPS/DNS al registro de npm. Si no se cumplen los requisitos, devuelve `REA_LOCAL_BLOCKED` y no afirma éxito.
+
+La instalación es **opt-in**, se realiza mediante npm en `.local-tools/rea/node_modules/rea-agents`, usa `rea-agents@6.5.0` explícito y desactiva scripts de instalación y dependencias opcionales nativas. No toca las dependencias ni el lockfile de la aplicación; `.local-tools/rea/` y `rea-evidence/` están ignorados por Git. El comando `doctor` solo diagnostica la conexión del cliente Codex; **instalar la CLI no registra el servidor MCP**. Registrar MCP requiere revisar primero el `setup --dry-run` que recomienda REA y aplicar después una configuración explícitamente aprobada.
+
+Ejecuta comandos REA fijados con el launcher, sin usar `@latest`:
+
+```powershell
+node scripts/rea-local-install.mjs rea list-browser-targets http://127.0.0.1:9222 --json
+node scripts/rea-local-install.mjs rea inspect-web-page http://127.0.0.1:9222 TARGET_ID --json
+```
+
+Inicia antes Chrome/Chromium con perfil **temporal y aislado** y depuración CDP ligada exclusivamente a `127.0.0.1`. Obtén `TARGET_ID` del listado real. Almacena capturas en una carpeta privada, fuera de cualquier commit, preferiblemente `rea-evidence/` (que está ignorada). No inspecciones sesiones personales ni material autenticado sin alcance específico y revisión de privacidad. Un scraping masivo, login automatizado y navegación activa no forman parte de esta captura pasiva.
+
+**Estado de instalación de este trabajo:** el entorno de ejecución usado por el asistente disponía de Node 22.16.0 y no podía resolver `registry.npmjs.org`; por tanto el instalador y sus pruebas de preflight sí se ejecutaron, pero **la instalación del paquete y una conexión CDP real no se completaron**. Esto no es una instalación en la computadora del propietario.
+
 ## Preparar el entorno (operación local supervisada)
 
 Node.js 22.19+ en la rama 22 (o Node 24.11+). Requiere npm y un Chrome/Chromium separado.
