@@ -91,3 +91,17 @@ La política de protección de secretos frontend y rutas fijas se conserva.
 El test nativo `npm run test:config:manifest`, startup con proveedores,
 Docker y bundle de producción todavía deben ejecutarse en checkout
 exact-SHA; un PASS de comprobación V8 no sustituye Node 22.
+
+### URLs públicas: parámetros con secretos (#665)
+
+El catálogo rechaza URLs absolutas y rutas de marketing relativas que
+incluyan claves sensibles en query o hash: `access_token`, `api_key`,
+`client_secret`, `service_role_key`, `jwt`, `password` y alias
+normalizados. El resultado emite únicamente el código de error y la
+variable de entorno, **nunca el valor de la URL**. Enlaces seguros como
+`/?module=login&utm_source=home#screen?tab=sales` siguen funcionando;
+`DATABASE_RUNTIME_URL` conserva conexión PostgreSQL con credenciales
+exclusivamente del servidor.
+
+Esta protección revisa plantillas versionadas, **no sustituye un escaneo
+de bundles compilados**, despliegues reales ni pruebas de navegación.

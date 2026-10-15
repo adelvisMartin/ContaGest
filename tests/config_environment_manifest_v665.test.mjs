@@ -265,3 +265,29 @@ test('#665 malformed per-key metadata fails closed without TypeError or disclosu
   }
  }
 });
+
+test('#665 public frontend URL query and fragments never carry credential parameters',()=>{
+ for(const [key, url] of [
+  ['VITE_API_BASE_URL','https://api.example.test/v1?access_token=synthetic-private-query'],
+  ['VITE_SUPABASE_URL','https://supabase.example.test/?client_secret=synthetic-private-query'],
+  ['VITE_API_BASE_URL','http://localhost:3030/api?api_key=synthetic-private-query'],
+  ['VITE_MARKETING_DEMO_URL','/?module=login&token=synthetic-private-query'],
+  ['VITE_MARKETING_DEMO_URL','/?module=login#access_token=synthetic-private-fragment'],
+  ['VITE_MARKETING_DEMO_URL','/#/welcome?service_role_key=synthetic-private-fragment'],
+  ['VITE_MARKETING_DEMO_URL','https://public.example.test/?utm_campaign=demo#/?jwt=synthetic-private-fragment']
+ ]){
+  const altered=samples.frontend.replace(new RegExp('^'+key+'=.*$','m'),key+'='+url);
+  const report=check({frontend:altered});
+  assert.ok(report.findings.some(f=>f.code==='MANIFEST_SAMPLE_TYPE_INVALID'&&
+    f.owner==='frontend'&&f.key===key),key);
+  assert.equal(JSON.stringify(report).includes('synthetic-private-'),false);
+ }
+ // Marketing navigation is still permitted, including safe query/hash routes.
+ const safe=samples.frontend.replace(/^VITE_MARKETING_DEMO_URL=.*$/m,
+   'VITE_MARKETING_DEMO_URL=/?module=login&utm_source=home#screen?tab=sales');
+ assert.equal(check({frontend:safe}).status,'PASS');
+ // Database credentials remain valid in a backend-only connection URL.
+ const db=samples.backend.replace(/^DATABASE_RUNTIME_URL=.*$/m,
+  'DATABASE_RUNTIME_URL=postgresql://synthetic-user:synthetic-pass@db.example.test:5432/fixture');
+ assert.equal(check({backend:db}).status,'PASS');
+});
