@@ -325,3 +325,39 @@ a backend npm test. El ensayo aislado con una transacción simulada
 NO sustituye PostgreSQL17 con restricciones, locks y RLS reales.
 Se requiere también TypeScript build, HTTP autenticado/CSRF/RBAC y E2E.
 El ticket #760 permanece abierto hasta verificar el CRM completo.
+
+## 2026-10-15 · Interfaz para abrir y listar oportunidades comerciales
+
+La pantalla existente **Clientes** integra ahora el formulario **Oportunidades
+CRM** y el listado **Últimas oportunidades** sin añadir rutas, CSS, permisos
+alternativos ni un nuevo maestro `Client`.
+
+Desde un Lead `qualified` obtenido de la API, el usuario selecciona
+`Abrir oportunidad` y captura título, moneda ISO, monto positivo de
+dos decimales y probabilidad entera 0–100. El servicio
+`crmOpportunityService.mjs` verifica el ID del lead y la revisión
+`updatedAt` canónica y envía `POST /modules/crm/opportunities/from-lead/:id`
+con `expectedLeadUpdatedAt`. No envía tenant/actor/clientId desde
+el navegador: `BackendApi` conserva cookies y CSRF, mientras el
+backend impone tenant y RBAC `sales.manage`.
+
+La interfaz no registra ingresos ni reconoce ventas, cotizaciones
+o equivalencias de monedas; presenta la previsión como `monto moneda`
+sin sumas que mezclen USD, VES u otras divisas. El listado
+`GET /modules/crm/opportunities?take=50&skip=0` está limitado,
+resuelve datos del servidor y escapa todo contenido HTML.
+
+Ante fallo o conflicto 409, la pantalla refresca oportunidades y leads
+sin crear registros locales ni reintentar automáticamente con otro ID.
+Tras alta confirmada se refrescan ambas listas (el CAS transaccional
+cambió la revisión del lead) y se limpia la selección.
+Los avisos accesibles `role=status` y los errores genéricos no exponen
+detalles privados del backend.
+
+Regresión `node --test tests/crm_opportunities_ui_v760.test.mjs`,
+incluida en root `npm test`: validación, llamada API, conflicto,
+contratos de UI y ausencia de persistencia paralela.
+Faltan aún Browser/Playwright, TypeScript/Vite build, PostgreSQL17
+con RLS/locks y un flujo firmado HTTP real antes de certificar el
+CRM en producción. #760 permanece OPEN mientras no estén completas
+Opportunity lifecycle, Quote #753, conversión Client y los demás DoD.
