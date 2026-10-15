@@ -1514,3 +1514,39 @@ test('failed encrypted deletion after fsynced handoff does not reclassify pre-En
     ],label);
   }
 });
+
+test('inbox rejects an existing POSIX AES key readable by other users without deleting ciphertext',async t=>{
+  const f=await harness(t);
+  const first=f.create();await first.initialize();
+  await first.enqueue(candidate());
+  const keyFile=path.join(f.rootDir,'inbox.key');
+  const originalKey=await fs.readFile(keyFile);
+  const ciphertextFile=(await fs.readdir(f.rootDir)).find(name=>/^[a-f0-9]{64}\\.json$/.test(name));
+  assert.ok(ciphertextFile);
+  const ciphertextPath=path.join(f.rootDir,ciphertextFile);
+  const originalCiphertext=await fs.readFile(ciphertextPath);
+  await first.close();
+
+  if(process.platform==='win32'){
+    // chmod mode bits cannot establish or audit NTFS ACLs on Windows.
+    const restarted=f.create();await restarted.initialize();
+    assert.equal((await restarted.read(MESSAGE))?.messageId,MESSAGE);
+    await restarted.close();
+    return;
+  }
+
+  await fs.chmod(keyFile,0o644);
+  t.after(()=>fs.chmod(keyFile,0o600).catch(()=>{}));
+  assert.notEqual((await fs.stat(keyFile)).mode & 0o077,0);
+  const unsafe=f.create();
+  await assert.rejects(unsafe.initialize(),/LAB_PENDING_KEY_PERMISSIONS_UNSAFE/);
+  assert.deepEqual(await fs.readFile(keyFile),originalKey,
+    'startup must not silently rotate or rewrite an exposed key');
+  assert.deepEqual(await fs.readFile(ciphertextPath),originalCiphertext,
+    'unsafe permissions must not erase or modify encrypted pending requests');
+
+  await fs.chmod(keyFile,0o600);
+  const recovered=f.create();await recovered.initialize();
+  assert.equal((await recovered.read(MESSAGE))?.messageId,MESSAGE);
+  await recovered.close();
+});
