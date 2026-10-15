@@ -220,7 +220,7 @@ export function renderReferenceReport(workspace, filter, presentation = {}) {
   return `<section class="reference-report" aria-label="${label(typeNames[type])}">
     <div class="page-head"><div><h2>${label(typeNames[type])}</h2>
       <p>${label(model.group.companyName)} · ${label(model.date)} · Datos internos de la jornada, sin acceso a sistemas ajenos.</p></div>
-      <div class="page-actions"><button class="button" data-action="copy-reference-report" type="button">Copiar resumen</button>
+      <div class="page-actions">${type === "personal" ? '<button class="button" data-action="consolidator-back" type="button">Volver al consolidador</button>' : ""}<button class="button" data-action="copy-reference-report" type="button">Copiar resumen</button>
       <button class="button" data-action="export-reference-report-pdf" type="button">PDF</button></div>
     </div>
     ${controls(workspace,model,type,filter.participantId,presentation)}
