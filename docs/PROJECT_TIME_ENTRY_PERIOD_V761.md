@@ -1,6 +1,6 @@
 # #761 · Projects / Time Entry — UTC interval normalization foundation
 
-Status: **MERGED_INCREMENT / PARTIAL after integration**, not a deployed Projects or Timesheet module. `SOURCE_REUSE=NONE`.
+Status: **PARTIAL (standalone domain foundation)**; only after a verified merge may this become `MERGED_INCREMENT`. This is not a deployed Projects or Timesheet module. `SOURCE_REUSE=NONE`.
 
 This small, side-effect-free backend module is the first security/consistency boundary before designing Project, Task, TimeEntry, approval and cost-to-invoice persistence. The owning issue remains [#761](https://github.com/adelvisMartin/ContaGest/issues/761).
 
