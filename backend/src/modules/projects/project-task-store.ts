@@ -60,7 +60,7 @@ function assertProject(project: any, tenantId: string, projectId: string) {
 export function serializeTask(row: any, tenantId: string, projectId: string, clientId: string) {
   const payload = row?.payload;
   if (!row || row.tenantId !== tenantId || row.moduleSlug !== PROJECT_TASK_SLUG ||
-      row.status !== 'todo' || !payload || typeof payload !== 'object' || Array.isArray(payload) ||
+      !['todo','in_progress','done'].includes(row.status) || !payload || typeof payload !== 'object' || Array.isArray(payload) ||
       payload.schemaVersion !== 1 || payload.projectId !== projectId || payload.clientId !== clientId ||
       !UUID.test(payload.assigneeId || '') || !UUID.test(payload.creatorId || '') ||
       typeof row.title !== 'string' || row.title.trim().length < 3) {
@@ -126,10 +126,80 @@ export async function listProjectTasks({db,tenantId,projectId,take=50,skip=0}: {
   const project = await db.moduleRecord.findFirst({where:{id:projectId,tenantId,moduleSlug:PROJECT_SLUG}});
   const parent = assertProject(project,tenantId,projectId);
   const rows = await db.moduleRecord.findMany({where:{tenantId,moduleSlug:PROJECT_TASK_SLUG,
-    status:'todo',payload:{path:['projectId'],equals:projectId}},take:take+1,skip,
+    payload:{path:['projectId'],equals:projectId}},take:take+1,skip,
     orderBy:[{createdAt:'desc'},{id:'desc'}]});
   if (!Array.isArray(rows) || rows.length>take+1) throw new TypeError('PROJECT_TASK_PAGE_RESULT_INVALID');
   const result = rows.slice(0,take).map(row=>serializeTask(row,tenantId,projectId,parent.clientId));
   return Object.freeze({items:result,pagination:Object.freeze({take,skip,hasMore:rows.length>take,
     nextSkip:rows.length>take?skip+take:null,consistency:'REQUEST_SNAPSHOT_ONLY'})});
+}
+
+
+export class ProjectTaskStaleRevision extends Error { constructor(){super('PROJECT_TASK_STALE_REVISION');} }
+export class ProjectTaskTransitionRejected extends Error { constructor(){super('PROJECT_TASK_TRANSITION_INVALID');} }
+
+const UTC_REVISION = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/** Terminal task completion is manager-controlled, tenant-scoped and audit-atomic. */
+export async function transitionProjectTask({db,tenantId,actorId,projectId,taskId,
+  nextStatus,expectedUpdatedAt,ipAddress,userAgent}: {
+  db:any;tenantId:string;actorId:string;projectId:string;taskId:string;
+  nextStatus:'in_progress'|'done';expectedUpdatedAt:string;
+  ipAddress?:string;userAgent?:string|string[];
+}) {
+  requireId(tenantId,'PROJECT_TASK_TENANT_INVALID');
+  requireId(actorId,'PROJECT_TASK_ACTOR_INVALID');
+  requireId(projectId,'PROJECT_TASK_PROJECT_ID_INVALID');
+  requireId(taskId,'PROJECT_TASK_ID_INVALID');
+  if (nextStatus!=='in_progress' && nextStatus!=='done') throw new ProjectTaskTransitionRejected();
+  if (typeof expectedUpdatedAt!=='string' || !UTC_REVISION.test(expectedUpdatedAt) ||
+      !Number.isFinite(Date.parse(expectedUpdatedAt)) ||
+      new Date(expectedUpdatedAt).toISOString()!==expectedUpdatedAt) {
+    throw new TypeError('PROJECT_TASK_REVISION_INVALID');
+  }
+  if (typeof db?.$transaction !== 'function') throw new TypeError('PROJECT_TASK_TRANSACTION_REQUIRED');
+  try {
+    return await db.$transaction(async (tx:any)=>{
+      if(!tx.moduleRecord?.findFirst || !tx.moduleRecord?.updateMany ||
+         !tx.userProfile?.findFirst || !tx.auditLog?.create){
+        throw new TypeError('PROJECT_TASK_STORE_AUTHORITY_REQUIRED');
+      }
+      const project=await tx.moduleRecord.findFirst({where:{id:projectId,tenantId,moduleSlug:PROJECT_SLUG}});
+      const parent=assertProject(project,tenantId,projectId);
+      if(project.status!=='active')throw new ProjectTaskConflict();
+      if(parent.managerId!==actorId)throw new ProjectTaskForbidden();
+      const actor=await tx.userProfile.findFirst({where:{id:actorId,tenantId,status:'active'},select:{id:true,tenantId:true}});
+      if(!actor || actor.id!==actorId || actor.tenantId!==tenantId)throw new ProjectTaskForbidden();
+      const where={id:taskId,tenantId,moduleSlug:PROJECT_TASK_SLUG};
+      const before=await tx.moduleRecord.findFirst({where});
+      if(!before)throw new ProjectTaskNotFound();
+      const current=serializeTask(before,tenantId,projectId,parent.clientId);
+      if(!(before.updatedAt instanceof Date) || !Number.isFinite(before.updatedAt.getTime())){
+        throw new TypeError('PROJECT_TASK_STORED_REVISION_INVALID');
+      }
+      if(before.updatedAt.toISOString()!==expectedUpdatedAt)throw new ProjectTaskStaleRevision();
+      if(!((current.status==='todo' && nextStatus==='in_progress') ||
+           (current.status==='in_progress' && nextStatus==='done'))){
+        throw new ProjectTaskTransitionRejected();
+      }
+      const changed=await tx.moduleRecord.updateMany({where:{...where,status:current.status,
+        updatedAt:new Date(expectedUpdatedAt),payload:{path:['projectId'],equals:projectId}},
+        data:{status:nextStatus}});
+      if(changed?.count!==1)throw new ProjectTaskStaleRevision();
+      await tx.auditLog.create({data:{tenantId,userId:actorId,action:'project.task.status.change',
+        entity:'ModuleRecord',entityId:taskId,
+        before:{moduleSlug:PROJECT_TASK_SLUG,projectId,status:current.status},
+        after:{moduleSlug:PROJECT_TASK_SLUG,projectId,status:nextStatus},
+        ipAddress:ipAddress||null,userAgent:typeof userAgent==='string'?userAgent:null}});
+      const after=await tx.moduleRecord.findFirst({where});
+      if(!after || !(after.updatedAt instanceof Date))throw new Error('PROJECT_TASK_POST_WRITE_INVALID');
+      const verified=serializeTask(after,tenantId,projectId,parent.clientId);
+      if(verified.status!==nextStatus)throw new Error('PROJECT_TASK_POST_WRITE_INVALID');
+      return Object.freeze({id:verified.id,projectId,status:verified.status,
+        updatedAt:after.updatedAt.toISOString()});
+    },{isolationLevel:'Serializable'});
+  } catch(error:any) {
+    if(error?.code==='P2034')throw new ProjectTaskStaleRevision();
+    throw error;
+  }
 }

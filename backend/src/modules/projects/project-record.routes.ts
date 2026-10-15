@@ -7,8 +7,8 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { createProjectRecord, listProjectRecords, ProjectOwnerNotFound, ProjectReplayConflict } from './project-record-store.js';
 import { transitionProjectStatus, ProjectStatusNotFound, ProjectStatusConflict,
   ProjectStatusForbidden, ProjectStatusTransitionRejected } from './project-status-transition.js';
-import { createProjectTask, listProjectTasks, ProjectTaskNotFound, ProjectTaskForbidden,
-  ProjectTaskConflict } from './project-task-store.js';
+import { createProjectTask, listProjectTasks, transitionProjectTask, ProjectTaskNotFound, ProjectTaskForbidden,
+  ProjectTaskConflict, ProjectTaskStaleRevision, ProjectTaskTransitionRejected } from './project-task-store.js';
 
 const router=Router();
 router.use(requireTenant);
@@ -143,6 +143,43 @@ router.post('/:projectId/tasks',requirePermission('modules.manage'),validateBody
         'PROJECT_TASK_FIELD_NOT_ALLOWED','PROJECT_TASK_TITLE_INVALID',
         'PROJECT_TASK_ASSIGNEE_INVALID','PROJECT_TASK_DESCRIPTION_INVALID'
       ].includes(error.message))throw new HttpError(400,'Identificador, clave de intento o datos de tarea inválidos.');
+      throw error;
+    }
+  }));
+
+
+const taskTransitionSchema=z.object({
+  nextStatus:z.enum(['in_progress','done']),
+  expectedUpdatedAt:z.string().datetime({offset:false,local:false})
+}).strict();
+
+// Same default-OFF feature flag and tenant+RBAC gate as task creation.
+// Only the active project manager can progress a task; no invoice/ledger effect.
+router.patch('/:projectId/tasks/:taskId/status',
+  requirePermission('modules.manage'),validateBody(taskTransitionSchema),
+  asyncHandler(async(req,res)=>{
+    const ctx=(req as any).context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
+    if(!ctx.userId)throw new HttpError(403,'Se requiere usuario autenticado.');
+    try{
+      const result=await transitionProjectTask({
+        db:prisma,tenantId:ctx.tenantId,actorId:ctx.userId,
+        projectId:req.params.projectId,taskId:req.params.taskId,
+        nextStatus:req.body.nextStatus,expectedUpdatedAt:req.body.expectedUpdatedAt,
+        ipAddress:ctx.ip,userAgent:ctx.userAgent
+      });
+      res.setHeader('Cache-Control','private, no-store');
+      ok(res,result);
+    }catch(error){
+      if(error instanceof ProjectTaskForbidden)throw new HttpError(403,'Solo el responsable activo del proyecto puede cambiar sus tareas.');
+      if(error instanceof ProjectTaskNotFound)throw new HttpError(404,'Tarea o proyecto no encontrado.');
+      if(error instanceof ProjectTaskConflict || error instanceof ProjectTaskStaleRevision){
+        throw new HttpError(409,'La tarea o el proyecto cambió. Actualiza el registro.');
+      }
+      if(error instanceof ProjectTaskTransitionRejected)throw new HttpError(409,'Transición de tarea no permitida.');
+      if(error instanceof TypeError&&[
+        'PROJECT_TASK_TENANT_INVALID','PROJECT_TASK_ACTOR_INVALID','PROJECT_TASK_PROJECT_ID_INVALID',
+        'PROJECT_TASK_ID_INVALID','PROJECT_TASK_REVISION_INVALID'
+      ].includes(error.message))throw new HttpError(400,'Identificador o revisión de tarea inválidos.');
       throw error;
     }
   }));
