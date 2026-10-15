@@ -11,6 +11,7 @@ import {
 import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRows } from './sales-kpi.js';
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
 import { deriveReorderCandidates } from './replenishment-candidates.js';
+import { parseReorderScanQuery, reorderScanPageMeta } from './reorder-scan-page.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
 import { LOT_EXPIRY_RISK_VERSION, expiryUtcBounds, projectLotExpiryRisk } from './lot-expiry-risk.js';
 import { summarizePhysicalOutbound } from './stock-movement-activity.js';
@@ -325,16 +326,20 @@ router.get('/inventory/slow-moving', asyncHandler(async (req, res) => {
 }));
 
 router.get('/inventory/reorder', asyncHandler(async (req, res) => {
+  let query;
+  try {
+    query = parseReorderScanQuery(req.query);
+  } catch {
+    throw new HttpError(400, 'Filtros de reporte de reposición inválidos.', { code: 'REORDER_SCAN_QUERY_INVALID' });
+  }
   const ctx = context(req);
-  const requestedTake = Number(req.query.take || 500);
-  const take = Number.isFinite(requestedTake)
-    ? Math.min(Math.max(Math.trunc(requestedTake), 1), 1000)
-    : 500;
-  const onlyNeedsReorder = String(req.query.onlyNeedsReorder || 'false').trim().toLowerCase() === 'true';
+  const { take, skip, onlyNeedsReorder } = query;
 
-  const [activeProducts, products] = await Promise.all([
-    prisma.product.count({ where: { tenantId: ctx.tenantId, active: true } }),
-    prisma.product.findMany({
+  // The catalog count and this page share the same PostgreSQL snapshot.
+  // Cross-request offset paging remains live and is NOT a persistent cursor.
+  const [activeProducts, products] = await prisma.$transaction(async tx => Promise.all([
+    tx.product.count({ where: { tenantId: ctx.tenantId, active: true } }),
+    tx.product.findMany({
       where: { tenantId: ctx.tenantId, active: true },
       select: {
         id: true,
@@ -346,14 +351,22 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
         minStock: true
       },
       orderBy: [{ sku: 'asc' }, { id: 'asc' }],
+      skip,
       take
     })
-  ]);
+  ]), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 
   const rows = products.map(buildInventoryStockHealth);
-  const filteredRows = onlyNeedsReorder ? rows.filter((row) => row.needsReorder) : rows;
+  // Filtering is page-local. A page with zero matches can still have
+  // matching products on subsequent catalog pages.
+  const filteredRows = onlyNeedsReorder ? rows.filter(row => row.needsReorder) : rows;
   const reorderCandidates = deriveReorderCandidates(rows);
+  const pagination = reorderScanPageMeta({
+    skip, take, scannedProducts: products.length, activeProducts,
+    matchesInPage: rows.filter(row => row.needsReorder).length
+  });
 
+  res.setHeader('cache-control', 'no-store');
   ok(res, {
     report: 'inventory-reorder',
     rows: filteredRows,
@@ -366,12 +379,15 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
       noLocationForecastUntil: '#755',
       reorderCandidates
     },
+    pagination,
     meta: {
       onlyNeedsReorder,
       activeProducts,
       scannedProducts: products.length,
       scanLimit: take,
-      truncated: activeProducts > products.length
+      skip,
+      pageScoped: true,
+      truncated: pagination.truncated
     }
   });
 }));
