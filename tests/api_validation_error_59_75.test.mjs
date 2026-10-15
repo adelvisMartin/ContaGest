@@ -21,7 +21,7 @@ test('59/75 API validation delegates Zod to the canonical v2 normalizer and retu
   assert.match(redaction,/SENSITIVE_FIELD\.test\(key\) \|\| key\.toLowerCase\(\) === 't'/);
   assert.match(redaction,/\? REDACTION_CENSOR : visit\(nested, depth \+ 1\)/);
   assert.match(redaction,/SIGNED_QUERY_PARAM\.test\(key\)/);
-  assert.match(redaction,/\bt\s*\[:=\]/, 'standalone short-link parameters must remain redacted');
+  assert.ok(redaction.includes('43}(?![A-Za-z0-9_-])'),'43-character capability link value must remain redacted');
   assert.match(contract,/errorEnvelopeVersion:\s*2/);
   assert.doesNotMatch(middleware,/res\.status\(422\)\.json\(error\)|error\.issues\s*\)/,
     'the middleware must never expose raw Zod issues');
