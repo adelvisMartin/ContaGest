@@ -223,3 +223,36 @@ Verificación: `node --test tests/crm_leads_ui_v760.test.mjs` se enlaza al
 no sustituyen un flujo HTTP/Playwright con cookie/CSRF ni PG17 real.
 El CRM completo sigue pendiente: actualización, oportunidades, cotizaciones,
 métricas, Client conversion atómica, import/export, permisos E2E y QA.
+
+## 2026-10-15 · Actualización transaccional de etapa de prospectos
+
+`PATCH /api/v1/modules/crm/leads/:id/stage` permite mover un lead
+`new → qualified / lost` o `qualified → lost`. Requiere el permiso
+`sales.manage`, actor y tenant autorizados en sesión, un ID de lead UUID
+y un cuerpo estricto `{nextStage,expectedUpdatedAt}` con revisión UTC
+milisegundos obtenida del listado. No permite `proposal`, `won` ni reabrir
+`lost`: pertenecen al ciclo de Opportunity y/o Quote #753 futuro.
+
+El servicio `crm-lead-stage.mjs` realiza dentro de **una transacción Prisma**:
+(1) buscar por `id + tenantId + moduleSlug=crm-leads`; (2) validar
+etapa y revisión; (3) `updateMany` con comparación atómica de
+`id+tenantId+moduleSlug+status+updatedAt`, exigiendo exactamente una fila;
+(4) insertar AuditLog de etapas sin RIF/correo ni payload PII;
+(5) releer por alcance de empresa y devolver `{id,stage,updatedAt}`.
+Cuando otra transacción modificó el prospecto, responde HTTP 409, sin
+sobrescribir ni generar auditoría. Lead ajeno responde 404. Un fallo de
+auditoría o fallo de lectura final revierte toda la transacción.
+
+La fecha `updatedAt` sirve como token de concurrencia del modelo legado;
+una columna entera `version` y un histórico inmutable de eventos siguen
+siendo los contratos recomendados para el esquema CRM definitivo. No
+se crea cliente, documento comercial, ingreso ni puntuación de IA.
+El nuevo `.mjs` se copia al `dist` compilado mediante el script
+`copy-runtime-assets.mjs`; su regresión está incluida en backend `npm test`.
+
+Verificación: `node --test tests/crm_lead_stage_v760.test.mjs` con Prisma
+simulado para casos de CAS, rollback, bloqueo de etapas, aislamiento y
+rutas, sin afirmar que sustituye pruebas de transacción PostgreSQL 17.
+Pendientes: tests HTTP con JWT/CSRF/RBAC, PG17 multi-tenant, navegación
+de la UI hacia el PATCH y browser E2E. El ticket #760 permanece ABIERTO
+hasta completar Opportunity/Quote y conversión transaccional a Client.
