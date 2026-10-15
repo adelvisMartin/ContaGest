@@ -103,7 +103,15 @@ export function main(argv = process.argv.slice(2)) {
       block('Package installed but version/license/entrypoint cannot be verified');
       return;
     }
-    console.log('REA_LOCAL_VERIFIED ' + packageVersion);
+    // A package manifest alone is not proof that the published CLI starts.
+    const smoke = spawnSync(process.execPath, [cli, '--help'], {
+      cwd: root, encoding: 'utf8', shell: false
+    });
+    if (smoke.error || smoke.status !== 0 || !smoke.stdout?.trim()) {
+      block('REA CLI smoke test failed: ' + (smoke.error?.message || smoke.stderr?.slice(0, 300) || 'no help output'));
+      return;
+    }
+    console.log('REA_LOCAL_VERIFIED ' + packageVersion + ' (CLI --help PASS)');
     return;
   }
   if (!availableCli()) {
