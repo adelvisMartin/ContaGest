@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { prepareAsyncJobIntent, planAsyncJobFailure } from '../backend/src/modules/jobs/job-intent-policy.ts';
+import { prepareAsyncJobIntent, planAsyncJobFailure, assertAsyncJobTenantId } from '../backend/src/modules/jobs/job-intent-policy.ts';
 
 const base = () => ({ tenantId: '96a5f951-03ef-44f6-a3de-984e9b29cf52', handlerKey: 'reports.refresh.v1', effectKey: 'report:42', payload: { amount: '0.01', id: '42' }, maxAttempts: 3, runAt: new Date('2026-10-15T15:00:00Z') });
 
@@ -91,4 +91,22 @@ test('lease deadlines use database clock rather than caller time', () => {
   assert.match(code, /"runAt" <= clock_timestamp\(\)/);
   assert.match(code, /"leaseUntil">clock_timestamp\(\)/);
   assert.doesNotMatch(code, /"leaseUntil"\s*[><]=?\s*\$\{now\}/);
+});
+
+test('all worker entrypoints enforce the canonical tenant UUID guard', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  assert.equal((code.match(/assertAsyncJobTenantId\(tenantId\);/g) || []).length, 4);
+  for (const invalid of [undefined, null, '', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'not-a-tenant']) {
+    assert.throws(() => assertAsyncJobTenantId(invalid), /JOB_TENANT_INVALID/);
+  }
+  assert.doesNotThrow(() => assertAsyncJobTenantId(base().tenantId));
+});
+
+test('retry deadlines and audit timestamps are chosen by PostgreSQL, not worker clock', () => {
+  const code = readFileSync(new URL('../backend/src/modules/jobs/async-job-intent.service.ts', import.meta.url), 'utf8');
+  assert.match(code, /"runAt"=CASE WHEN \$\{decision\.status\} = 'retry'/);
+  assert.match(code, /THEN clock_timestamp\(\) \+ \(\$\{retryDelaySeconds\}::integer \* INTERVAL '1 second'\)/);
+  assert.doesNotMatch(code, /COALESCE\(\$\{decision\.runAt\}/);
+  assert.doesNotMatch(code, /"updatedAt"=\$\{now\}/);
+  assert.match(code, /"updatedAt"=clock_timestamp\(\)/);
 });
