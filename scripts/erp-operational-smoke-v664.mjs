@@ -46,6 +46,15 @@ export function buildSmokeSteps() {
 export function isolatedSmokeEnvironment(source, databaseUrl) {
   const env = { ...source };
   for (const key of ERASE_REMOTE_ENV) delete env[key];
+  // Child Prisma/API/Chromium tasks need only the disposable DB URL, not
+  // credentials capable of creating/dropping databases or offsite archives.
+  // Preserve harmless runtime settings while suppressing secret-bearing sources.
+  for (const key of Object.keys(env)) {
+    if (/^(?:LOCAL_VERIFY_DATABASE_ADMIN_URL|DATABASE_BACKUP_URL|DATABASE_BACKUP_EXPECTED_ROLE|BACKUP_|RCLONE_|AGE_|SUPABASE_|WHATSAPP_|OPENAI_|VERCEL_AUTOMATION_|POSTGRES_)/.test(key)
+      || /^(?:.*_SECRET|.*_PRIVATE_KEY|.*_ACCESS_TOKEN|.*_SERVICE_ROLE_KEY)$/.test(key)) {
+      delete env[key];
+    }
+  }
   // DB fallbacks and direct URLs must never route around the disposable PostgreSQL.
   for (const key of [
     'DATABASE_RUNTIME_URL', 'POSTGRES_PRISMA_URL', 'DIRECT_URL', 'DIRECT_DATABASE_URL',
