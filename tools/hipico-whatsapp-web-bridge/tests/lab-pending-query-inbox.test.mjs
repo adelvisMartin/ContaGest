@@ -1521,7 +1521,7 @@ test('inbox rejects an existing POSIX AES key readable by other users without de
   await first.enqueue(candidate());
   const keyFile=path.join(f.rootDir,'inbox.key');
   const originalKey=await fs.readFile(keyFile);
-  const ciphertextFile=(await fs.readdir(f.rootDir)).find(name=>/^[a-f0-9]{64}\\.json$/.test(name));
+  const ciphertextFile=(await fs.readdir(f.rootDir)).find(name=>name.endsWith('.json')&&name.length===69);
   assert.ok(ciphertextFile);
   const ciphertextPath=path.join(f.rootDir,ciphertextFile);
   const originalCiphertext=await fs.readFile(ciphertextPath);
