@@ -18,7 +18,8 @@ export function careAnamnesisConsistencyIssues(input: CareAnamnesisConsistencyIn
   ] as const) {
     const seen=new Set<string>();
     input[key].forEach((entry,index)=>{
-      const name=entry[field].normalize('NFKC').trim().toLocaleLowerCase('es');
+      const label='substance' in entry ? entry.substance : entry.name;
+      const name=label.normalize('NFKC').trim().toLocaleLowerCase('es');
       if (seen.has(name))errors.push({path:[key,index,field],message:'No repitas una misma entrada en la anamnesis.'});
       seen.add(name);
     });
