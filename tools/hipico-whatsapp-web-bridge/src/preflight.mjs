@@ -1,6 +1,10 @@
 import { assertRuntimeConfig, loadRuntimeConfig, RUNTIME_MODES, VERSION } from './runtime-config.mjs';
 import { assertLocalPromotionSafe } from './promotion-guard.mjs';
 import { policyDiagnostic } from './source-policy-gate.mjs';
+import { assertSourceAutoReadDenied } from './source-read-policy-gate.mjs';
+
+// Preflight must NOT say READY for a runtime that is forbidden to read SOURCE.
+assertSourceAutoReadDenied();
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const promotion = assertLocalPromotionSafe(process.env, process.cwd());
