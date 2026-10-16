@@ -1,5 +1,7 @@
 # Control Hípico · WhatsApp Web Bridge v1.6.0
 
+> **IMPORTANTE — SOURCE AUTOMATION BLOCKED (issue #1011).** Este Bridge NO debe abrir WhatsApp Messenger real para leer ni enviar mensajes automáticamente. El guard `SOURCE_AUTO_READ_POLICY_NO_GO` aborta `start`, `server:start`, `live:v130`, `history:v130`, `capture:groups` y `production:check` antes de cargar el navegador o crear spools. El texto histórico de abajo describe arquitectura preservada, NO funcionalidad habilitada. Sólo pruebas LAB con fixtures sintéticos offline o compartición manual hecha por la persona. Ver [contrato de bloqueo](../../docs/hipico/SOURCE_AUTO_READ_NO_GO_V1011.md).
+
 Bridge de Control Hípico para observar el grupo oficial mediante WhatsApp Web y ejecutar automatización conversacional segura en LAB.
 
 ```text
