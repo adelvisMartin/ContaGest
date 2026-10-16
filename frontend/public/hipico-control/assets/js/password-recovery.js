@@ -58,11 +58,10 @@ function readRecoveryContext() {
   }
   recoveryError = hashError || queryError || (hadAuthMaterial ? 'INVALID_RECOVERY_LINK' : '');
 }
+// Provider errors may contain emails, tokens or internal details. Never copy their
+// messages into an Error retained by the PWA; only the status class is needed.
 async function parseError(response) {
-  try {
-    const body = await response.json();
-    return String(body?.msg || body?.message || body?.error_description || body?.error || `Error ${response.status}`);
-  } catch { return `Error ${response.status}`; }
+  return Number(response?.status) === 429 ? 'RECOVERY_RATE_LIMITED' : 'RECOVERY_PROVIDER_UNAVAILABLE';
 }
 export async function requestPasswordRecovery(email) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
