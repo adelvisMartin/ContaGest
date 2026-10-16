@@ -27,8 +27,8 @@ test('5/51 sales requires server-confirmed persistence and preserves quote trans
   ]) assert.ok(source.includes(token),token);
   // A timeout may occur after the database commits. A generated client-side
   // sale/log ID or an automatic offline fallback would create a second effect.
-  assert.doesNotMatch(source, /create-sale-offline-fallback|RuntimePolicy\\.handlePersistenceFailure\\(/);
-  assert.doesNotMatch(source, /uid\\(['"](?:sale|log)['"]\\)/);
+  assert.doesNotMatch(source, /create-sale-offline-fallback|RuntimePolicy\.handlePersistenceFailure\(/);
+  assert.doesNotMatch(source, /uid\(['"](?:sale|log)['"]\)/);
   const serverCall=source.indexOf('await SupabaseSyncService.createSale(payload)');
   const confirm=source.indexOf("throw new Error('SALES_SERVER_CONFIRMATION_MISSING')",serverCall);
   const update=source.indexOf('draft.sales=[saved,',serverCall);
