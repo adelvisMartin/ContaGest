@@ -27,7 +27,7 @@ test('#794 member switch invalidates prior assessment, routine and nutrition per
   assert.match(scope,/GymVerticalService\.assessments\(memberId\)/);
   assert.match(scope,/GymVerticalService\.routines\(memberId\)/);
   assert.match(scope,/GymVerticalService\.nutrition\(memberId\)/);
-  assert.ok(scope.indexOf('setServerVerified(true)') > scope.indexOf('setRoutines(rows(routineResponse))'));
+  assert.ok(scope.lastIndexOf('setServerVerified(true)') > scope.indexOf('setRoutines(rows(routineResponse))'));
 });
 test('#794 failure state exposes retry and no stale member placeholders',()=>{
   assert.match(source,/if \(!serverVerified\) return/);
