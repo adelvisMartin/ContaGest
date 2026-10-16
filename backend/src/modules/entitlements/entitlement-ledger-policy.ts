@@ -37,7 +37,7 @@ export function deriveEntitlementBalance(
       !id(entitlement.payerId) || !id(entitlement.beneficiaryId) || !id(entitlement.targetId) ||
       !utc(entitlement.validFrom) ||
       (entitlement.validUntil !== null &&
-       (!utc(entitlement.validUntil) || entitlement.validUntil <= entitlement.validFrom)) ||
+       (!utc(entitlement.validUntil) || Date.parse(entitlement.validUntil) <= Date.parse(entitlement.validFrom))) ||
       !Array.isArray(events) || events.length > 10000) fail();
   const accepted = new Map<string, string>();
   const consumed = new Map<string, { units: bigint; released: bigint }>();
@@ -73,7 +73,8 @@ export function deriveEntitlementBalance(
       consumed.set(event.effectKey, { units: amount, released: 0n });
     } else if (event.kind === 'RELEASE') {
       const original = consumed.get(event.releaseOfEffectKey!);
-      if (!original || original.released + amount > original.units) fail();
+      if (!original) throw new Error('ENTITLEMENT_LEDGER_EVENT_INVALID');
+      if (original.released + amount > original.units) fail();
       original.released += amount;
       available += amount;
       spent -= amount;
