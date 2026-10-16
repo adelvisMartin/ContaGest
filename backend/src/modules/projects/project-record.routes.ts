@@ -13,6 +13,8 @@ import { createTimeEntryDraft, listTimeEntries, ProjectTimeEntryNotFound,
   ProjectTimeEntryForbidden, ProjectTimeEntryConflict } from './time-entry-record-store.js';
 import { transitionTimeEntryReview, TimeReviewMissing, TimeReviewForbidden,
   TimeReviewConflict, TimeReviewStateError } from './time-entry-review-store.js';
+import { createProjectRateCard, listProjectRateCards, ProjectRateCardNotFound,
+  ProjectRateCardForbidden, ProjectRateCardConflict } from './project-rate-card-store.js';
 
 const router=Router();
 router.use(requireTenant);
@@ -288,6 +290,68 @@ router.patch('/:projectId/tasks/:taskId/time-entries/:entryId/review',
         'PROJECT_TIME_REVIEW_PROJECT_INVALID','PROJECT_TIME_REVIEW_TASK_INVALID',
         'PROJECT_TIME_REVIEW_ENTRY_INVALID','PROJECT_TIME_REVIEW_REVISION_INVALID'
       ].includes(error.message))throw new HttpError(400,'Identificador o revisión inválidos.');
+      throw error;
+    }
+  }));
+
+
+const projectRateCardDraftSchema=z.object({
+  memberId:z.string().uuid(),
+  hourlyRateExact:z.string().regex(/^[0-9]{1,12}\.[0-9]{2}$/),
+  currency:z.string().regex(/^[A-Z]{3}$/),
+  effectiveFromUtc:z.string().datetime({offset:false,local:false}),
+  expectedRevision:z.number().int().min(0).max(1023)
+}).strict();
+
+// All rate card routes inherit project feature flag OFF by default, tenant,
+// active license and modules.manage. The store independently authorizes the
+// active Project.managerId, and NEVER produces billing or invoice authority.
+router.post('/:projectId/rate-cards',
+  requirePermission('modules.manage'),validateBody(projectRateCardDraftSchema),
+  asyncHandler(async(req,res)=>{
+    const ctx=(req as any).context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
+    if(!ctx.userId)throw new HttpError(403,'Se requiere usuario autenticado.');
+    try{
+      const result=await createProjectRateCard({
+        db:prisma,tenantId:ctx.tenantId,actorId:ctx.userId,
+        projectId:req.params.projectId,draft:req.body,ipAddress:ctx.ip,userAgent:ctx.userAgent
+      });
+      res.setHeader('Cache-Control','private, no-store');
+      ok(res,result,201);
+    }catch(error){
+      if(error instanceof ProjectRateCardForbidden)throw new HttpError(403,'Solo el responsable activo puede registrar tarifas.');
+      if(error instanceof ProjectRateCardNotFound)throw new HttpError(404,'Proyecto, cliente o trabajador no disponibles.');
+      if(error instanceof ProjectRateCardConflict)throw new HttpError(409,'Versión o vigencia de tarifa incompatible. Actualiza el historial.');
+      if(error instanceof TypeError&&error.message.startsWith('PROJECT_RATE_CARD_')&&
+         !error.message.startsWith('PROJECT_RATE_CARD_STORED_')&&
+         !error.message.includes('DB_AUTHORITY')){
+        throw new HttpError(400,'Datos de tarifa o revisión inválidos.');
+      }
+      throw error;
+    }
+  }));
+
+router.get('/:projectId/rate-cards/:memberId',
+  requirePermission('modules.manage'),asyncHandler(async(req,res)=>{
+    const page=pageSchema.safeParse(req.query);
+    if(!page.success)throw new HttpError(400,'Paginación de tarifas inválida.');
+    const ctx=(req as any).context as {tenantId:string;userId?:string};
+    if(!ctx.userId)throw new HttpError(403,'Se requiere usuario autenticado.');
+    try{
+      const result=await listProjectRateCards({
+        db:prisma,tenantId:ctx.tenantId,actorId:ctx.userId,
+        projectId:req.params.projectId,memberId:req.params.memberId,...page.data
+      });
+      res.setHeader('Cache-Control','private, no-store');
+      ok(res,result);
+    }catch(error){
+      if(error instanceof ProjectRateCardForbidden)throw new HttpError(403,'No autorizado para consultar tarifas.');
+      if(error instanceof ProjectRateCardNotFound)throw new HttpError(404,'Proyecto no encontrado.');
+      if(error instanceof TypeError&&[
+        'PROJECT_RATE_CARD_TENANT_INVALID','PROJECT_RATE_CARD_ACTOR_INVALID',
+        'PROJECT_RATE_CARD_PROJECT_INVALID','PROJECT_RATE_CARD_MEMBER_INVALID',
+        'PROJECT_RATE_CARD_PAGE_INVALID'
+      ].includes(error.message))throw new HttpError(400,'Identificador o paginación inválidos.');
       throw error;
     }
   }));
