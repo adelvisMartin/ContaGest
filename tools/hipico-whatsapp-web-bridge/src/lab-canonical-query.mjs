@@ -153,11 +153,13 @@ export function resolveQuotedLabRaceScope(row,visibleRows){
 // trailing qualifier while still allowing a LAB reply from the backend.
 function validCanonicalLabEnvelope({token,labGroupId,labChannelKey,messageId,senderId,
   text,timestamp,race,quotedMessageId,timeoutMs}){
-  const bounded=(value,max)=>typeof value==='string'&&value.length>0&&
-    value.length<=max&&value.trim().length>0&&!/[\u0000-\u001f\u007f]/.test(value);
+  const bounded=(value,max,allowLines=false)=>typeof value==='string'&&value.length>0&&
+    value.length<=max&&value.trim().length>0&&
+    !(allowLines ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/ :
+      /[\u0000-\u001f\u007f]/).test(value);
   if(!bounded(token,4096)||!bounded(labGroupId,160)||
      !bounded(labChannelKey,128)||!bounded(messageId,320)||
-     !bounded(senderId,160)||!bounded(text,1200)||
+     !bounded(senderId,160)||!bounded(text,1200,true)||
      !Number.isFinite(timeoutMs)||timeoutMs<0||timeoutMs>30000)return false;
   // Input must already be a normalized server/DOM observation timestamp.
   if(typeof timestamp!=='string'||
@@ -171,7 +173,7 @@ function validCanonicalLabEnvelope({token,labGroupId,labChannelKey,messageId,sen
        !['raceNumber','racetrack','raceDate'].every(key=>
          Object.prototype.hasOwnProperty.call(race,key))||
        !Number.isInteger(race.raceNumber)||race.raceNumber<1||race.raceNumber>99||
-       !bounded(race.racetrack,80)||
+       !bounded(race.racetrack,80)||race.racetrack.trim().length<2||
        !/^[\p{L}\p{N} -]+$/u.test(race.racetrack)||
        typeof race.raceDate!=='string'||
        !/^\d{4}-\d\d-\d\d$/.test(race.raceDate))return false;
