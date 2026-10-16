@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { optionalText, dateText, jsonRecord, jsonArray } from './verticals.shared.js';
+import { immunizationDateIssues } from './veterinary-immunization-date-policy.js';
 
 export const patientSchema = z.object({
   kind: z.enum(['human','animal']).default('human'),
@@ -287,6 +288,10 @@ export const immunizationSchema = z.object({
   administeredAt: z.string().optional(),
   nextDueAt: z.string().optional().nullable(),
   notes: optionalText
+}).superRefine((value, refinement) => {
+  for (const issue of immunizationDateIssues(value)) {
+    refinement.addIssue({ code: 'custom', path: [issue.field], message: issue.message });
+  }
 });
 
 
