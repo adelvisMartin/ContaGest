@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { optionalText, dateText, jsonRecord } from './verticals.shared.js';
 import { gymProgressionConfigIssues, isRirRpePairCoherent } from './gym.progression.js';
+import { validGymCalendarDay } from './gym-calendar-date.js';
 
 /**
  * Validation authority for the Gym vertical.
@@ -247,8 +248,8 @@ export const workoutSetSchema = z.object({
 
 export const performanceQuerySchema = z.object({
   memberId: z.string().min(10),
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+  from: z.string().refine(validGymCalendarDay, {message:'Fecha desde inválida.'}).optional(),
+  to: z.string().refine(validGymCalendarDay, {message:'Fecha hasta inválida.'}).optional()
 });
 
 export const routineSchema = z.object({
