@@ -66,6 +66,12 @@ test('#119 distinct physical observation dates and files allow synthetically val
   const checked=check(f);
   assert.equal(checked.status,0,checked.stderr);
   assert.ok(fs.existsSync(path.join(f.dir,'physical-qa-evidence.json')));
+  const material=JSON.parse(fs.readFileSync(path.join(f.dir,'physical-qa-evidence.json'),'utf8'));
+  for(const env of material.environments){
+    assert.ok(env.physicalDays?.day1ObservedAtUtc);
+    assert.ok(env.physicalDays?.day2ObservedAtUtc);
+    assert.ok(Date.parse(env.physicalDays.day2ObservedAtUtc)-Date.parse(env.physicalDays.day1ObservedAtUtc)>=86400000);
+  }
 });
 
 test('#119 identical evidence path reused for both journeys cannot yield physical PASS',()=>{
