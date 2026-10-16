@@ -342,7 +342,7 @@ function SalesWorkspace({state,context}){
           Poner carrito en espera
         </CgButton>
         <Typography variant="caption" color="text.secondary">
-          {visiblePosHeld.length}/5 borradores en espera · Solo memoria, se pierden al cerrar o cambiar empresa
+          {visiblePosHeld.length}/5 borradores en espera · Solo memoria: se pierden al salir de Ventas, recargar o cambiar empresa
         </Typography>
       </Box>
       {visiblePosHeld.length>0?
