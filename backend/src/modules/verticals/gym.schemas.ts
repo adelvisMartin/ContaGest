@@ -405,8 +405,10 @@ export const completeNutritionSchema = z.object({
   fatG:z.coerce.number().min(0).optional().nullable(),
   waterMl:z.coerce.number().int().min(0).optional().nullable(),
   notes:optionalText,
-  startsAt:z.string().optional().nullable(),
-  endsAt:z.string().optional().nullable(),
+  startsAt:z.string().refine((value)=>value===''||validGymCalendarDay(value),
+    {message:'Fecha inicial del plan inválida.'}).optional().nullable(),
+  endsAt:z.string().refine((value)=>value===''||validGymCalendarDay(value),
+    {message:'Fecha final del plan inválida.'}).optional().nullable(),
   meals:z.array(nutritionMealSchema).min(1).max(1400)
 }).superRefine((value, refinement) => {
   if(value.startsAt&&value.endsAt&&new Date(value.endsAt).getTime()<new Date(value.startsAt).getTime()){
