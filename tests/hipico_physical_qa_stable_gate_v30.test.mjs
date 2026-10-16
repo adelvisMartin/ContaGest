@@ -14,8 +14,12 @@ const run=(argv,sha)=>spawnSync(process.execPath,[recorder,...argv],{
 const read=(relative)=>fs.readFileSync(relative,'utf8');
 
 function completePhysicalQa(dir,file,sha){
-  const proof='proof.log';
-  fs.writeFileSync(path.join(dir,proof),'physical material evidence');
+  const proof='proof.log', dayOne='day-one.log', dayTwo='day-two.log';
+  fs.writeFileSync(path.join(dir,proof),'synthetic physical fixture');
+  fs.writeFileSync(path.join(dir,dayOne),'synthetic day one distinct');
+  fs.writeFileSync(path.join(dir,dayTwo),'synthetic day two distinct');
+  const observed1=new Date(Date.now()-3*86400000).toISOString();
+  const observed2=new Date(Date.now()-1*86400000).toISOString();
   const sourceHash='1'.repeat(64);
   const labHash='2'.repeat(64);
   assert.equal(run(['init',`--file=${file}`,'--force','--operator=QA Operador'],sha).status,0);
@@ -28,7 +32,10 @@ function completePhysicalQa(dir,file,sha){
   const raw=JSON.parse(fs.readFileSync(file,'utf8'));
   for(const env of raw.environments){
     for(const scenario of catalog.scenarios){
-      env.scenarios[scenario.id]={status:'PASS',severity:null,notes:'verified',evidence:[proof]};
+      const first=scenario.id==='source-to-lab-e2e-day-1', second=scenario.id==='source-to-lab-e2e-day-2';
+      env.scenarios[scenario.id]={status:'PASS',severity:null,notes:'verified',
+        evidence:[first?dayOne:second?dayTwo:proof],
+        ...((first||second)?{observedAtUtc:first?observed1:observed2}:{})};
     }
   }
   raw.invariants={sourceReadOnly:'PASS',labOnlyWriteDestination:'PASS',sessionFallbackSafe:'PASS'};
@@ -52,6 +59,10 @@ test('v30 successful physical QA check emits canonical exact-SHA release evidenc
   assert.ok(evidence.completedAt);
   assert.equal(evidence.operator,'QA Operador');
   assert.deepEqual(evidence.requiredModes,['pwa-browser','pwa-standalone','android-apk']);
+  assert.ok(evidence.environments.every(env=>
+    /^\d{4}-\d\d-\d\dT/.test(env.physicalDays?.day1ObservedAtUtc||'')&&
+    /^\d{4}-\d\d-\d\dT/.test(env.physicalDays?.day2ObservedAtUtc||'')),
+    'canonical release evidence must preserve observation times for both days');
   assert.equal(evidence.summary.releasePhysicalGate,'PASS');
   assert.equal(evidence.summary.materialEvidenceComplete,true);
   assert.deepEqual(evidence.invariants,{
@@ -70,6 +81,9 @@ test('v30 physical QA verifier indexes only canonical PASS evidence as optional 
   assert.match(source,/schemas:\s*\['hipico-physical-qa-evidence\.v119'\]/);
   assert.match(source,/summary\?\.releasePhysicalGate\s*===\s*'PASS'/);
   assert.match(source,/summary\?\.materialEvidenceComplete\s*===\s*true/);
+  assert.match(source,/summary\?\.twoDayEvidenceComplete\s*===\s*true/);
+  assert.match(source,/validTwoDayPhysicalEvidence\(data\)/);
+  assert.match(source,/physicalDays/);
   assert.match(source,/data\?\.completedAt/);
   assert.match(source,/data\?\.operator/);
   assert.match(source,/requiredModes/);
