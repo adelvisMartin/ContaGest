@@ -1,0 +1,13 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {straightLineAssetSchedule as make} from '../backend/src/modules/assets/asset-straight-line-schedule.mjs';
+const data=()=>({tenantId:'T1',assetId:'A1',cost:'1000.00',residual:'100.00',lifeMonths:12,inServiceDate:'2028-01-31'});
+test('twelve months reconcile exactly to salvage and 900 depreciation',()=>{const x=make(data());assert.equal(x.rows.length,12);assert.equal(x.rows[11].accumulated,'900.00');assert.equal(x.rows[11].carryingValue,'100.00');assert.equal(x.ledgerPosted,false)});
+test('one-cent remainder distributed deterministically',()=>{const x=data();x.cost='1.00';x.residual='0';x.lifeMonths=3;const r=make(x);assert.deepEqual(r.rows.map(z=>z.charge),['0.34','0.33','0.33'])});
+test('leap February calendar boundaries',()=>{const r=make(data());assert.equal(r.rows[0].periodEnd,'2028-01-31');assert.equal(r.rows[1].periodEnd,'2028-02-29');assert.equal(r.rows[2].periodEnd,'2028-03-31')});
+test('non-leap calendar boundaries',()=>{const x=data();x.inServiceDate='2027-01-31';assert.equal(make(x).rows[1].periodEnd,'2027-02-28')});
+test('reject fractional fractions exceeding cents and exponents',()=>{for(const cost of ['1.001','1e3','-100','NaN',1000]){const x=data();x.cost=cost;assert.throws(()=>make(x),/INVALID_ASSET_AMOUNT/)}});
+test('reject residual >= cost',()=>{const x=data();x.residual='1000.00';assert.throws(()=>make(x),/INVALID_ASSET_RESIDUAL/)});
+test('reject impossible date',()=>{const x=data();x.inServiceDate='2027-02-30';assert.throws(()=>make(x),/INVALID_ASSET_SCHEDULE/)});
+test('reject unreasonable 601 months',()=>{const x=data();x.lifeMonths=601;assert.throws(()=>make(x),/INVALID_ASSET_SCHEDULE/)});
+test('schedule rows and projection immutable',()=>{const r=make(data());assert.ok(Object.isFrozen(r));assert.ok(Object.isFrozen(r.rows));assert.ok(Object.isFrozen(r.rows[0]))});
+test('one cent amount is handled without floating point',()=>{const x=data();x.cost='0.01';x.residual='0';x.lifeMonths=4;assert.deepEqual(make(x).rows.map(z=>z.charge),['0.01','0.00','0.00','0.00'])});
