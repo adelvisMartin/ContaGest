@@ -1,0 +1,5 @@
+# #789 — Límite del versionado de programas de periodización
+
+El POST existente `/gym/periodization/programs/:id/version` calculaba `maxVersion+1` sin comprobar si el máximo es un entero seguro/positivo ni si el valor supera el int32 que PostgreSQL usa para `version`. La nueva función `nextPeriodizationVersion` mantiene CAS de última versión y rechaza valores inexistentes, no finitos o el máximo 2,147,483,647 antes de emitir un INSERT. La ruta traduce esa excepción exclusivamente a HTTP 409. No altera estructura de programas, historial, esquema ni permisos.
+
+Se ejecutaron **6/6 pruebas de la lógica real** sobre blobs exactos de GitHub en V8 con anotaciones TypeScript eliminadas. La ruta se inspeccionó, pero **no** pasó test HTTP real ni PG17; full monorepo build/CI/browser NO EJECUTADOS. No equivale a DoD. #789 permanece OPEN por publicación, snapshots, aislamiento, editor UX y tests multi-tenant. Revertir tres archivos para rollback; SOURCE_REUSE=NONE.
