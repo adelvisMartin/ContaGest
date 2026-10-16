@@ -81,3 +81,28 @@ test('#666 still accepts symlinks with targets contained in the checkout', () =>
   put('README.md', '[Internal](docs/alias.md)');
   assert.deepEqual(check().findings, []);
 }));
+
+
+test('#666 validates reference-style links with canonical relative resolution', () => fixture(({ put, check }) => {
+  put('README.md', '[Guide][GUIDE]\n[guide]: <docs/guide.md> "Guide"\n');
+  assert.deepEqual(check().findings, []);
+  put('README.md', '[Gone][guide]\n[guide]: docs/missing.md\n');
+  assert.deepEqual(check().findings.map(x => x.code), ['LINK_MISSING']);
+}));
+
+test('#666 rejects undefined reference IDs and ignores literal examples', () => fixture(({ put, check }) => {
+  put('README.md', '[Broken][unknown]\n' + '\x60[literal][not-a-ref]\x60\n');
+  assert.deepEqual(check().findings.map(x => x.code), ['LINK_REFERENCE_UNDEFINED']);
+  assert.equal(check().findings[0].line, 1);
+}));
+
+test('#666 applies symlink/traversal protection to reference definitions', () => fixture(({ root, put, check }) => {
+  const external = mkdtempSync(path.join(tmpdir(), 'cg-docs-ref-external-'));
+  try {
+    writeFileSync(path.join(external, 'secret.md'), 'EXTERNAL_SECRET');
+    symlinkSync(path.join(external, 'secret.md'), path.join(root, 'docs', 'escaped.md'));
+    put('README.md', '[Escape][r]\n[r]: docs/escaped.md\n');
+    assert.deepEqual(check().findings.map(x => x.code), ['LINK_TRAVERSAL']);
+    assert.equal(JSON.stringify(check()).includes('EXTERNAL_SECRET'), false);
+  } finally { rmSync(external, { recursive: true, force: true }); }
+}));

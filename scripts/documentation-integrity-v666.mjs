@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { collectReferenceLinks } from './documentation-reference-links-v666.mjs';
 
 // Explicitly curated critical surfaces; documents are reviewed before entering this gate.
 export const CRITICAL_DOCUMENTS = Object.freeze([
@@ -103,6 +104,19 @@ export function auditDocumentation({ root = process.cwd(), documents = CRITICAL_
       const target = withinRoot(base, path.join(path.dirname(doc), value));
       if (!target) report('LINK_TRAVERSAL', doc, line, value);
       else if (!existsSync(target)) report('LINK_MISSING', doc, line, value);
+    }
+    // Reference-style links share the exact same root, symlink and URL policy
+    // as inline links. Undefined labels are reported without guessing targets.
+    for (const reference of collectReferenceLinks(contents)) {
+      if (reference.kind === 'undefined') {
+        report('LINK_REFERENCE_UNDEFINED', doc, reference.line, reference.reference);
+        continue;
+      }
+      const value = localLinkTarget(reference.reference);
+      if (!value) continue;
+      const target = withinRoot(base, path.join(path.dirname(doc), value));
+      if (!target) report('LINK_TRAVERSAL', doc, reference.line, value);
+      else if (!existsSync(target)) report('LINK_MISSING', doc, reference.line, value);
     }
     for (const { match, line } of collectMatches(contents, /\bnpm\s+(?:(?:--workspace\s+|--workspace=)([a-zA-Z0-9_-]+)\s+)?run\s+([a-zA-Z0-9:_-]+)/g)) {
       const workspace = match[1];
