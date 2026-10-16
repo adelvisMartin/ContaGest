@@ -189,7 +189,13 @@ let report=summary(result);
 const material=collectEvidenceFiles(result,path.dirname(target));
 const materialEvidenceComplete=report.evidenceComplete&&report.invariantEvidenceComplete&&material.errors.length===0;
 report={...report,materialEvidenceComplete,materialEvidenceErrors:material.errors};
-if(report.releasePhysicalGate==='PASS'&&!materialEvidenceComplete)report.releasePhysicalGate='NOT_READY';
+// A status preview must never show release PASS for evidence belonging to
+// another candidate, even though `check` also rejects the mismatch strictly.
+const candidateShaMatchesCurrent=/^[a-f0-9]{40}$/i.test(sha)&&
+  String(result.candidateSha||'').toLowerCase()===sha;
+report.candidateShaMatchesCurrent=candidateShaMatchesCurrent;
+if(report.releasePhysicalGate==='PASS'&&(!materialEvidenceComplete||!candidateShaMatchesCurrent))
+  report.releasePhysicalGate='NOT_READY';
 if(command==='status'){console.log(JSON.stringify(report,null,2));process.exit(0);}
 if(command==='check'){
   if(!/^[a-f0-9]{40}$/i.test(sha)){console.error('CANDIDATE_SHA_UNBOUND: check requiere HEAD/GIT_SHA verificable.');process.exit(1);}
