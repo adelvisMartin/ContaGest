@@ -101,6 +101,8 @@ model Tenant {
   documentSequences DocumentSequence[]
   asyncJobIntents AsyncJobIntent[]
   businessLocations BusinessLocation[]
+  schedulingResources SchedulingResource[]
+  schedulingBookings SchedulingBooking[]
 
   @@index([rif])
 }
@@ -827,8 +829,11 @@ model BusinessLocation {
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   addressGeocode AddressGeocode? @relation(fields: [addressGeocodeId], references: [id], onDelete: SetNull)
+  schedulingResources SchedulingResource[]
+  schedulingBookings SchedulingBooking[]
 
   @@unique([tenantId, code])
+  @@unique([tenantId, id])
   @@index([tenantId, status])
   @@index([tenantId, addressGeocodeId])
 }
@@ -965,24 +970,72 @@ model AuthLoginAttempt {
   @@index([tenantRif, email, ipAddress, success, createdAt])
 }
 
-model AsyncJobIntent {
-  id            String   @id @default(uuid())
-  tenantId      String
-  handlerKey    String   @db.VarChar(100)
-  effectKey     String   @db.VarChar(160)
-  requestHash   String   @db.Char(64)
-  payload       Json
-  status        String   @default("queued")
-  runAt         DateTime @db.Timestamptz(6)
-  attempts      Int      @default(0)
-  maxAttempts   Int      @default(5)
-  leaseOwner    String?  @db.VarChar(160)
-  leaseUntil    DateTime? @db.Timestamptz(6)
-  lastErrorCode String?  @db.VarChar(100)
-  createdAt     DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+// #848: Shared scheduling, capacity=1 only until a separately verified N-capacity design.
+// Composite tenant/location FKs and PostgreSQL GiST exclusion are in the SQL migration;
+// Prisma alone DOES NOT enforce the no-overlap invariant.
+model SchedulingResource {
+  id          String   @id @default(uuid())
+  tenantId    String
+  locationId  String
+  code        String
+  kind        String
+  status      String   @default("active")
+  capacity    Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  @@unique([tenantId, effectKey], map: "async_job_intent_effect")
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location    BusinessLocation @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Restrict)
+  allocations SchedulingResourceAllocation[]
+
+  @@unique([tenantId, locationId, id])
+  @@unique([tenantId, locationId, code])
+  @@index([tenantId, locationId, status])
+}
+
+model SchedulingBooking {
+  id              String   @id @default(uuid())
+  tenantId        String
+  locationId      String
+  sourceType      String
+  sourceId        String
+  idempotencyKey  String
+  status          String   @default("confirmed")
+  startsAtUtc     DateTime @db.Timestamptz(3)
+  endsAtUtc       DateTime @db.Timestamptz(3)
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location        BusinessLocation @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Restrict)
+  allocations     SchedulingResourceAllocation[]
+
+  @@unique([tenantId, locationId, id])
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, locationId, startsAtUtc])
+}
+
+// Each row claims one exclusive resource for one booking/stage.
+// SQL supplies an additional composite resource FK for tenant/location matching.
+model SchedulingResourceAllocation {
+  id              String   @id @default(uuid())
+  tenantId        String
+  locationId      String
+  bookingId       String
+  resourceId      String
+  stepId          String
+  status          String   @default("active")
+  occupiedStartAt DateTime @db.Timestamptz(3)
+  occupiedEndAt   DateTime @db.Timestamptz(3)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  booking         SchedulingBooking @relation(fields: [tenantId, locationId, bookingId], references: [tenantId, locationId, id], onDelete: Restrict)
+  resource        SchedulingResource @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingId, stepId, resourceId])
+  @@index([tenantId, resourceId, occupiedStartAt])
+  @@index([tenantId, bookingId])
 }
