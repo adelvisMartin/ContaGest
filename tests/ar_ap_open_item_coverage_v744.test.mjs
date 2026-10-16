@@ -38,3 +38,6 @@ test('#744 empty period is not mistaken for reconciled account',()=>{
  assert.equal(a.sourceCount,0);assert.equal(a.status,'NOT_RECONCILABLE');
  assert.ok(Object.isFrozen(a.documents));
 });
+test('#744 future issue dates cannot appear in an as-of period',()=>{
+ fail(()=>projectOpenItemCoverage({...q,invoices:[{...rows[0],issueDate:'2026-10-17T00:00:00.000Z'}]}));
+});
