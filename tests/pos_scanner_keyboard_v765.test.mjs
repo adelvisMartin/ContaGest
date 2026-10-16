@@ -66,9 +66,11 @@ test('real UI dispatches pure keyboard decision and prevents default only for re
 test('scanner uses actual CgTextField inputRef and refocuses only after successful form scan',()=>{
   assert.match(source,/inputRef=\{posScannerInputRef\}/);
   assert.match(source,/await lookupAndAddPosProduct\(posCode,null,true\)/);
-  assert.match(source,/if\(refocusAfterSuccess && typeof document!=='undefined'/);
+  assert.match(source,/if\(refocusAfterSuccess && tenantAtStart===BackendApi\.tenantId/);
+  assert.match(source,/posScannerRefocusPendingRef\.current=true/);
+  assert.match(source,/if\(posLoading \|\| !posScannerRefocusPendingRef\.current\)return/);
   assert.match(source,/document\.activeElement===document\.body/);
-  assert.match(source,/posScannerInputRef\.current\?\.focus\?\.\(\)/);
+  assert.match(source,/scanner\.focus\(\)/);
 });
 test('native form handles Enter and double-submit remains single-flight',()=>{
   assert.match(source,/component="form" onSubmit=\{addPosDraftProduct\}/);
