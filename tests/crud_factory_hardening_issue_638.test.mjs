@@ -114,3 +114,27 @@ test('#638: router has one bounded delegate authority, strict Zod and tenant sco
   assert.match(policy, /NON_DELETABLE_MODELS/);
   assert.match(policy, /CRUD_SEARCH_FIELDS/);
 });
+
+
+test('#638: runtime caller cannot bypass typed model or operation allowlists', () => {
+  const cases = [
+    { fn: 'assertCrudOperation', args: ['unknown', 'create'] },
+    { fn: 'assertCrudOperation', args: ['__proto__', 'update'] },
+    { fn: 'assertCrudOperation', args: ['constructor', 'delete'] },
+    { fn: 'assertCrudOperation', args: ['client', 'bulkDelete'] },
+    { fn: 'assertCrudMutationFields', args: ['unknown', 'create', { name:'fake' }] },
+    { fn: 'assertCrudMutationFields', args: ['client', 'patch', { name:'fake' }] },
+    { fn: 'parseCrudListWindow', args: [null] },
+    { fn: 'parseCrudListWindow', args: [[]] },
+    { fn: 'parseCrudListWindow', args: ['take=25'] },
+    { fn: 'assertCrudOperation', args: ['client', 'create'] }
+  ];
+  const results=executePolicy(cases);
+  for (const row of results.slice(0, 9)) {
+    assert.equal(row.ok, false);
+    assert.equal(row.name, 'CrudPolicyError');
+    assert.equal(row.status, 422);
+    assert.doesNotMatch(row.message, /unknown|bulkDelete|constructor/);
+  }
+  assert.equal(results[9].ok,true);
+});
