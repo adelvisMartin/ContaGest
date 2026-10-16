@@ -1,0 +1,5 @@
+# #792 · Guard de esfuerzo contradictorio dentro del motor de progresión
+
+El esquema HTTP ya validaba coherencia entre RIR y RPE declarados, pero `evaluateGymProgression` podía invocarse directamente desde otro servicio con evidencia contradictoria y recomendar subida/reset de carga. Se reutiliza la misma función `isRirRpePairCoherent` de dominio, antes de ramificar por estrategias automáticas. El caso invalida la recomendación con `action:'hold'` y razón `incoherent_effort_evidence`; la estrategia manual conserva la ruta previa.
+
+No se modifican historial, sesiones, membresías ni persistencia. Pruebas focales: **6/6 PASS** sobre fuente exacta publicada mediante intérprete V8 con anotaciones TS retiradas y shim de assert/test. Node nativo/TypeScript full, HTTP Zod/PG17 y browser **NOT_EXECUTED**. Retroceso: revertir 3 archivos. #792 permanece OPEN/PARTIAL hasta workout session, sets, historial, offline y QA. SOURCE_REUSE=NONE.
