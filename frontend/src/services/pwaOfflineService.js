@@ -152,7 +152,7 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
   }
   if (!session?.tenantId || !session?.user?.id) throw new Error('Se requiere sesión tenant/user para usar el outbox offline.');
   const key = String(idempotencyKey || '').trim();
-  if (key.length < 8) throw new Error('idempotencyKey es obligatorio para operaciones offline reintentables.');
+  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(key)) throw new Error('idempotencyKey inválida para operaciones offline reintentables.');
   const database = await openOutbox(session);
   try {
     const transaction = database.transaction('outbox', 'readwrite');
@@ -168,12 +168,28 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
       attempts: 0,
       authority
     };
-    store.put(record);
+    // Store.add enforces write-once event identity. put() silently overwrote
+    // a pending event with new payload under the same idempotency key.
+    store.add(record);
     await transactionPromise(transaction);
     return record;
   } finally {
     database.close();
   }
+}
+
+export function assertOfflineDeliveryAcknowledged(response) {
+  // Successful Promise resolution is not proof of server acceptance.
+  const acknowledged = response && typeof response === 'object' &&
+    response.ok !== false && response.delivered !== false &&
+    (response.ok === true || response.delivered === true ||
+      (Number.isInteger(response.status) && response.status >= 200 && response.status < 300));
+  if (!acknowledged) {
+    const error = new Error('OFFLINE_DELIVERY_NOT_ACKNOWLEDGED');
+    error.code = 'OFFLINE_DELIVERY_NOT_ACKNOWLEDGED';
+    throw error;
+  }
+  return true;
 }
 
 async function readOutbox(session) {
@@ -208,8 +224,7 @@ export async function flushOfflineOutbox(session, sender) {
   const records = await readOutbox(session);
   const results = [];
   for (const record of records.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))) {
-    // IndexedDB is mutable and untrusted; route requests only through the
-    // current code-owned allowlist, never through stored authority metadata.
+    // Resolve offline transport from this source-controlled allowlist, never mutable IndexedDB metadata.
     const authority = Object.hasOwn(OUTBOX_ALLOWLIST, record.operation)
       ? OUTBOX_ALLOWLIST[record.operation] : null;
     if (!authority) continue;
@@ -221,6 +236,7 @@ export async function flushOfflineOutbox(session, sender) {
         payload: record.payload,
         idempotencyKey: record.idempotencyKey
       });
+      assertOfflineDeliveryAcknowledged(response);
       await deleteOutboxRecord(session, record.id);
       results.push({ id: record.id, delivered: true, response });
     } catch (error) {
