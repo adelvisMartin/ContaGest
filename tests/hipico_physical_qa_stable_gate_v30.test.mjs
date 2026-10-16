@@ -81,6 +81,9 @@ test('v30 physical QA verifier indexes only canonical PASS evidence as optional 
   assert.match(source,/schemas:\s*\['hipico-physical-qa-evidence\.v119'\]/);
   assert.match(source,/summary\?\.releasePhysicalGate\s*===\s*'PASS'/);
   assert.match(source,/summary\?\.materialEvidenceComplete\s*===\s*true/);
+  assert.match(source,/summary\?\.twoDayEvidenceComplete\s*===\s*true/);
+  assert.match(source,/validTwoDayPhysicalEvidence\(data\)/);
+  assert.match(source,/physicalDays/);
   assert.match(source,/data\?\.completedAt/);
   assert.match(source,/data\?\.operator/);
   assert.match(source,/requiredModes/);
