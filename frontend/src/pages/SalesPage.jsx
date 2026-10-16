@@ -39,6 +39,7 @@ function SalesWorkspace({state,context}){
   const clientRef=useRef(null);
   const [posCode,setPosCode]=useState('');
   const posScannerInputRef=useRef(null);
+  const posScannerRefocusPendingRef=useRef(false);
   const [posLoading,setPosLoading]=useState(false);
   const [posDraftError,setPosDraftError]=useState('');
   const [posChecking,setPosChecking]=useState(false);
@@ -83,8 +84,18 @@ function SalesWorkspace({state,context}){
     posFavoritesRef.current=[];
     setPosFavorites([]);
     setPosCode('');
+    posScannerRefocusPendingRef.current=false;
     setPosDraftError('');
   },[posTenantId]);
+  React.useEffect(()=>{
+    if(posLoading || !posScannerRefocusPendingRef.current)return;
+    posScannerRefocusPendingRef.current=false;
+    if(posTenantRef.current!==BackendApi.tenantId || typeof document==='undefined')return;
+    const scanner=posScannerInputRef.current;
+    if(scanner && (document.activeElement===document.body || document.activeElement===scanner)){
+      scanner.focus();
+    }
+  },[posLoading]);
   const saleSaveInFlight=useRef(false);
   const [form,setForm]=useState({
     date:today(),
@@ -314,7 +325,7 @@ function SalesWorkspace({state,context}){
     const action=decidePosScannerKey({
       key:event.key,ctrlKey:event.ctrlKey,altKey:event.altKey,metaKey:event.metaKey,
       repeat:event.repeat,isComposing:event.isComposing,
-      busy:posBusyRef.current||posLoading||posChecking||posQuoteBusyRef.current||posStockBusyRef.current,
+      busy:posBusyRef.current||posVerifyBusyRef.current||posLoading||posChecking||posQuoteBusyRef.current||posStockBusyRef.current,
       targetIsScanner:target===posScannerInputRef.current,
       targetIsEditable:Boolean(target?.closest?.('input,textarea,select,[contenteditable="true"],[role="textbox"],[role="combobox"]')),
       modalOpen:Boolean(target?.closest?.('[role="dialog"],[aria-modal="true"]'))
@@ -372,10 +383,11 @@ function SalesWorkspace({state,context}){
       }}));
       if(!favorite){
         setPosCode('');
-        // Do not steal focus when the operator moved to another field mid-scan.
-        if(refocusAfterSuccess && typeof document!=='undefined'
-          && (document.activeElement===document.body || document.activeElement===posScannerInputRef.current)){
-          posScannerInputRef.current?.focus?.();
+        // Focus only after React re-enables the scanner, not while disabled.
+        // A later effect also checks that the operator has not moved to another field.
+        if(refocusAfterSuccess && tenantAtStart===BackendApi.tenantId
+          && posTenantRef.current===tenantAtStart){
+          posScannerRefocusPendingRef.current=true;
         }
       }
       notify('Producto agregado al borrador. La venta aún no está confirmada.','success');
