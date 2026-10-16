@@ -7,6 +7,16 @@ import { activeDay, activeGroupId, activeRace, balanceRows, dailyStats, groupPro
 import { escapeHtml, icon } from './ui.js';
 
 const ROOT_ID = 'hipico-operational-copy-center';
+// An async clipboard completion only belongs to the exact reviewed draft
+// revision that started it, not merely to an equal string typed later.
+const manualDraftRevisions = new WeakMap();
+const pendingManualClipboardWrites = new WeakSet();
+
+function invalidateManualDraftReview(dialog) {
+  if (!dialog) return;
+  manualDraftRevisions.set(dialog, (manualDraftRevisions.get(dialog) ?? 0) + 1);
+}
+
 let state = { workspace: null, participantId: '' };
 
 function raceOrdinal(value) {
@@ -141,7 +151,7 @@ function updateManualSuggestionControls(dialog) {
   const draft = dialog?.querySelector('[data-ops-manual-text]');
   const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
   const copy = dialog?.querySelector('[data-ops-manual-copy]');
-  if (copy) copy.disabled = !mayCopyManualSuggestion(draft?.value, confirmation?.checked);
+  if (copy) copy.disabled = pendingManualClipboardWrites.has(copy) || !mayCopyManualSuggestion(draft?.value, confirmation?.checked);
 }
 
 function messageCard(id, title, hint, text, open = false) {
@@ -197,11 +207,15 @@ function renderDialog(root) {
   root.append(dialog);
   dialog.addEventListener('cancel', (event) => { event.preventDefault(); dialog.close(); });
   dialog.addEventListener('close', () => {
+    // Any pending clipboard resolution is stale once the operator closes.
+    invalidateManualDraftReview(dialog);
     // Do not retain private drafts in hidden DOM after dismissing the panel.
     const draft = dialog.querySelector('[data-ops-manual-text]');
     const confirmation = dialog.querySelector('[data-ops-manual-confirm]');
     if (draft) draft.value = '';
     if (confirmation) confirmation.checked = false;
+    const copy = dialog.querySelector('[data-ops-manual-copy]');
+    if (copy) copy.innerHTML = copyButtonContent(false);
     updateManualSuggestionControls(dialog);
   });
   dialog.showModal?.();
@@ -279,8 +293,11 @@ export function mountOperationalCopyCenter() {
         const dialog = target.closest('dialog');
         const draft = dialog?.querySelector('[data-ops-manual-text]');
         const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
+        invalidateManualDraftReview(dialog);
         if (draft) draft.value = '';
         if (confirmation) confirmation.checked = false;
+        const copy = dialog?.querySelector('[data-ops-manual-copy]');
+        if (copy) copy.innerHTML = copyButtonContent(false);
         updateManualSuggestionControls(dialog);
         return;
       }
@@ -291,16 +308,23 @@ export function mountOperationalCopyCenter() {
         const button = target.closest('[data-ops-manual-copy]');
         // A pending clipboard write cannot count as fresh review of an edited
         // draft. Disable reentry and retain the exact human-approved snapshot.
-        if (button.disabled || !mayCopyManualSuggestion(draft?.value, confirmation?.checked)) return;
+        if (button.disabled || pendingManualClipboardWrites.has(button) ||
+            !mayCopyManualSuggestion(draft?.value, confirmation?.checked)) return;
         const reviewedText = draft.value.trim();
+        const reviewedRevision = manualDraftRevisions.get(dialog) ?? 0;
+        pendingManualClipboardWrites.add(button);
         button.disabled = true;
         try {
           await copyText(reviewedText);
+          // Re-typing identical text is NOT the same reviewed version.
+          if ((manualDraftRevisions.get(dialog) ?? 0) === reviewedRevision &&
+              draft.value.trim() === reviewedText && confirmation.checked &&
+              button.isConnected && root.dataset.opsAuthorized === 'true') {
+            button.innerHTML = copyButtonContent(true);
+          }
         } finally {
+          pendingManualClipboardWrites.delete(button);
           updateManualSuggestionControls(dialog);
-        }
-        if (draft.value.trim() === reviewedText && confirmation.checked && button.isConnected) {
-          button.innerHTML = copyButtonContent(true);
         }
         return;
       }
@@ -323,6 +347,7 @@ export function mountOperationalCopyCenter() {
       const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
       const copy = dialog?.querySelector('[data-ops-manual-copy]');
       // Explicit review applies to a particular draft, never to later edits.
+      invalidateManualDraftReview(dialog);
       if (confirmation) confirmation.checked = false;
       if (copy) copy.innerHTML = copyButtonContent(false);
       updateManualSuggestionControls(dialog);
@@ -333,6 +358,8 @@ export function mountOperationalCopyCenter() {
     const target = event.target instanceof Element ? event.target : null;
     if (target?.matches('[data-ops-manual-confirm]')) {
       const dialog = target.closest('dialog');
+      // A changed confirmation invalidates any asynchronous old approval.
+      invalidateManualDraftReview(dialog);
       const copy = dialog?.querySelector('[data-ops-manual-copy]');
       if (copy) copy.innerHTML = copyButtonContent(false);
       updateManualSuggestionControls(dialog);
