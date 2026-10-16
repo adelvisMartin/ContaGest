@@ -1,0 +1,7 @@
+# #746 — Check-in Gym: decremento y registro atómicos, no idempotencia completa
+
+`POST /gym/checkins` mantiene `gym.manage` y entrada Zod. Este incremento valida la pertenencia del miembro al tenant y bloquea su fila (`FOR UPDATE`) antes de buscar la membresía activa y vigente, también bloqueada. La búsqueda excluye `remainingAccesses=0`. El descuento condicionado (`remainingAccesses>0`) y el `INSERT GymCheckIn` ocurren en **una misma transacción Prisma SERIALIZABLE**. Si falla el descuento o el INSERT, la transacción debe abortar; no se permite un check-in aceptado con accesos agotados. La decisión de registrar un intento rechazado se conserva solo para un miembro existente del tenant.
+
+**Límite material:** no existe idempotency key durable en el esquema actual de GymCheckIn; un reintento tras timeout exitoso aún puede producir un segundo acceso. La revisión SERIALIZABLE puede rechazar transacciones concurrentes; el cliente no debe reintentar automáticamente hasta implementar dedupe transaccional por actor/device/request fingerprint. Tampoco se ha centralizado renovación de membresía, conciliación con finanzas ni freeze/grace. **#746 permanece OPEN**.
+
+Test focal sobre el manejador real con mock Prisma: `node --test tests/gym_checkin_atomic_v746.test.mjs`; 8 escenarios SQL/rollback. Pendiente crítico PG17 dos sesiones last access, fallas reales de commit, tenant A/B y Playwright/browser, typecheck monorepo y CI. Rollback simple revert sin DDL. SOURCE_REUSE=NONE.

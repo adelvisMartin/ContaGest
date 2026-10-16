@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -91,19 +92,43 @@ router.post('/gym/memberships', requirePermission('gym.manage'), asyncHandler(as
 
 router.post('/gym/checkins', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const b = checkInSchema.parse(req.body || {});
-  const membershipRows = await prisma.$queryRawUnsafe<any[]>(`
-    SELECT * FROM public."GymMembership" WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='active' AND "startsAt"<=now() AND "endsAt">=now() ORDER BY "endsAt" DESC LIMIT 1
-  `, ctx(req).tenantId,b.memberId);
-  const membership = membershipRows[0];
-  const result = membership ? 'accepted' : 'rejected';
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."GymCheckIn" ("id","tenantId","memberId","membershipId","checkedInAt","method","device","result","notes")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,now(),$4,$5,$6,$7) RETURNING *
-  `, ctx(req).tenantId,b.memberId,membership?.id||null,b.method,b.device||null,result,b.notes||null);
-  if (membership?.remainingAccesses != null) {
-    await prisma.$executeRawUnsafe(`UPDATE public."GymMembership" SET "remainingAccesses"=GREATEST(0,"remainingAccesses"-1), "updatedAt"=now() WHERE "id"=$1`, membership.id);
-  }
-  ok(res, { ...one(rows), membershipValid:Boolean(membership) }, membership ? 201 : 200);
+  const tenantId = ctx(req).tenantId;
+  // Lock the member row first to serialize concurrent check-ins for this member.
+  // All reads and writes use the same tenant-scoped SERIALIZABLE transaction.
+  const outcome = await prisma.$transaction(async tx => {
+    const members = await tx.$queryRawUnsafe<Array<{id:string}>>(`
+      SELECT "id" FROM public."GymMember"
+      WHERE "tenantId"=$1 AND "id"=$2
+      LIMIT 1 FOR UPDATE
+    `, tenantId, b.memberId);
+    if (!members.length) throw new HttpError(404, 'Miembro no encontrado en esta empresa.');
+    const membershipRows = await tx.$queryRawUnsafe<Array<{id:string;remainingAccesses:number|null}>>(`
+      SELECT "id","remainingAccesses" FROM public."GymMembership"
+      WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='active'
+        AND "startsAt"<=now() AND "endsAt">=now()
+        AND ("remainingAccesses" IS NULL OR "remainingAccesses">0)
+      ORDER BY "endsAt" DESC, "id" DESC LIMIT 1 FOR UPDATE
+    `, tenantId, b.memberId);
+    const membership = membershipRows[0];
+    // Rejected attempts are recorded, but never consume access.
+    // Retry idempotency is BLOCKED until GymCheckIn has a durable request key.
+    if (membership?.remainingAccesses != null) {
+      const affected = await tx.$executeRawUnsafe(`
+        UPDATE public."GymMembership"
+        SET "remainingAccesses"="remainingAccesses"-1, "updatedAt"=now()
+        WHERE "id"=$1 AND "tenantId"=$2 AND "memberId"=$3
+          AND "status"='active' AND "remainingAccesses">0
+      `, membership.id, tenantId, b.memberId);
+      if (affected !== 1) throw new HttpError(409, 'El acceso disponible cambió; inténtalo nuevamente.');
+    }
+    const result = membership ? 'accepted' : 'rejected';
+    const rows = await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymCheckIn" ("id","tenantId","memberId","membershipId","checkedInAt","method","device","result","notes")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,now(),$4,$5,$6,$7) RETURNING *
+    `, tenantId,b.memberId,membership?.id||null,b.method,b.device||null,result,b.notes||null);
+    return {...one(rows), membershipValid:Boolean(membership)};
+  }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+  ok(res, outcome, outcome.membershipValid ? 201 : 200);
 }));
 
 router.get('/gym/assessments', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
