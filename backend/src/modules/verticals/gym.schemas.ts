@@ -133,6 +133,12 @@ export const progressionEvaluationSchema = z.object({
   for (const issue of gymProgressionConfigIssues(value.strategy, value.config || {})) {
     refinement.addIssue({ code:'custom', path:['config', issue.field], message:issue.message });
   }
+  // Completed-session effort must agree with itself before it may inform load
+  // progression; checking prescribed RIR/RPE alone is insufficient.
+  if (!isRirRpePairCoherent(value.performance.rir, value.performance.rpe)) {
+    refinement.addIssue({ code:'custom', path:['performance','rpe'],
+      message:'La evidencia RPE y RIR del entrenamiento es contradictoria.' });
+  }
 });
 
 export const routineExerciseSchema = z.object({
