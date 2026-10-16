@@ -7,7 +7,9 @@ const uiSource=readFileSync(new URL('../frontend/src/pages/SalesPage.jsx',import
 const start=routeSource.indexOf("router.post('/pos/catalog-quote-preview'");
 const end=routeSource.indexOf("router.get('/', requirePermission('sales.view')",start);
 assert.ok(start>0&&end>start,'route exists immediately before generic sales read');
-const snippet=routeSource.slice(start,end);
+// Isolated function-source regression runs under Node without transpiling the TS route.
+// Remove only this audited type annotation from the mock-executed route excerpt.
+const snippet=routeSource.slice(start,end).replace('line: {productId:string;expectedSku:string}','line');
 const A='a5b468dc-347d-416a-80a7-8184e657db61';
 const requestLines=[{productId:A,quantity:'1.125',expectedSku:'SKU-001'}];
 const price=(value)=>({toFixed:()=>value});
