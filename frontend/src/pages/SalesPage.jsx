@@ -10,6 +10,7 @@ import { acceptServerPosProduct, normalizePosLookupCode } from '../services/posP
 import { addPosCartItem, decrementPosCartItem, removePosCartItem, setPosCartQuantity } from '../services/posCartPolicy.mjs';
 import { today } from '../utils/dom.js';
 import { holdPosCart, resumePosCart, discardHeldPosCart } from '../services/posHeldCartPolicy.mjs';
+import { addPosFavorite, removePosFavorite, matchesPosFavorite } from '../services/posFavoritePolicy.mjs';
 
 const rows=(value)=>Array.isArray(value)?value:[];
 const statusTone=(status)=>status==='Cobrada'?'success':status==='Anulada'?'error':'warning';
@@ -41,6 +42,8 @@ function SalesWorkspace({state,context}){
   const [posNames,setPosNames]=useState({});
   const [posQuantityInputs,setPosQuantityInputs]=useState({});
   const [posHeld,setPosHeld]=useState([]);
+  const [posFavorites,setPosFavorites]=useState([]);
+  const posFavoritesRef=useRef([]);
   const posHeldRef=useRef([]);
   const posCartRef=useRef([]);
   const posBusyRef=useRef(false);
@@ -48,6 +51,7 @@ function SalesWorkspace({state,context}){
   const posTenantRef=useRef(posTenantId);
   const visiblePosCart=posTenantRef.current===posTenantId?posCart:[];
   const visiblePosHeld=posTenantRef.current===posTenantId?posHeld:[];
+  const visiblePosFavorites=posTenantRef.current===posTenantId?posFavorites:[];
   React.useEffect(()=>{
     posTenantRef.current=posTenantId;
     posCartRef.current=[];
@@ -56,6 +60,8 @@ function SalesWorkspace({state,context}){
     setPosQuantityInputs({});
     posHeldRef.current=[];
     setPosHeld([]);
+    posFavoritesRef.current=[];
+    setPosFavorites([]);
     setPosCode('');
     setPosDraftError('');
   },[posTenantId]);
@@ -136,13 +142,22 @@ function SalesWorkspace({state,context}){
   // The client never authorizes a sale, calculates IVA or posts stock/payments.
   async function addPosDraftProduct(event){
     event.preventDefault();
+    await lookupAndAddPosProduct(posCode);
+  }
+
+  async function addPosFavoriteToCart(favorite){
+    if(!posFavoritesRef.current.some((item)=>item.id===favorite.id && item.sku===favorite.sku))return;
+    await lookupAndAddPosProduct(favorite.sku,favorite);
+  }
+
+  async function lookupAndAddPosProduct(value,favorite=null){
     if(posBusyRef.current)return;
     posBusyRef.current=true;
     setPosLoading(true);
     setPosDraftError('');
     const tenantAtStart=BackendApi.tenantId;
     try{
-      const code=normalizePosLookupCode(posCode);
+      const code=normalizePosLookupCode(value);
       if(!code){
         setPosDraftError('Escribe un SKU o código válido (máximo 64 caracteres).');
         return;
@@ -159,6 +174,13 @@ function SalesWorkspace({state,context}){
         setPosDraftError('El servidor devolvió un producto no válido. No se añadió nada al carrito.');
         return;
       }
+      // A shortcut is a label only. Verify the server still resolves its SKU
+      // to the exact same product before changing the current draft.
+      if(favorite && (!posFavoritesRef.current.some((item)=>item.id===favorite.id && item.sku===favorite.sku)
+          || !matchesPosFavorite(favorite,decision.product))){
+        setPosDraftError('Favorito desactualizado: verifica el producto antes de utilizarlo.');
+        return;
+      }
       const next=addPosCartItem(posCartRef.current,decision.product.id);
       posCartRef.current=next;
       setPosCart(next);
@@ -166,7 +188,7 @@ function SalesWorkspace({state,context}){
       setPosNames((current)=>({...current,[decision.product.id]:{
         sku:decision.product.sku,name:decision.product.name
       }}));
-      setPosCode('');
+      if(!favorite)setPosCode('');
       notify('Producto agregado al borrador. La venta aún no está confirmada.','success');
     }catch(cause){
       if(tenantAtStart!==BackendApi.tenantId || posTenantRef.current!==tenantAtStart){
@@ -224,6 +246,34 @@ function SalesWorkspace({state,context}){
       commitPosDraftCart(setPosCartQuantity(posCartRef.current,productId,proposed),productId);
     }catch{
       setPosDraftError('Cantidad inválida: utiliza un valor mayor que cero y hasta tres decimales.');
+    }
+  }
+
+  function togglePosFavoriteFromCart(line){
+    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posLoading)return;
+    try{
+      const existing=posFavoritesRef.current.some((item)=>item.id===line.productId);
+      const label=posNames[line.productId];
+      const next=existing
+        ?removePosFavorite(posFavoritesRef.current,line.productId)
+        :addPosFavorite(posFavoritesRef.current,{id:line.productId,sku:label?.sku,name:label?.name});
+      posFavoritesRef.current=next;
+      setPosFavorites(next);
+      setPosDraftError('');
+    }catch{
+      setPosDraftError('No se pudo cambiar el favorito. Máximo doce productos con SKU válido.');
+    }
+  }
+
+  function deletePosFavorite(productId){
+    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posLoading)return;
+    try{
+      const next=removePosFavorite(posFavoritesRef.current,productId);
+      posFavoritesRef.current=next;
+      setPosFavorites(next);
+      setPosDraftError('');
+    }catch{
+      setPosDraftError('No se pudo quitar el favorito. Actualiza la pantalla.');
     }
   }
 
@@ -332,6 +382,27 @@ function SalesWorkspace({state,context}){
           {posLoading?'Consultando…':'Agregar al borrador'}
         </CgButton>
       </Box>
+      <Box component="section" aria-label="Favoritos POS de la sesión" sx={{mt:1.25}}>
+        <Typography variant="body2" sx={{fontWeight:600}}>
+          Favoritos rápidos ({visiblePosFavorites.length}/12)
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Se crean desde el carrito y se vuelven a comprobar en el servidor antes de agregar. No se guardan al salir de Ventas.
+        </Typography>
+        {visiblePosFavorites.length?
+          <Box sx={{display:'flex',flexWrap:'wrap',gap:1,mt:1}}>
+            {visiblePosFavorites.map((favorite)=><Box key={favorite.id} sx={{display:'flex',alignItems:'center',gap:.5}}>
+              <CgButton type="button" size="small" variant="outlined" disabled={posLoading}
+                aria-label={`Consultar y agregar favorito ${favorite.name}`}
+                onClick={()=>void addPosFavoriteToCart(favorite)} sx={{minHeight:44}}>
+                {favorite.name} · {favorite.sku}
+              </CgButton>
+              <CgButton type="button" size="small" variant="outlined" disabled={posLoading}
+                aria-label={`Quitar favorito ${favorite.name}`}
+                onClick={()=>deletePosFavorite(favorite.id)} sx={{minHeight:44}}>×</CgButton>
+            </Box>)}
+          </Box>:null}
+      </Box>
       {posDraftError?<CgState severity="warning" title="Carrito no actualizado">{posDraftError}</CgState>:null}
       <Typography variant="caption" color="text.secondary" role="status" aria-live="polite" sx={{display:'block',mt:1}}>
         {visiblePosCart.length} productos distintos · Sin total fiscal ni cobro confirmado
@@ -373,8 +444,14 @@ function SalesWorkspace({state,context}){
                 <CgButton type="button" size="small" variant="outlined" disabled={posLoading}
                   onClick={()=>applyPosDraftQuantity(line.productId)} sx={{minHeight:44}}>Aplicar</CgButton>
               </Box>},
-              {key:'actions',label:'Acciones',render:(line)=><CgButton type="button" size="small" variant="outlined"
-                disabled={posLoading} onClick={()=>removePosDraftProduct(line.productId)} sx={{minHeight:44}}>Quitar</CgButton>}
+              {key:'actions',label:'Acciones',render:(line)=><Box sx={{display:'flex',flexWrap:'wrap',gap:1}}>
+                <CgButton type="button" size="small" variant="outlined" disabled={posLoading}
+                  onClick={()=>togglePosFavoriteFromCart(line)} sx={{minHeight:44}}>
+                  {visiblePosFavorites.some((favorite)=>favorite.id===line.productId)?'Quitar favorito':'Favorito'}
+                </CgButton>
+                <CgButton type="button" size="small" variant="outlined"
+                  disabled={posLoading} onClick={()=>removePosDraftProduct(line.productId)} sx={{minHeight:44}}>Quitar</CgButton>
+              </Box>}
             ]}/>
         </Box>
         :<CgState severity="info" title="Carrito vacío">Escanea o escribe un código para preparar líneas de venta sin efectos financieros.</CgState>}
