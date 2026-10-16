@@ -36,6 +36,22 @@ const epleyEstimate = (load:number,reps:number) => reps>=1&&reps<=12&&load>0
   : null;
 
 
+// Inventory planning input only: an exercise's equipment label is not
+// proof that a physical asset is safe, working, available or reservable.
+router.get('/gym/equipment-requirements', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
+  const tenantId=ctx(req).tenantId;
+  const rows=await prisma.$queryRawUnsafe<Array<{equipment:string;exerciseCount:number}>>(`
+    SELECT btrim("equipment") AS "equipment",count(*)::int AS "exerciseCount"
+    FROM public."GymExercise"
+    WHERE "tenantId"=$1 AND "active"=true AND NULLIF(btrim("equipment"),'') IS NOT NULL
+    GROUP BY btrim("equipment")
+    ORDER BY "exerciseCount" DESC,"equipment" ASC
+    LIMIT 201
+  `,tenantId);
+  ok(res,{items:rows.slice(0,200),truncated:rows.length>200,
+    authority:'exercise_equipment_requirements',assetAvailabilityVerified:false});
+}));
+
 router.get('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   let filters: ReturnType<typeof parseGymExerciseFilters>;
