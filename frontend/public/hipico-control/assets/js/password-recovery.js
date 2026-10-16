@@ -5,6 +5,8 @@ import { toast } from './ui.js';
 let recoveryAccessToken = '';
 let recoveryError = '';
 let recoveryNoticeShown = false;
+// A disabled submit button alone does not prevent scripted/queued double submissions.
+let recoveryUpdateInFlight = false;
 
 // Query parameters can be logged by hosting intermediaries. Strip any
 // recovery/session material from the visible URL on the first app render,
@@ -35,12 +37,12 @@ function recoveryRedirectUrl() {
   return url.toString();
 }
 function readRecoveryContext() {
+  // Never retain a token from an earlier callback when a subsequent link is invalid.
+  recoveryAccessToken = '';
   const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
   const type = String(hash.get('type') || '').toLowerCase();
   const token = String(hash.get('access_token') || '');
-  const hashError = String(hash.get('error_description') || hash.get('error') || '');
   const query = new URLSearchParams(location.search);
-  const queryError = String(query.get('error_description') || query.get('error') || '');
   // Even an invalid link can contain sensitive material. Clean it before
   // exposing the login screen and show a generic recovery error.
   const hadAuthMaterial = RECOVERY_URL_PARAMS.some(key => hash.has(key) || query.has(key));
@@ -56,7 +58,9 @@ function readRecoveryContext() {
     recoveryError = '';
     return;
   }
-  recoveryError = hashError || queryError || (hadAuthMaterial ? 'INVALID_RECOVERY_LINK' : '');
+  // Error descriptions may carry identities, secrets or arbitrary provider text.
+  // Store only a generic classification, never raw callback strings.
+  recoveryError = providerHasError || hadAuthMaterial ? 'INVALID_RECOVERY_LINK' : '';
 }
 // Provider errors may contain emails, tokens or internal details. Never copy their
 // messages into an Error retained by the PWA; only the status class is needed.
@@ -87,24 +91,32 @@ export async function updateRecoveredPassword(password) {
   const nextPassword = String(password || '');
   if (nextPassword.length < 10) throw new Error('La nueva contraseña debe tener al menos 10 caracteres.');
   if (!recoveryAccessToken) throw new Error('El enlace de recuperación no es válido o ya venció.');
+  if (recoveryUpdateInFlight) throw new Error('RECOVERY_ALREADY_IN_PROGRESS');
+  recoveryUpdateInFlight = true;
   const token = recoveryAccessToken;
+  try {
+    // Password recovery is a reauthentication boundary. Clear any regular PWA
+    // session before changing the credential so a still-valid cached JWT cannot
+    // silently reopen Control Hípico after the reset.
+    await signOut();
 
-  // Password recovery is a reauthentication boundary. Clear any regular PWA
-  // session before changing the credential so a still-valid cached JWT cannot
-  // silently reopen Control Hípico after the reset.
-  await signOut();
-
-  const response = await fetch(`${CLOUD_CONFIG.supabaseUrl}/auth/v1/user`, {
-    method: 'PUT', headers: authHeaders(token), cache: 'no-store', body: JSON.stringify({ password: nextPassword })
-  });
-  if (!response.ok) {
-    const error = new Error(await parseError(response));
-    error.status = response.status;
-    throw error;
+    const response = await fetch(`${CLOUD_CONFIG.supabaseUrl}/auth/v1/user`, {
+      method: 'PUT', headers: authHeaders(token), cache: 'no-store', body: JSON.stringify({ password: nextPassword })
+    });
+    if (!response.ok) {
+      const error = new Error(await parseError(response));
+      error.status = response.status;
+      if ([401, 403].includes(response.status)) recoveryAccessToken = '';
+      throw error;
+    }
+    // One successful PUT consumes the recovery capability. A later optional
+    // profile-state RPC failure must never allow a second password change.
+    recoveryAccessToken = '';
+    await markCredentialChanged(token).catch(() => {});
+    return true;
+  } finally {
+    recoveryUpdateInFlight = false;
   }
-  await markCredentialChanged(token).catch(() => {});
-  recoveryAccessToken = '';
-  return true;
 }
 function passwordScore(value) {
   const text = String(value || '');
@@ -176,6 +188,7 @@ async function handleRecoveryRequest(button) {
   } finally { button.disabled = false; button.textContent = original; }
 }
 async function handleNewPassword(form) {
+  if (recoveryUpdateInFlight) return;
   const data = new FormData(form);
   const password = String(data.get('password') || '');
   const confirm = String(data.get('confirm') || '');
