@@ -83,7 +83,9 @@ export const VETERINARY_GUARDIAN_PORTAL_SCOPES =['appointments','reminders','dis
 export const veterinaryGuardianPortalGrantSchema =z.object({
   patientId:z.string().min(10),
   expiresInHours:z.coerce.number().int().min(1).max(168).default(48),
-  scopes:z.array(z.enum(VETERINARY_GUARDIAN_PORTAL_SCOPES)).min(1).max(VETERINARY_GUARDIAN_PORTAL_SCOPES.length).default([...VETERINARY_GUARDIAN_PORTAL_SCOPES])
+  scopes:z.array(z.enum(VETERINARY_GUARDIAN_PORTAL_SCOPES)).min(1).max(VETERINARY_GUARDIAN_PORTAL_SCOPES.length)
+    .refine(value=>new Set(value).size===value.length,{message:'No repitas los ámbitos autorizados.'})
+    .default([...VETERINARY_GUARDIAN_PORTAL_SCOPES])
 }).strict();
 
 export const veterinaryBoardingSettingsSchema =z.object({
