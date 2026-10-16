@@ -1,0 +1,7 @@
+# Gym #746 · Cambio transaccional de check-in — NO MERGE sin PG17
+
+La ruta `POST /gym/checkins` insertaba GymCheckIn y reducía remainingAccesses en dos operaciones independientes; además la reducción sólo filtraba por id y saturaba con GREATEST(0,...). El candidato encierra SELECT de membresía activa con FOR UPDATE, consumo sujeto a tenant/member/membership y saldo >0, e INSERT de GymCheckIn en **una transacción Prisma Serializable**. Si falla el decremento, no se registra aceptación. Un saldo cero genera rechazo, no acceso autorizado.
+
+**Bloqueador grave:** sigue **sin existir** una clave idempotente persistente / fingerprint de check-in; dos reintentos con claves diferentes podrían registrar dos accesos válidos. Antes de fusionar deben implementarse ID estable, deduplicación por (tenant,actor,event key), política de tiempo mínimo entre entradas, prueba con dos conexiones PG17 y replays. Exigir pruebas de membresía activa/inactiva, límites zero/one, rollback de inserción, inexistencia/foreign tenant y funcionamiento de checkIn HTTP/CSRF. No habilitar este PR como garantía completa de #746.
+
+Las 6 comprobaciones de contrato del archivo de ruta publicadas en tests/gym_checkin_atomic_source_v746.test.mjs pasaron en V8; **son inspección de código, no SQL ni PG17**. Full npm ci/typecheck, PostgreSQL y navegador NOT_EXECUTED. Sin schema ni migración. Rollback: revert de ruta+test+doc; no borrar GymMembership/GymCheckIn. Issue #746 OPEN/PARTIAL; SOURCE_REUSE=NONE.
