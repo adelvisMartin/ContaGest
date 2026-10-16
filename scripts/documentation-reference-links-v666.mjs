@@ -30,7 +30,7 @@ export function collectReferenceLinks(markdown) {
 
     // Literal inline examples are not Markdown links. Preserve all other text.
     const visible = line.replace(/`+[^`\n]*`+/g, '');
-    const definition = /^[ \t]{0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]+>|[^ \t\n]+)(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*$/.exec(visible);
+    const definition = /^[ \t]{0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]+>|[^ \t\n]+)(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^\)\n]*\)))?[ \t]*$/.exec(visible);
     if (definition && !definition[1].startsWith('^')) {
       const key = normalize(definition[1]);
       if (!definitions.has(key)) {
