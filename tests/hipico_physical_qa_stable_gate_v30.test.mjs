@@ -14,8 +14,12 @@ const run=(argv,sha)=>spawnSync(process.execPath,[recorder,...argv],{
 const read=(relative)=>fs.readFileSync(relative,'utf8');
 
 function completePhysicalQa(dir,file,sha){
-  const proof='proof.log';
-  fs.writeFileSync(path.join(dir,proof),'physical material evidence');
+  const proof='proof.log', dayOne='day-one.log', dayTwo='day-two.log';
+  fs.writeFileSync(path.join(dir,proof),'synthetic physical fixture');
+  fs.writeFileSync(path.join(dir,dayOne),'synthetic day one distinct');
+  fs.writeFileSync(path.join(dir,dayTwo),'synthetic day two distinct');
+  const observed1=new Date(Date.now()-3*86400000).toISOString();
+  const observed2=new Date(Date.now()-1*86400000).toISOString();
   const sourceHash='1'.repeat(64);
   const labHash='2'.repeat(64);
   assert.equal(run(['init',`--file=${file}`,'--force','--operator=QA Operador'],sha).status,0);
@@ -28,7 +32,10 @@ function completePhysicalQa(dir,file,sha){
   const raw=JSON.parse(fs.readFileSync(file,'utf8'));
   for(const env of raw.environments){
     for(const scenario of catalog.scenarios){
-      env.scenarios[scenario.id]={status:'PASS',severity:null,notes:'verified',evidence:[proof]};
+      const first=scenario.id==='source-to-lab-e2e-day-1', second=scenario.id==='source-to-lab-e2e-day-2';
+      env.scenarios[scenario.id]={status:'PASS',severity:null,notes:'verified',
+        evidence:[first?dayOne:second?dayTwo:proof],
+        ...((first||second)?{observedAtUtc:first?observed1:observed2}:{})};
     }
   }
   raw.invariants={sourceReadOnly:'PASS',labOnlyWriteDestination:'PASS',sessionFallbackSafe:'PASS'};
