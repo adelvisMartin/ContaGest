@@ -148,3 +148,20 @@ test('#267 conflicting provider error overrides a recovery token', async () => {
   assert.match(source,/type === 'recovery' && token && !providerHasError/);
   assert.match(source,/if \(hadAuthMaterial\) history\.replaceState/);
 });
+
+
+test('#267 never parses or reflects provider error payloads containing credentials', async () => {
+  const source = await fs.readFile(recoveryPath, 'utf8');
+  const start = source.indexOf('async function parseError(');
+  const end = source.indexOf('export async function requestPasswordRecovery(', start);
+  assert.ok(start > 0 && end > start);
+  const isolated = source.slice(start, end);
+  let parsed = 0;
+  const parse = vm.runInNewContext(isolated + '; parseError');
+  for (const status of [400,401,403,404,429,500]) {
+    const result = await parse({status, json(){parsed++;return {message:'token=secret@example.org'};}});
+    assert.match(result,/^RECOVERY_(?:RATE_LIMITED|PROVIDER_UNAVAILABLE)$/);
+    assert.doesNotMatch(result,/secret|token|email|@/i);
+  }
+  assert.equal(parsed,0,'raw provider body must not be read');
+});

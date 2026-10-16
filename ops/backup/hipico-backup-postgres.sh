@@ -11,7 +11,8 @@ EXPECTED_ROLE="hipico_backup"
 MODE="${HIPICO_BACKUP_MODE:-PRE_ROLLOUT}"
 SCOPE="hipico-canonical-v12-v27"
 CHAIN="v12-v27"
-TABLE_FILE="${HIPICO_BACKUP_TABLE_FILE:-$(cd "$(dirname "$0")" && pwd)/hipico-public-tables.txt}"
+CANONICAL_TABLE_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hipico-public-tables.txt"
+TABLE_FILE="${HIPICO_BACKUP_TABLE_FILE:-$CANONICAL_TABLE_FILE}"
 OUTPUT_ROOT="${HIPICO_BACKUP_OUTPUT_DIR:-artifacts/qa/hipico-schema-backup/${HIPICO_CANDIDATE_SHA}/source}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 BACKUP_ID="hipico-${STAMP}-${HIPICO_CANDIDATE_SHA:0:12}"
@@ -26,6 +27,15 @@ esac
 for command in psql pg_dump pg_restore age rclone sha256sum node git; do
   command -v "$command" >/dev/null || { echo "$command is required" >&2; exit 3; }
 done
+
+# Inventory overrides cannot silently change the claimed 25/25 canonical scope.
+# Compare bytes before any database connection, role verification or backup IO.
+[[ -f "$CANONICAL_TABLE_FILE" ]] || { echo "Missing canonical Hípico inventory." >&2; exit 3; }
+provided_inventory_hash="$(sha256sum "$TABLE_FILE")"
+canonical_inventory_hash="$(sha256sum "$CANONICAL_TABLE_FILE")"
+[[ "${provided_inventory_hash%% *}" == "${canonical_inventory_hash%% *}" ]] || {
+  echo "Backup inventory differs from the reviewed canonical 25-table scope." >&2; exit 4;
+}
 
 # Release evidence must describe the checked-out code, not a different commit.
 # Run these gates before creating any output or making the first DB query.
