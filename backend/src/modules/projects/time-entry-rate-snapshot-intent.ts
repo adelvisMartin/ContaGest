@@ -85,6 +85,16 @@ export function prepareProjectTimeRateSnapshotIntent(input: ProjectTimeRateSnaps
   const captured = canonicalUtcInstant(input.capturedAtUtc);
   const effective = canonicalUtcInstant(quote.effectiveFromUtc);
   if (effective > captured) throw new TypeError('PROJECT_TIME_RATE_NOT_YET_EFFECTIVE');
+  // A tariff published during a shift cannot be applied retroactively to
+  // the shift's earlier minutes. Splitting between revisions needs explicit
+  // accounting policy and a trusted version-history lookup upstream.
+  if (effective > Date.parse(period.startedAtUtc)) {
+    throw new TypeError('PROJECT_TIME_RATE_EFFECTIVE_AFTER_START');
+  }
+  // Server capture cannot precede the end of the time being reviewed.
+  if (captured < Date.parse(period.endedAtUtc)) {
+    throw new TypeError('PROJECT_TIME_RATE_CAPTURE_BEFORE_END');
+  }
 
   // All integer arithmetic. No IEEE-754 monetary values, implicit rounding,
   // invoice lines, tax or ledger mutations are produced by this helper.
