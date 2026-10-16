@@ -364,7 +364,7 @@ export function mountOperationalCopyCenter() {
   root.addEventListener('change', async (event) => {
     if (root.dataset.opsAuthorized !== 'true') return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.matches('[data-ops-manual-confirm], [data-ops-manual-consent]')) {
+    if (target?.matches('[data-ops-manual-confirm]') || target?.matches('[data-ops-manual-consent]')) {
       const dialog = target.closest('dialog');
       // Any consent/review change invalidates asynchronous clipboard results.
       invalidateManualDraftReview(dialog);
