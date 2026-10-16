@@ -50,10 +50,13 @@ function exactUnits(text: string, signed: boolean): bigint {
 export function inspectReorderStockRows(rows: readonly ReorderStockRow[]) {
   const eligibleRows: ReorderStockRow[] = [];
   const stockExceptions: ReorderStockException[] = [];
+  const seenProductIds = new Set<string>();
   for (const row of rows) {
     if (!row.productId || !row.sku || !row.name || !row.unit) {
       throw new TypeError('REORDER_INVALID_PRODUCT');
     }
+    if (seenProductIds.has(row.productId)) throw new TypeError('REORDER_DUPLICATE_PRODUCT');
+    seenProductIds.add(row.productId);
     const stock = exactUnits(row.stockExact, true);
     const reserved = exactUnits(row.reservedExact, true);
     const available = exactUnits(row.availableExact, true);
