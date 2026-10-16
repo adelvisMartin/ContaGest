@@ -101,6 +101,9 @@ test('public HTML escapes hostile labels, is no-store, no-referrer and cannot lo
   assert.equal(r.status,200);
   assert.match(r.headers.get('cache-control')||'',/no-store/);
   assert.equal(r.headers.get('referrer-policy'),'no-referrer');
+  assert.equal(r.headers.get('x-content-type-options'),'nosniff');
+  assert.equal(r.headers.get('cross-origin-resource-policy'),'same-origin');
+  assert.match(r.headers.get('permissions-policy')||'',/payment=\(\)/);
   assert.match(r.headers.get('content-security-policy')||'',/default-src 'none'/);
   assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);
   assert.ok(!html.includes('<img src=x'));
