@@ -134,3 +134,50 @@ test('#119 record CLI persists explicit observation instant without fabricating 
   assert.equal(raw.environments.find(e=>e.id==='browser').scenarios[one].observedAtUtc,when);
   assert.equal(status(f).twoDayEvidenceComplete,true);
 });
+
+
+// Verify the downstream release-consumer authority against the same canonical
+// artifact that the recorder emits. A PASS flag alone is not proof.
+const verifierSource=fs.readFileSync('scripts/hipico-verify-evidence-v290.mjs','utf8');
+const verifierHelper=verifierSource.slice(
+  verifierSource.indexOf('function validTwoDayPhysicalEvidence('),
+  verifierSource.indexOf('const optionalDescriptors =')
+);
+assert.ok(verifierHelper.startsWith('function validTwoDayPhysicalEvidence('));
+const validateReleaseDays=new Function(verifierHelper+';return validTwoDayPhysicalEvidence;')();
+
+test('#119 release verifier checks actual dates and SHA digests, not only a summary PASS flag',()=>{
+  const f=fixture();
+  assert.equal(check(f).status,0);
+  const data=JSON.parse(fs.readFileSync(path.join(f.dir,'physical-qa-evidence.json'),'utf8'));
+  assert.equal(validateReleaseDays(data),true);
+  assert.match(verifierSource,/summary\?\.twoDayEvidenceComplete\s*===\s*true/);
+  assert.match(verifierSource,/validTwoDayPhysicalEvidence\(data\)/);
+});
+
+test('#119 release verifier rejects forged same-hash days even if summary claims PASS',()=>{
+  const f=fixture();
+  assert.equal(check(f).status,0);
+  const data=JSON.parse(fs.readFileSync(path.join(f.dir,'physical-qa-evidence.json'),'utf8'));
+  const day1=data.evidenceFiles.find(row=>row.scenario===one);
+  for(const row of data.evidenceFiles)if(row.scenario===two)row.sha256=day1.sha256;
+  assert.equal(data.summary.releasePhysicalGate,'PASS');
+  assert.equal(data.summary.twoDayEvidenceComplete,true);
+  assert.equal(validateReleaseDays(data),false);
+});
+
+test('#119 release verifier rejects missing, old or future observation metadata',()=>{
+  const f=fixture();
+  assert.equal(check(f).status,0);
+  const raw=JSON.parse(fs.readFileSync(path.join(f.dir,'physical-qa-evidence.json'),'utf8'));
+  const missing=structuredClone(raw);
+  delete missing.environments[0].physicalDays;
+  assert.equal(validateReleaseDays(missing),false);
+  const old=structuredClone(raw);
+  old.environments[0].physicalDays.day2ObservedAtUtc=
+    new Date(Date.parse(old.environments[0].physicalDays.day1ObservedAtUtc)+3600000).toISOString();
+  assert.equal(validateReleaseDays(old),false);
+  const future=structuredClone(raw);
+  future.environments[0].physicalDays.day2ObservedAtUtc=new Date(Date.now()+86400000).toISOString();
+  assert.equal(validateReleaseDays(future),false);
+});
