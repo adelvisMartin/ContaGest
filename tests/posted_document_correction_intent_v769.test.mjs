@@ -1,0 +1,12 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {prepareDocumentCorrection as plan} from '../backend/src/modules/document-lifecycle/posted-document-correction-intent.ts';
+const A='cb0054f7-ef51-4580-888a-087701fca814', B='9236ec7b-5eaf-44c2-9526-6b8ebce8d58e';
+const base={tenantId:A,actorTenantId:A,documentTenantId:A,documentId:'130849ad-a46d-5adb-a286-2774fd36bfac',state:'posted',action:'reverse',expectedRevision:3,reason:'Corrección aprobada del documento original',idempotencyKey:'correction-2026-001',reversalPeriodOpen:true};
+test('posted document may only request separately authorized reversal',()=>{const r=plan(base);assert.equal(r.requestedState,'reversed');assert.equal(r.proposedRevision,4);assert.equal(r.requiresImmutableOriginal,true);assert.deepEqual([r.ledgerAuthorized,r.sequenceAuthorized,r.noteAuthorized,r.persisted],[false,false,false,false]);});
+test('issued-but-unposted may request administrative cancellation only',()=>{const r=plan({...base,state:'issued',action:'cancel',reversalPeriodOpen:false});assert.equal(r.requestedState,'cancelled');assert.equal(r.requiresServerPeriodVerification,false);});
+test('posted cannot cancel without accounting reversal',()=>{assert.throws(()=>plan({...base,action:'cancel'}),/NOT_ALLOWED/);});
+test('issued cannot reverse, terminal cannot mutate',()=>{for(const p of [{state:'issued',action:'reverse'},{state:'cancelled'},{state:'reversed'},{state:'draft',action:'cancel'}])assert.throws(()=>plan({...base,...p}),/NOT_ALLOWED/);});
+test('closed reversal period fails closed',()=>{assert.throws(()=>plan({...base,reversalPeriodOpen:false}),/PERIOD_CLOSED/);});
+test('actor and original document must be same tenant',()=>{for(const p of [{actorTenantId:B},{documentTenantId:B},{documentId:'other'}])assert.throws(()=>plan({...base,...p}),/SCOPE/);});
+test('reason, revision and idempotency evidence are required',()=>{for(const p of [{reason:'x'},{reason:''},{idempotencyKey:'x'},{expectedRevision:0},{expectedRevision:Number.MAX_SAFE_INTEGER}])assert.throws(()=>plan({...base,...p}));});
+test('intent never contains caller-changeable source snapshots or ledger lines',()=>{const r=plan(base);assert.equal('sequenceNumber' in r,false);assert.equal('tax' in r,false);assert.equal('lines' in r,false);assert.equal(Object.isFrozen(r),true);});
