@@ -1,0 +1,5 @@
+# #799 · Demanda de equipos desde el catálogo Gym
+
+`GET /api/v1/verticals/gym/equipment-requirements` reutiliza `GymExercise`, con `gym.manage`, tenant derivado de sesión, SQL parametrizado, filtro `active=true`, normalización de etiquetas vacías y `GROUP BY` con orden determinista. Devuelve hasta 200 tipos y un indicador `truncated` explícito. `assetAvailabilityVerified:false` informa que la lista **NO es** un registro de activos ni certifica disponibilidad, mantenimiento, inventario o seguridad de una máquina. No se crean precios, ingresos ni una segunda tabla frente a #759.
+
+Prueba focal ejecutada contra handler exacto de GitHub, con Prisma/Express simulados: 5/5 PASS, incluyendo tenant, filtro, límites y ausencia de SQL de escritura. Pendiente: typecheck/backend/PG17/browser, registro de incidentes, ubicación, maintenance/asset links, revenue. #799 sigue OPEN. Rollback: revertir ruta+prueba+doc sin migración. GitHub Actions no desactivado.
