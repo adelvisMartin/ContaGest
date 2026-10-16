@@ -70,6 +70,20 @@ for(const file of tests){
 }
 
 console.log(`[authoritative-contracts] implementations=${implementations.length} tests=${tests.length} concurrency=${CONTRACT_CONCURRENCY} batchSize=${CONTRACT_BATCH_SIZE}`);
+// Additional next-four native regression suites for disposable QA, no CI gate removal.
+for(const filename of [
+  'tests/dental_lab_fulfillment_v804.test.mjs',
+  'tests/vet_diagnostic_study_scope_v814.test.mjs',
+  'tests/vet_hospital_join_scope_v816.test.mjs',
+  'tests/vet_dispense_replay_guard_v818.test.mjs'
+]){
+  console.log('[VETNEXT4][START] '+filename);
+  const focus=spawnSync(process.execPath,['--test',filename],{stdio:'inherit',env:process.env,shell:false});
+  if(focus.error)throw focus.error;
+  if(focus.status!==0){process.exitCode=focus.status??1;process.exit();}
+  console.log('[VETNEXT4][PASS] '+filename);
+}
+
 for(let offset=0;offset<tests.length;offset+=CONTRACT_BATCH_SIZE){
   const batch=tests.slice(offset,offset+CONTRACT_BATCH_SIZE);
   console.log(`[authoritative-contracts] batch=${Math.floor(offset/CONTRACT_BATCH_SIZE)+1} files=${batch.length}`);
