@@ -4,6 +4,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx, one } from './verticals.shared.js';
 import { evaluateGymProgression } from './gym.progression.js';
+import { parseGymExerciseFilters } from './gym-exercise-filters.js';
 import {
   exerciseLibrarySchema,
   exerciseLibraryPatchSchema,
@@ -37,11 +38,10 @@ const epleyEstimate = (load:number,reps:number) => reps>=1&&reps<=12&&load>0
 
 router.get('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
-  const q=String(req.query.q||'').trim();
-  const muscleGroup=String(req.query.muscleGroup||'').trim();
-  const equipment=String(req.query.equipment||'').trim();
-  const category=String(req.query.category||'').trim();
-  const active=String(req.query.active||'').trim();
+  let filters: ReturnType<typeof parseGymExerciseFilters>;
+  try { filters=parseGymExerciseFilters(req.query); }
+  catch { throw new HttpError(422,'Filtros de ejercicios inválidos.'); }
+  const {q,muscleGroup,equipment,category,active}=filters;
   const rows=await prisma.$queryRawUnsafe<any[]>(`
     SELECT *
     FROM public."GymExercise"

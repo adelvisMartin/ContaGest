@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { HttpError } from '../../shared/http.js';
+import { parseStatementCsvRows, StatementCsvStructureError } from './statement-csv-structure.js';
 import { money, serializeDecimal } from '../../shared/financial/decimal.js';
 
 export const BANK_STATEMENT_PARSER_VERSION = 'contagest-bank-statement/1.2.0';
@@ -55,27 +56,6 @@ const normalizeCurrency = (value: unknown, fallback = 'VES') => {
   return code;
 };
 
-function csvRows(text: string) {
-  const rows: string[][] = [];
-  let row: string[] = [], cell = '', quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"' && text[i+1] === '"') { cell += '"'; i++; }
-      else if (ch === '"') quoted = false;
-      else cell += ch;
-      continue;
-    }
-    if (ch === '"') { quoted = true; continue; }
-    if (ch === ',') { row.push(cell); cell = ''; continue; }
-    if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; continue; }
-    if (ch !== '\r') cell += ch;
-  }
-  if (quoted) throw new HttpError(422, 'CSV malformado: comillas sin cerrar.', { code: 'BANK_STATEMENT_CSV_MALFORMED' });
-  if (cell.length || row.length) { row.push(cell); rows.push(row); }
-  return rows.filter((item) => item.some((value) => value.trim()));
-}
-
 const aliases = {
   date: ['date','fecha','bookedat','bookingdate'],
   valueDate: ['valuedate','fecha_valor','value_date'],
@@ -89,13 +69,23 @@ const aliases = {
 const key = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/_/g, '');
 const findHeader = (headers: string[], names: string[]) => headers.findIndex((header) => names.includes(key(header)));
 function parseCsv(text: string, defaultCurrency: string): ParsedStatement {
-  const rows = csvRows(text);
+  let rows: string[][];
+  try { rows = parseStatementCsvRows(text); }
+  catch (error) {
+    if (error instanceof StatementCsvStructureError) {
+      throw new HttpError(422, 'CSV malformado: comillas o estructura incorrectas.', {code:'BANK_STATEMENT_CSV_MALFORMED'});
+    }
+    throw error;
+  }
   if (rows.length < 2) throw new HttpError(422, 'CSV sin líneas de movimiento.', { code: 'BANK_STATEMENT_EMPTY' });
   const headers = rows[0];
   if (headers.some((header, index) => !safeText(header, `header:${index}`, 120))) throw new HttpError(422, 'CSV contiene cabeceras vacías.', { code: 'BANK_STATEMENT_CSV_HEADERS' });
   const indexes = Object.fromEntries(Object.entries(aliases).map(([name,names]) => [name, findHeader(headers, names)]));
   if (indexes.date < 0 || indexes.amount < 0) throw new HttpError(422, 'CSV requiere columnas de fecha y monto.', { code: 'BANK_STATEMENT_CSV_HEADERS' });
   const lines = rows.slice(1).map((columns, rowIndex) => {
+    if (columns.length !== headers.length) {
+      throw new HttpError(422, 'CSV con cantidad de columnas inconsistente.', {code:'BANK_STATEMENT_CSV_MALFORMED', row:rowIndex+2});
+    }
     const structuralIndexes = new Set([indexes.date,indexes.valueDate,indexes.amount].filter((index:number)=>index>=0));
     columns.forEach((value,index)=>{if(!structuralIndexes.has(index)) safeText(value,`cell:${rowIndex}:${index}`,4000);});
     const raw = Object.fromEntries(headers.map((header,index) => [header, columns[index] ?? '']));

@@ -44,7 +44,6 @@ const context = (req: any) => req.context as { tenantId: string; userId?: string
 const requestId = (req: any) => String(req.requestId || '') || null;
 const idempotencyKey = (req: any) => req.header('Idempotency-Key') || null;
 
-
 const openItemQuerySchema = z.object({
   kind: z.enum(['ar','ap']),
   asOf: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/),
