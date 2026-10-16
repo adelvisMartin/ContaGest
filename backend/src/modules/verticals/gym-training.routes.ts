@@ -6,6 +6,7 @@ import { ctx, one } from './verticals.shared.js';
 import { evaluateGymProgression } from './gym.progression.js';
 import { nextPeriodizationVersion } from './gym-program-version.js';
 import { parseGymExerciseFilters } from './gym-exercise-filters.js';
+import { parseGymMemberQuery } from './gym-member-query.js';
 import {
   exerciseLibrarySchema,
   exerciseLibraryPatchSchema,
@@ -436,11 +437,10 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
   const today=new Date();
   const defaultTo=today.toISOString().slice(0,10);
   const defaultFrom=new Date(today.getTime()-89*86400000).toISOString().slice(0,10);
-  const q=performanceQuerySchema.parse({
-    memberId:String(req.query.memberId||''),
-    from:req.query.from?String(req.query.from):undefined,
-    to:req.query.to?String(req.query.to):undefined
-  });
+  let transport:ReturnType<typeof parseGymMemberQuery>;
+  try { transport=parseGymMemberQuery(req.query,{requireMember:true,allowDates:true}); }
+  catch { throw new HttpError(422,'Filtros de performance inválidos.'); }
+  const q=performanceQuerySchema.parse(transport);
   const from=q.from||defaultFrom;
   const to=q.to||defaultTo;
   const fromDate=new Date(`${from}T00:00:00.000Z`);
