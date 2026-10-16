@@ -1,0 +1,7 @@
+# #757 — Prevalidación de cantidades de recepción de compras
+
+`preparePurchaseReceipt` es un componente **puro** para decidir qué cantidad de una línea de PurchaseOrder podría recibirse, sin permitir sobre-recepción, cantidad negativa/cero, estado cancelado ni scope de otra empresa. Usa enteros `BigInt` a tres posiciones de inventario exactas y devuelve remanente, estado sugerido y revisión esperada para una futura transacción CAS.
+
+Requiere `idempotencyKey`, pero **no implementa persistencia ni garantiza deduplicación**; esa clave deberá usarse en una transacción serializable tenant-scoped que compruebe el estado de la orden, lot/location, #738 y registre `GoodsReceipt`, `InventoryMovement` y auditoría exactamente una vez. No contabiliza compras ni genera `PurchaseInvoice`/AP. El resultado lo declara: `persisted:false`, `inventoryMovementAuthorized:false`, `supplierInvoiceAuthorized:false`, `ledgerAuthorized:false`.
+
+Pruebas ejecutadas: Node v22.16 `node --experimental-strip-types --test tests/purchase_receipt_preflight_v757.test.mjs` 7/7 PASS; TypeScript v5.8.3 strict aislado PASS. Los Git blob del código y test coinciden con el contenido realmente ejecutado. Backend full `npm ci`/build, PostgreSQL17 con concurrencia y dos tenants, contrato HTTP, integración con reservas/inventario y navegador **NOT_EXECUTED**. Issue #757 abierto/partial por flujo PurchaseRequest→PurchaseOrder→Reception→SupplierInvoice faltante. No hay migración ni workflow alterado. Rollback: revertir tres archivos nuevos, sin eliminar datos. SOURCE_REUSE=NONE.
