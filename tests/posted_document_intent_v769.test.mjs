@@ -1,0 +1,15 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {prepareDocumentTransition as plan} from '../backend/src/modules/documents/posted-document-intent.mjs';
+const doc=()=>({id:'D1',tenantId:'T1',status:'draft',revision:1,sequenceId:'SEQ1',snapshotHash:'a'.repeat(64),postedLedgerEntryId:'GL1'});
+const args=(action='issue')=>({document:doc(),tenantId:'T1',actorId:'A1',expectedRevision:1,action,reason:'Corrección autorizada'});
+test('draft issue intent references existing sequence, posts nothing',()=>{const r=plan(args());assert.equal(r.nextStatus,'issued');assert.equal(r.sequenceId,'SEQ1');assert.equal(r.ledgerPostingPerformed,false)});
+test('issued can post with historical snapshot identity',()=>{const a=args('post');a.document.status='issued';assert.equal(plan(a).nextStatus,'posted')});
+test('posted reversals require authorized actor, reason and linked ledger',()=>{const a=args('reverse');a.document.status='posted';const r=plan(a);assert.equal(r.nextStatus,'reversed');assert.equal(r.originalDocumentMutated,false)});
+test('posting twice is forbidden',()=>{const a=args('post');a.document.status='posted';assert.throws(()=>plan(a),/DOCUMENT_TRANSITION_FORBIDDEN/)});
+test('cross tenant blocked before any effect',()=>{const a=args();a.tenantId='T2';assert.throws(()=>plan(a),/DOCUMENT_SCOPE_OR_REVISION_CONFLICT/)});
+test('stale revision rejected',()=>{const a=args();a.expectedRevision=0;assert.throws(()=>plan(a),/DOCUMENT_SCOPE_OR_REVISION_CONFLICT/)});
+test('cancel requires meaningful reason',()=>{const a=args('cancel');a.reason='oops';assert.throws(()=>plan(a),/DOCUMENT_REASON_REQUIRED/)});
+test('no issue/post without immutable snapshot',()=>{const a=args();a.document.snapshotHash='';assert.throws(()=>plan(a),/DOCUMENT_SNAPSHOT_REQUIRED/)});
+test('no issue without sequence authority',()=>{const a=args();a.document.sequenceId='';assert.throws(()=>plan(a),/DOCUMENT_SEQUENCE_AUTHORITY_REQUIRED/)});
+test('cannot reverse without financial authority',()=>{const a=args('reverse');a.document.status='posted';a.document.postedLedgerEntryId=null;assert.throws(()=>plan(a),/LEDGER_REVERSAL_AUTHORITY_REQUIRED/)});
+test('immutable intent is not a posted entry',()=>{const r=plan(args());assert.ok(Object.isFrozen(r));assert.equal(r.requiresTransaction,true)});
