@@ -30,7 +30,7 @@ export function preparePostedDocumentTransition(input){
    ? transitions[/** @type {keyof typeof transitions} */ (input.from)]
    : null;
  const target=state&&typeof input.action==='string'&&Object.hasOwn(state,input.action)
-   ? state[/** @type {'issue'|'cancel'|'post'|'reverse'} */ (input.action)]
+   ? /** @type {Record<string,string>} */ (/** @type {unknown} */ (state))[input.action]
    : null;
  if(!target)throw new TypeError('DOCUMENT_TRANSITION_NOT_ALLOWED');
  if(input.action==='issue'||input.action==='post'||input.action==='reverse'){
