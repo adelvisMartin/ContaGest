@@ -71,6 +71,22 @@ for(const file of tests){
 }
 
 console.log(`[authoritative-contracts] implementations=${implementations.length} tests=${tests.length} concurrency=${CONTRACT_CONCURRENCY} batchSize=${CONTRACT_BATCH_SIZE}`);
+// QA-only preview instrumentation: ADD checks, never skip/replace canonical gates.
+// This block belongs solely to the disposable QA branch, not any product PR.
+const qaFocus=[
+  ['985 PG17 workflow contract', ['--test','tests/production_ops_v566_contract.test.mjs']],
+  ['638 CRUD TS runtime policy', ['--no-warnings','--experimental-strip-types','--test','tests/crud_factory_hardening_issue_638.test.mjs']],
+  ['720 Tenant authentication source contract', ['--test','tests/auth_boundary_issue_636.test.mjs']],
+  ['979 Structured telemetry TypeScript contract', ['--import','tsx','--test','backend/src/shared/observability/contract.test.ts']]
+];
+for(const [name,args] of qaFocus){
+  console.log('[qa-next4][START] '+name);
+  const result=spawnSync(process.execPath,args,{stdio:'inherit',env:process.env,shell:false});
+  if(result.error)throw result.error;
+  if(result.status!==0){process.exitCode=result.status??1;process.exit();}
+  console.log('[qa-next4][PASS] '+name);
+}
+
 for(let offset=0;offset<tests.length;offset+=CONTRACT_BATCH_SIZE){
   const batch=tests.slice(offset,offset+CONTRACT_BATCH_SIZE);
   console.log(`[authoritative-contracts] batch=${Math.floor(offset/CONTRACT_BATCH_SIZE)+1} files=${batch.length}`);
