@@ -136,3 +136,40 @@ test('no invoice line, tax, ledger, payment, or billing authorizations in output
   assert.equal(Object.keys(r).some(k=>/invoiceId|tax|ledger|payment|posted/i.test(k)),false);
   assert.deepEqual([r.billableAuthorized,r.invoiceAuthorized,r.persisted,r.approvedInDatabase],[false,false,false,false]);
 });
+
+
+test('rejects retroactive rate effective inside already-worked minutes',()=>{
+  const x=fixture();
+  x.quote.effectiveFromUtc='2026-10-15T13:15:00.000Z';
+  // The new tariff was active by capture (13:45), but not at shift start (13:00).
+  error(x,'EFFECTIVE_AFTER_START');
+});
+
+test('accepts tariff effective at shift start and capture exactly at shift end',()=>{
+  const x=fixture();
+  x.quote.effectiveFromUtc='2026-10-15T13:00:00.000Z';
+  const result=prepare(x);
+  assert.equal(result.rateEffectiveFromUtc,'2026-10-15T13:00:00.000Z');
+  assert.equal(result.capturedAtUtc,'2026-10-15T13:45:00.000Z');
+  assert.equal(result.billableAuthorized,false);
+});
+
+test('rejects capture before the actual end of submitted time',()=>{
+  const x=fixture();
+  x.capturedAtUtc='2026-10-15T13:44:59.999Z';
+  error(x,'CAPTURE_BEFORE_END');
+});
+
+test('UTC rate boundary is enforced across DST fall-back offsets',()=>{
+  const x=fixture();
+  x.period.startedAt='2026-11-01T01:30:00-04:00';
+  x.period.endedAt='2026-11-01T01:30:00-05:00';
+  x.period.recordedMinutes=60;
+  x.capturedAtUtc='2026-11-01T06:30:00.000Z';
+  x.quote.effectiveFromUtc='2026-11-01T05:45:00.000Z';
+  error(x,'EFFECTIVE_AFTER_START');
+  x.quote.effectiveFromUtc='2026-11-01T05:30:00.000Z';
+  const allowed=prepare(x);
+  assert.equal(allowed.durationMinutes,60);
+  assert.equal(allowed.billableAuthorized,false);
+});
