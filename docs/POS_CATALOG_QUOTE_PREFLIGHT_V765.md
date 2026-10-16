@@ -4,7 +4,7 @@
 
 El backend de Ventas proporciona `POST /api/v1/sales/pos/catalog-quote-preview`, protegido por `requireTenant` y `sales.view`. Recibe el mismo esquema estricto de hasta 100 líneas del preflight de existencias: UUID de producto y cantidad exacta Decimal(18,3).
 
-Consulta exclusivamente productos activos del tenant autenticado mediante Prisma, en una lectura sin bloqueo, y obtiene `id,sku,name,price,taxRate,stock,reserved`. Reutiliza **`validatePosStockLines`**, **`previewPosStock`** y **`calculateInvoiceTotals`** (la misma política de subtotal/IVA/total que `POST /sales`). La ruta no permite al navegador fijar precios, tasas fiscales ni moneda y nunca escribe ventas, ledger, pagos o movimientos de inventario.
+Consulta exclusivamente productos activos del tenant autenticado mediante Prisma, en una lectura sin bloqueo, y obtiene `id,sku,name,price,taxRate,stock,reserved`. Para cada línea se exige además `expectedSku` con validación estricta de código escaneable; el backend compara el SKU **exactamente** (respetando mayúsculas y ceros iniciales) con el producto de ese tenant. Si el identificador continúa igual pero su SKU fue reasignado, renombrado o no coincide, devuelve conflicto `409` (`POS_CATALOG_SKU_CHANGED`) **antes** de calcular subtotal/impuesto/total. El cliente también rechaza respuestas que no repiten su SKU esperado. Reutiliza **`validatePosStockLines`**, **`previewPosStock`** y **`calculateInvoiceTotals`** (la misma política de subtotal/IVA/total que `POST /sales`). La ruta no permite al navegador fijar precios, tasas fiscales ni moneda y nunca escribe ventas, ledger, pagos o movimientos de inventario.
 
 La pantalla **Ventas** incorpora el botón *Consultar importe del catálogo*, una tabla de cantidades, precios y tasa de catálogo y un resumen de base, impuesto y total estimado. El resultado se descarta si cambia la empresa o la versión/identidad del carrito durante la llamada; no se aceptan respuestas con campos monetarios malformados. La consulta es single-flight y exige aplicar las cantidades pendientes antes de comenzar.
 
@@ -25,7 +25,7 @@ node --test tests/pos_catalog_quote_preflight_v765.test.mjs
 npm --workspace backend run typecheck
 ```
 
-**Evidencia obtenida:** 11/11 casos del test ejecutados en V8 sobre el código exacto de GitHub (`new Function` con dependencias de base de datos, política de stock y cálculo de facturas simuladas); 9/9 escenarios del manejador `checkPosCatalogQuote` extraído del archivo real de Ventas, incluidos éxito, error de red, carrito vacío, cantidad pendiente, cambio de tenant/revisión, respuesta fiscal inválida, importes malformados y doble clic.
+**Evidencia tras endurecer la identidad:** 17/17 casos del test de ruta fuente ejecutados en V8 con el código exacto de GitHub y dobles explícitos de Prisma/stock/calculador; seis regresiones nuevas de SKU divergente con mismo UUID, mayúsculas, ceros iniciales, SKU ausente, validación Zod estricta y eco de identidad. 10/10 escenarios del manejador real de Ventas con API/estado simulado, incluidos SKU incorrecto, SKU ausente, cero inicial, carrito editado durante petición y doble pulsación. Los mocks no prueban que Prisma, Zod o PostgreSQL funcionen integrados; esa evidencia sigue pendiente.
 
 **Pendiente de ejecutar:** runner nativo Node contra un checkout, `tsc` completo, Prisma/PG17 real, build Vite, Chromium/E2E, controles RBAC A/B y workflow CI. No se debe atribuir PASS a nada de lo anterior, ni a jobs remotos en cola.
 
