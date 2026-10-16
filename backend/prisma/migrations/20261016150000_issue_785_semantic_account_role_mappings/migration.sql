@@ -24,3 +24,15 @@ BEGIN
     GRANT SELECT,INSERT ON public."SemanticAccountRoleMapping" TO contagest_runtime;
   END IF;
 END $$;
+
+-- Enforce append-only at the database boundary even if the canonical runtime
+-- sidecar later grants UPDATE/DELETE on all tenant tables.
+CREATE FUNCTION public.contagest_785_role_mapping_immutable()
+RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+BEGIN
+  RAISE EXCEPTION 'ACCOUNT_ROLE_MAPPING_IMMUTABLE' USING ERRCODE = '55000';
+END;
+$$;
+CREATE TRIGGER contagest_785_role_mapping_immutable
+  BEFORE UPDATE OR DELETE ON public."SemanticAccountRoleMapping"
+  FOR EACH ROW EXECUTE FUNCTION public.contagest_785_role_mapping_immutable();
