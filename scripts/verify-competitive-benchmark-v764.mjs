@@ -50,7 +50,7 @@ function isHttps(url) {
   if (typeof url !== 'string' || url.length > 2048) return false;
   try {
     const u = new URL(url);
-    const host = u.hostname.toLowerCase().replace(/\\.$/, '');
+    const host = u.hostname.toLowerCase().replace(/\.$/, '');
     // Provenance references must be public documentation URLs, NEVER
     // credential-bearing/private service endpoints or embedded fragments.
     if (u.protocol !== 'https:' || u.username || u.password ||
@@ -58,7 +58,7 @@ function isHttps(url) {
         host.endsWith('.localhost') || host.endsWith('.local') ||
         host.endsWith('.internal') || host.endsWith('.test') ||
         host.endsWith('.invalid') ||
-        /^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(host) ||
+        /^\d+\.\d+\.\d+\.\d+$/.test(host) ||
         host.includes(':')) return false;
     return true;
   } catch {
