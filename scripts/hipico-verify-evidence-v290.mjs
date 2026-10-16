@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { validHipicoDrRestoreEvidence } from './hipico-dr-restore-policy-v839.mjs';
 import { validSoakMetricEvidence } from './hipico-soak-metric-integrity-v120.mjs';
+import { validSoakSamplesProof } from './hipico-soak-samples-proof-v120.mjs';
 
 const SHA40 = /^[0-9a-f]{40}$/i;
 const STATUSES = Object.freeze(['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
@@ -296,6 +297,13 @@ function findDescriptor(descriptor) {
   }
   if (typeof descriptor.validate === 'function' && descriptor.validate(selected.data) !== true) {
     return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'EVIDENCE_CONTRACT_MISMATCH' };
+  }
+  // #120: a syntactically valid samplesSha256 does not prove that the actual
+  // producer's samples.jsonl exists, was preserved, or matches the summary.
+  // A missing/tampered/duplicated or discontinuous sample log is fail-closed.
+  if (descriptor.id === 'soak' &&
+      !validSoakSamplesProof(selected.file, selected.data, Number(soakPolicy?.sampleSeconds))) {
+    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'SOAK_SAMPLES_NOT_VERIFIED' };
   }
   const status = evidenceStatus(selected.data);
   return {
