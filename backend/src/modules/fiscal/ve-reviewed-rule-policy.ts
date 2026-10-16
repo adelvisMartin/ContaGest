@@ -37,7 +37,8 @@ function isDate(value: unknown): value is string {
 function isUtc(value: unknown): value is string {
   return typeof value === 'string' && UTC.test(value) &&
     Number.isFinite(Date.parse(value)) &&
-    new Date(value).toISOString() === new Date(value).toISOString();
+    // Reject invalid calendar dates normalized by Date.parse (Feb 30 etc.).
+    new Date(value).toISOString().slice(0, 19) === value.slice(0, 19);
 }
 function stringId(value: unknown) {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= 200;
