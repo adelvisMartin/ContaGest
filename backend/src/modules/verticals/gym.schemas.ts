@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { optionalText, dateText, jsonRecord } from './verticals.shared.js';
 import { gymProgressionConfigIssues, isRirRpePairCoherent } from './gym.progression.js';
 import { validGymCalendarDay } from './gym-calendar-date.js';
+import { validGymMealClockTime } from './gym-meal-clock.mjs';
 
 /**
  * Validation authority for the Gym vertical.
@@ -370,7 +371,7 @@ export const nutritionMealSchema = z.object({
   dayOfWeek:z.coerce.number().int().min(1).max(7),
   sortOrder:z.coerce.number().int().min(1).max(50),
   mealType:z.string().trim().min(2).max(80),
-  plannedAt:z.string().optional().nullable(),
+  plannedAt:z.string().refine(validGymMealClockTime, {message:'Usa una hora válida en formato HH:mm o HH:mm:ss.'}).optional().nullable(),
   recipeId:z.string().min(10).optional().nullable(),
   servings:z.coerce.number().positive().max(100).default(1),
   preparation:optionalText,
