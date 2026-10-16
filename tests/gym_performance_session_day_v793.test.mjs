@@ -1,0 +1,18 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {gymPerformanceSessionDay as day} from '../backend/src/modules/verticals/gym-performance-day.mjs';
+const route=readFileSync(new URL('../backend/src/modules/verticals/gym-training.routes.ts',import.meta.url),'utf8');
+const a=route.indexOf("router.get('/gym/performance'");
+const b=route.indexOf("router.post('/gym/exercise-substitutions/suggest'",a);
+assert.ok(a>0&&b>a);
+const performance=route.slice(a,b);
+test('UTC session start determines day independently of late set recordedAt',()=>{const session=new Date('2026-10-15T23:59:59.000Z');const upload=new Date('2026-10-16T00:02:00.000Z');assert.equal(day(session),'2026-10-15');assert.notEqual(day(upload),day(session));});
+test('time zone strings normalize to same UTC session day',()=>assert.equal(day('2026-10-16T01:00:00+02:00'),'2026-10-15'));
+test('month/year rollover is deterministic',()=>assert.equal(day(new Date('2026-12-31T23:59:59Z')),'2026-12-31'));
+test('invalid timestamps fail closed',()=>{for(const v of [null,undefined,'x','2026-02-30T99:00:00Z',NaN,{},false])assert.throws(()=>day(v),/SESSION_DATE_INVALID/);});
+test('SQL performance period filters by same session.startedAt basis',()=>{assert.match(performance,/s\."startedAt">=\$3::timestamptz/);assert.match(performance,/s\."startedAt"<\$4::timestamptz/);});
+test('dailyTrend groups by session day, not set upload time',()=>{assert.match(performance,/const date=gymPerformanceSessionDay\(row\.startedAt\)/);assert.doesNotMatch(performance,/const date=new Date\(row\.recordedAt\)/);});
+test('trainingDays uses identical session day authority',()=>assert.match(performance,/new Set\(sessions\.map\(\(session:any\)=>gymPerformanceSessionDay\(session\.startedAt\)\)\)/));
+test('original event provenance is still retained for last performed',()=>assert.match(performance,/exercise\.lastPerformedAt=row\.recordedAt/));
+test('only one timestamp authority module import in route',()=>assert.match(route,/import \{ gymPerformanceSessionDay \} from '\.\/gym-performance-day\.mjs'/));

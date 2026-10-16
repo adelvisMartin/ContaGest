@@ -6,6 +6,7 @@ import { ctx, one } from './verticals.shared.js';
 import { evaluateGymProgression } from './gym.progression.js';
 import { nextPeriodizationVersion } from './gym-program-version.js';
 import { parseGymExerciseFilters } from './gym-exercise-filters.js';
+import { gymPerformanceSessionDay } from './gym-performance-day.mjs';
 import { parseGymMemberQuery } from './gym-member-query.js';
 import {
   exerciseLibrarySchema,
@@ -541,14 +542,14 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     exercise.bestEstimated1RmKg=estimated==null?exercise.bestEstimated1RmKg:Math.max(Number(exercise.bestEstimated1RmKg||0),estimated);
     exercise.lastPerformedAt=row.recordedAt;
 
-    const date=new Date(row.recordedAt).toISOString().slice(0,10);
+    const date=gymPerformanceSessionDay(row.startedAt);
     if(!dailyMap.has(date))dailyMap.set(date,{date,completedSets:0,totalVolume:0});
     const day=dailyMap.get(date);
     day.completedSets+=1;
     day.totalVolume+=volume;
   }
 
-  const trainingDays=new Set(sessions.map((session:any)=>new Date(session.startedAt).toISOString().slice(0,10))).size;
+  const trainingDays=new Set(sessions.map((session:any)=>gymPerformanceSessionDay(session.startedAt))).size;
   const completedSessions=sessions.length;
   const sessionsPerWeek=periodDays>0?Number((completedSessions/(periodDays/7)).toFixed(2)):0;
   const setAdherencePct=plannedSets>0?Number((Math.min(1,completedSets/plannedSets)*100).toFixed(1)):0;
