@@ -91,19 +91,41 @@ router.post('/gym/memberships', requirePermission('gym.manage'), asyncHandler(as
 
 router.post('/gym/checkins', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const b = checkInSchema.parse(req.body || {});
-  const membershipRows = await prisma.$queryRawUnsafe<any[]>(`
-    SELECT * FROM public."GymMembership" WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='active' AND "startsAt"<=now() AND "endsAt">=now() ORDER BY "endsAt" DESC LIMIT 1
-  `, ctx(req).tenantId,b.memberId);
-  const membership = membershipRows[0];
-  const result = membership ? 'accepted' : 'rejected';
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."GymCheckIn" ("id","tenantId","memberId","membershipId","checkedInAt","method","device","result","notes")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,now(),$4,$5,$6,$7) RETURNING *
-  `, ctx(req).tenantId,b.memberId,membership?.id||null,b.method,b.device||null,result,b.notes||null);
-  if (membership?.remainingAccesses != null) {
-    await prisma.$executeRawUnsafe(`UPDATE public."GymMembership" SET "remainingAccesses"=GREATEST(0,"remainingAccesses"-1), "updatedAt"=now() WHERE "id"=$1`, membership.id);
-  }
-  ok(res, { ...one(rows), membershipValid:Boolean(membership) }, membership ? 201 : 200);
+  const tenantId=ctx(req).tenantId;
+  // The membership lock, bounded entitlement consumption and check-in insert
+  // must all commit together; a DB/audit failure cannot consume only half.
+  const saved=await prisma.$transaction(async(tx)=>{
+    const membershipRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."GymMembership"
+      WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='active'
+        AND "startsAt"<=now() AND "endsAt">=now()
+      ORDER BY "endsAt" DESC LIMIT 1 FOR UPDATE
+    `,tenantId,b.memberId);
+    const membership=membershipRows[0];
+    const remaining=membership?.remainingAccesses;
+    if(remaining!==null&&remaining!==undefined&&
+       (!Number.isSafeInteger(Number(remaining))||Number(remaining)<0)){
+      throw new HttpError(409,'La membresía tiene un saldo de accesos inválido.');
+    }
+    const entitled=Boolean(membership)&&(remaining===null||remaining===undefined||Number(remaining)>0);
+    if(entitled&&remaining!==null&&remaining!==undefined){
+      const affected=await tx.$executeRawUnsafe(`
+        UPDATE public."GymMembership"
+        SET "remainingAccesses"="remainingAccesses"-1, "updatedAt"=now()
+        WHERE "id"=$1 AND "tenantId"=$2 AND "memberId"=$3
+          AND "status"='active' AND "remainingAccesses">0
+      `,membership.id,tenantId,b.memberId);
+      if(affected!==1)throw new HttpError(409,'No hay accesos disponibles para completar el ingreso.');
+    }
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymCheckIn"
+        ("id","tenantId","memberId","membershipId","checkedInAt","method","device","result","notes")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,now(),$4,$5,$6,$7) RETURNING *
+    `,tenantId,b.memberId,entitled?membership.id:null,b.method,b.device||null,
+       entitled?'accepted':'rejected',b.notes||null);
+    return {...one(rows),membershipValid:entitled};
+  },{isolationLevel:'Serializable'});
+  ok(res,saved,saved.membershipValid?201:200);
 }));
 
 router.get('/gym/assessments', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
