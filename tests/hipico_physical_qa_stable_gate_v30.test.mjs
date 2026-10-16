@@ -59,6 +59,10 @@ test('v30 successful physical QA check emits canonical exact-SHA release evidenc
   assert.ok(evidence.completedAt);
   assert.equal(evidence.operator,'QA Operador');
   assert.deepEqual(evidence.requiredModes,['pwa-browser','pwa-standalone','android-apk']);
+  assert.ok(evidence.environments.every(env=>
+    /^\d{4}-\d\d-\d\dT/.test(env.physicalDays?.day1ObservedAtUtc||'')&&
+    /^\d{4}-\d\d-\d\dT/.test(env.physicalDays?.day2ObservedAtUtc||'')),
+    'canonical release evidence must preserve observation times for both days');
   assert.equal(evidence.summary.releasePhysicalGate,'PASS');
   assert.equal(evidence.summary.materialEvidenceComplete,true);
   assert.deepEqual(evidence.invariants,{
