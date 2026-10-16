@@ -1,6 +1,7 @@
 import { loadRuntimeConfig, VERSION } from './runtime-config.mjs';
 import { policyDiagnostic, SOURCE_POLICY_REVIEW } from './source-policy-gate.mjs';
 import { WHATSAPP_USE_CASES_1011, evaluateWhatsAppUseCase1011 } from './policy-review-v1011.mjs';
+import { sourceReadPolicyStatus } from './source-read-policy-gate.mjs';
 
 const config = loadRuntimeConfig(process.env, process.cwd());
 const { transport, sourcePolicy } = policyDiagnostic(config);
@@ -23,6 +24,7 @@ const payload = {
     inputRequested: config.labTestInputEnabled,
     technicallyAvailable: transport.implemented && transport.labSend
   },
+  sourceReadPolicy: sourceReadPolicyStatus(),
   sourcePolicy: {
     requested: sourcePolicy.requested,
     eligible: sourcePolicy.eligible,
@@ -42,4 +44,5 @@ const payload = {
 };
 
 process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
-process.exitCode = sourcePolicy.requested && !sourcePolicy.eligible ? 2 : 0;
+// SOURCE automation is blocked even when the source-send switch is off.
+process.exitCode = 2;

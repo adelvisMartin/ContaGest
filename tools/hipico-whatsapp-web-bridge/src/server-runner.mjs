@@ -1,4 +1,9 @@
+import './source-read-startup-denial.mjs';
 import { spawn } from 'node:child_process';
+import { assertSourceAutoReadDenied } from './source-read-policy-gate.mjs';
+
+// Reject before spawning a child that can open a Messenger profile.
+assertSourceAutoReadDenied();
 
 const SERVICE = 'control-hipico-whatsapp-bridge';
 let child = null;

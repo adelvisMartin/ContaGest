@@ -62,10 +62,12 @@ test('confirmed draft identity goes through previously merged exact cart logic',
   assert.equal(b[0].quantity,'2.000');
   assert.deepEqual(removePosCartItem(b,found.product.id),[]);
 });
-test('Sales view wires authenticated products API and merged draft cart without checkout', () => {
+test('Sales view wires tenant-authoritative barcode endpoint and merged draft cart without checkout', () => {
   const s=readFileSync(new URL('../frontend/src/pages/SalesPage.jsx',import.meta.url),'utf8');
-  assert.match(s,/BackendApi\.list\('products'\)/);
-  assert.match(s,/matchPosDraftProduct\(products,\s*posCode\)/);
+  // Server-side resolver (PR #1068/#1115) replaced the paginated client list.
+  assert.ok(s.includes('BackendApi.get(`/sales/pos/product-lookup?code='));
+  assert.ok(s.includes('acceptServerPosProduct(resolved)'));
+  assert.ok(!s.includes("BackendApi.list('products')"));
   assert.match(s,/addPosCartItem\(/);
   assert.match(s,/removePosCartItem\(/);
   assert.doesNotMatch(s,/\b(?:submitPosCheckout|confirmPosSale|postPosPayment)\b/);
