@@ -138,6 +138,16 @@ export const dentalTreatmentPlanClinicalDataSchema = z.object({
     status:z.literal('proposed').default('proposed'),
     acceptance:z.object({ status:z.literal('pending') }).default({status:'pending'})
   }).superRefine((value, refinement) => {
+    // Stable phase positions are necessary for the consent/budget snapshot.
+    // Do not accept ambiguous ordering that can change invoice composition.
+    const phaseOrders=new Set<number>();
+    value.phases.forEach((phase,index)=>{
+      if(phaseOrders.has(phase.order))refinement.addIssue({
+        code:'custom',path:['phases',index,'order'],
+        message:'Cada fase de tratamiento debe tener un orden único.'
+      });
+      phaseOrders.add(phase.order);
+    });
     const allTeeth = new Set([...DENTAL_PERMANENT_TEETH,...DENTAL_PRIMARY_TEETH]);
     value.phases.forEach((phase, phaseIndex) => phase.procedures.forEach((procedure, procedureIndex) => {
       const tooth = String(procedure.tooth || '').trim();
