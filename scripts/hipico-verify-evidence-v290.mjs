@@ -196,6 +196,32 @@ const requiredDescriptors = [
   { id: 'releaseManifest', name: 'release-manifest.json', schemas: ['hipico-release-evidence.v1'], requireClean: true }
 ];
 
+// #119: do not trust a self-asserted physical PASS or an old artifact whose
+// two journeys share one recording, time window, or duplicate content digest.
+function validTwoDayPhysicalEvidence(data) {
+  const environments=Array.isArray(data?.environments)?data.environments:[];
+  const files=Array.isArray(data?.evidenceFiles)?data.evidenceFiles:[];
+  const utc=/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
+  const parse=(value)=>{
+    if(typeof value!=='string'||!utc.test(value))return null;
+    const time=Date.parse(value);
+    return Number.isFinite(time)&&new Date(time).toISOString()===value&&time<=Date.now()?time:null;
+  };
+  return environments.length>0&&environments.every((environment)=>{
+    const start=parse(environment?.physicalDays?.day1ObservedAtUtc);
+    const end=parse(environment?.physicalDays?.day2ObservedAtUtc);
+    if(start===null||end===null||end-start<86400000)return false;
+    const dayHashes=(id)=>files.filter(row=>
+      row?.environment===environment.id&&row?.scenario===id
+      &&/^[a-f0-9]{64}$/i.test(String(row?.sha256||''))).map(row=>String(row.sha256).toLowerCase());
+    const first=dayHashes('source-to-lab-e2e-day-1');
+    const second=dayHashes('source-to-lab-e2e-day-2');
+    return first.length>0&&second.length>0
+      &&first.some(hash=>!second.includes(hash))
+      &&second.some(hash=>!first.includes(hash));
+  });
+}
+
 const optionalDescriptors = [
   { id: 'runtimeBuild', name: 'build-info.json', schemas: [] },
   { id: 'apkMetadata', name: 'QA_APK_METADATA.json', schemas: [] },
@@ -220,6 +246,8 @@ const optionalDescriptors = [
       const invariants = data?.invariants || {};
       return data?.summary?.releasePhysicalGate === 'PASS'
         && data?.summary?.materialEvidenceComplete === true
+        && data?.summary?.twoDayEvidenceComplete === true
+        && validTwoDayPhysicalEvidence(data)
         && Boolean(completedAt)
         && Number.isFinite(Date.parse(completedAt))
         && operator.length >= 2
