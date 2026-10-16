@@ -288,7 +288,7 @@ export const immunizationSchema = z.object({
   administeredAt: z.string().optional(),
   nextDueAt: z.string().optional().nullable(),
   notes: optionalText
-}}).superRefine((value, refinement) => {
+}).superRefine((value, refinement) => {
   for (const issue of immunizationDateIssues(value)) {
     refinement.addIssue({ code: 'custom', path: [issue.field], message: issue.message });
   }
