@@ -4,7 +4,7 @@ import { encodeImportReportCsvCell as cell } from '../backend/src/modules/import
 import { previewProductCsvImport } from '../backend/src/modules/portability/product-csv-import-preview.mjs';
 test('#770 spreadsheet formula prefixes are quoted as literal CSV cells',()=>{
   for(const v of ['=1+1','+SUM(1,2)','-2+3','@SUM(A1)'])
-    assert.equal(cell(v),'"\\''+v+'"');
+    assert.equal(cell(v),String.fromCharCode(34,39)+v+String.fromCharCode(34));
 });
 test('#770 spaces and tabs cannot bypass spreadsheet formula guard',()=>{
   for(const v of [' =1+1','  @cmd','\t=SUM(1)','\r\n+SUM(2)','\u00a0-42','\ufeff=HYPERLINK(1)'])
