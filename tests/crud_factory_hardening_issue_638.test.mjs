@@ -105,7 +105,7 @@ test('#638: router has one bounded delegate authority, strict Zod and tenant sco
   assert.doesNotMatch(manifest, /model:'(?:client|supplier|product|bankAccount|taxPeriod)' as any/);
   // One client router is now registered through a named constant while the
   // other four remain inline. Count model delegates, not incidental layout.
-  const crudModels=[...manifest.matchAll(/createCrudRouter\\(\\{\\s*model:'(client|supplier|product|bankAccount|taxPeriod)'/g)].map((match)=>match[1]);
+  const crudModels=[...manifest.matchAll(/createCrudRouter\(\{\s*model:'(client|supplier|product|bankAccount|taxPeriod)'/g)].map((match)=>match[1]);
   assert.equal(crudModels.length, 5);
   assert.deepEqual([...new Set(crudModels)].sort(), ['bankAccount','client','product','supplier','taxPeriod']);
   assert.match(factory, /schema\.strict\(\)/);
