@@ -180,10 +180,11 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
 
 export function assertOfflineDeliveryAcknowledged(response) {
   // Successful Promise resolution is not proof of server acceptance.
-  if (response == null || response === false ||
-      (typeof response === 'object' &&
-        (response.ok === false || response.delivered === false ||
-         (Number.isInteger(response.status) && response.status >= 400)))) {
+  const acknowledged = response && typeof response === 'object' &&
+    response.ok !== false && response.delivered !== false &&
+    (response.ok === true || response.delivered === true ||
+      (Number.isInteger(response.status) && response.status >= 200 && response.status < 300));
+  if (!acknowledged) {
     const error = new Error('OFFLINE_DELIVERY_NOT_ACKNOWLEDGED');
     error.code = 'OFFLINE_DELIVERY_NOT_ACKNOWLEDGED';
     throw error;
