@@ -4,6 +4,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx, one } from './verticals.shared.js';
 import { evaluateGymProgression } from './gym.progression.js';
+import { nextPeriodizationVersion } from './gym-program-version.js';
 import { parseGymExerciseFilters } from './gym-exercise-filters.js';
 import {
   exerciseLibrarySchema,
@@ -247,9 +248,16 @@ router.post('/gym/periodization/programs/:id/version', requirePermission('gym.ma
       FROM public."GymPeriodizationProgram"
       WHERE "tenantId"=$1 AND "programKey"=$2
     `,tenantId,source.programKey);
-    const maxVersion=Number(versionRows[0]?.maxVersion||0);
-    if(Number(source.version)!==maxVersion)throw new HttpError(409,'Solo la versión más reciente puede generar una nueva revisión.');
-    const nextVersion=maxVersion+1;
+    const maxVersion=Number(versionRows[0]?.maxVersion);
+    let nextVersion:number;
+    try {
+      nextVersion=nextPeriodizationVersion(Number(source.version),maxVersion);
+    } catch(error) {
+      if(!(error instanceof TypeError))throw error;
+      throw new HttpError(409,error.message==='GYM_PERIODIZATION_STALE_VERSION'
+        ?'Solo la versión más reciente puede generar una nueva revisión.'
+        :'La numeración de versiones del programa no es segura.');
+    }
     const rows=await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."GymPeriodizationProgram"
         ("id","tenantId","routineId","programKey","version","name","startsAt","structure","sourceTemplateId","supersedesId","notes","createdBy","createdAt")
