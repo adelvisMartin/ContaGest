@@ -1,7 +1,7 @@
 /** #759 Exact 2-decimal straight-line plan. Preview only: never post a journal. */
 const MONEY=/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/;
 function cents(value){if(typeof value!=='string'||!MONEY.test(value))throw new Error('INVALID_ASSET_AMOUNT');let [w,f='']=value.split('.');return BigInt(w)*100n+BigInt(f.padEnd(2,'0'));}
-function money(value){return String(value/100n)+'.'+String(value%100n).padStart(2,'0');}
+function money(value){return `${value/100n}.${String(value%100n).padStart(2,'0')}`;}
 const ID=/^[a-zA-Z0-9][a-zA-Z0-9:_-]{0,119}$/;
 function validDate(text){if(typeof text!=='string'|| !/^\d{4}-\d\d-\d\d$/.test(text))return false;const ms=Date.parse(text+'T00:00:00.000Z');return Number.isFinite(ms)&&new Date(ms).toISOString().slice(0,10)===text;}
 function monthEnd(start,index){const [y,m]=start.split('-').map(Number);return new Date(Date.UTC(y,m+index,0)).toISOString().slice(0,10);}
