@@ -4,6 +4,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { NotificationTemplateError, renderNotificationTemplate, evaluateNotificationQuietHours, listNotificationTemplateDescriptors } from './notification-template-catalog.js';
+import { projectNotificationDeliveryEvidence } from './notification-delivery-evidence.js';
 import { classifyWhatsAppProviderAck } from './notification-provider-ack.mjs';
 
 const router = Router();
@@ -97,6 +98,27 @@ router.post('/send', requirePermission('sales.manage'), asyncHandler(async (req,
   // No #853 transactional outbox/worker exists behind this endpoint yet.
   // Never report queued=true or echo a private message when nothing was persisted.
   throw new HttpError(503, 'La cola de notificaciones no está disponible; no se programó ningún envío.');
+}));
+
+
+const deliveryWindow = z.object({
+  take: z.coerce.number().int().min(1).max(100).default(50),
+  skip: z.coerce.number().int().min(0).max(100000).default(0),
+}).strict();
+// This is NOT a receipt log or provider timeline; it is a safe projection
+// of existing internal NotificationLog rows only.
+router.get('/delivery-evidence', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
+  const { take, skip } = deliveryWindow.parse(req.query);
+  const tenantId = (req as any).context.tenantId as string;
+  const rows = await prisma.notificationLog.findMany({
+    where: { tenantId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: { id: true, tenantId: true, channel: true, status: true, createdAt: true },
+    take: take + 1, skip,
+  });
+  const hasMore = rows.length > take;
+  const evidence = projectNotificationDeliveryEvidence(tenantId, rows.slice(0, take));
+  res.setHeader('Cache-Control', 'private, no-store');
+  ok(res, { ...evidence, pagination: { take, skip, hasMore } });
 }));
 
 export default router;
