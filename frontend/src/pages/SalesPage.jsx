@@ -189,8 +189,8 @@ function SalesWorkspace({state,context}){
         || result.lines.some((line,index)=>line.productId!==snapshot[index].productId
           || line.requested!==snapshot[index].quantity
           || !['available','shortage'].includes(line.status)
-          || !/^(?:0|[1-9]\\d*)\\.\\d{3}$/.test(line.available)
-          || !/^(?:0|[1-9]\\d*)\\.\\d{3}$/.test(line.shortfall))){
+          || !/^(?:0|[1-9]\d*)\.\d{3}$/.test(line.available)
+          || !/^(?:0|[1-9]\d*)\.\d{3}$/.test(line.shortfall))){
         throw new Error('POS_STOCK_INVALID_PREVIEW');
       }
       setPosStockPreview(result);
