@@ -9,6 +9,7 @@ import { BackendApi } from '../services/backendApi.js';
 import { acceptServerPosProduct, normalizePosLookupCode } from '../services/posProductLookup.mjs';
 import { addPosCartItem, decrementPosCartItem, removePosCartItem, setPosCartQuantity } from '../services/posCartPolicy.mjs';
 import { today } from '../utils/dom.js';
+import { holdPosCart, resumePosCart, discardHeldPosCart } from '../services/posHeldCartPolicy.mjs';
 
 const rows=(value)=>Array.isArray(value)?value:[];
 const statusTone=(status)=>status==='Cobrada'?'success':status==='Anulada'?'error':'warning';
@@ -39,17 +40,22 @@ function SalesWorkspace({state,context}){
   const [posCart,setPosCart]=useState([]);
   const [posNames,setPosNames]=useState({});
   const [posQuantityInputs,setPosQuantityInputs]=useState({});
+  const [posHeld,setPosHeld]=useState([]);
+  const posHeldRef=useRef([]);
   const posCartRef=useRef([]);
   const posBusyRef=useRef(false);
   const posTenantId=BackendApi.tenantId;
   const posTenantRef=useRef(posTenantId);
   const visiblePosCart=posTenantRef.current===posTenantId?posCart:[];
+  const visiblePosHeld=posTenantRef.current===posTenantId?posHeld:[];
   React.useEffect(()=>{
     posTenantRef.current=posTenantId;
     posCartRef.current=[];
     setPosCart([]);
     setPosNames({});
     setPosQuantityInputs({});
+    posHeldRef.current=[];
+    setPosHeld([]);
     setPosCode('');
     setPosDraftError('');
   },[posTenantId]);
@@ -221,6 +227,61 @@ function SalesWorkspace({state,context}){
     }
   }
 
+  // Hold/resume exists only within the mounted, authenticated Sales workspace.
+  // It never writes to storage, server, inventory, payments or accounting.
+  function holdCurrentPosDraft(){
+    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posLoading)return;
+    if(posCartRef.current.some((line)=>(posQuantityInputs[line.productId]??line.quantity)!==line.quantity)){
+      setPosDraftError('Aplica las cantidades pendientes antes de poner el carrito en espera.');
+      return;
+    }
+    try{
+      const id=globalThis.crypto?.randomUUID?.();
+      const next=holdPosCart(posHeldRef.current,posCartRef.current,posNames,id);
+      posHeldRef.current=next;
+      setPosHeld(next);
+      posCartRef.current=[];
+      setPosCart([]);
+      setPosNames({});
+      setPosQuantityInputs({});
+      setPosDraftError('');
+      notify('Carrito guardado en espera solo durante esta sesión.','success');
+    }catch{
+      setPosDraftError('No se pudo poner en espera. Límite: cinco carritos válidos; no se modificó el borrador.');
+    }
+  }
+
+  function resumeHeldPosDraft(id){
+    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posLoading)return;
+    try{
+      const result=resumePosCart(posHeldRef.current,id,posCartRef.current);
+      posHeldRef.current=result.held;
+      setPosHeld(result.held);
+      posCartRef.current=result.cart;
+      setPosCart(result.cart);
+      setPosNames({...result.names});
+      setPosQuantityInputs(Object.fromEntries(result.cart.map((line)=>[line.productId,line.quantity])));
+      setPosDraftError('');
+      notify('Carrito recuperado sin procesar ninguna venta.','success');
+    }catch{
+      setPosDraftError('Vacía o pon en espera el carrito activo antes de recuperar otro.');
+    }
+  }
+
+  function discardHeldPosDraft(id){
+    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posLoading)return;
+    if(typeof window.confirm!=='function' || !window.confirm('¿Descartar este borrador en espera? No existe una copia guardada.'))return;
+    try{
+      const next=discardHeldPosCart(posHeldRef.current,id);
+      posHeldRef.current=next;
+      setPosHeld(next);
+      setPosDraftError('');
+      notify('Borrador en espera descartado.','warning');
+    }catch{
+      setPosDraftError('No se pudo descartar el borrador. Actualiza la pantalla.');
+    }
+  }
+
   const columns=[
     {key:'invoice',label:'Factura',render:(sale)=>sale.invoice||sale.id},
     {key:'date',label:'Fecha',render:(sale)=>shortDate(sale.date)},
@@ -275,6 +336,25 @@ function SalesWorkspace({state,context}){
       <Typography variant="caption" color="text.secondary" role="status" aria-live="polite" sx={{display:'block',mt:1}}>
         {visiblePosCart.length} productos distintos · Sin total fiscal ni cobro confirmado
       </Typography>
+      <Box sx={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:1,mt:1}}>
+        <CgButton type="button" variant="outlined" onClick={holdCurrentPosDraft}
+          disabled={posLoading||visiblePosCart.length===0||visiblePosHeld.length>=5} sx={{minHeight:44}}>
+          Poner carrito en espera
+        </CgButton>
+        <Typography variant="caption" color="text.secondary">
+          {visiblePosHeld.length}/5 borradores en espera · Solo memoria, se pierden al cerrar o cambiar empresa
+        </Typography>
+      </Box>
+      {visiblePosHeld.length>0?
+        <Box component="section" aria-label="Carritos POS en espera" sx={{mt:1,display:'grid',gap:1}}>
+          {visiblePosHeld.map((held,index)=><Paper key={held.id} variant="outlined" sx={{p:1,display:'flex',flexWrap:'wrap',alignItems:'center',gap:1}}>
+            <Typography variant="body2" sx={{flex:'1 1 180px'}}>Carrito {index+1} · {held.lines.length} productos</Typography>
+            <CgButton type="button" size="small" variant="outlined" disabled={posLoading||visiblePosCart.length>0}
+              onClick={()=>resumeHeldPosDraft(held.id)} sx={{minHeight:44}}>Recuperar</CgButton>
+            <CgButton type="button" size="small" variant="outlined" disabled={posLoading}
+              onClick={()=>discardHeldPosDraft(held.id)} sx={{minHeight:44}}>Descartar</CgButton>
+          </Paper>)}
+        </Box>:null}
       {visiblePosCart.length?
         <Box sx={{mt:1,maxWidth:'100%',overflowX:'auto'}}>
           <CgDataTable rows={visiblePosCart.map((line)=>({...line,...(posNames[line.productId]||{sku:'—',name:'Producto en revisión'})}))}
