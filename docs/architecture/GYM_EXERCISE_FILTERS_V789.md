@@ -1,0 +1,5 @@
+# Gym #789 — contrato de filtros de la biblioteca de ejercicios
+
+Se reutiliza la autoridad existente `GymExercise` y su ruta `GET /api/v1/verticals/gym/exercises`. Antes, `active=garbage` se interpretaba silenciosamente como `false`, las listas/objetos podían convertirse a texto y `q` no tenía longitud máxima. Ahora `parseGymExerciseFilters` valida un allowlist estricto de q/muscleGroup/equipment/category/active antes del SQL parametrizado y de ámbito `tenantId`; los valores inválidos responden HTTP 422. Sin cambios de DB ni campos de catálogo. La biblioteca y la autoría versionada completa de #789 siguen pendientes.
+
+Evidencia: siete pruebas focales V8 sobre los blobs exactos GitHub de helper, ruta y tests pasan, cubriendo entrada válida, arrays/objetos, tenant spoofing, límites de longitud y booleanos; no es la suite nativa completa en backend instalado. Deben verificarse además TypeScript build, PostgreSQL17 tenant A/B, UI y ordenamiento/edición/publicación de programas antes de cerrar #789. Los checks de GitHub en cola no equivalen a PASS. Rollback: revertir helper, uso en GET y test, sin migración.
