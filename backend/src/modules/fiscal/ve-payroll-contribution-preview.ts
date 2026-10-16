@@ -75,6 +75,6 @@ export function previewVePayrollContribution(
     previewOnly: true as const,
   };
   const previewSha256 = createHash('sha256')
-    .update('VE_PAYROLL_PREVIEW_V1\\n' + JSON.stringify(preview), 'utf8').digest('hex');
+    .update('VE_PAYROLL_PREVIEW_V1\n' + JSON.stringify(preview), 'utf8').digest('hex');
   return Object.freeze({ ...preview, previewSha256 });
 }
