@@ -17,6 +17,8 @@ export function labCanonicalQueryUrl(ingestUrl){
 // Never turn an arbitrary syntactically valid backend status into permission
 // to send a WhatsApp LAB answer. This is the closed catalog emitted by the
 // canonical race/schedule readers and immutable receipt reconciliation.
+// Deny unknown or write-oriented purposes before even calling the backend.
+const READ_ONLY_LAB_PURPOSES=new Set(['next','active','schedule','summary','result','participants','status']);
 const SAFE_LAB_INFORMATION_STATUSES=new Set([
   'CANONICAL_RESULT_NOT_CONFIRMED',
   'CANONICAL_RESULT_EVIDENCE_MISSING',
@@ -151,7 +153,8 @@ export async function queryCanonicalLab({
   timestamp=new Date().toISOString(),race=null,purpose='status',quotedMessageId=null,timeoutMs=4500,fetchImpl=fetch
 }={}){
   const url=labCanonicalQueryUrl(ingestUrl);
-  if(!url||!token||!labGroupId||!labChannelKey||!senderId||!messageId){
+  if(!url||!token||!labGroupId||!labChannelKey||!senderId||!messageId||
+     !READ_ONLY_LAB_PURPOSES.has(purpose)){
     return{available:false,reason:'LAB_CANONICAL_DISABLED'};
   }
   const payload={
