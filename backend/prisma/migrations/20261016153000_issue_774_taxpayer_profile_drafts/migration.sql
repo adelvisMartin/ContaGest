@@ -35,3 +35,15 @@ BEGIN
     GRANT SELECT,INSERT ON public."TaxpayerProfileVersion" TO contagest_runtime;
   END IF;
 END $$;
+
+-- Versions are historical snapshots; RLS alone does not make rows immutable.
+-- Reject mutations even after sidecar provisioning of tenant runtime grants.
+CREATE FUNCTION public.contagest_774_taxpayer_profile_immutable()
+RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+BEGIN
+  RAISE EXCEPTION 'TAXPAYER_PROFILE_VERSION_IMMUTABLE' USING ERRCODE = '55000';
+END;
+$$;
+CREATE TRIGGER contagest_774_taxpayer_profile_immutable
+  BEFORE UPDATE OR DELETE ON public."TaxpayerProfileVersion"
+  FOR EACH ROW EXECUTE FUNCTION public.contagest_774_taxpayer_profile_immutable();
