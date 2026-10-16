@@ -77,13 +77,16 @@ router.get('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async
 router.post('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   const b=exerciseLibrarySchema.parse(req.body||{});
-  const existing=await prisma.$queryRawUnsafe<any[]>(`
+  const created=await prisma.$transaction(async tx=>{
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      'gym-exercise-name:'+tenantId+':'+b.name.trim().toLowerCase());
+    const existing=await tx.$queryRawUnsafe<any[]>(`
     SELECT "id" FROM public."GymExercise"
     WHERE "tenantId"=$1 AND lower("name")=lower($2)
     LIMIT 1
   `,tenantId,b.name);
   if(existing.length)throw new HttpError(409,'Ya existe un ejercicio con ese nombre.');
-  const rows=await prisma.$queryRawUnsafe<any[]>(`
+  const rows=await tx.$queryRawUnsafe<any[]>(`
     INSERT INTO public."GymExercise"
       ("id","tenantId","name","category","muscleGroup","equipment","instructions","mediaUrl","defaultSets","defaultReps","active","createdAt","updatedAt")
     VALUES
@@ -92,35 +95,42 @@ router.post('/gym/exercises', requirePermission('gym.manage'), asyncHandler(asyn
     RETURNING *
   `,tenantId,b.name,b.category||null,b.muscleGroup||null,b.equipment||null,b.instructions||null,b.mediaUrl||null,b.defaultSets??null,b.defaultReps||null,b.active);
   if(!rows.length)throw new HttpError(409,'Ya existe un ejercicio con ese nombre.');
-  ok(res,one(rows),201);
+    return one(rows);
+  });
+  ok(res,created,201);
 }));
 
 router.patch('/gym/exercises/:id', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   const b=exerciseLibraryPatchSchema.parse(req.body||{});
+  const updated=await prisma.$transaction(async tx=>{
   if(b.name){
-    const duplicate=await prisma.$queryRawUnsafe<any[]>(`
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      'gym-exercise-name:'+tenantId+':'+b.name.trim().toLowerCase());
+    const duplicate=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymExercise"
       WHERE "tenantId"=$1 AND lower("name")=lower($2) AND "id"<>$3
       LIMIT 1
     `,tenantId,b.name,String(req.params.id));
     if(duplicate.length)throw new HttpError(409,'Ya existe otro ejercicio con ese nombre.');
   }
-  const currentRows=await prisma.$queryRawUnsafe<any[]>(`
+  const currentRows=await tx.$queryRawUnsafe<any[]>(`
     SELECT * FROM public."GymExercise"
     WHERE "tenantId"=$1 AND "id"=$2
     LIMIT 1
   `,tenantId,String(req.params.id));
   const current=one(currentRows,'Ejercicio no encontrado.');
   const next={...current,...b};
-  const rows=await prisma.$queryRawUnsafe<any[]>(`
+  const rows=await tx.$queryRawUnsafe<any[]>(`
     UPDATE public."GymExercise"
     SET "name"=$3,"category"=$4,"muscleGroup"=$5,"equipment"=$6,"instructions"=$7,
         "mediaUrl"=$8,"defaultSets"=$9,"defaultReps"=$10,"active"=$11,"updatedAt"=now()
     WHERE "tenantId"=$1 AND "id"=$2
     RETURNING *
   `,tenantId,current.id,next.name,next.category||null,next.muscleGroup||null,next.equipment||null,next.instructions||null,next.mediaUrl||null,next.defaultSets??null,next.defaultReps||null,Boolean(next.active));
-  ok(res,one(rows));
+  return one(rows);
+  });
+  ok(res,updated);
 }));
 
 router.post('/gym/progression/evaluate', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
