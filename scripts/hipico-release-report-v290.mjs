@@ -51,6 +51,8 @@ const productionSchemaJob = status(process.env.HIPICO_GATE_PRODUCTION_SCHEMA);
 const productionSchemaStatus = combineProductionSchemaGate(productionSchemaJob, productionSchemaArtifact);
 const physicalQaArtifact = status(optionalEvidence.find((item) => item?.id === 'physicalQa')?.status);
 const soakArtifact = status(optionalEvidence.find((item) => item?.id === 'soak')?.status);
+// #839 DR is an isolated restore proof, never an operator-supplied PASS flag.
+const drRestoreArtifact = status(optionalEvidence.find((item) => item?.id === 'drRestore')?.status);
 const authRecoveryArtifact = status(optionalEvidence.find((item) => item?.id === 'authRecovery')?.status);
 const authRecoveryJob = status(process.env.HIPICO_GATE_AUTH_RECOVERY);
 const authRecoveryStatus = combineAuthRecoveryGate(authRecoveryJob, authRecoveryArtifact);
@@ -65,11 +67,12 @@ const gates = {
   browserMatrix: status(process.env.HIPICO_GATE_MATRIX),
   physicalQa: physicalQaArtifact,
   soak: soakArtifact,
+  drRestore: drRestoreArtifact,
   productionSchema: productionSchemaStatus,
   authRecovery: authRecoveryStatus
 };
 const codeReviewRequired = ['static', 'postgres', 'restartRecovery', 'browserChromium', 'security', 'android', 'evidence'];
-const stableRequired = [...codeReviewRequired, 'browserMatrix', 'physicalQa', 'soak', 'productionSchema', 'authRecovery'];
+const stableRequired = [...codeReviewRequired, 'browserMatrix', 'physicalQa', 'soak', 'drRestore', 'productionSchema', 'authRecovery'];
 const codeReviewStatus = aggregate(codeReviewRequired.map((key) => gates[key]));
 const stablePromotionStatus = aggregate(stableRequired.map((key) => gates[key]));
 const agentShadowStatus = status(process.env.HIPICO_GATE_AGENT_SHADOW);
@@ -132,6 +135,7 @@ const report = {
     physicalQa: gates.physicalQa,
     physicalQaArtifact,
     soakArtifact,
+    drRestoreArtifact,
     productionSchemaJob,
     productionSchemaArtifact,
     authRecoveryJob,
@@ -147,7 +151,7 @@ const report = {
     automationReadiness,
     note: productionReady
       ? 'All required code, browser matrix, security, Android, evidence, production schema, auth recovery, physical QA, soak, P0/security status and automation validation gates are PASS on this exact SHA.'
-      : 'Stable promotion remains blocked until every required gate, including physical QA, >=24h soak, production schema and auth recovery verification, is PASS on this exact SHA and P0/security/automation readiness evidence is explicit.'
+      : 'Stable promotion remains blocked until every required gate, including physical QA, >=24h soak, isolated 25/25 DR restore, production schema and auth recovery verification, is PASS on this exact SHA and P0/security/automation readiness evidence is explicit.'
   }
 };
 
