@@ -47,8 +47,23 @@ export function validateCompetitiveBenchmark(input) {
 }
 
 function isHttps(url) {
-  try { const u = new URL(url); return u.protocol === 'https:' && !u.username && !u.password && !u.searchParams.has('token'); }
-  catch { return false; }
+  if (typeof url !== 'string' || url.length > 2048) return false;
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase().replace(/\\.$/, '');
+    // Provenance references must be public documentation URLs, NEVER
+    // credential-bearing/private service endpoints or embedded fragments.
+    if (u.protocol !== 'https:' || u.username || u.password ||
+        u.search || u.hash || !host || host === 'localhost' ||
+        host.endsWith('.localhost') || host.endsWith('.local') ||
+        host.endsWith('.internal') || host.endsWith('.test') ||
+        host.endsWith('.invalid') ||
+        /^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(host) ||
+        host.includes(':')) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
