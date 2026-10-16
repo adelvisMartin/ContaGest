@@ -11,6 +11,7 @@ import {
   getClosingBalanceSummary,
   getMatchingCandidates,
   getReconciliationHistory,
+  getReconciliationExceptionWindow,
   importBankStatement,
   listReconciliationModels,
   listStatementImports,
@@ -45,6 +46,15 @@ function parseMultipart(body:Buffer,contentType:string){const match=contentType.
 async function readUpload(req:Request){const contentType=String(req.headers['content-type']||'').toLowerCase();if(contentType.startsWith('multipart/form-data')){const body=await collectBody(req,MAX_STATEMENT_BYTES+64*1024);return parseMultipart(body,contentType);}return {bytes:await collectBody(req,MAX_STATEMENT_BYTES),fileName:safeFileName(String(req.headers['x-file-name']||'extracto.csv')),mimeType:contentType.split(';')[0].trim()};}
 
 router.get('/imports',asyncHandler(async(req,res)=>{ok(res,await listStatementImports(context(req).tenantId,String(req.query.accountId||'')||undefined,Number(req.query.take||50)));}));
+const exceptionsQuery=z.object({
+  accountId:z.string().uuid(),
+  take:z.coerce.number().int().min(1).max(99).default(50)
+}).strict();
+router.get('/exceptions',asyncHandler(async(req,res)=>{
+  const args=exceptionsQuery.parse(req.query);
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,await getReconciliationExceptionWindow(context(req).tenantId,args.accountId,args.take));
+}));
 router.get('/lines',asyncHandler(async(req,res)=>{ok(res,await listStatementLines(context(req).tenantId,{accountId:String(req.query.accountId||'')||undefined,status:String(req.query.status||'all'),take:Number(req.query.take||200)}));}));
 router.get('/lines/:id/candidates',asyncHandler(async(req,res)=>{ok(res,await getMatchingCandidates(context(req).tenantId,req.params.id));}));
 router.get('/lines/:id/history',asyncHandler(async(req,res)=>{ok(res,await getReconciliationHistory(context(req).tenantId,req.params.id));}));
