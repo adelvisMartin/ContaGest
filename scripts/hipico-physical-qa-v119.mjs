@@ -167,7 +167,13 @@ function writeReleaseEvidence(final,target){
     completedAt:final.completedAt,
     operator:final.operator,
     requiredModes:final.requiredModes,
-    environments:(final.environments||[]).map((env)=>({id:env.id,mode:env.mode,device:env.device})),
+    environments:(final.environments||[]).map((env)=>({
+      id:env.id,mode:env.mode,device:env.device,
+      physicalDays:{
+        day1ObservedAtUtc:env.scenarios?.['source-to-lab-e2e-day-1']?.observedAtUtc,
+        day2ObservedAtUtc:env.scenarios?.['source-to-lab-e2e-day-2']?.observedAtUtc
+      }
+    })),
     invariants:final.invariants,
     summary:final.summary,
     evidenceFiles:final.evidenceFiles
