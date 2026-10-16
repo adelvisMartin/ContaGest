@@ -1,0 +1,5 @@
+# Gym #793 — período de métricas con días de calendario válidos
+
+`GET /gym/performance` validaba `from/to` con formato YYYY-MM-DD, pero la librería Date de JavaScript normaliza días imposibles (por ejemplo 2026-02-30), pudiendo producir una ventana distinta de la seleccionada. Se reutiliza la autoridad `performanceQuerySchema` y se añade `validGymCalendarDay` como guard de calendario gregoriano exacto antes de cualquier SQL. Se preservan el tenantId del servidor, el límite 366 días, Epley y todos los cálculos actuales.
+
+Evidencia: función publicada en GitHub ejecutada en V8 9/9 fechas válidas e imposibles, validación estática de la conexión en ambos extremos y del predicado tenant. El archivo de pruebas se incluye para ejecución Node en checkout. No se ejecutaron PG17, build TypeScript completo ni browser Gym. El ticket #793 continúa OPEN por métricas y QA restantes. Sin cambios de DB ni CI bypass.
