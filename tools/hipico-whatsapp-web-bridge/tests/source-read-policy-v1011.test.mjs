@@ -52,6 +52,7 @@ test('#1011: hostile environment flags, shadow mode and synthetic LAB switches c
 for (const entrypoint of ENTRYPOINTS) {
   test('#1011: ' + entrypoint + ' evaluates independent read denial at top-level', () => {
     const data = source(entrypoint);
+    assert.ok(data.startsWith("import './source-read-startup-denial.mjs';\n"), 'must deny before evaluating any other ESM dependency');
     assert.match(data, /import \{ assertSourceAutoReadDenied \} from '\.\/source-read-policy-gate\.mjs';/);
     const guardedAt = data.search(guard);
     assert.ok(guardedAt >= 0, 'must call read guard, not merely import it');
