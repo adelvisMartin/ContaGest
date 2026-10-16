@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {classifyWhatsAppProviderAck} from '../backend/src/modules/notifications/notification-provider-ack.mjs';
+const good={messages:[{id:'wamid.Message_ABC12345'}],contacts:[{wa_id:'123456789'}],secret:'do-not-retain'};
+test('200 with genuine message identity means provider accepted only',()=>{const r=classifyWhatsAppProviderAck(true,good);assert.deepEqual(r,{status:'provider_accepted',providerAccepted:true,deliveryConfirmed:false});assert.ok(Object.isFrozen(r));});
+test('200 with empty result is not delivery nor provider acceptance',()=>{for(const v of [null,{},[],{messages:[]},{messages:[{}]},{messages:[{id:''}]}])assert.equal(classifyWhatsAppProviderAck(true,v).status,'provider_unverified');});
+test('non-success HTTP may not be accepted despite body',()=>assert.equal(classifyWhatsAppProviderAck(false,good).status,'provider_unverified'));
+test('multiple ambiguous messages fail closed',()=>assert.equal(classifyWhatsAppProviderAck(true,{messages:[good.messages[0],good.messages[0]]}).providerAccepted,false));
+test('invalid provider id never accepted',()=>{for(const id of ['x','abc xyz','***','a'.repeat(257),{},null])assert.equal(classifyWhatsAppProviderAck(true,{messages:[{id}]}).providerAccepted,false)});
+test('provider payload PII, id, and arbitrary data never copied',()=>{const r=classifyWhatsAppProviderAck(true,good);const s=JSON.stringify(r);for(const term of ['wamid.','123456789','do-not-retain'])assert.ok(!s.includes(term));});
+const route=readFileSync(new URL('../backend/src/modules/notifications/notifications.routes.ts',import.meta.url),'utf8');
+test('real Cloud adapter calls policy on HTTP result rather than treating 200 as delivered',()=>{assert.match(route,/classifyWhatsAppProviderAck\(response\.ok,data\)/);assert.doesNotMatch(route,/return \{ ok: true, provider: 'whatsapp-cloud', data \}/);});
+test('provider_unverified gets distinct log status, without recipient or raw receipt',()=>{assert.match(route,/status: result\.ok \? 'provider_accepted' : result\.status==='provider_unverified' \? 'provider_unverified' : 'skipped'/);assert.match(route,/deliveryConfirmed: false/);assert.doesNotMatch(route,/payload: \{[^\n]*data/);});
+test('no queued/delivered claim on the generic route',()=>{assert.match(route,/throw new HttpError\(503, 'La cola de notificaciones no está disponible/);assert.match(route,/delivered: false/);});
