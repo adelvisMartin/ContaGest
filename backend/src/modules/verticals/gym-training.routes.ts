@@ -422,6 +422,14 @@ router.post('/gym/workout-sessions/:id/complete', requirePermission('gym.manage'
     `,tenantId,sessionId);
     const session=one(sessionRows,'Sesión de entrenamiento no encontrada.');
     if(session.status!=='in_progress')throw new HttpError(409,'La sesión ya está completada.');
+    // Only recorded session sets constitute workout completion evidence.
+    // Checked under the same transaction and row lock as the status change.
+    const setCountRows=await tx.$queryRawUnsafe<Array<{recorded:number}>>(`
+      SELECT COUNT(*)::int AS recorded FROM public."GymWorkoutSet"
+      WHERE "tenantId"=$1 AND "sessionId"=$2 AND "status" IN ('completed','skipped')
+    `,tenantId,session.id);
+    if(!Number.isSafeInteger(setCountRows[0]?.recorded)||setCountRows[0].recorded<1)
+      throw new HttpError(409,'Registra al menos una serie realizada u omitida antes de completar la sesión.');
     const rows=await tx.$queryRawUnsafe<any[]>(`
       UPDATE public."GymWorkoutSession"
       SET "status"='completed',"completedAt"=now(),"updatedAt"=now()
