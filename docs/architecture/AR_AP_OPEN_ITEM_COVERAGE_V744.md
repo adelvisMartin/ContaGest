@@ -1,0 +1,7 @@
+# #744 — AR/AP Open-Item Coverage, NO subledger definitivo
+
+El esquema actual tiene SalesInvoice y PurchaseInvoice pero no un PaymentAllocation canónico ni fecha de vencimiento contractual por documento. No se puede inferir saldo abierto como total de la factura por estado `issued/paid/overdue` ni generar ageing desde issueDate. Este incremento añade `GET /accounting/open-items/readiness?kind=ar|ap&asOf=YYYY-MM-DD&take=50&skip=0` con RBAC `accounting.view`, tenant obtenido del servidor, consulta real paginada de facturas existentes, filtro de estado explícito, evidencia SHA-256 de la página y estados inequívocos `NOT_RECONCILABLE`.
+
+El reporte expone solamente número de factura, estado interno, importe total fuente decimal/string, moneda y fecha de emisión; `openBalanceExact` y `daysOverdue` son **null**, no cero inventado. No acepta cliente/proveedor o saldo desde navegador, no agrega moneda sin conversión, no altera facturas ni ledger. El hash incluye tenant/kind/asOf y representa evidencia parcial **solo de la página**, no integridad fiscal o bancaria.
+
+Pendientes de DoD: contratos de pagos y créditos, Allocation FK compuesta de tenant/source, idempotencia/efecto, totales con Prisma.Decimal, periodo cerrado, reversos, due date snapshot, ageing por fecha límite, dunning outbox #853, conciliación #643, endpoints de estados, QA PG17 tenant A/B y browser. **OPEN/PARTIAL / NO MERGE** hasta gates materiales; sin segunda autoridad financiera.

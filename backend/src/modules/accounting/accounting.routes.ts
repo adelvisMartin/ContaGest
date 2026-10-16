@@ -7,6 +7,7 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { add, serializeDecimal, serializeLegacyNumber, subtract, ZERO } from '../../shared/financial/decimal.js';
+import { projectOpenItemCoverage } from './open-item-coverage.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import {
   createLedgerEntry,
@@ -42,6 +43,43 @@ const closeSchema = z.object({ note: z.string().max(500).optional() });
 const context = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
 const requestId = (req: any) => String(req.requestId || '') || null;
 const idempotencyKey = (req: any) => req.header('Idempotency-Key') || null;
+
+const openItemQuerySchema = z.object({
+  kind: z.enum(['ar','ap']),
+  asOf: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/),
+  take: z.coerce.number().int().min(1).max(100).default(50),
+  skip: z.coerce.number().int().min(0).max(100000).default(0)
+}).strict();
+router.get('/open-items/readiness', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
+  const args = openItemQuerySchema.parse(req.query);
+  const tenantId = context(req).tenantId;
+  const asOfInstant = new Date(args.asOf + 'T23:59:59.999Z');
+  if (asOfInstant.toISOString().slice(0,10) !== args.asOf) {
+    throw new HttpError(422, 'Fecha de corte inválida.', { code: 'OPEN_ITEM_AS_OF_INVALID' });
+  }
+  const select = {
+    id: true, tenantId: true, number: true, status: true,
+    issueDate: true, currency: true, total: true
+  } as const;
+  const rows = args.kind === 'ar'
+    ? await prisma.salesInvoice.findMany({
+      where:{tenantId,issueDate:{lte:asOfInstant}},select,orderBy:[{issueDate:'desc'},{id:'desc'}],take:args.take+1,skip:args.skip
+    })
+    : await prisma.purchaseInvoice.findMany({
+      where:{tenantId,issueDate:{lte:asOfInstant}},select,orderBy:[{issueDate:'desc'},{id:'desc'}],take:args.take+1,skip:args.skip
+    });
+  const hasMore = rows.length > args.take;
+  const report = projectOpenItemCoverage({
+    tenantId,kind:args.kind,asOf:args.asOf,
+    invoices:rows.slice(0,args.take).map(row=>({
+      id:row.id,tenantId:row.tenantId,number:row.number,
+      status:row.status,issueDate:row.issueDate.toISOString(),
+      currency:row.currency,totalExact:row.total.toString()
+    }))
+  });
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,{ ...report, pagination:{take:args.take,skip:args.skip,hasMore} });
+}));
 
 router.get('/entries', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;
