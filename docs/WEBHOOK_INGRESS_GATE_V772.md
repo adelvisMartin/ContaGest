@@ -1,0 +1,7 @@
+# #772 — Gate de ingreso webhook firmado, sin activar conectores
+
+El catálogo provider-neutral de #772 (PR #1007) permanece `RESEARCH_ONLY`, con siete proveedores deshabilitados. Este incremento añade un helper determinista `webhook-ingress-gate.mjs` que sólo permite procesar eventos cuando el adapter servidor ha verificado **criptográficamente** la firma del cuerpo crudo, ha resuelto tenant y conexión desde registro confiable, ha validado una ventana temporal de ±300s y ha obtenido una reclamación **persistente** de un evento único en inbox `(tenant,connection,eventId)` con resultado `inserted`. Un retry `duplicate` no reprocesa. Cualquier bandera ausente o discordancia produce rechazo; ninguna identidad, firma, cuerpo o secreto sale en la respuesta.
+
+**No es verificador HMAC**, no acepta banderas del navegador, no almacena inbox/outbox y no es endpoint HTTP. `signatureVerified` e `inboxClaim*` son evidencias que deberán obtener los adapters de fuentes confiables, nunca campos de `req.body`. Activar providers sigue prohibido hasta implementar firma real con secreto de servidor/constant-time verify, PostgreSQL 17 unique scope/replay, RBAC, idempotency, DLQ, tenant A/B y pruebas HTTP contra un proveedor autorizado.
+
+`node --test tests/webhook_ingress_gate_v772.test.mjs`. Sin DB, DDL, credenciales, conexión de red ni modificación al manifest original. #772 OPEN/PARTIAL, SOURCE_REUSE=NONE. Rollback = revert de 3 archivos.
