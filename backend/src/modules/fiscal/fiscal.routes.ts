@@ -7,6 +7,8 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
+import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
+import { createFiscalLegalSourceDraft, listFiscalLegalSources } from './fiscal-legal-source.repository.js';
 import {
   allocateFiscalNumber,
   assertFiscalClosePreconditions,
@@ -49,6 +51,19 @@ const fiscalRuleSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['effectiveTo'], message: 'effectiveTo debe ser posterior a effectiveFrom.' });
   }
 });
+const fiscalLegalSourceSchema = z.object({
+  sourceType: z.enum(['official_gazette', 'statute', 'regulation', 'administrative_ruling', 'other']),
+  reference: z.string().trim().min(3).max(160),
+  title: z.string().trim().min(3).max(240),
+  sourceUrl: z.string().max(2048).nullable().optional(),
+  publishedAt: z.string().nullable().optional(),
+  contentSha256: z.string().regex(/^[0-9a-f]{64}$/i),
+  snapshotMetadata: z.object({
+    captureMethod: z.enum(['manual', 'archive']),
+    contentBytes: z.number().int().min(0).max(50_000_000).optional()
+  }).strict().optional()
+}).strict();
+
 const issueDocumentSchema = z.object({
   kind: documentKindSchema,
   period: periodSchema,
@@ -117,6 +132,26 @@ router.post('/periods', requirePermission('fiscal.close'), validateBody(createPe
   const created = await prisma.closingPeriod.create({ data: { tenantId: ctx.tenantId, period: req.body.period, module: req.body.module, status: 'open', note: req.body.note || null } });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.period.created', entity: 'ClosingPeriod', entityId: created.id, after: created, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, created);
+}));
+
+// Legal evidence is operator-supplied DRAFT only. No rule activation or tax rates.
+router.get('/legal-sources', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  ok(res, await listFiscalLegalSources(ctx.tenantId));
+}));
+
+router.post('/legal-sources', requirePermission('fiscal.close'), validateBody(fiscalLegalSourceSchema), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  if (!ctx.userId) throw new HttpError(401, 'Se requiere un usuario autenticado.', { code: 'FISCAL_LEGAL_SOURCE_ACTOR_REQUIRED' });
+  const draft = prepareFiscalLegalSourceDraft(req.body, { tenantId: ctx.tenantId, userId: ctx.userId });
+  const created = await createFiscalLegalSourceDraft(draft);
+  await writeAudit({
+    tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.legal_source.draft_created',
+    entity: 'FiscalLegalSource', entityId: created.id,
+    after: { id: created.id, sourceType: created.sourceType, reference: created.reference, contentSha256: created.contentSha256, status: created.status },
+    ipAddress: ctx.ip, userAgent: ctx.userAgent
+  });
+  res.status(201).json({ ok: true, data: created });
 }));
 
 router.get('/rules', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
