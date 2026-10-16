@@ -76,7 +76,7 @@ test('native form handles Enter and double-submit remains single-flight',()=>{
   assert.doesNotMatch(source,/requestSubmit\(|dispatchEvent\(new KeyboardEvent/);
 });
 test('explicit accessible focus action is provided for tablets',()=>{
-  assert.match(source,/>Enfocar lector/);
+  assert.match(source,/>\s*Enfocar lector/);
   assert.match(source,/aria-label="Carrito POS de borrador"/);
   assert.match(source,/Lector de códigos: Enter agrega un producto/);
 });
