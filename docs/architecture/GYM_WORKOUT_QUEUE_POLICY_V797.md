@@ -1,0 +1,7 @@
+# #797 · Offline workout outbox security boundary
+
+**Actual integration:** Existing PWA outbox `pwaOfflineService.js` was checking `OUTBOX_ALLOWLIST[operation]` via prototype lookup; an attacker could supply inherited keys such as `constructor` or `toString`. The replayer also used `record.authority.method/path` stored in IndexedDB, which can be locally modified. This increment requires an **own property** in the code-owned allowlist and resolves method/path from that current allowlist **at replay time**. Does not create another queue.
+
+**Deliberately not enabled:** workout create/set/complete operations remain excluded, because the existing Gym backend has not demonstrated idempotent server write receipts, conflict handling or ordered replay. Enabling them before #792/#797 server contracts would risk duplicate sets. Read-only Gym PWA #794 must not grant this permission.
+
+**Remaining DoD:** durable server event IDs + idempotency and replay fingerprint, version conflicts, IndexedDB queue ordering/retry, tenant scope/logout purge, two-tab/restart/E2E, error/ack semantics, browser offline→reconnect. No source clinical effects. `SOURCE_REUSE=NONE`. Rollback: revert scoped source/test/docs only.
