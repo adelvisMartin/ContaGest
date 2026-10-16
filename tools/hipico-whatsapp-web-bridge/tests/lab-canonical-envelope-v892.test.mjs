@@ -47,6 +47,14 @@ test('#892 rejects >1200 text with dangerous trailing qualifiers instead of sile
   await denied({text:'¿Estado de carrera 5? '+'X'.repeat(1200)+' registrar saldo'});
   await denied({text:'X'.repeat(1201)});
 });
+test('#892 preserves legitimate multiline questions as submitted',async()=>{
+  let payload;
+  const question='¿Cuál es el estado de la carrera 5?\n¿Se confirmó el resultado?';
+  const result=await queryCanonicalLab({...BASE,text:question,
+    fetchImpl:async(_url,args)=>{payload=JSON.parse(args.body);return okResponse();}});
+  assert.equal(result.available,true);
+  assert.equal(payload.text,question);
+});
 test('#892 exact upper length limits are accepted',async()=>{
   let calls=0;
   const res=await queryCanonicalLab({...BASE,messageId:'i'.repeat(320),text:'a'.repeat(1200),
