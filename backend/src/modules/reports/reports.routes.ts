@@ -556,10 +556,21 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
   // Invalid balances remain in the original rows/summary, not candidates.
   const { rows, stockReview, reorderCandidates } = scan;
   const filteredRows = onlyNeedsReorder ? rows.filter(row => row.needsReorder) : rows;
-  const pagination = reorderScanPageMeta({
-    skip, take, scannedProducts: rows.length, activeProducts,
-    matchesInPage: rows.filter(row => row.needsReorder).length
-  });
+  const pagination = (() => {
+    try {
+      return reorderScanPageMeta({
+        skip, take, scannedProducts: rows.length, activeProducts,
+        matchesInPage: rows.filter(row => row.needsReorder).length
+      });
+    } catch (error) {
+      if (error instanceof TypeError && error.message === 'REORDER_SCAN_OFFSET_WINDOW_EXCEEDED') {
+        throw new HttpError(422, 'El catálogo supera la ventana de paginación; reduce el tamaño del lote o usa otra estrategia de exportación.', {
+          code: 'REORDER_SCAN_OFFSET_WINDOW_EXCEEDED'
+        });
+      }
+      throw error;
+    }
+  })();
 
   const salesEvidence = salesOptions.includeSalesEvidence
     ? projectReorderSalesEvidence({
