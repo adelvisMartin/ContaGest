@@ -33,12 +33,12 @@ test('transport capability contract is explicit and unimplemented adapters fail 
   assert.match(config, /todavía no está implementado/);
 });
 
-test('SOURCE writing remains code-level NO-GO under current WhatsApp Business policy', () => {
+test('SOURCE writing remains code-level NO-GO under current WhatsApp Messenger terms', () => {
   assert.match(policy, /SOURCE_AUTO_REPLY_POLICY_NO_GO/);
-  assert.match(policy, /REAL_MONEY_GAMBLING_PROHIBITED_BY_WHATSAPP_BUSINESS_POLICY/);
+  assert.match(policy, /MESSENGER_AUTOMATED_MESSAGING_NOT_AUTHORIZED/);
   assert.match(policy, /eligible:\s*false/);
-  assert.match(policy, /business\.whatsapp\.com\/policy/);
-  assert.match(config, /SOURCE permanece read-only/);
+  assert.match(policy, /SOURCE_POLICY_REFERENCE = WHATSAPP_POLICY_REVIEW_1011\.references\.messengerTerms/);
+  assert.match(config, /SOURCE permanece sin autoenv[ií]o/);
 });
 
 test('runtime still prevents self-loop ingestion and preserves ambiguous exactly-once semantics', () => {
@@ -64,7 +64,8 @@ test('readiness note records current transport market and physical gaps without 
   assert.match(readiness, /WebSocket/i);
   assert.match(readiness, /Playwright/i);
   assert.match(readiness, /Cloud API/i);
-  assert.match(readiness, /Apuestas con dinero real/i);
+  assert.match(readiness, /WhatsApp Messenger normal/i);
+  assert.match(readiness, /sin dinero real/i);
   assert.match(readiness, /NOT VERIFIED/i);
   assert.match(readiness, /SOURCE zero-send/i);
 });
