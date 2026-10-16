@@ -74,7 +74,7 @@ node scripts/hipico-physical-qa-v119.mjs record --env=apk --scenario=source-to-l
 node scripts/hipico-physical-qa-v119.mjs record --env=apk --scenario=source-to-lab-e2e-day-2 --status=PASS --evidence=day2-sanitized.log --observed-at=2026-10-15T15:00:00.000Z
 ```
 
-`status` y `check` devuelven `twoDayEvidenceComplete` y `twoDayEvidenceErrors`; si hay evidencia duplicada o faltan fechas la puerta es `NOT_READY`. **Esto solo valida metadatos y archivos aportados por la persona, no demuestra que se efectuaran pruebas físicas.** La autorización para automatizar SOURCE sigue denegada por #1011; por tanto, si el escenario requiere esa conexión, debe registrarse `BLOCKED`, nunca fabricarse `PASS`.
+`status` y `check` devuelven `twoDayEvidenceComplete` y `twoDayEvidenceErrors`; si hay evidencia duplicada o faltan fechas la puerta es `NOT_READY`. El archivo canónico `physical-qa-evidence.json` conserva por entorno `physicalDays.day1ObservedAtUtc` y `physicalDays.day2ObservedAtUtc`, junto a los hashes de cada evidencia para auditoría posterior. **Esto solo valida metadatos y archivos aportados por la persona, no demuestra que se efectuaran pruebas físicas.** La autorización para automatizar SOURCE sigue denegada por #1011; por tanto, si el escenario requiere esa conexión, debe registrarse `BLOCKED`, nunca fabricarse `PASS`.
 
 Los fixtures automáticos del repositorio son sintéticos y prueban el validador, no teléfonos, sesiones ni dos jornadas reales.
 
