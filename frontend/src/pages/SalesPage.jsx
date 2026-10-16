@@ -6,7 +6,7 @@ import {
 } from '../components/ui/cg/CgPrimitives.jsx';
 import { shortDate } from '../core/formatters.js';
 import { BackendApi } from '../services/backendApi.js';
-import { matchPosDraftProduct } from '../services/posProductLookup.mjs';
+import { acceptServerPosProduct, normalizePosLookupCode } from '../services/posProductLookup.mjs';
 import { addPosCartItem, decrementPosCartItem, removePosCartItem, setPosCartQuantity } from '../services/posCartPolicy.mjs';
 import { today } from '../utils/dom.js';
 
@@ -126,7 +126,7 @@ function SalesWorkspace({state,context}){
   }
 
 
-  // Draft only: every lookup is authenticated by the existing products API.
+  // Draft only: every lookup is authenticated and tenant-scoped in sales API.
   // The client never authorizes a sale, calculates IVA or posts stock/payments.
   async function addPosDraftProduct(event){
     event.preventDefault();
@@ -136,20 +136,21 @@ function SalesWorkspace({state,context}){
     setPosDraftError('');
     const tenantAtStart=BackendApi.tenantId;
     try{
-      const products=await BackendApi.list('products');
+      const code=normalizePosLookupCode(posCode);
+      if(!code){
+        setPosDraftError('Escribe un SKU o código válido (máximo 64 caracteres).');
+        return;
+      }
+      // Server resolves SKU, barcode and ProductCode under the authenticated
+      // tenant with collision rejection; no paginated client-side guesswork.
+      const resolved=await BackendApi.get(`/sales/pos/product-lookup?code=${encodeURIComponent(code)}`);
       if(tenantAtStart!==BackendApi.tenantId || posTenantRef.current!==tenantAtStart){
         setPosDraftError('Cambió la empresa activa. Vuelve a consultar los productos.');
         return;
       }
-      const decision=matchPosDraftProduct(products,posCode);
+      const decision=acceptServerPosProduct(resolved);
       if(decision.kind!=='found'){
-        const descriptions={
-          invalid:'Escribe un SKU o código válido (máximo 64 caracteres).',
-          not_found:'No hay coincidencias en el catálogo consultado. Verifica el SKU o código.',
-          ambiguous:'Código ambiguo entre productos. No se añadió nada al carrito.',
-          invalid_catalog:'El catálogo recibido no es válido para una selección segura.'
-        };
-        setPosDraftError(descriptions[decision.kind]||'No se pudo seleccionar el producto.');
+        setPosDraftError('El servidor devolvió un producto no válido. No se añadió nada al carrito.');
         return;
       }
       const next=addPosCartItem(posCartRef.current,decision.product.id);
@@ -161,8 +162,17 @@ function SalesWorkspace({state,context}){
       }}));
       setPosCode('');
       notify('Producto agregado al borrador. La venta aún no está confirmada.','success');
-    }catch{
-      setPosDraftError('No se pudo consultar el catálogo. Comprueba la conexión y tus permisos.');
+    }catch(cause){
+      if(tenantAtStart!==BackendApi.tenantId || posTenantRef.current!==tenantAtStart){
+        setPosDraftError('Cambió la empresa activa. Vuelve a consultar los productos.');
+      }else{
+        const status=cause?.status;
+        const message=status===404?'Código no encontrado en el catálogo del servidor.'
+          :status===409?'Código ambiguo: pertenece a varios productos. Requiere revisión.'
+          :status===400?'Código inválido para el servidor.'
+          :'No se pudo consultar el producto. Comprueba la conexión y tus permisos.';
+        setPosDraftError(message);
+      }
     }finally{
       posBusyRef.current=false;
       setPosLoading(false);
@@ -245,7 +255,7 @@ function SalesWorkspace({state,context}){
     <Paper component="section" variant="outlined" aria-label="Carrito POS de borrador" sx={{p:1.5}}>
       <Typography variant="h6">Venta rápida · carrito en preparación</Typography>
       <Typography variant="caption" color="text.secondary">
-        Consulta productos del servidor por SKU o código de barras. Este carrito no crea facturas, no reserva inventario y no procesa cobros.
+        Consulta productos del servidor por SKU, código de barras o alias. Este carrito no crea facturas, no reserva inventario y no procesa cobros.
       </Typography>
       <Box component="form" onSubmit={addPosDraftProduct} sx={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:1,mt:1.25}}>
         <CgTextField
