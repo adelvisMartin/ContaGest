@@ -8,7 +8,7 @@ Do not weaken existing `SOURCE_AUTO_REPLY_POLICY_NO_GO` (#1015). This is a disti
 
 ## Entrypoints actually protected
 
-The new gate is called unconditionally at module evaluation **before** local profile/spool creation, Chromium/Edge launch, web.whatsapp.com navigation, remote network requests, or source ingestion:
+The **first import** is a side-effect denial module (`source-read-startup-denial.mjs`), evaluated before the remaining ESM dependency graph. A second explicit top-level assertion offers defense in depth. The new gate is called unconditionally before local profile/spool creation, Chromium/Edge launch, web.whatsapp.com navigation, remote network requests, or source ingestion:
 
 - `src/index.mjs` — primary Bridge runner, including shadow-local mode;
 - `src/history-v130.mjs` — legacy history backfill and source spool;
