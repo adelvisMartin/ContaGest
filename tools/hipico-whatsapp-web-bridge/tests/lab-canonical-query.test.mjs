@@ -673,3 +673,13 @@ test('LAB human review receipt statuses require a bounded unavailable canonical 
     }
   }
 });
+
+
+test('#892 denies unknown or financial LAB purposes before canonical HTTP transport',async()=>{
+  let calls=0;
+  for(const purpose of ['transfer','settlement','write','',null,{}]){
+    const result=await queryCanonicalLab({...base,purpose,fetchImpl:async()=>{calls++;throw Error('unsafe network call');}});
+    assert.deepEqual(result,{available:false,reason:'LAB_CANONICAL_DISABLED'});
+  }
+  assert.equal(calls,0,'unknown LAB intent must never reach backend or provider');
+});
