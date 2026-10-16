@@ -91,6 +91,7 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
     const existing = existingRows[0];
     if (existing?.status === body.status) return {booking:existing,replayed:true};
     if (body.status === 'booked') {
+      if (existing && existing.status !== 'cancelled') throw new HttpError(409, 'La reserva finalizada no se puede reabrir como nueva.');
       if (gymClass.status !== 'scheduled') throw new HttpError(409, 'La clase no admite nuevas reservas.');
       const membershipRows = await tx.$queryRawUnsafe<any[]>(`
         SELECT "id" FROM public."GymMembership"
@@ -101,7 +102,7 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
       if (!membershipRows.length) throw new HttpError(403, 'El cliente no tiene una membresía activa.');
       const occupied = await tx.$queryRawUnsafe<Array<{taken:number}>>(`
         SELECT count(*)::int AS taken FROM public."GymClassBooking"
-        WHERE "tenantId"=$1 AND "classId"=$2 AND "status"='booked'
+        WHERE "tenantId"=$1 AND "classId"=$2 AND "status" IN ('booked','attended')
       `, tenantId, body.classId);
       if (!Number.isSafeInteger(occupied[0]?.taken) ||
           occupied[0].taken >= gymClass.capacity) throw new HttpError(409, 'La clase alcanzó su capacidad máxima.');
