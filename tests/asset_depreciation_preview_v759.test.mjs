@@ -1,0 +1,12 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {previewStraightLineDepreciation as plan} from '../backend/src/modules/assets/asset-depreciation-preview.ts';
+const A='cb0054f7-ef51-4580-888a-087701fca814',B='9236ec7b-5eaf-44c2-9526-6b8ebce8d58e';
+const base={tenantId:A,actorTenantId:A,assetTenantId:A,assetId:'130849ad-a46d-5adb-a286-2774fd36bfac',costExact:'100.00',residualExact:'10.00',firstMonth:'2026-12',lifeMonths:3};
+test('straight-line exact cents preserve cost minus residual',()=>{const r=plan(base);assert.deepEqual(r.rows.map(x=>x.chargeExact),['30.00','30.00','30.00']);assert.equal(r.rows.at(-1).bookValueAfterExact,'10.00');assert.equal(r.totalDepreciationExact,'90.00');});
+test('nondivisible cents distribute deterministically without losing a cent',()=>{const r=plan({...base,costExact:'0.10',residualExact:'0.00',lifeMonths:3});assert.deepEqual(r.rows.map(x=>x.chargeExact),['0.04','0.03','0.03']);assert.equal(r.rows.at(-1).accumulatedExact,'0.10');});
+test('year boundary creates chronological month labels',()=>{const r=plan({...base,lifeMonths:3});assert.deepEqual(r.rows.map(x=>x.month),['2026-12','2027-01','2027-02']);});
+test('full residual does not create phantom expense',()=>{const r=plan({...base,residualExact:'100.00'});assert.equal(r.totalDepreciationExact,'0.00');assert.ok(r.rows.every(x=>x.chargeExact==='0.00'));});
+test('tenant spoofing and bad asset UUID denied',()=>{for(const p of [{actorTenantId:B},{assetTenantId:B},{assetId:'bad'}])assert.throws(()=>plan({...base,...p}),/SCOPE/);});
+test('rejects cost lower than residual or zero cost',()=>{for(const p of [{costExact:'0.00'},{residualExact:'100.01'}])assert.throws(()=>plan({...base,...p}),/COST_RESIDUAL/);});
+test('rejects unsafe floats, malformed precision and invalid month',()=>{for(const p of [{costExact:'1e3'},{costExact:'100.000'},{residualExact:'-1.00'},{firstMonth:'2026-13'},{firstMonth:'bad'}])assert.throws(()=>plan({...base,...p}));});
+test('life bounded and no ledger/tax authority',()=>{for(const lifeMonths of [0,-1,601,1.5])assert.throws(()=>plan({...base,lifeMonths}),/PERIOD/);const r=plan(base);assert.equal(r.accountingAuthorized,false);assert.equal(r.taxAuthorized,false);assert.equal(r.persisted,false);assert.equal(Object.isFrozen(r.rows),true);});
