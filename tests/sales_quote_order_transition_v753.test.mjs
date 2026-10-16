@@ -8,3 +8,16 @@ test('draft order can confirm but cannot fulfill directly',()=>{const o={...q,ki
 test('partially fulfilled order may later fulfill without creating invoice',()=>{const r=plan({...q,kind:'order',from:'partially_fulfilled',action:'fulfill'});assert.equal(r.to,'fulfilled');assert.equal(r.invoiceAuthorized,false);});
 test('tenant and document IDs cannot be spoofed',()=>{for(const value of [{actorTenantId:'tenant-b'},{documentId:'../another'},{tenantId:' '},{kind:'ledger'}])assert.throws(()=>plan({...q,...value}));});
 test('CAS revision bounds and terminal statuses reject changes',()=>{for(const revision of [0,-1,1.5,Number.MAX_SAFE_INTEGER])assert.throws(()=>plan({...q,expectedRevision:revision}),/REVISION/);assert.throws(()=>plan({...q,kind:'order',from:'fulfilled',action:'cancel'}),/NOT_ALLOWED/);});
+
+test('unknown states do not traverse Object.prototype',()=>{
+  for(const from of ['__proto__','constructor','toString','hasOwnProperty']){
+    assert.throws(()=>plan({...q,from,action:'toString'}),/NOT_ALLOWED/);
+  }
+});
+test('inherited operations cannot become an authorized quote or order transition',()=>{
+  for(const action of ['constructor','toString','hasOwnProperty','__proto__']){
+    for(const kind of ['quote','order']){
+      assert.throws(()=>plan({...q,kind,from:'draft',action}),/NOT_ALLOWED/);
+    }
+  }
+});
