@@ -49,7 +49,11 @@ test('cookie session remains server-revocable with rotation replay and CSRF prot
 test('tenant, membership and permission authority remain server-side',()=>{
   const context=read('backend/src/shared/middleware/context.ts');
   const auth=read('backend/src/modules/auth/auth.routes.ts');
-  assert.match(context,/where: \{ id: decoded\.sub, tenantId: decoded\.tenantId, status: 'active' \}/);
+  // Formatting is not the auth boundary. The signed identity, active status,
+  // server-owned tenant context and server membership check are.
+  assert.match(context,/where:\s*\{\s*id:\s*decoded\.sub,\s*tenantId:\s*decoded\.tenantId,\s*status:\s*'active'\s*\}/);
+  assert.match(context,/runWithRuntimeTenant\(decoded\.tenantId/);
+  assert.match(context,/session\.status !== 'active'/);
   assert.match(context,/role:\{ tenantId:ctx\.tenantId, permissions:/);
   assert.match(auth,/ensureAccountMembership/);
   assert.match(auth,/status:'active'/);
