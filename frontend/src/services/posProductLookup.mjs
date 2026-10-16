@@ -49,3 +49,24 @@ export function matchPosDraftProduct(products, code) {
   if (!matches.length) return { kind: 'not_found' };
   return { kind: 'found', product: Object.freeze(matches[0]) };
 }
+
+/**
+ * Server lookup is tenant/RBAC authoritative and may match ProductCode aliases
+ * that are not present in sku/barcode. Never re-match the returned identity
+ * against a stale browser catalogue. Strip prices/stock/other fields.
+ * @param {unknown} response
+ * @returns {PosDraftMatch}
+ */
+export function acceptServerPosProduct(response) {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return { kind:'invalid_catalog' };
+  const item = /** @type {{id?:unknown,sku?:unknown,name?:unknown,barcode?:unknown}} */ (response);
+  if (typeof item.id !== 'string' || !PRODUCT_ID.test(item.id)
+      || typeof item.sku !== 'string' || !item.sku.trim()
+      || typeof item.name !== 'string' || !item.name.trim()
+      || (item.barcode !== undefined && item.barcode !== null && typeof item.barcode !== 'string')) {
+    return { kind:'invalid_catalog' };
+  }
+  return { kind:'found', product:Object.freeze({
+    id:item.id.toLowerCase(), sku:item.sku, name:item.name, barcode:typeof item.barcode==='string'?item.barcode:''
+  }) };
+}
