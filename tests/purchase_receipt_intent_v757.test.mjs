@@ -1,0 +1,14 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {preparePurchaseReceipt} from '../backend/src/modules/procurement/purchase-receipt-intent.mjs';
+const line={tenantId:'T1',orderId:'O1',lineId:'L1',productId:'P1',ordered:'10.000000',previouslyReceived:'2',incoming:'3.125000'};
+const facts=()=>({tenantId:'T1',orderId:'O1',receiptKey:'receipt-1',orderStatus:'confirmed',coversAllOpenLines:false,lines:[{...line}]});
+test('partial receipt uses exact decimal and exposes no stock effect',()=>{const r=preparePurchaseReceipt(facts());assert.equal(r.lines[0].outstandingAfter,'4.875000');assert.equal(r.nextOrderStatus,'partially_received');assert.equal(r.inventoryCommitted,false);assert.equal(r.ledgerPosted,false)});
+test('full receipt is explicit only when all order lines verified',()=>{const x=facts();x.lines[0].incoming='8';x.coversAllOpenLines=true;assert.equal(preparePurchaseReceipt(x).nextOrderStatus,'received')});
+test('no implicit full receipt from one line',()=>{const x=facts();x.lines[0].incoming='8';assert.equal(preparePurchaseReceipt(x).nextOrderStatus,'partially_received')});
+test('reject over-receipt without currency floats',()=>{const x=facts();x.lines[0].incoming='8.000001';assert.throws(()=>preparePurchaseReceipt(x),/RECEIPT_OVER_DELIVERY/)});
+test('reject empty, zero and negative quantities',()=>{for(const invalid of ['0','-1','1e8','1.0000001','1,25']){const x=facts();x.lines[0].incoming=invalid;assert.throws(()=>preparePurchaseReceipt(x))}});
+test('reject cross tenant and order lines',()=>{for(const changes of [{tenantId:'T2'},{orderId:'O2'}]){const x=facts();Object.assign(x.lines[0],changes);assert.throws(()=>preparePurchaseReceipt(x),/RECEIPT_LINE_SCOPE_MISMATCH/)}});
+test('reject duplicate lines to avoid double reception',()=>{const x=facts();x.lines.push({...line});assert.throws(()=>preparePurchaseReceipt(x),/RECEIPT_LINE_SCOPE_MISMATCH/)});
+test('reject non-confirmed purchase order',()=>{const x=facts();x.orderStatus='draft';assert.throws(()=>preparePurchaseReceipt(x),/INVALID_RECEIPT_SCOPE/)});
+test('immutable intents require transaction authority and do not post',()=>{const r=preparePurchaseReceipt(facts());assert.ok(Object.isFrozen(r));assert.ok(Object.isFrozen(r.lines));assert.equal(r.requiresTransactionalRevalidation,true);assert.equal(r.invoiceCreated,false)});
