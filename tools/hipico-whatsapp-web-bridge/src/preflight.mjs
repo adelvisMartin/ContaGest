@@ -1,3 +1,4 @@
+import './source-read-startup-denial.mjs';
 import { assertRuntimeConfig, loadRuntimeConfig, RUNTIME_MODES, VERSION } from './runtime-config.mjs';
 import { assertLocalPromotionSafe } from './promotion-guard.mjs';
 import { policyDiagnostic } from './source-policy-gate.mjs';
