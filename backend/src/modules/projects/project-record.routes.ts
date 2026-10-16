@@ -15,6 +15,8 @@ import { transitionTimeEntryReview, TimeReviewMissing, TimeReviewForbidden,
   TimeReviewConflict, TimeReviewStateError } from './time-entry-review-store.js';
 import { createProjectRateCard, listProjectRateCards, ProjectRateCardNotFound,
   ProjectRateCardForbidden, ProjectRateCardConflict } from './project-rate-card-store.js';
+import { captureApprovedTimeRateSnapshot, SnapshotNotFound,
+  SnapshotForbidden, SnapshotConflict } from './time-entry-rate-snapshot-store.js';
 
 const router=Router();
 router.use(requireTenant);
@@ -352,6 +354,40 @@ router.get('/:projectId/rate-cards/:memberId',
         'PROJECT_RATE_CARD_PROJECT_INVALID','PROJECT_RATE_CARD_MEMBER_INVALID',
         'PROJECT_RATE_CARD_PAGE_INVALID'
       ].includes(error.message))throw new HttpError(400,'Identificador o paginación inválidos.');
+      throw error;
+    }
+  }));
+
+
+const timeSnapshotSchema=z.object({
+  expectedRevision:z.number().int().min(2).max(Number.MAX_SAFE_INTEGER-1)
+}).strict();
+
+// Captures only immutable rate evidence. The default-OFF Projects flag,
+// requireTenant, server session/licence and modules.manage still apply.
+router.post('/:projectId/tasks/:taskId/time-entries/:entryId/rate-snapshot',
+  requirePermission('modules.manage'),validateBody(timeSnapshotSchema),
+  asyncHandler(async(req,res)=>{
+    const ctx=(req as any).context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
+    if(!ctx.userId)throw new HttpError(403,'Se requiere usuario autenticado.');
+    try{
+      const result=await captureApprovedTimeRateSnapshot({
+        db:prisma,tenantId:ctx.tenantId,actorId:ctx.userId,
+        projectId:req.params.projectId,taskId:req.params.taskId,
+        entryId:req.params.entryId,expectedRevision:req.body.expectedRevision,
+        ipAddress:ctx.ip,userAgent:ctx.userAgent
+      });
+      res.setHeader('Cache-Control','private, no-store');
+      ok(res,result,201);
+    }catch(error){
+      if(error instanceof SnapshotForbidden)throw new HttpError(403,'Solo el responsable independiente puede registrar el snapshot de tarifa.');
+      if(error instanceof SnapshotNotFound)throw new HttpError(404,'Proyecto, tarea, trabajador, cliente o registro no disponibles.');
+      if(error instanceof SnapshotConflict)throw new HttpError(409,'El registro cambió o ya existe el snapshot.');
+      if(error instanceof TypeError&&[
+        'PROJECT_SNAPSHOT_TENANT_INVALID','PROJECT_SNAPSHOT_ACTOR_INVALID',
+        'PROJECT_SNAPSHOT_PROJECT_INVALID','PROJECT_SNAPSHOT_TASK_INVALID',
+        'PROJECT_SNAPSHOT_ENTRY_INVALID','PROJECT_SNAPSHOT_REVISION_INVALID'
+      ].includes(error.message))throw new HttpError(400,'Identificador o revisión inválidos.');
       throw error;
     }
   }));
