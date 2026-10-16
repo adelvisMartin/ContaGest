@@ -42,7 +42,7 @@ function setup({rows=[product()],invalid=false,stockInvalid=false,calculationInv
     };
   };
   const prisma={product:{findMany:async (query)=>{calls.query=query;return rows;}}};
-  const execute=new Function('router','requirePermission','validateBody','posStockSchema',
+  const execute=new Function('router','requirePermission','validateBody','posCatalogQuoteSchema',
     'asyncHandler','context','validatePosStockLines','PosStockPreviewError',
     'HttpError','prisma','previewPosStock','calculateInvoiceTotals','ok',snippet);
   execute(router,x=>x,x=>x,{strict:true},x=>x,
