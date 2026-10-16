@@ -118,7 +118,7 @@ test('#979 structured telemetry masks credential containers and private keys wit
     credentials: { username: 'should-never-appear', password: 'should-not-appear' },
     privateKey: '-----BEGIN PRIVATE KEY----- sensitive',
     clientCredential: 'oauth-credential-secret',
-    nested: [{ signing_private_key: 'signing-sentinel', message: 'safe status' }]
+    nested: [{ signing_private_key: 'signing-sentinel', message: 'privacy-sensitive', state: 'safe status' }]
   };
   const actual = redactTelemetryValue(payload) as Record<string, any>;
   assert.equal(actual.action, 'sync-completed');
@@ -126,7 +126,8 @@ test('#979 structured telemetry masks credential containers and private keys wit
   assert.equal(actual.privateKey, '[REDACTED]');
   assert.equal(actual.clientCredential, '[REDACTED]');
   assert.equal(actual.nested[0].signing_private_key, '[REDACTED]');
-  assert.equal(actual.nested[0].message, 'safe status');
+  assert.equal(actual.nested[0].message, '[REDACTED]');
+  assert.equal(actual.nested[0].state, 'safe status');
   const serialized = JSON.stringify(actual);
-  assert.doesNotMatch(serialized, /should-never-appear|should-not-appear|BEGIN PRIVATE KEY|oauth-credential-secret|signing-sentinel/);
+  assert.doesNotMatch(serialized, /should-never-appear|should-not-appear|BEGIN PRIVATE KEY|oauth-credential-secret|signing-sentinel|privacy-sensitive/);
 });
