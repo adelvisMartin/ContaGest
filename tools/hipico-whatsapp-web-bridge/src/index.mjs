@@ -38,6 +38,10 @@ import { composeLabAssistantReply } from './lab-assistant-replies.mjs';
 import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
 import { createLabQueryBackoff } from './lab-query-backoff.mjs';
 import { createLabPendingQueryInbox, reconcileLabPendingObservation } from './lab-pending-query-inbox.mjs';
+import { assertSourceAutoReadDenied } from './source-read-policy-gate.mjs';
+
+// #1011: evaluate before local data directories, spools, network or Chromium.
+assertSourceAutoReadDenied();
 
 const config = assertRuntimeConfig(loadRuntimeConfig());
 const {
