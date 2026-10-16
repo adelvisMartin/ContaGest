@@ -42,7 +42,9 @@ export function deriveEntitlementBalance(
   const accepted = new Map<string, string>();
   const consumed = new Map<string, { units: bigint; released: bigint }>();
   let available = 0n, granted = 0n, spent = 0n, revoked = 0n;
-  let lastAt = '';
+  let lastMs = Number.NEGATIVE_INFINITY;
+  const startMs = Date.parse(entitlement.validFrom);
+  const endMs = entitlement.validUntil === null ? null : Date.parse(entitlement.validUntil);
   let uniqueEvents = 0;
   for (const event of events) {
     if (!event || event.tenantId !== entitlement.tenantId ||
@@ -57,14 +59,15 @@ export function deriveEntitlementBalance(
       if (previous !== digest) fail(); // effect identity reused with changed payload
       continue; // same event replay has no second financial effect
     }
-    if (event.occurredAt < lastAt) fail();
-    lastAt = event.occurredAt;
+    const occurredMs = Date.parse(event.occurredAt);
+    if (occurredMs < lastMs) fail();
+    lastMs = occurredMs;
     const amount = BigInt(event.units);
     if (event.kind === 'GRANT') {
       granted += amount; available += amount;
     } else if (event.kind === 'CONSUME') {
-      if (event.occurredAt < entitlement.validFrom ||
-          (entitlement.validUntil !== null && event.occurredAt >= entitlement.validUntil) ||
+      if (occurredMs < startMs ||
+          (endMs !== null && occurredMs >= endMs) ||
           amount > available) fail();
       available -= amount; spent += amount;
       consumed.set(event.effectKey, { units: amount, released: 0n });
