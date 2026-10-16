@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -29,6 +29,23 @@ export const SUPERSEDED_AUTHORITIES = Object.freeze({
 function withinRoot(root, requested) {
   const absolute = path.resolve(root, requested);
   if (absolute !== root && !absolute.startsWith(root + path.sep)) return null;
+  try {
+    // A lexical path may still escape through a directory/file symlink.
+    // Resolve the nearest existing ancestor to cover missing link targets too.
+    const realRoot = realpathSync(root);
+    let ancestor = absolute;
+    const missing = [];
+    while (!existsSync(ancestor)) {
+      if (ancestor === root) return null;
+      missing.unshift(path.basename(ancestor));
+      ancestor = path.dirname(ancestor);
+    }
+    const realTarget = path.resolve(realpathSync(ancestor), ...missing);
+    if (realTarget !== realRoot && !realTarget.startsWith(realRoot + path.sep)) return null;
+  } catch {
+    // Broken symlinks, invalid roots and inaccessible components fail closed.
+    return null;
+  }
   return absolute;
 }
 
