@@ -16,15 +16,16 @@ test('qa today binds all evidence templates to a 40-char candidate SHA',()=>{
   for(const path of ['erp-v155','erp-performance-v157','erp-mobile-v182','hipico-v119','hipico-v120'])assert.match(script,new RegExp(path));
 });
 
-test('physical/soak instructions preserve SOURCE read-only and LAB write-only',()=>{
-  assert.match(script,/SOURCE no se usa como destino de escritura/);
-  assert.match(script,/--source-read-only=PASS/);
-  assert.match(script,/--lab-only-write=PASS/);
+test('physical/soak instructions keep Messenger disconnected and LAB synthetic',()=>{
+  assert.match(script,/SOURCE\(no-auto-send\)/);
+  assert.match(script,/LAB\(harness local sintético\)/);
+  assert.match(script,/No conectar SOURCE ni LAB a WhatsApp Messenger real/);
 });
 
 test('runbook never treats Actions no-runner as PASS and keeps compliance NO_GO',()=>{
   assert.match(runbook,/runner_id=0/);
   assert.match(runbook,/BLOCKED\/NOT_EXECUTED/);
   assert.match(runbook,/NO_GO/);
-  assert.match(runbook,/apuestas con dinero real/);
+  assert.match(runbook,/WhatsApp Messenger normal/);
+  assert.match(runbook,/sin dinero real/);
 });

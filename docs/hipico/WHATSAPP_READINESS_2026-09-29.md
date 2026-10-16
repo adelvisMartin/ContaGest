@@ -1,14 +1,16 @@
 # Control Hípico — WhatsApp readiness y revisión de mercado
 
+> **Nota de vigencia (2026-10-15):** este runbook es histórico y sus secciones inferiores describen una evaluación anterior de WhatsApp Business y apuestas monetarias. El owner confirmó que el caso actual es un grupo privado de amigos, recreativo y sin dinero real, en WhatsApp Messenger normal; WhatsApp Business queda excluido. Para Messenger, los términos oficiales restringen mensajería automática/uso no personal salvo autorización expresa, por lo que no se debe enviar automáticamente a SOURCE ni usar WhatsApp Web/Playwright como workaround. LAB debe ejecutarse con harness local y fixtures sintéticos, sin conectarse a un grupo real. Véase la [revisión #1011](WHATSAPP_ELIGIBILITY_REVIEW_2026-10-15.md).
+
 **Fecha de revisión:** 2026-09-29  
 **Bridge:** `hipico-whatsapp-web-bridge` v1.6.0  
-**Objetivo inmediato:** prueba física/local en Windows con SOURCE read-only y autonomía conversacional en LAB.
+**Objetivo histórico (supersedido):** prueba física/local en Windows con SOURCE read-only y autonomía conversacional en LAB. No ejecutar como plan vigente: el canal aprobado ahora es WhatsApp Messenger normal para un grupo recreativo, y no hay autorización comprobada para lectura ni escritura automáticas.
 
 ## Resumen
 
 El Bridge mantiene identidad pinneada por `@g.us`, deduplicación, anti-loop, spool durable, idempotencia, backoff/rate limit, health/readiness, journal de respuestas, estado `ambiguous` para entregas inciertas, kill switch y recuperación supervisada.
 
-Flujo autorizado para la prueba actual:
+Flujo del plan histórico (no habilitado para el alcance actual):
 
 ```text
 SOURCE (solo lectura)
@@ -19,35 +21,31 @@ SOURCE (solo lectura)
   -> LAB (respuesta automática de QA)
 ```
 
-La escritura automática al SOURCE real permanece **NO-GO por política**, no por falta de código.
+La escritura automática al SOURCE real permanece **NO-GO**, no por falta de código: no se ha comprobado autorización para automatizar Messenger.
 
-## Política oficial revisada
+## Política oficial — evaluación histórica y decisión vigente
 
-La Política de mensajes de WhatsApp Business consultada el 2026-09-29 incluye **“Apuestas con dinero real”** entre los bienes/servicios cuyo intercambio, promoción u operación no puede facilitarse con los Servicios de WhatsApp Business y aclara que la prohibición aplica independientemente de licencias/registros/aprobaciones locales.
+El texto de 2026-09-29 sobre la Política de mensajes Business y apuestas monetarias queda como antecedente histórico; no describe el grupo recreativo que definió el owner. La fuente aplicable hoy es [Condiciones del servicio de WhatsApp Messenger](https://www.whatsapp.com/legal/terms-of-service?lang=es), que restringe mensajería automática y uso no personal salvo autorización expresa. El carácter recreativo/no monetario se da por confirmado y no habilita autoenvíos.
 
-Referencia canónica: `https://business.whatsapp.com/policy/`.
+Consecuencias vigentes:
 
-Consecuencias para este proyecto:
-
-- no se implementa un bypass por `.env`, licencia o país;
+- no se implementa bypass por `.env`, licencia, país, DOM/RPA, Playwright, sesión web, APIs privadas o cliente no oficial;
 - `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true` continúa fallando cerrado;
-- los campos de evidencia v1.6 son metadatos para futuras reevaluaciones, no permisos;
-- un transporte oficial como Cloud API no convierte este caso en permitido mientras la política conserve esa prohibición;
-- LAB sigue siendo el entorno correcto para probar conversación/autonomía sin escribir en SOURCE.
+- WhatsApp Business, Cloud API, Business Platform y Groups API no forman parte del canal elegido;
+- los campos de evidencia son metadatos para reevaluaciones futuras, no permisos;
+- LAB se ejecuta con harness local y fixtures sintéticos, sin conexión a un grupo real ni envío por WhatsApp.
 
 ## Mercado / transporte
 
-### Playwright Web — adapter actual
+### Playwright Web — adapter histórico, fuera del canal autorizado
 
 Ventajas: controla la misma UI que un operador, permite verificar chat/destino visualmente y ya está integrado con spool, identity guard, recovery y observabilidad. Costes: Chromium consume más recursos y el DOM de WhatsApp puede cambiar.
 
-Estado v1.6: `implemented=true`, `official=false`, `sourceRead=true`, `labSend=true`, `groupSend=true` técnicamente. La capacidad técnica **no** otorga permiso de política.
+Estado v1.6: `implemented=true`, `official=false`, `sourceRead=true`, `labSend=true`, `groupSend=true` técnicamente. Estos flags describen capacidad heredada; **no usarla para conectar Messenger ni como autorización**. El target del proyecto ahora es harness local/sintético y asistencia manual.
 
 ### Cloud API — boundary futuro, no implementación actual
 
-La Plataforma de WhatsApp Business/Cloud API es el transporte oficial de Meta, pero v1.6 sólo registra su contrato como adapter futuro (`official=true`, `implemented=false`). Configurarlo hoy falla validación para impedir que el runtime aparente usar un transporte que todavía no existe en el Bridge.
-
-Además, la política de apuestas con dinero real sigue siendo bloqueante para el caso SOURCE aun si en el futuro existe un adapter oficial.
+La Plataforma de WhatsApp Business/Cloud API no es el canal solicitado y no debe implementarse como sustituto. La nota histórica de este runbook no constituye aprobación para usarla.
 
 ### Baileys / WebSocket
 

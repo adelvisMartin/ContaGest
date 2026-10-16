@@ -248,6 +248,79 @@
         "LICENSE",
         "skills/ponytail/SKILL.md"
       ]
+    },
+    {
+      "id": "rea",
+      "kind": "mcp-package",
+      "repo": "morluto/rea",
+      "commit": "d69acc3455c33f90a2fc4381db43d38b6af50622",
+      "license": "MIT",
+      "trustLevel": "reviewed-advisory-reverse-engineering",
+      "package": "rea-agents",
+      "packageVersion": "6.5.0",
+      "namespace": "rea",
+      "vendorPaths": []
+    },
+    {
+      "id": "omniroute",
+      "kind": "github-skill",
+      "repo": "diegosouzapw/OmniRoute",
+      "commit": "fc5e2bccd4f70fecf5aab94dfb8136c74ab5a21b",
+      "license": "MIT",
+      "trustLevel": "read-only-evaluation-reference",
+      "namespace": "omniroute",
+      "vendorPaths": [
+        "LICENSE",
+        "skills/omni-auth/SKILL.md",
+        "skills/omni-combos-routing/SKILL.md",
+        "skills/omni-resilience/SKILL.md"
+      ]
+    },
+    {
+      "id": "codex-smart-project-memory",
+      "kind": "github-skill",
+      "repo": "richenyu/codex-smart-project-memory",
+      "commit": "a000480fb296f551d5d6578929db1bb581d12cd3",
+      "license": "MIT",
+      "trustLevel": "reviewed-context-guidance",
+      "namespace": "codex-project-memory",
+      "vendorPaths": [
+        "LICENSE",
+        "skill/codex-smart-project-memory/SKILL.md"
+      ]
+    },
+    {
+      "id": "headroom-portable",
+      "kind": "github-skill",
+      "repo": "romangalaxys10-spec/headroom-skill",
+      "commit": "118466d7737ebc42806c331e44bd251b5222d59b",
+      "license": "Apache-2.0",
+      "trustLevel": "reviewed-context-guidance",
+      "namespace": "headroom",
+      "vendorPaths": [
+        "LICENSE",
+        "NOTICE",
+        "SKILL.md",
+        "AGENTS.md",
+        "docs/techniques.md",
+        "docs/integrations.md"
+      ]
+    },
+    {
+      "id": "task-observer",
+      "kind": "github-skill",
+      "repo": "rebelytics/one-skill-to-rule-them-all",
+      "commit": "56e890712273ce231b478adc56ee2eb81101c3d6",
+      "license": "CC-BY-4.0",
+      "trustLevel": "reviewed-context-guidance",
+      "namespace": "task-observer",
+      "vendorPaths": [
+        "LICENSE.txt",
+        "SKILL.md",
+        "references/environments.md",
+        "references/signals.md",
+        "references/observation-log.md"
+      ]
     }
   ]
 }

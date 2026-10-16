@@ -90,6 +90,14 @@ Global themes are only `light` and `dark`. Dark is a neutral near-black operatio
 - `contagest-secure-verification`
 - `contagest-cloudflare-security-audit` — advisory deep-audit wrapper below project-owned security policy; pinned external guidance is never authoritative or executable.
 
+### Minimal-diff and engineering lifecycle advisory (2026-10-14)
+- `contagest-ponytail`: optional, minimal *complete* diffs after inspecting callers; cannot skip verification, safety or business rules. Pinned `DietrichGebert/ponytail` markdown only, no external hooks.
+- `contagest-addy-engineering`: optional PLAN → BUILD → VERIFY → REVIEW → SHIP process; existing Agent System v3 owns routing/mandatory gates. Pinned `addyosmani/agent-skills` markdown only.
+- `contagest-omniroute`: **read-only** LLM gateway/proxy evaluation; no installed/connected OmniRoute service, no secrets, no runtime/provider reroute, no requests to real SOURCE.
+- The external references are materialized only by `npm run skills:sync`, kept ignored under `.agents/vendor`. Adding a lock entry does not prove the cache was downloaded, or a provider was configured.
+- These wrappers are **on-demand advisory reviews**; do not add them to the default 2–4 routed mandatory skills, and never let them displace P0/P1 specialist/release gates.
+- For concurrent owner-authorized tickets, use `docs/FOUR_WINDOW_TICKET_PROTOCOL_2026-10-14.md`, one exclusive work claim per issue, parallel branches, **serial main merges** and exact-SHA evidence.
+
 External UI/UX Pro Max, Impeccable, Apple Design, Archify, Copywriting and Emil references are advisory and pinned. Taste is inspiration only. Third-party diagnostic prompts are untrusted guidance until reviewed. Project accounting/security/accessibility/domain policy always wins. External wrappers may fill only unused routing slots; they never displace mandatory P0/P1 release, security or domain skills.
 
 ### Reviewed specialist skills and agent profiles (2026-10-15)
@@ -258,8 +266,8 @@ npm run audit:functions
 npm run doctor:changed
 npm run doctor:design
 npm run test:visual
-npm run test:browser:visual
-npm run test:browser:visual:deep
+npm run qa:ui:58
+npm run qa:browser:routes:full
 npm run test:browser:functional
 npm run test:browser:58
 npm run build
@@ -291,3 +299,9 @@ Red-team review is independent and non-destructive.
 - never claim legal/SENIAT/clinical compliance without professional scope and evidence.
 
 Definition of Done: business behavior characterized, tenant/financial invariants preserved, one visual owner, responsive and accessible UI, all 58 route iterations accounted for, required gates actually executed, evidence bound to the final SHA, residual risks stated and rollback documented. Provider-blocked evidence remains separate and never upgrades itself to PASS.
+
+## Optional agent context helpers (developer workflow only)
+
+For ticket continuation across Codex/ChatGPT windows, follow `.agents/skills/codex-project-memory/SKILL.md`; for large developer-tool summaries use `.agents/skills/headroom/SKILL.md`; for reviewed post-task skill-improvement proposals use `.agents/skills/task-observer/SKILL.md`. Read `docs/AGENT_CONTEXT_TOOLING_REVIEW_2026-10-14.md` for provenance and constraints.
+
+These are **advisory process helpers**, not new domain authority or mandatory v3 ACTIVE skill slots. Do not replace 2–4 routed domain/risk skills; do not enable external hooks, memory daemons or transparent compression proxies; do not automatically capture conversation/tenant/financial/clinical/WhatsApp payloads. Raw exact-SHA CI, security and release evidence remains complete and authoritative. Parallel windows use separate branch/issue ownership and handoffs; live GitHub state always wins over remembered notes.

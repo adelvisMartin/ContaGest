@@ -38,14 +38,15 @@ test('v1.6 exposes an explicit transport capability contract', () => {
   assert.equal(resolveTransportCapabilities('unknown').implemented, false);
 });
 
-test('current official WhatsApp Business policy keeps real-money SOURCE automation fail-closed', () => {
+test('current WhatsApp Messenger terms keep recreational SOURCE automation fail-closed', () => {
   const config = loadRuntimeConfig({ ...pinned, HIPICO_SOURCE_AUTO_REPLY_ENABLED: 'true' }, 'C:/tmp');
   const policy = evaluateSourceAutoReplyPolicy(config);
   assert.equal(policy.status, 'NO_GO');
   assert.equal(policy.eligible, false);
   assert.equal(policy.policyCode, SOURCE_AUTO_REPLY_POLICY_NO_GO);
   assert.equal(policy.snapshot, SOURCE_POLICY_SNAPSHOT);
-  assert.ok(policy.reasons.includes('REAL_MONEY_GAMBLING_PROHIBITED_BY_WHATSAPP_BUSINESS_POLICY'));
+  assert.ok(policy.reasons.includes('MESSENGER_AUTOMATED_MESSAGING_NOT_AUTHORIZED'));
+  assert.equal(policy.policyReference, 'https://www.whatsapp.com/legal/terms-of-service?lang=es');
   assert.ok(policy.reasons.includes('UNOFFICIAL_TRANSPORT'));
   assert.match(validateRuntimeConfig(config).join(' '), /SOURCE_AUTO_REPLY_POLICY_NO_GO/);
 });
@@ -62,7 +63,7 @@ test('no environment evidence can convert the current policy snapshot into GO', 
   }, 'C:/tmp');
   const policy = evaluateSourceAutoReplyPolicy(config);
   assert.equal(policy.eligible, false);
-  assert.ok(policy.reasons.includes('REAL_MONEY_GAMBLING_PROHIBITED_BY_WHATSAPP_BUSINESS_POLICY'));
+  assert.ok(policy.reasons.includes('MESSENGER_AUTOMATED_MESSAGING_NOT_AUTHORIZED'));
   assert.ok(policy.reasons.includes('TRANSPORT_NOT_IMPLEMENTED'));
 });
 

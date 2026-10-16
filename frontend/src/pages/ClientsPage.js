@@ -3,6 +3,8 @@ import { escapeHtml, mountSubmit, qsa } from '../utils/dom.js';
 import { isValidRif } from '../core/validators.js';
 import { BackendApi } from '../services/backendApi.js';
 import { checkClientRegistrationBeforeSave } from '../services/clientRegistrationPreflight.mjs';
+import { createCrmLeadService } from '../services/crmLeadService.mjs';
+import { createCrmOpportunityService } from '../services/crmOpportunityService.mjs';
 
 const safe = (value) => escapeHtml(String(value ?? ''));
 
@@ -27,6 +29,16 @@ export const ClientsPage = {
       rows:clients
     });
 
+    const prospectForm = `<form id="crmLeadForm" class="cg-record-form"><div class="cg-record-fields">
+      ${Field({labelKey:'Nombre del prospecto',name:'name',required:true})}${Field({labelKey:'RIF del prospecto',name:'rif',placeholder:'J-12345678-9'})}${Field({labelKey:'Correo',name:'email',type:'email',placeholder:'contacto@empresa.com'})}${Field({labelKey:'Teléfono',name:'phone'})}${Textarea({labelKey:'Notas comerciales',name:'notes',className:'cg-field-wide'})}
+      </div><p id="crmLeadStatus" role="status" aria-live="polite" class="cg-ui-muted">Los prospectos se guardan en el servidor sin convertirse automáticamente en clientes.</p><div class="cg-record-actions">${Button({text:'Registrar prospecto',icon:'fa-user-plus',type:'submit'})}${Button({id:'crmLeadRefresh',text:'Actualizar prospectos',icon:'fa-rotate',type:'button',variant:'secondary'})}</div></form>`;
+    const prospectPanel = `${ErpSection({title:'Prospectos CRM',description:'Alta y seguimiento inicial de interesados. Solo el servidor mantiene estos datos.',content:prospectForm})}${ErpSection({title:'Últimos prospectos',description:'Listado real consultado al CRM, independiente del directorio de clientes.',content:'<div id="crmLeadResults" role="region" aria-live="polite" aria-label="Listado de prospectos"><p class="cg-ui-muted">Cargando prospectos…</p></div>'})}`;
+
+    const opportunityForm = `<form id="crmOpportunityForm" class="cg-record-form"><p id="crmOpportunitySelected" role="status" aria-live="polite" class="cg-ui-muted">Selecciona primero un prospecto calificado en la tabla anterior.</p><div class="cg-record-fields">
+      ${Field({labelKey:'Título de oportunidad',name:'title',required:true})}${Field({labelKey:'Monto esperado (sin contabilizar)',name:'expectedValue',placeholder:'100.00',required:true})}${Field({labelKey:'Moneda ISO',name:'currency',value:'USD',required:true})}${Field({labelKey:'Probabilidad 0–100',name:'probability',type:'number',value:'50',required:true})}
+      </div><p id="crmOpportunityStatus" role="status" aria-live="polite" class="cg-ui-muted">Las oportunidades son previsiones: no crean facturas ni cotizaciones.</p><div class="cg-record-actions">${Button({text:'Abrir oportunidad',type:'submit',icon:'fa-chart-line'})}${Button({id:'crmOpportunityRefresh',text:'Actualizar oportunidades',icon:'fa-rotate',type:'button',variant:'secondary'})}</div></form>`;
+    const opportunityPanel = `${ErpSection({title:'Oportunidades CRM',description:'Oportunidades solo para prospectos calificados, sin registrar ingresos.',content:opportunityForm})}${ErpSection({title:'Últimas oportunidades',description:'Datos del servidor, importes por moneda sin mezclas de cambio.',content:'<div id="crmOpportunityResults" role="region" aria-live="polite" aria-label="Oportunidades CRM"><p class="cg-ui-muted">Consultando oportunidades…</p></div>'})}${ErpSection({title:'Previsión del pipeline por moneda',description:'Resumen informativo de oportunidades calificadas; las descartadas se excluyen. No representa ingresos realizados ni aplica tasas de cambio.',content:`${Button({id:'crmForecastRefresh',text:'Actualizar previsión',icon:'fa-rotate',type:'button',variant:'secondary'})}<div id="crmForecastResults" role="region" aria-live="polite" aria-label="Previsión del pipeline"><p class="cg-ui-muted">Consultando previsión…</p></div>`})}`;
+
     const form = `<form id="clientForm" class="cg-record-form"><div class="cg-record-fields">
       ${Field({ labelKey:'name', name:'name', required:true })}${Field({ labelKey:'rif', name:'rif', required:true })}${Field({ labelKey:'email', name:'email', type:'email' })}${Field({ labelKey:'phone', name:'phone' })}${Field({ labelKey:'type', name:'type', value:'Contribuyente ordinario' })}${Textarea({ labelKey:'address', name:'address', className:'cg-field-wide' })}
       </div><p id="clientPreflightFeedback" role="status" aria-live="polite" class="cg-ui-muted">La identidad fiscal se verificará con el servidor antes de registrar.</p><div class="cg-record-actions">${Button({ text:'Registrar cliente', icon:'fa-user-plus', type:'submit' })}</div></form>`;
@@ -36,9 +48,223 @@ export const ClientsPage = {
       titleKey:'clientsTitle',
       descKey:'clientsDesc',
       actions:Button({ id:'btnSyncClients', text:'Sincronizar', icon:'fa-cloud-arrow-down', variant:'secondary', attrs:'type="button"' })
-    })}${ErpSection({ title:'Registrar cliente', description:'Datos comerciales y fiscales utilizados por cotizaciones y documentos.', content:form })}${ErpSection({ title:'Directorio de clientes', description:'Persistencia, validación fiscal y acciones operativas.', content:table })}</section>`;
+    })}${prospectPanel}${opportunityPanel}${ErpSection({ title:'Registrar cliente', description:'Datos comerciales y fiscales utilizados por cotizaciones y documentos.', content:form })}${ErpSection({ title:'Directorio de clientes', description:'Persistencia, validación fiscal y acciones operativas.', content:table })}</section>`;
   },
   mount(state, { Store, Toast, navigate, Modal, SupabaseSyncService }) {
+    const crmLeads = createCrmLeadService({api:BackendApi});
+    const crmOpportunities = createCrmOpportunityService({api:BackendApi});
+    const opportunitySelected = document.getElementById('crmOpportunitySelected');
+    const opportunityStatus = document.getElementById('crmOpportunityStatus');
+    const opportunityResults = document.getElementById('crmOpportunityResults');
+    const forecastResults = document.getElementById('crmForecastResults');
+    let selectedOpportunityLead = null;
+    let loadedCrmOpportunities = [];
+    let opportunityLossInFlight = false;
+    const status = document.getElementById('crmLeadStatus');
+    const results = document.getElementById('crmLeadResults');
+    let loadedCrmLeads = [];
+    let stageRequestInFlight = false;
+    const refreshCrmLeads = async () => {
+      loadedCrmLeads = [];
+      if (!results) return;
+      results.textContent = 'Cargando prospectos…';
+      try {
+        const rows = await crmLeads.list();
+        loadedCrmLeads = rows;
+        if (!rows.length) {
+          results.textContent = 'Todavía no hay prospectos registrados para esta empresa.';
+          return;
+        }
+        results.innerHTML = ErpDataTable({
+          caption:'Prospectos comerciales',
+          columns:[
+            {key:'name',label:'Prospecto',render:(lead)=>safe(lead.name)},
+            {key:'stage',label:'Etapa',render:(lead)=>safe(lead.stage||'new')},
+            {key:'email',label:'Correo',render:(lead)=>safe(lead.email)},
+            {key:'phone',label:'Teléfono',render:(lead)=>safe(lead.phone)},
+            {key:'createdAt',label:'Registrado',render:(lead)=>safe(lead.createdAt?new Date(lead.createdAt).toLocaleDateString('es-VE'):'')},
+            {key:'actions',label:'Etapa',render:(lead)=>{
+              if (lead.stage === 'lost') return Badge('Descartado','neutral');
+              const actions=[];
+              if (lead.stage === 'new') actions.push(ErpButton('Calificar',{
+                variant:'secondary',data:{'crm-stage-id':lead.id,'crm-next-stage':'qualified'}
+              }));
+              if (lead.stage === 'qualified') actions.push(ErpButton('Abrir oportunidad',{
+                variant:'secondary',data:{'crm-opportunity-lead-id':lead.id}
+              }));
+              if (lead.stage === 'new' || lead.stage === 'qualified') actions.push(ErpButton('Descartar',{
+                variant:'danger',data:{'crm-stage-id':lead.id,'crm-next-stage':'lost'}
+              }));
+              return actions.length ? ErpRow(actions.join(''),{wrap:true}) : Badge('Sin acciones','neutral');
+            }}
+          ],rows
+        });
+      } catch (_error) {
+        results.textContent = 'No se pudieron consultar los prospectos. Comprueba tu sesión y vuelve a intentar.';
+      }
+    };
+    results?.addEventListener('click',event=>{
+      const openButton=event.target?.closest?.('[data-crm-opportunity-lead-id]');
+      if (!openButton) return;
+      selectedOpportunityLead=loadedCrmLeads.find(item=>item.id===openButton.dataset.crmOpportunityLeadId && item.stage==='qualified') || null;
+      if (opportunitySelected) opportunitySelected.textContent=selectedOpportunityLead
+        ? 'Prospecto calificado seleccionado: '+selectedOpportunityLead.name
+        : 'Prospecto no disponible. Actualiza la lista antes de abrir una oportunidad.';
+    });
+    results?.addEventListener('click',async(event)=>{
+      const button=event.target?.closest?.('[data-crm-stage-id]');
+      if (!button || stageRequestInFlight) return;
+      const lead=loadedCrmLeads.find(item=>item.id===button.dataset.crmStageId);
+      if (!lead) return;
+      stageRequestInFlight=true;
+      button.setAttribute('disabled','disabled');
+      if (status) status.textContent='Actualizando etapa del prospecto…';
+      try {
+        await crmLeads.changeStage(lead,button.dataset.crmNextStage);
+        if (status) status.textContent='La nueva etapa quedó guardada y auditada.';
+        Toast.show('Etapa de prospecto actualizada.', 'success');
+      } catch (error) {
+        const concurrent=error?.status===409;
+        if (status) status.textContent=concurrent
+          ? 'Otro usuario actualizó el prospecto. El listado se volverá a consultar.'
+          : 'No se confirmó el cambio de etapa. No se realizaron cambios locales.';
+        Toast.show('No se pudo confirmar la etapa. Revisa el listado actualizado.', 'warning');
+      } finally {
+        button.removeAttribute('disabled');
+        stageRequestInFlight=false;
+        await refreshCrmLeads();
+      }
+    });
+    document.getElementById('crmLeadRefresh')?.addEventListener('click',()=>{void refreshCrmLeads()});
+    mountSubmit('#crmLeadForm', async (data, form) => {
+      const submit = form.querySelector('button[type="submit"]');
+      if (submit?.disabled) return;
+      submit?.setAttribute('disabled','disabled');
+      if (status) status.textContent = 'Registrando prospecto con identidad verificada por el servidor…';
+      try {
+        await crmLeads.create(data);
+        if (status) status.textContent = 'Prospecto registrado. Puedes consultarlo en el listado.';
+        Toast.show('Prospecto guardado en CRM.', 'success');
+        form.reset();
+        await refreshCrmLeads();
+      } catch (error) {
+        // The attempted UUID is preserved for the same form values on retry;
+        // never create a local Lead after an ambiguous server/network error.
+        if (status) status.textContent = error?.status === 409
+          ? 'La solicitud ya fue procesada. Actualiza el listado antes de repetir.'
+          : 'No se confirmó el registro. Revisa la conexión; no se guardó un prospecto local.';
+        Toast.show('No se confirmó el registro del prospecto.', 'warning');
+      } finally { submit?.removeAttribute('disabled'); }
+    });
+    const refreshCrmForecast=async()=>{
+      if(!forecastResults) return;
+      forecastResults.textContent='Consultando previsión…';
+      try {
+        const summary=await crmOpportunities.forecast();
+        if(!summary.currencyTotals.length){
+          forecastResults.textContent='Sin oportunidades activas. Las descartadas se excluyen de la previsión.';
+          return;
+        }
+        forecastResults.innerHTML=ErpDataTable({
+          caption:'Previsión comercial informativa por moneda',
+          columns:[
+            {key:'currency',label:'Moneda',render:item=>safe(item.currency)},
+            {key:'count',label:'Oportunidades',render:item=>safe(item.count)},
+            {key:'gross',label:'Valor bruto',render:item=>safe(item.gross)},
+            {key:'weighted',label:'Previsión ponderada',render:item=>safe(item.weighted)}
+          ],rows:summary.currencyTotals
+        });
+      } catch(_error){
+        forecastResults.textContent='No se pudo verificar el resumen completo. No se muestran cifras parciales.';
+      }
+    };
+    document.getElementById('crmForecastRefresh')?.addEventListener('click',()=>{void refreshCrmForecast()});
+    const refreshCrmOpportunities=async()=>{
+      loadedCrmOpportunities = [];
+      if (!opportunityResults) return;
+      opportunityResults.textContent='Consultando oportunidades…';
+      try {
+        const rows=await crmOpportunities.list();
+        loadedCrmOpportunities=rows;
+        if(!rows.length){
+          opportunityResults.textContent='Todavía no hay oportunidades registradas para esta empresa.';
+          return;
+        }
+        opportunityResults.innerHTML=ErpDataTable({
+          caption:'Oportunidades comerciales',
+          columns:[
+            {key:'title',label:'Oportunidad',render:item=>safe(item.title)},
+            {key:'stage',label:'Etapa',render:item=>safe(item.stage)},
+            {key:'expectedValue',label:'Previsión',render:item=>safe(item.expectedValue)+' '+safe(item.currency)},
+            {key:'probability',label:'Probabilidad',render:item=>safe(item.probability)+'%'},
+            {key:'createdAt',label:'Registrada',render:item=>safe(item.createdAt?new Date(item.createdAt).toLocaleDateString('es-VE'):'' )},
+            {key:'actions',label:'Acciones',render:item=>item.stage==='qualified'
+              ? ErpButton('Descartar oportunidad',{variant:'danger',data:{'crm-opportunity-loss-id':item.id}})
+              : Badge('Sin acción disponible','neutral')}
+          ],rows
+        });
+      } catch(_error){
+        opportunityResults.textContent='No se pudieron consultar las oportunidades. Comprueba la sesión y vuelve a intentar.';
+      }
+    };
+    opportunityResults?.addEventListener('click',async(event)=>{
+      const button=event.target?.closest?.('[data-crm-opportunity-loss-id]');
+      if(!button || opportunityLossInFlight) return;
+      const opportunity=loadedCrmOpportunities.find(row=>
+        row.id===button.dataset.crmOpportunityLossId && row.stage==='qualified'
+      );
+      if(!opportunity) return;
+      opportunityLossInFlight=true;
+      button.setAttribute('disabled','disabled');
+      if(opportunityStatus) opportunityStatus.textContent='Descartando oportunidad en el servidor…';
+      try {
+        await crmOpportunities.markLost(opportunity);
+        if(opportunityStatus) opportunityStatus.textContent='Oportunidad descartada y auditada; no afecta facturas.';
+        Toast.show('Oportunidad descartada.', 'success');
+      } catch(error) {
+        if(opportunityStatus) opportunityStatus.textContent=error?.status===409
+          ? 'La oportunidad cambió desde tu última consulta. Listado actualizado.'
+          : 'No se confirmó el cambio. No se guardó información local.';
+        Toast.show('No se confirmó el cambio de oportunidad.', 'warning');
+      } finally {
+        button.removeAttribute('disabled');
+        opportunityLossInFlight=false;
+        await refreshCrmOpportunities();
+        await refreshCrmForecast();
+      }
+    });
+    document.getElementById('crmOpportunityRefresh')?.addEventListener('click',()=>{void refreshCrmOpportunities()});
+    mountSubmit('#crmOpportunityForm',async(data,form)=>{
+      const submit=form.querySelector('button[type="submit"]');
+      if(submit?.disabled) return;
+      if(!selectedOpportunityLead){
+        if(opportunityStatus) opportunityStatus.textContent='Debes seleccionar un prospecto calificado antes de continuar.';
+        return;
+      }
+      submit?.setAttribute('disabled','disabled');
+      if(opportunityStatus) opportunityStatus.textContent='Abriendo oportunidad con revisión fiscal del servidor…';
+      try {
+        await crmOpportunities.createFromLead(selectedOpportunityLead,data);
+        if(opportunityStatus) opportunityStatus.textContent='Oportunidad registrada; no se ha creado factura ni cotización.';
+        Toast.show('Oportunidad CRM registrada.', 'success');
+        selectedOpportunityLead=null;
+        if(opportunitySelected) opportunitySelected.textContent='Selecciona otro prospecto calificado.';
+        form.reset();
+        await refreshCrmOpportunities();
+        await refreshCrmForecast();
+        await refreshCrmLeads();
+      } catch(error){
+        if(opportunityStatus) opportunityStatus.textContent=error?.status===409
+          ? 'Prospecto modificado u oportunidad existente. Actualiza los listados.'
+          : 'No se confirmó el registro. No se guardó información local.';
+        Toast.show('No se confirmó la oportunidad. Revisa el listado.', 'warning');
+        await refreshCrmOpportunities();
+        await refreshCrmLeads();
+      } finally {submit?.removeAttribute('disabled');}
+    });
+    void refreshCrmOpportunities();
+    void refreshCrmForecast();
+    void refreshCrmLeads();
     document.getElementById('btnSyncClients')?.addEventListener('click', () => SupabaseSyncService.pullClients({ Store, Toast, force:true, silent:false }));
     mountSubmit('#clientForm', async (data, form) => {
       const submit = form.querySelector('button[type="submit"], [data-mui-button-fallback]');

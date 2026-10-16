@@ -22,7 +22,7 @@ Puntos de referencia adicionales: [META general #841](https://github.com/adelvis
 
 **ContaGest:** ERP multi-tenant venezolano, núcleo financiero/comercial, operaciones, verticales de salud, odontología, veterinaria, psicología, fitness y comida. El núcleo decide auth/tenant/contabilidad/monedas; las verticales lo consumen, sin crear autoridades paralelas.
 
-**Control Hípico:** plataforma especializada de jornadas/carreras, PWA/APK, dominio canónico, PostgreSQL, integraciones y Bridge WhatsApp. Los canales proponen eventos; **no** son la autoridad del ledger, saldo, participante, resultado o cierre.
+**Control Hípico:** plataforma especializada de jornadas/carreras, PWA/APK, dominio canónico, PostgreSQL, integraciones y Bridge WhatsApp. Para el chatbot pedido, el owner fijó un grupo privado de amigos con apuestas recreativas sin dinero real ni efectos económicos y WhatsApp Messenger normal; no usar WhatsApp Business. Los canales proponen eventos; **no** son la autoridad del ledger, saldo, participante, resultado o cierre.
 
 Jerarquía al decidir: petición autorizada + issue/aceptación → `AGENTS.md` y política de tickets → código/contratos/BD efectiva → pruebas y evidencia SHA → documentación vigente → benchmarking como inspiración. Si documentos anteriores describen un defecto ya corregido, **validar regresión, no reabrir automáticamente**. Ejemplo: #698 aparece como hallazgo histórico, pero está cerrado; su antigua sobrescritura no aparece en `frontend/src/app.js` de la auditoría.
 
@@ -56,9 +56,9 @@ El repositorio ya define motor conversacional, consultas de sólo lectura, conte
 
 **No introducir un segundo motor, otra cola, un parser paralelo o persistencia ficticia.** La entrada `processLabTestInput()` ya utiliza controles de consulta canónica, identidad/handoff y journal; cada criterio #892/#907 debe reconciliarse con el HEAD y probarse, no marcarse ausente por estar abierto el issue. El bloqueo ante fallo de un mensaje, entrega `ambiguous`, corrupción de clave/inbox, cambio de destinatario o contexto cruzado es obligatorio.
 
-**Límite de política:** `SOURCE` (grupo real) permanece **sólo lectura** y su auto-envío está expresamente en estado `NO_GO` por [#154](https://github.com/adelvisMartin/ContaGest/issues/154), [#728](https://github.com/adelvisMartin/ContaGest/issues/728) y [política de plataforma](hipico/WHATSAPP_PRODUCTION_COMPLIANCE.md). **No habilitar envíos monetarios a SOURCE con flags, Playwright, Cloud API, Baileys ni vías alternativas como bypass**. Las pruebas de envío deben permanecer en LAB sintético/autorizado; la operativa comercial debe usar sus propias APIs/console con revisión legal aplicable.
+**Límite de política:** `SOURCE` (grupo real de Messenger) permanece **sin conexión automatizada de lectura ni envío** hasta que se compruebe autorización expresa. La premisa de este grupo es recreativa y no monetaria; no volver a preguntar por ello. Las [Condiciones del servicio de WhatsApp Messenger](https://www.whatsapp.com/legal/terms-of-service?lang=es) restringen mensajería automática y usos no personales salvo autorización expresa, por lo que la falta de dinero real no habilita el bot. No se usará WhatsApp Business ni su API. No conectar a SOURCE con flags, Playwright/DOM, Cloud API, Baileys, APIs privadas o vías alternativas como bypass. Las pruebas permanecen en un harness local LAB con fixtures sintéticos; el producto puede ofrecer respuestas sugeridas con compartir/copiar manual, sujeto a privacidad y gates existentes. Ver la [especificación funcional](hipico/WHATSAPP_RECREATIONAL_BOT_SCOPE_2026-10-15.md) y el [mapa de referencias/tareas](market-research/README.md).
 
-E2E esperado: input válido → identidad/tenant/sender/race/hilo → consulta read-only actual → política/handoff → salida LAB autorizada → receipt visible → journaling/observabilidad → recuperación sin un segundo Enter. AI/LLM puede clasificar o proponer; nunca realiza apuestas, saldo o liquidaciones.
+E2E esperado mientras el canal no esté autorizado: fixture sintético → identidad/perfil/conversación → consulta read-only canónica → política/handoff → respuesta simulada → receipt del harness → journaling/observabilidad → recuperación sin duplicado. No conectarse a WhatsApp real ni afirmar delivery. AI/LLM puede clasificar o proponer; nunca altera apuestas recreativas, datos financieros o liquidaciones.
 
 ## 5. REA y benchmarking sin copiar software propietario
 
@@ -115,7 +115,7 @@ En diseño observó reglas CSS de ContaGest y Hípico por separado, con necesida
 - [ ] Tengo un ticket exclusivo no reclamado por otra ventana, o trabajo advisory delimitado.
 - [ ] Identifiqué archivos/contratos/skill/agent y dependencias sin duplicar owners.
 - [ ] Tengo matriz verificable de aceptación y riesgos antes de escribir.
-- [ ] Preservé SOURCE read-only y no envié datos/secretos externos.
+- [ ] No conecté SOURCE a lectores automáticos; el código todavía requiere el gate de lectura #1011 y no debe ejecutarse contra Messenger real.
 - [ ] Ejecuté y registré todos los gates posibles, sin falsear los restantes.
 - [ ] Revisé diff/rollback y publiqué evidencia por SHA.
 - [ ] Sólo cerré issue tras merge y pruebas materiales; si no, dejé estado PARTIAL/BLOCKED.

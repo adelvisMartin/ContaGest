@@ -117,7 +117,7 @@ export function validateRuntimeConfig(config) {
   if ((config.labSendEnabled || config.labTestInputEnabled) && !transport.labSend) errors.push(`HIPICO_TRANSPORT_ADAPTER=${transport.id} no implementa envío LAB.`);
   if (config.sourceAutoReplyEnabled) {
     const policy = evaluateSourceAutoReplyPolicy(config, transport);
-    errors.push(`${SOURCE_AUTO_REPLY_POLICY_NO_GO}: WhatsApp Business prohíbe facilitar apuestas con dinero real en la política revisada; razones=${policy.reasons.join(',')}. SOURCE permanece read-only.`);
+    errors.push(`${SOURCE_AUTO_REPLY_POLICY_NO_GO}: WhatsApp Messenger restringe mensajería automática y usos no personales salvo autorización expresa; el grupo es recreativo y no monetario, pero no hay autorización verificada para Messenger; razones=${policy.reasons.join(',')}. SOURCE permanece sin autoenvío.`);
   }
   if (config.sourceAutoReplyEnabled && config.runtimeMode !== RUNTIME_MODES.PRODUCTION) errors.push('HIPICO_SOURCE_AUTO_REPLY_ENABLED solo se admite en production.');
   if (config.sourceAutoReplyEnabled && !config.backendSyncEnabled) errors.push('Auto reply SOURCE exige backend sync autoritativo.');

@@ -84,18 +84,18 @@ function instructions(){
     'CONTROL HÍPICO QA HOY',
     `1) npm run qa:today:prepare -- --scope=hipico --sha=${sha}`,
     '2) npm run test:hipico && npm run qa:hipico && npm run qa:hipico:visual',
-    `3) Completa artifacts/qa/hipico-v119/${sha}/physical-qa.json con operador, device×mode, SOURCE(read-only), LAB(write-only), sesiones separadas y archivos reales de evidencia.`,
+    `3) Completa artifacts/qa/hipico-v119/${sha}/physical-qa.json con operador, device×mode, SOURCE(no-auto-send), LAB(harness local sintético), sesiones separadas y archivos de evidencia.`,
     '4) node scripts/hipico-physical-qa-v119.mjs check',
     `5) Durante #120 actualiza ${inputDir}/drill-evidence.json con los cuatro restart/reconnect reales y sus archivos de evidencia.`,
-    `6) En los últimos 15 minutos actualiza ${inputDir}/safety-evidence.json con la verificación final de SOURCE read-only, LAB-only y session fallback safe.`,
+    `6) En los últimos 15 minutos actualiza ${inputDir}/safety-evidence.json con la verificación final de no conexión a Messenger real, LAB local-only y session fallback safe.`,
     `7) Soak mínimo 24h: GIT_SHA=${sha} npm --workspace backend run soak:hipico -- --sha=${sha} --duration-minutes=1440 --operator-id=<qa-user> --health-url=<bridge-health-url> --spool-path=<spool-v2-dir> --physical-evidence=artifacts/qa/hipico-v119/${sha}/manifest.json --safety-evidence=${inputDir}/safety-evidence.json --drill-evidence=${inputDir}/drill-evidence.json`,
     `8) npm run qa:today:status -- --scope=hipico --sha=${sha}`,
     '',
     'SEGURIDAD',
-    '- SOURCE no se usa como destino de escritura durante #119/#120.',
+    '- No conectar SOURCE ni LAB a WhatsApp Messenger real ni usarlos como destino de escritura durante #119/#120.',
     '- Los PASS requieren evidencia material; flags declarativos no promueven release.',
     '- Cada soak crea un attempt inmutable; no mezcla muestras de ejecuciones anteriores.',
-    '- #154 permanece NO_GO para automatización productiva de apuestas con dinero real.',
+    '- #1011 mantiene NO_GO para autoenvío Messenger mientras la autorización expresa no esté verificada; el grupo es recreativo y sin dinero real.',
     '- Un NOT_EXECUTED/BLOCKED nunca se reporta como PASS.'
   ];
   console.log(lines.join('\n'));

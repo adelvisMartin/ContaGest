@@ -16,6 +16,26 @@ const assets = [
   {
     source: 'src/modules/crm/client-match-preflight.mjs',
     target: 'dist/src/modules/crm/client-match-preflight.mjs'
+  },
+  {
+    source: 'src/modules/crm/crm-lead-store.mjs',
+    target: 'dist/src/modules/crm/crm-lead-store.mjs'
+  },
+  {
+    source: 'src/modules/crm/crm-lead-stage.mjs',
+    target: 'dist/src/modules/crm/crm-lead-stage.mjs'
+  },
+  {
+    source: 'src/modules/crm/crm-opportunity-store.mjs',
+    target: 'dist/src/modules/crm/crm-opportunity-store.mjs'
+  },
+  {
+    source: 'src/modules/crm/crm-opportunity-stage.mjs',
+    target: 'dist/src/modules/crm/crm-opportunity-stage.mjs'
+  },
+  {
+    source: 'src/modules/crm/crm-forecast.mjs',
+    target: 'dist/src/modules/crm/crm-forecast.mjs'
   }
 ];
 

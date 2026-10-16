@@ -11,10 +11,14 @@ import {
 import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRows } from './sales-kpi.js';
 import { summarizeInvoicedUnitActivity } from './invoiced-unit-activity.js';
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
-import { deriveReorderCandidates } from './replenishment-candidates.js';
+import { prepareReorderStockPage } from './replenishment-candidates.js';
+import { previewReorderPolicy } from './reorder-policy-preview.js';
 import { parseReorderScanQuery, reorderScanPageMeta } from './reorder-scan-page.js';
+import { parseReorderSalesOptions, projectReorderSalesEvidence } from './reorder-sales-evidence.js';
+import { parseGrossInvoiceLeadTime, projectGrossInvoiceLeadTimeReview } from './gross-invoice-leadtime-review.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
 import { parseAgeingCutoffs } from './configurable-ageing.js';
+import { parseFifoCohortOptions } from './fifo-cohort-drilldown.js';
 import { LOT_EXPIRY_RISK_VERSION, expiryUtcBounds, projectLotExpiryRisk } from './lot-expiry-risk.js';
 import { summarizePhysicalOutbound } from './stock-movement-activity.js';
 import { calculateObservedStockCoverage } from './stock-coverage.js';
@@ -178,7 +182,15 @@ router.get('/inventory', (_req, res) => {
 
 // Estimate only: FIFO cohorts are inferred from complete physical-movement
 // history and cannot be used as physical lot provenance or inventory valuation.
-const stockAgeingQuery = z.object({ productId: z.string().uuid(), bucketDays: z.string().optional() }).strict();
+const stockAgeingQuery = z.object({
+  productId: z.string().uuid(),
+  bucketDays: z.string().optional(),
+  includeCohorts: z.enum(['true', 'false']).optional(),
+  cohortTake: z.string().optional(),
+  cohortSkip: z.string().optional(),
+  cohortBucket: z.string().optional(),
+  cohortRange: z.string().optional()
+}).strict();
 // Commercial activity is sourced from actual issued/paid/overdue invoice lines.
 // It is not physical stock movement, estimated demand or approval to purchase.
 const invoiceActivityInteger = z.string()
@@ -257,6 +269,15 @@ router.get('/inventory/ageing', asyncHandler(async (req, res) => {
   } catch {
     throw new HttpError(400, 'Intervalos de antigüedad inválidos: use tres días crecientes.', { code: 'AGEING_BUCKET_QUERY_INVALID' });
   }
+  let cohortOptions;
+  try {
+    cohortOptions = parseFifoCohortOptions(
+      query.data.includeCohorts, query.data.cohortTake, query.data.cohortSkip,
+      query.data.cohortBucket, query.data.cohortRange, bucketCutoffs
+    );
+  } catch {
+    throw new HttpError(400, 'Parámetros de detalle FIFO inválidos.', { code: 'AGEING_COHORT_QUERY_INVALID' });
+  }
   const ctx = context(req);
   const asOf = new Date();
   try {
@@ -276,13 +297,17 @@ router.get('/inventory/ageing', asyncHandler(async (req, res) => {
         throw new HttpError(409, 'Historial de movimientos supera el límite del cálculo.', { code: 'AGEING_HISTORY_LIMIT' });
       return {
         product: { id: product.id, sku: product.sku, name: product.name, unit: product.unit },
-        stockAgeing: calculateStockAgeing({ movements, stockExact: product.stock, asOf, bucketCutoffs })
+        stockAgeing: calculateStockAgeing({ movements, stockExact: product.stock, asOf, bucketCutoffs, cohortOptions })
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     ok(res, result);
   } catch (error) {
     if (error instanceof StockAgeingError)
       throw new HttpError(409, 'La antigüedad de stock no se puede reconciliar; se omitió la estimación.', { code: error.code });
+    if (error instanceof TypeError)
+      throw new HttpError(409, 'El detalle FIFO no puede reconciliarse con el stock canónico.', {
+        code: 'AGEING_COHORT_RECONCILIATION_INVALID'
+      });
     throw error;
   }
 }));
@@ -402,46 +427,164 @@ router.get('/inventory/slow-moving', asyncHandler(async (req, res) => {
   }
 }));
 
+// Stateless simulation only. The operator-supplied assumptions are NOT
+// persisted reorder policies, lot/location availability or purchase authority.
+const reorderPolicyPreviewQuery = z.object({
+  productId: z.string().uuid(),
+  reorderPointExact: z.string(),
+  targetStockExact: z.string(),
+  safetyStockExact: z.string().optional(),
+  orderMultipleExact: z.string().optional(),
+  leadTimeDays: z.string().optional()
+}).strict();
+
+router.get('/inventory/reorder/preview', asyncHandler(async (req, res) => {
+  const parsed = reorderPolicyPreviewQuery.safeParse(req.query);
+  if (!parsed.success)
+    throw new HttpError(400, 'Parámetros de simulación de reposición inválidos.', { code: 'REORDER_POLICY_QUERY_INVALID' });
+  const ctx = context(req);
+  const product = await prisma.product.findFirst({
+    where: { id: parsed.data.productId, tenantId: ctx.tenantId, active: true },
+    select: { id: true, sku: true, name: true, unit: true, stock: true, reserved: true, minStock: true }
+  });
+  if (!product) throw new HttpError(404, 'Producto no encontrado.', { code: 'REORDER_POLICY_PRODUCT_NOT_FOUND' });
+  let policyPreview;
+  try {
+    policyPreview = previewReorderPolicy({
+      stockExact: product.stock,
+      reservedExact: product.reserved,
+      canonicalMinStockExact: product.minStock,
+      reorderPointExact: parsed.data.reorderPointExact,
+      targetStockExact: parsed.data.targetStockExact,
+      safetyStockExact: parsed.data.safetyStockExact,
+      orderMultipleExact: parsed.data.orderMultipleExact,
+      leadTimeDays: parsed.data.leadTimeDays
+    });
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    const inconsistentStock = error.message === 'REORDER_POLICY_UNRECONCILED_RESERVATIONS';
+    throw new HttpError(inconsistentStock ? 409 : 422,
+      'La política simulada no es consistente con sus límites o con las existencias.',
+      { code: inconsistentStock ? 'REORDER_POLICY_STOCK_CONFLICT' : 'REORDER_POLICY_ASSUMPTION_INVALID' });
+  }
+  res.setHeader('cache-control', 'no-store');
+  ok(res, {
+    product: { id: product.id, sku: product.sku, name: product.name, unit: product.unit },
+    policyPreview
+  });
+}));
+
 router.get('/inventory/reorder', asyncHandler(async (req, res) => {
   let query;
+  let salesOptions;
+  let reviewLeadTimeDays: number | null = null;
   try {
-    query = parseReorderScanQuery(req.query);
+    // Sales evidence is opt-in; the existing scan parser stays strict.
+    const { includeSalesEvidence, salesWindowDays, leadTimeDays, ...scanParams } = req.query;
+    query = parseReorderScanQuery(scanParams);
+    salesOptions = parseReorderSalesOptions(includeSalesEvidence, salesWindowDays);
+    reviewLeadTimeDays = parseGrossInvoiceLeadTime(leadTimeDays, salesOptions.includeSalesEvidence);
   } catch {
     throw new HttpError(400, 'Filtros de reporte de reposición inválidos.', { code: 'REORDER_SCAN_QUERY_INVALID' });
   }
   const ctx = context(req);
   const { take, skip, onlyNeedsReorder } = query;
+  const asOf = new Date();
+  const since = new Date(asOf.getTime() - salesOptions.salesWindowDays * 86_400_000);
 
-  // The catalog count and this page share the same PostgreSQL snapshot.
-  // Cross-request offset paging remains live and is NOT a persistent cursor.
-  const [activeProducts, products] = await prisma.$transaction(async tx => Promise.all([
-    tx.product.count({ where: { tenantId: ctx.tenantId, active: true } }),
-    tx.product.findMany({
-      where: { tenantId: ctx.tenantId, active: true },
-      select: {
-        id: true,
-        sku: true,
-        name: true,
-        unit: true,
-        stock: true,
-        reserved: true,
-        minStock: true
-      },
-      orderBy: [{ sku: 'asc' }, { id: 'asc' }],
-      skip,
-      take
-    })
-  ]), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  // Product catalog and optional observed sales share one PG snapshot.
+  // Across separate offset pages there is NO durable snapshot.
+  const { activeProducts, scan, salesGroups } = await prisma.$transaction(async tx => {
+    const [activeProducts, products] = await Promise.all([
+      tx.product.count({ where: { tenantId: ctx.tenantId, active: true } }),
+      tx.product.findMany({
+        where: { tenantId: ctx.tenantId, active: true },
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          unit: true,
+          stock: true,
+          reserved: true,
+          minStock: true
+        },
+        orderBy: [{ sku: 'asc' }, { id: 'asc' }],
+        skip,
+        take
+      })
+    ]);
+    // Validate and segregate ALL canonical page balances first, while still
+    // inside the same snapshot and BEFORE even an optional sales aggregation.
+    // A malformed page must fail as 409, never escape as an unhandled TypeError.
+    const scan = (() => {
+      try {
+        return prepareReorderStockPage(products.map(buildInventoryStockHealth));
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        throw new HttpError(409, 'El cálculo de disponibilidad no concuerda con los datos canónicos.', {
+          code: 'REORDER_STOCK_PROJECTION_CONFLICT'
+        });
+      }
+    })();
+    // Only safe reorder candidates may participate in the optional invoice
+    // aggregate; exceptions stay visible in the report but are not queried.
+    const candidateIds = salesOptions.includeSalesEvidence
+      ? scan.salesCandidateIds
+      : [];
+    const salesGroups = candidateIds.length
+      ? await tx.salesInvoiceLine.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: candidateIds },
+            invoice: {
+              is: {
+                tenantId: ctx.tenantId,
+                status: { in: [...SALES_KPI_STATUSES] },
+                issueDate: { gte: since, lte: asOf }
+              }
+            }
+          },
+          _sum: { quantity: true },
+          _count: { _all: true },
+          orderBy: { productId: 'asc' }
+        })
+      : [];
+    return { activeProducts, scan, salesGroups };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 
-  const rows = products.map(buildInventoryStockHealth);
-  // Filtering is page-local. A page with zero matches can still have
-  // matching products on subsequent catalog pages.
+  // The validated page and commercial aggregate came from ONE snapshot.
+  // Invalid balances remain in the original rows/summary, not candidates.
+  const { rows, stockReview, reorderCandidates } = scan;
   const filteredRows = onlyNeedsReorder ? rows.filter(row => row.needsReorder) : rows;
-  const reorderCandidates = deriveReorderCandidates(rows);
   const pagination = reorderScanPageMeta({
-    skip, take, scannedProducts: products.length, activeProducts,
+    skip, take, scannedProducts: rows.length, activeProducts,
     matchesInPage: rows.filter(row => row.needsReorder).length
   });
+
+  const salesEvidence = salesOptions.includeSalesEvidence
+    ? projectReorderSalesEvidence({
+        candidates: reorderCandidates,
+        groups: salesGroups,
+        asOf,
+        salesWindowDays: salesOptions.salesWindowDays
+      })
+    : null;
+  let leadTimeReview = null;
+  if (salesEvidence && reviewLeadTimeDays !== null) {
+    try {
+      leadTimeReview = projectGrossInvoiceLeadTimeReview({
+        candidates: reorderCandidates,
+        salesItems: salesEvidence.items,
+        salesWindowDays: salesOptions.salesWindowDays,
+        leadTimeDays: reviewLeadTimeDays
+      });
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+      throw new HttpError(409, 'Los saldos o la actividad facturada no permiten una comparación confiable.', {
+        code: 'INVOICE_LEADTIME_EVIDENCE_CONFLICT'
+      });
+    }
+  }
 
   res.setHeader('cache-control', 'no-store');
   ok(res, {
@@ -454,13 +597,22 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
       scope: 'SCANNED_PAGE_ONLY',
       autoPurchaseEnabled: false,
       noLocationForecastUntil: '#755',
-      reorderCandidates
+      reorderCandidates,
+      stockExceptions: stockReview.stockExceptions,
+      stockExceptionCount: stockReview.stockExceptions.length,
+      exceptionsScope: 'SCANNED_CATALOG_PAGE_ONLY',
+      ...(salesEvidence ? {
+        salesEvidence: {
+          ...salesEvidence,
+          ...(leadTimeReview ? { leadTimeReview } : {})
+        }
+      } : {})
     },
     pagination,
     meta: {
       onlyNeedsReorder,
       activeProducts,
-      scannedProducts: products.length,
+      scannedProducts: rows.length,
       scanLimit: take,
       skip,
       pageScoped: true,

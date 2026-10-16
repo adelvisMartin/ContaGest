@@ -147,12 +147,14 @@ test('readiness requires source, cloud and empty durable queues', () => {
   assert.ok(degraded.reasons.includes('LAB_MIRROR_PENDING'));
 });
 
-test('SOURCE automatic reply is fail-closed while WhatsApp Business policy is NO-GO for this real-money use case',()=>{
+test('SOURCE automatic reply is fail-closed while Messenger automation authorization is unverified',()=>{
   const enabled=loadRuntimeConfig({...productionEnv,HIPICO_SOURCE_AUTO_REPLY_ENABLED:'true'},'C:/tmp');
   assert.equal(enabled.sourceAutoReplyEnabled,true);
   const errors=validateRuntimeConfig(enabled).join(' ');
   assert.match(errors,/SOURCE_AUTO_REPLY_POLICY_NO_GO/);
-  assert.match(errors,/WhatsApp Business/i);
+  assert.match(errors,/WhatsApp Messenger/i);
+  assert.match(errors,/recreativo y no monetario/i);
+  assert.match(errors,/no hay autorización verificada/i);
 
   const local=loadRuntimeConfig({...productionEnv,HIPICO_RUNTIME_MODE:'shadow-local',HIPICO_SOURCE_AUTO_REPLY_ENABLED:'true'},'C:/tmp');
   assert.match(validateRuntimeConfig(local).join(' '),/solo se admite en production/);
