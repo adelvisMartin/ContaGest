@@ -1,6 +1,6 @@
 /** #761: pure server-side effective RateCard selector. No billable or invoice authority. */
 export const PROJECT_EFFECTIVE_RATE_SELECTION_VERSION = 'project-effective-rate-selection-v1';
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MONEY = /^([0-9]{1,12})\.([0-9]{2})$/;
 function uuid(v:unknown):asserts v is string {
   if(typeof v!=='string'||!UUID.test(v))throw new TypeError('PROJECT_RATE_SELECT_ID_INVALID');
