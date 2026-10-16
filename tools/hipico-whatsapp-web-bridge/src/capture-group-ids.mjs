@@ -1,3 +1,4 @@
+import './source-read-startup-denial.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline/promises';
