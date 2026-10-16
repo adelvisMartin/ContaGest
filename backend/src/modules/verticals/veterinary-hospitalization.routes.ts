@@ -18,9 +18,10 @@ router.get('/hospitalizations', asyncHandler(async (req, res) => {
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT h.*, p."displayName" AS "patientName", p."species", p."breed", pr."fullName" AS "professionalName",
       count(o."id")::int AS "observationCount"
-    FROM public."CareHospitalization" h JOIN public."CarePatient" p ON p."id"=h."patientId" AND p."kind"='animal'
+    FROM public."CareHospitalization" h
+    JOIN public."CarePatient" p ON p."id"=h."patientId" AND p."tenantId"=h."tenantId" AND p."kind"='animal'
     LEFT JOIN public."CareProfessional" pr ON pr."id"=h."professionalId" AND pr."tenantId"=h."tenantId"
-    LEFT JOIN public."CareHospitalObservation" o ON o."hospitalizationId"=h."id"
+    LEFT JOIN public."CareHospitalObservation" o ON o."hospitalizationId"=h."id" AND o."tenantId"=h."tenantId"
     WHERE h."tenantId"=$1 AND ($2='' OR h."patientId"=$2) AND ($3='' OR h."status"=$3)
     GROUP BY h."id",p."displayName",p."species",p."breed",pr."fullName"
     ORDER BY h."admittedAt" DESC LIMIT 1000
