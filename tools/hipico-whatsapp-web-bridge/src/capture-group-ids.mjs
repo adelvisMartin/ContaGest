@@ -5,6 +5,10 @@ import { stdin as input, stdout as output } from 'node:process';
 import { chromium } from 'playwright-core';
 import { extractGroupIds, redactGroupId, selectUniqueGroupId } from './group-identity.mjs';
 import { loadRuntimeConfig } from './runtime-config.mjs';
+import { assertSourceAutoReadDenied } from './source-read-policy-gate.mjs';
+
+// #1011: interactive group discovery would read Messenger group metadata.
+assertSourceAutoReadDenied();
 
 const config = loadRuntimeConfig();
 const dataDir = config.dataDir;
