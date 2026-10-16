@@ -10,6 +10,8 @@ import { acceptServerPosProduct, normalizePosLookupCode } from '../services/posP
 import { addPosCartItem, decrementPosCartItem, removePosCartItem, setPosCartQuantity } from '../services/posCartPolicy.mjs';
 import { today } from '../utils/dom.js';
 import { holdPosCart, resumePosCart, discardHeldPosCart } from '../services/posHeldCartPolicy.mjs';
+import { addPosFavorite, removePosFavorite, matchesPosFavorite } from '../services/posFavoritePolicy.mjs';
+import { verifyPosDraftCart } from '../services/posDraftVerification.mjs';
 
 const rows=(value)=>Array.isArray(value)?value:[];
 const statusTone=(status)=>status==='Cobrada'?'success':status==='Anulada'?'error':'warning';
@@ -37,25 +39,37 @@ function SalesWorkspace({state,context}){
   const [posCode,setPosCode]=useState('');
   const [posLoading,setPosLoading]=useState(false);
   const [posDraftError,setPosDraftError]=useState('');
+  const [posChecking,setPosChecking]=useState(false);
+  const [posVerification,setPosVerification]=useState(null);
+  const posVerifyBusyRef=useRef(false);
+  const posCartRevisionRef=useRef(0);
   const [posCart,setPosCart]=useState([]);
   const [posNames,setPosNames]=useState({});
   const [posQuantityInputs,setPosQuantityInputs]=useState({});
   const [posHeld,setPosHeld]=useState([]);
+  const [posFavorites,setPosFavorites]=useState([]);
+  const posFavoritesRef=useRef([]);
   const posHeldRef=useRef([]);
   const posCartRef=useRef([]);
   const posBusyRef=useRef(false);
   const posTenantId=BackendApi.tenantId;
   const posTenantRef=useRef(posTenantId);
   const visiblePosCart=posTenantRef.current===posTenantId?posCart:[];
+  const visiblePosVerification=posTenantRef.current===posTenantId?posVerification:null;
   const visiblePosHeld=posTenantRef.current===posTenantId?posHeld:[];
+  const visiblePosFavorites=posTenantRef.current===posTenantId?posFavorites:[];
   React.useEffect(()=>{
     posTenantRef.current=posTenantId;
     posCartRef.current=[];
+    posCartRevisionRef.current+=1;
+    setPosVerification(null);
     setPosCart([]);
     setPosNames({});
     setPosQuantityInputs({});
     posHeldRef.current=[];
     setPosHeld([]);
+    posFavoritesRef.current=[];
+    setPosFavorites([]);
     setPosCode('');
     setPosDraftError('');
   },[posTenantId]);
@@ -132,17 +146,70 @@ function SalesWorkspace({state,context}){
   }
 
 
+  function invalidatePosVerification(){
+    posCartRevisionRef.current+=1;
+    setPosVerification(null);
+  }
+
+  async function verifyCurrentPosDraft(){
+    if(posVerifyBusyRef.current || posBusyRef.current || posLoading
+        || posTenantRef.current!==BackendApi.tenantId)return;
+    if(posCartRef.current.length===0){
+      setPosDraftError('Agrega productos antes de comprobar el borrador.');
+      return;
+    }
+    if(posCartRef.current.some((line)=>(posQuantityInputs[line.productId]??line.quantity)!==line.quantity)){
+      setPosDraftError('Aplica las cantidades pendientes antes de comprobar el carrito.');
+      return;
+    }
+    const tenantAtStart=BackendApi.tenantId;
+    const lines=posCartRef.current;
+    const revision=posCartRevisionRef.current;
+    const isCurrent=()=>tenantAtStart===BackendApi.tenantId
+      && posTenantRef.current===tenantAtStart
+      && posCartRevisionRef.current===revision
+      && posCartRef.current===lines;
+    posVerifyBusyRef.current=true;
+    setPosChecking(true);
+    setPosVerification(null);
+    setPosDraftError('');
+    try{
+      const outcome=await verifyPosDraftCart({
+        lines,
+        labels:posNames,
+        resolve:(sku)=>BackendApi.get(`/sales/pos/product-lookup?code=${encodeURIComponent(sku)}`),
+        isCurrent
+      });
+      if(!isCurrent())return;
+      setPosVerification(outcome);
+    }catch{
+      if(isCurrent())setPosVerification({kind:'unavailable',count:0});
+    }finally{
+      posVerifyBusyRef.current=false;
+      setPosChecking(false);
+    }
+  }
+
   // Draft only: every lookup is authenticated and tenant-scoped in sales API.
   // The client never authorizes a sale, calculates IVA or posts stock/payments.
   async function addPosDraftProduct(event){
     event.preventDefault();
-    if(posBusyRef.current)return;
+    await lookupAndAddPosProduct(posCode);
+  }
+
+  async function addPosFavoriteToCart(favorite){
+    if(!posFavoritesRef.current.some((item)=>item.id===favorite.id && item.sku===favorite.sku))return;
+    await lookupAndAddPosProduct(favorite.sku,favorite);
+  }
+
+  async function lookupAndAddPosProduct(value,favorite=null){
+    if(posBusyRef.current || posVerifyBusyRef.current)return;
     posBusyRef.current=true;
     setPosLoading(true);
     setPosDraftError('');
     const tenantAtStart=BackendApi.tenantId;
     try{
-      const code=normalizePosLookupCode(posCode);
+      const code=normalizePosLookupCode(value);
       if(!code){
         setPosDraftError('Escribe un SKU o código válido (máximo 64 caracteres).');
         return;
@@ -159,14 +226,22 @@ function SalesWorkspace({state,context}){
         setPosDraftError('El servidor devolvió un producto no válido. No se añadió nada al carrito.');
         return;
       }
+      // A shortcut is a label only. Verify the server still resolves its SKU
+      // to the exact same product before changing the current draft.
+      if(favorite && (!posFavoritesRef.current.some((item)=>item.id===favorite.id && item.sku===favorite.sku)
+          || !matchesPosFavorite(favorite,decision.product))){
+        setPosDraftError('Favorito desactualizado: verifica el producto antes de utilizarlo.');
+        return;
+      }
       const next=addPosCartItem(posCartRef.current,decision.product.id);
       posCartRef.current=next;
+      invalidatePosVerification();
       setPosCart(next);
       setPosQuantityInputs((current)=>({...current,[decision.product.id]:next.find((line)=>line.productId===decision.product.id).quantity}));
       setPosNames((current)=>({...current,[decision.product.id]:{
         sku:decision.product.sku,name:decision.product.name
       }}));
-      setPosCode('');
+      if(!favorite)setPosCode('');
       notify('Producto agregado al borrador. La venta aún no está confirmada.','success');
     }catch(cause){
       if(tenantAtStart!==BackendApi.tenantId || posTenantRef.current!==tenantAtStart){
@@ -187,6 +262,7 @@ function SalesWorkspace({state,context}){
 
   function commitPosDraftCart(next,productId){
     posCartRef.current=next;
+    invalidatePosVerification();
     setPosCart(next);
     setPosQuantityInputs((current)=>{
       const updated={...current};
@@ -199,12 +275,12 @@ function SalesWorkspace({state,context}){
   }
 
   function removePosDraftProduct(productId){
-    if(posTenantRef.current!==BackendApi.tenantId)return;
+    if(posTenantRef.current!==BackendApi.tenantId || posVerifyBusyRef.current)return;
     commitPosDraftCart(removePosCartItem(posCartRef.current,productId),productId);
   }
 
   function stepPosDraftQuantity(productId,direction){
-    if(posTenantRef.current!==BackendApi.tenantId)return;
+    if(posTenantRef.current!==BackendApi.tenantId || posVerifyBusyRef.current)return;
     try{
       const next=direction===1
         ?addPosCartItem(posCartRef.current,productId,'1.000')
@@ -216,7 +292,7 @@ function SalesWorkspace({state,context}){
   }
 
   function applyPosDraftQuantity(productId){
-    if(posTenantRef.current!==BackendApi.tenantId)return;
+    if(posTenantRef.current!==BackendApi.tenantId || posVerifyBusyRef.current)return;
     try{
       const existing=posCartRef.current.find((line)=>line.productId===productId);
       if(!existing)return;
@@ -227,10 +303,38 @@ function SalesWorkspace({state,context}){
     }
   }
 
+  function togglePosFavoriteFromCart(line){
+    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posLoading)return;
+    try{
+      const existing=posFavoritesRef.current.some((item)=>item.id===line.productId);
+      const label=posNames[line.productId];
+      const next=existing
+        ?removePosFavorite(posFavoritesRef.current,line.productId)
+        :addPosFavorite(posFavoritesRef.current,{id:line.productId,sku:label?.sku,name:label?.name});
+      posFavoritesRef.current=next;
+      setPosFavorites(next);
+      setPosDraftError('');
+    }catch{
+      setPosDraftError('No se pudo cambiar el favorito. Máximo doce productos con SKU válido.');
+    }
+  }
+
+  function deletePosFavorite(productId){
+    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posLoading)return;
+    try{
+      const next=removePosFavorite(posFavoritesRef.current,productId);
+      posFavoritesRef.current=next;
+      setPosFavorites(next);
+      setPosDraftError('');
+    }catch{
+      setPosDraftError('No se pudo quitar el favorito. Actualiza la pantalla.');
+    }
+  }
+
   // Hold/resume exists only within the mounted, authenticated Sales workspace.
   // It never writes to storage, server, inventory, payments or accounting.
   function holdCurrentPosDraft(){
-    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posLoading)return;
+    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posVerifyBusyRef.current || posLoading)return;
     if(posCartRef.current.some((line)=>(posQuantityInputs[line.productId]??line.quantity)!==line.quantity)){
       setPosDraftError('Aplica las cantidades pendientes antes de poner el carrito en espera.');
       return;
@@ -241,6 +345,7 @@ function SalesWorkspace({state,context}){
       posHeldRef.current=next;
       setPosHeld(next);
       posCartRef.current=[];
+      invalidatePosVerification();
       setPosCart([]);
       setPosNames({});
       setPosQuantityInputs({});
@@ -252,12 +357,13 @@ function SalesWorkspace({state,context}){
   }
 
   function resumeHeldPosDraft(id){
-    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posLoading)return;
+    if(posTenantRef.current!==BackendApi.tenantId || posBusyRef.current || posVerifyBusyRef.current || posLoading)return;
     try{
       const result=resumePosCart(posHeldRef.current,id,posCartRef.current);
       posHeldRef.current=result.held;
       setPosHeld(result.held);
       posCartRef.current=result.cart;
+      invalidatePosVerification();
       setPosCart(result.cart);
       setPosNames({...result.names});
       setPosQuantityInputs(Object.fromEntries(result.cart.map((line)=>[line.productId,line.quantity])));
@@ -325,20 +431,58 @@ function SalesWorkspace({state,context}){
           placeholder="Ej. 000123456789"
           value={posCode}
           onChange={(event)=>setPosCode(event.target.value)}
-          disabled={posLoading}
+          disabled={posLoading||posChecking}
           sx={{flex:'1 1 220px'}}
         />
-        <CgButton type="submit" disabled={posLoading||!posCode.trim()} sx={{minHeight:44}}>
+        <CgButton type="submit" disabled={posLoading||posChecking||!posCode.trim()} sx={{minHeight:44}}>
           {posLoading?'Consultando…':'Agregar al borrador'}
         </CgButton>
+      </Box>
+      <Box component="section" aria-label="Favoritos POS de la sesión" sx={{mt:1.25}}>
+        <Typography variant="body2" sx={{fontWeight:600}}>
+          Favoritos rápidos ({visiblePosFavorites.length}/12)
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Se crean desde el carrito y se vuelven a comprobar en el servidor antes de agregar. No se guardan al salir de Ventas.
+        </Typography>
+        {visiblePosFavorites.length?
+          <Box sx={{display:'flex',flexWrap:'wrap',gap:1,mt:1}}>
+            {visiblePosFavorites.map((favorite)=><Box key={favorite.id} sx={{display:'flex',alignItems:'center',gap:.5}}>
+              <CgButton type="button" size="small" variant="outlined" disabled={posLoading}
+                aria-label={`Consultar y agregar favorito ${favorite.name}`}
+                onClick={()=>void addPosFavoriteToCart(favorite)} sx={{minHeight:44}}>
+                {favorite.name} · {favorite.sku}
+              </CgButton>
+              <CgButton type="button" size="small" variant="outlined" disabled={posLoading}
+                aria-label={`Quitar favorito ${favorite.name}`}
+                onClick={()=>deletePosFavorite(favorite.id)} sx={{minHeight:44}}>×</CgButton>
+            </Box>)}
+          </Box>:null}
       </Box>
       {posDraftError?<CgState severity="warning" title="Carrito no actualizado">{posDraftError}</CgState>:null}
       <Typography variant="caption" color="text.secondary" role="status" aria-live="polite" sx={{display:'block',mt:1}}>
         {visiblePosCart.length} productos distintos · Sin total fiscal ni cobro confirmado
       </Typography>
+      <Box component="section" aria-label="Comprobación del carrito contra el servidor" sx={{mt:1,display:'grid',gap:1}}>
+        <CgButton type="button" variant="outlined" onClick={()=>void verifyCurrentPosDraft()}
+          disabled={posChecking||posLoading||visiblePosCart.length===0} sx={{minHeight:44,justifySelf:'start'}}>
+          {posChecking?'Comprobando productos…':'Comprobar identidad de productos'}
+        </CgButton>
+        {visiblePosVerification?
+          <CgState severity={visiblePosVerification.kind==='verified'?'info':'warning'}
+            title={visiblePosVerification.kind==='verified'?'Identidades consultadas en el servidor':'El carrito necesita revisión'}>
+            {visiblePosVerification.kind==='verified'
+              ?`${visiblePosVerification.count} productos coinciden por SKU e identificador. No confirma precio, existencias, impuestos ni disponibilidad para cobrar.`
+              :visiblePosVerification.kind==='changed'
+                ?'Algún producto cambió o ya no corresponde al mismo SKU. Verifica cada línea antes de continuar.'
+                :visiblePosVerification.kind==='unavailable'
+                  ?'No se pudo completar la comprobación. Revisa permisos y conexión; el borrador no ha cambiado.'
+                  :'No se pudo comprobar este borrador. Revisa cantidades y productos antes de repetir.'}
+          </CgState>:null}
+      </Box>
       <Box sx={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:1,mt:1}}>
         <CgButton type="button" variant="outlined" onClick={holdCurrentPosDraft}
-          disabled={posLoading||visiblePosCart.length===0||visiblePosHeld.length>=5} sx={{minHeight:44}}>
+          disabled={posLoading||posChecking||visiblePosCart.length===0||visiblePosHeld.length>=5} sx={{minHeight:44}}>
           Poner carrito en espera
         </CgButton>
         <Typography variant="caption" color="text.secondary">
@@ -349,7 +493,7 @@ function SalesWorkspace({state,context}){
         <Box component="section" aria-label="Carritos POS en espera" sx={{mt:1,display:'grid',gap:1}}>
           {visiblePosHeld.map((held,index)=><Paper key={held.id} variant="outlined" sx={{p:1,display:'flex',flexWrap:'wrap',alignItems:'center',gap:1}}>
             <Typography variant="body2" sx={{flex:'1 1 180px'}}>Carrito {index+1} · {held.lines.length} productos</Typography>
-            <CgButton type="button" size="small" variant="outlined" disabled={posLoading||visiblePosCart.length>0}
+            <CgButton type="button" size="small" variant="outlined" disabled={posLoading||posChecking||visiblePosCart.length>0}
               onClick={()=>resumeHeldPosDraft(held.id)} sx={{minHeight:44}}>Recuperar</CgButton>
             <CgButton type="button" size="small" variant="outlined" disabled={posLoading}
               onClick={()=>discardHeldPosDraft(held.id)} sx={{minHeight:44}}>Descartar</CgButton>
@@ -363,18 +507,24 @@ function SalesWorkspace({state,context}){
               {key:'name',label:'Producto'},
               {key:'quantity',label:'Cantidad',render:(line)=><Box sx={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:1,minWidth:280}}>
                 <CgButton type="button" size="small" variant="outlined" aria-label={`Disminuir una unidad de ${line.name}`}
-                  disabled={posLoading} onClick={()=>stepPosDraftQuantity(line.productId,-1)} sx={{minWidth:44,minHeight:44}}>−1</CgButton>
+                  disabled={posLoading||posChecking} onClick={()=>stepPosDraftQuantity(line.productId,-1)} sx={{minWidth:44,minHeight:44}}>−1</CgButton>
                 <CgTextField size="small" label={`Cantidad de ${line.sku}`} inputProps={{inputMode:'decimal'}}
                   value={posQuantityInputs[line.productId]??line.quantity}
-                  onChange={(event)=>setPosQuantityInputs((current)=>({...current,[line.productId]:event.target.value}))}
-                  disabled={posLoading} sx={{width:148}}/>
+                  onChange={(event)=>{invalidatePosVerification();setPosQuantityInputs((current)=>({...current,[line.productId]:event.target.value}));}}
+                  disabled={posLoading||posChecking} sx={{width:148}}/>
                 <CgButton type="button" size="small" variant="outlined" aria-label={`Aumentar una unidad de ${line.name}`}
-                  disabled={posLoading} onClick={()=>stepPosDraftQuantity(line.productId,1)} sx={{minWidth:44,minHeight:44}}>+1</CgButton>
-                <CgButton type="button" size="small" variant="outlined" disabled={posLoading}
+                  disabled={posLoading||posChecking} onClick={()=>stepPosDraftQuantity(line.productId,1)} sx={{minWidth:44,minHeight:44}}>+1</CgButton>
+                <CgButton type="button" size="small" variant="outlined" disabled={posLoading||posChecking}
                   onClick={()=>applyPosDraftQuantity(line.productId)} sx={{minHeight:44}}>Aplicar</CgButton>
               </Box>},
-              {key:'actions',label:'Acciones',render:(line)=><CgButton type="button" size="small" variant="outlined"
-                disabled={posLoading} onClick={()=>removePosDraftProduct(line.productId)} sx={{minHeight:44}}>Quitar</CgButton>}
+              {key:'actions',label:'Acciones',render:(line)=><Box sx={{display:'flex',flexWrap:'wrap',gap:1}}>
+                <CgButton type="button" size="small" variant="outlined" disabled={posLoading||posChecking}
+                  onClick={()=>togglePosFavoriteFromCart(line)} sx={{minHeight:44}}>
+                  {visiblePosFavorites.some((favorite)=>favorite.id===line.productId)?'Quitar favorito':'Favorito'}
+                </CgButton>
+                <CgButton type="button" size="small" variant="outlined"
+                  disabled={posLoading||posChecking} onClick={()=>removePosDraftProduct(line.productId)} sx={{minHeight:44}}>Quitar</CgButton>
+              </Box>}
             ]}/>
         </Box>
         :<CgState severity="info" title="Carrito vacío">Escanea o escribe un código para preparar líneas de venta sin efectos financieros.</CgState>}
