@@ -36,24 +36,32 @@ router.get('/health/prescriptions', requirePermission('health.manage'), asyncHan
 
 router.post('/health/prescriptions', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const body = carePrescriptionSchema.parse(req.body || {});
+  const tenantId=context(req).tenantId;
+  // One statement enforces the tenant/patient/encounter/provider boundary
+  // atomically. An optional foreign or mismatched reference must not create
+  // even an orphan prescription when the caller knows another tenant's ID.
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CarePrescription"
       ("id", "tenantId", "patientId", "encounterId", "professionalId", "medication", "dose", "frequency", "duration", "instructions", "status", "createdAt")
-    VALUES
-      (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+    SELECT gen_random_uuid()::text, $1, p."id", $3, $4, $5, $6, $7, $8, $9, $10, now()
+    FROM public."CarePatient" p
+    WHERE p."tenantId"=$1 AND p."id"=$2 AND p."active"=true
+      AND ($3::text IS NULL OR EXISTS (
+        SELECT 1 FROM public."CareEncounter" e
+        WHERE e."tenantId"=$1 AND e."id"=$3 AND e."patientId"=p."id"
+      ))
+      AND ($4::text IS NULL OR EXISTS (
+        SELECT 1 FROM public."CareProfessional" pr
+        WHERE pr."tenantId"=$1 AND pr."id"=$4
+      ))
     RETURNING *
   `,
-    context(req).tenantId,
-    body.patientId,
-    body.encounterId || null,
-    body.professionalId || null,
-    body.medication,
-    body.dose || null,
-    body.frequency || null,
-    body.duration || null,
-    body.instructions || null,
-    body.status
+    tenantId, body.patientId, body.encounterId || null,
+    body.professionalId || null, body.medication,
+    body.dose || null, body.frequency || null, body.duration || null,
+    body.instructions || null, body.status
   );
+  if (!rows.length) throw new HttpError(422,'Paciente, consulta o profesional inválidos para el tenant activo.');
   ok(res, one(rows), 201);
 }));
 
