@@ -13,7 +13,17 @@ function prepareCompleteEvidence(dir,file,sha,evidence='proof.log'){
   assert.equal(run(['init',`--file=${file}`,'--force','--operator=QA'],sha).status,0);
   for(const [id,mode] of [['browser','pwa-browser'],['pwa','pwa-standalone'],['apk','android-apk']])assert.equal(run(['add-env',`--file=${file}`,`--id=${id}`,`--mode=${mode}`,'--device=Device',`--source-session-hash=${sourceHash}`,`--lab-session-hash=${labHash}`,...(mode==='android-apk'?['--apk-version=1.13.0-rc3','--apk-sha256='+('a'.repeat(64))]:[])],sha).status,0);
   const raw=JSON.parse(fs.readFileSync(file,'utf8'));
-  for(const env of raw.environments)for(const scenario of catalog.scenarios)env.scenarios[scenario.id]={status:'PASS',severity:null,notes:'verified',evidence:[evidence]};
+  const dayOne='day-one.log', dayTwo='day-two.log';
+  fs.writeFileSync(path.join(dir,dayOne),'synthetic separate day 1 fixture');
+  fs.writeFileSync(path.join(dir,dayTwo),'synthetic separate day 2 fixture');
+  const observed1=new Date(Date.now()-3*86400000).toISOString();
+  const observed2=new Date(Date.now()-1*86400000).toISOString();
+  for(const env of raw.environments)for(const scenario of catalog.scenarios){
+    const first=scenario.id==='source-to-lab-e2e-day-1', second=scenario.id==='source-to-lab-e2e-day-2';
+    env.scenarios[scenario.id]={status:'PASS',severity:null,notes:'verified',
+      evidence:[first?dayOne:second?dayTwo:evidence],
+      ...((first||second)?{observedAtUtc:first?observed1:observed2}:{})};
+  }
   raw.invariants={sourceReadOnly:'PASS',labOnlyWriteDestination:'PASS',sessionFallbackSafe:'PASS'};
   raw.invariantEvidence={sourceReadOnly:[evidence],labOnlyWriteDestination:[evidence],sessionFallbackSafe:[evidence]};
   fs.writeFileSync(file,`${JSON.stringify(raw,null,2)}\n`);

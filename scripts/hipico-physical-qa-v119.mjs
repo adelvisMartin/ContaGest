@@ -73,6 +73,43 @@ function collectEvidenceFiles(result,dir){
   }
   return{evidenceFiles,errors};
 }
+// Two claimed SOURCE→LAB test days must be backed by observations made at
+// least 24 hours apart AND distinct physical artifacts; one reused file is
+// not evidence of two separate real-world sessions.
+function twoDayEvidenceStatus(result,evidenceFiles,clockMs=Date.now()){
+  const errors=[];
+  const dayIds=['source-to-lab-e2e-day-1','source-to-lab-e2e-day-2'];
+  const utc=/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
+  const parseObserved=(row,label)=>{
+    const value=row?.observedAtUtc;
+    if(typeof value!=='string'||!utc.test(value)){
+      errors.push(label+': observedAtUtc UTC canónico requerido');
+      return null;
+    }
+    const millis=Date.parse(value);
+    if(!Number.isFinite(millis)||new Date(millis).toISOString()!==value||millis>clockMs){
+      errors.push(label+': observedAtUtc inválido/futuro');
+      return null;
+    }
+    return millis;
+  };
+  for(const env of result.environments||[]){
+    if(dayIds.some(id=>env.scenarios?.[id]?.status!=='PASS'))continue;
+    const [first,second]=dayIds.map(id=>parseObserved(env.scenarios[id],env.id+'/'+id));
+    if(first!==null&&second!==null&&second-first<24*60*60*1000)
+      errors.push(env.id+': se requieren dos jornadas distintas separadas por >=24 horas');
+    const [firstFiles,secondFiles]=dayIds.map(id=>evidenceFiles
+      .filter(item=>item.environment===env.id&&item.scenario===id)
+      .map(item=>item.sha256));
+    // Both days must contribute independent evidence content, not aliases or
+    // duplicated files. Hash comparison detects copies under new file names.
+    if(!firstFiles.length||!secondFiles.length||
+       !firstFiles.some(hash=>!secondFiles.includes(hash))||
+       !secondFiles.some(hash=>!firstFiles.includes(hash)))
+      errors.push(env.id+': jornadas 1/2 sin evidencias materiales SHA-256 independientes');
+  }
+  return{complete:errors.length===0,errors};
+}
 function validSessionHash(value){return /^[a-f0-9]{64}$/i.test(String(value||''));}
 function validate(result){
   const errors=[];const allowed=new Set(catalog.allowedStatuses);
@@ -130,7 +167,13 @@ function writeReleaseEvidence(final,target){
     completedAt:final.completedAt,
     operator:final.operator,
     requiredModes:final.requiredModes,
-    environments:(final.environments||[]).map((env)=>({id:env.id,mode:env.mode,device:env.device})),
+    environments:(final.environments||[]).map((env)=>({
+      id:env.id,mode:env.mode,device:env.device,
+      physicalDays:{
+        day1ObservedAtUtc:env.scenarios?.['source-to-lab-e2e-day-1']?.observedAtUtc,
+        day2ObservedAtUtc:env.scenarios?.['source-to-lab-e2e-day-2']?.observedAtUtc
+      }
+    })),
     invariants:final.invariants,
     summary:final.summary,
     evidenceFiles:final.evidenceFiles
@@ -172,7 +215,7 @@ if(command==='record'){
   if(!env){console.error(`Environment no encontrado: ${envId}`);process.exit(2);}
   if(!catalog.scenarios.some((item)=>item.id===scenarioId)){console.error(`Scenario no encontrado: ${scenarioId}`);process.exit(2);}
   if(!catalog.allowedStatuses.includes(status)){console.error(`Status inválido: ${status}`);process.exit(2);}
-  env.scenarios[scenarioId]={status,severity:value('severity'),notes:value('notes')||'',evidence:parseEvidenceList(value('evidence'))};
+  env.scenarios[scenarioId]={status,severity:value('severity'),notes:value('notes')||'',evidence:parseEvidenceList(value('evidence')),...(value('observed-at')?{observedAtUtc:value('observed-at')}:{})};
   writeManifest(result,target);console.log(JSON.stringify({env:envId,scenario:scenarioId,status}));process.exit(0);
 }
 if(command==='invariant'){
@@ -188,13 +231,15 @@ const errors=validate(result);if(errors.length){console.error(errors.join('\n'))
 let report=summary(result);
 const material=collectEvidenceFiles(result,path.dirname(target));
 const materialEvidenceComplete=report.evidenceComplete&&report.invariantEvidenceComplete&&material.errors.length===0;
-report={...report,materialEvidenceComplete,materialEvidenceErrors:material.errors};
+const twoDay=twoDayEvidenceStatus(result,material.evidenceFiles);
+report={...report,materialEvidenceComplete,materialEvidenceErrors:material.errors,
+  twoDayEvidenceComplete:twoDay.complete,twoDayEvidenceErrors:twoDay.errors};
 // A status preview must never show release PASS for evidence belonging to
 // another candidate, even though `check` also rejects the mismatch strictly.
 const candidateShaMatchesCurrent=/^[a-f0-9]{40}$/i.test(sha)&&
   String(result.candidateSha||'').toLowerCase()===sha;
 report.candidateShaMatchesCurrent=candidateShaMatchesCurrent;
-if(report.releasePhysicalGate==='PASS'&&(!materialEvidenceComplete||!candidateShaMatchesCurrent))
+if(report.releasePhysicalGate==='PASS'&&(!materialEvidenceComplete||!twoDay.complete||!candidateShaMatchesCurrent))
   report.releasePhysicalGate='NOT_READY';
 if(command==='status'){console.log(JSON.stringify(report,null,2));process.exit(0);}
 if(command==='check'){
