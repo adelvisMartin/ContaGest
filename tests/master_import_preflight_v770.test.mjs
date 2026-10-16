@@ -1,0 +1,13 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {preflightMasterCsv as preflight} from '../backend/src/modules/portability/master-import-preflight.mjs';
+const req=(csv='rif,name,email\nJ1,Proveedor Uno,uno@example.com\nJ2,Proveedor Dos,dos@example.com\n')=>({kind:'suppliers',tenantId:'T1',csv});
+test('valid CSV preview never commits records',()=>{const x=preflight(req());assert.equal(x.accepted,2);assert.equal(x.canCommit,false);assert.equal(x.fileSha256.length,64)});
+test('duplicate identity is rejected after normalization',()=>{const x=preflight(req('rif,name,email\nj1,U,one@example.com\nJ1,D,two@example.com\n'));assert.equal(x.rejected,1);assert.equal(x.errors[0].code,'DUPLICATE_KEY')});
+test('CSV quote escapes and embedded commas parse',()=>{const x=preflight(req('rif,name,email\nJ1,"López, Pérez",x@example.com\n'));assert.equal(x.accepted,1)});
+test('reject unterminated quotes or trailing payload',()=>{for(const csv of ['rif,name,email\nJ1,"unclosed,x','rif,name,email\nJ1,"name"extra,x\n'])assert.throws(()=>preflight(req(csv)),/IMPORT_CSV_MALFORMED/)});
+test('reject unknown columns and duplicate headings',()=>{for(const csv of ['rif,name,token\nJ1,A,x\n','rif,rif,email\nJ1,A,x\n'])assert.throws(()=>preflight(req(csv)),/IMPORT_HEADER_NOT_ALLOWED/)});
+test('malicious formula cells are flagged without echoing PII',()=>{const x=preflight(req('rif,name,email\nJ1,"=HYPERLINK(""secret"")",x\n'));assert.equal(x.rejected,1);assert.equal(x.errors[0].code,'UNSAFE_CELL');assert.equal(JSON.stringify(x).includes('secret'),false)});
+test('reject cross-scope malformed identifiers',()=>{const x=req();x.tenantId='T1\nT2';assert.throws(()=>preflight(x),/IMPORT_SCOPE_OR_SIZE_INVALID/)});
+test('reject unequal number of columns',()=>{const x=preflight(req('rif,name,email\nJ1,X\n'));assert.equal(x.errors[0].code,'COLUMN_COUNT')});
+test('reject >1 MiB input',()=>{const x=req('rif,name,email\nJ1,'+'A'.repeat(1024*1024));assert.throws(()=>preflight(x),/IMPORT_SCOPE_OR_SIZE_INVALID/)});
+test('immutable output omits importable PII payload',()=>{const x=preflight(req());assert.ok(Object.isFrozen(x));assert.ok(!JSON.stringify(x).includes('Proveedor'))});
