@@ -18,7 +18,7 @@ import { parseReorderSalesOptions, projectReorderSalesEvidence } from './reorder
 import { parseGrossInvoiceLeadTime, projectGrossInvoiceLeadTimeReview } from './gross-invoice-leadtime-review.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
 import { parseAgeingCutoffs } from './configurable-ageing.js';
-import { parseFifoCohortOptions } from './fifo-cohort-drilldown.js';
+import { FifoCohortError, parseFifoCohortOptions } from './fifo-cohort-drilldown.js';
 import { LOT_EXPIRY_RISK_VERSION, expiryUtcBounds, projectLotExpiryRisk } from './lot-expiry-risk.js';
 import { summarizePhysicalOutbound } from './stock-movement-activity.js';
 import { calculateObservedStockCoverage } from './stock-coverage.js';
@@ -304,7 +304,7 @@ router.get('/inventory/ageing', asyncHandler(async (req, res) => {
   } catch (error) {
     if (error instanceof StockAgeingError)
       throw new HttpError(409, 'La antigüedad de stock no se puede reconciliar; se omitió la estimación.', { code: error.code });
-    if (error instanceof TypeError)
+    if (error instanceof FifoCohortError)
       throw new HttpError(409, 'El detalle FIFO no puede reconciliarse con el stock canónico.', {
         code: 'AGEING_COHORT_RECONCILIATION_INVALID'
       });
