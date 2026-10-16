@@ -1,3 +1,4 @@
+import './source-read-startup-denial.mjs';
 import { spawn } from 'node:child_process';
 import { assertSourceAutoReadDenied } from './source-read-policy-gate.mjs';
 
