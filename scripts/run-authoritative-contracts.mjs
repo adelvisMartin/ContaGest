@@ -71,8 +71,8 @@ for(const file of tests){
 }
 
 console.log(`[authoritative-contracts] implementations=${implementations.length} tests=${tests.length} concurrency=${CONTRACT_CONCURRENCY} batchSize=${CONTRACT_BATCH_SIZE}`);
-// QA-only preview instrumentation: ADD checks, never skip/replace canonical gates.
-// This block belongs solely to the disposable QA branch, not any product PR.
+// Extra native checks in preview before the full canonical test suite.
+// Product PRs keep the production runner unchanged.
 const qaFocus=[
   ['985 PG17 workflow contract', ['--test','tests/production_ops_v566_contract.test.mjs']],
   ['638 CRUD TS runtime policy', ['--no-warnings','--experimental-strip-types','--test','tests/crud_factory_hardening_issue_638.test.mjs']],
