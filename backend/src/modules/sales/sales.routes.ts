@@ -12,6 +12,7 @@ import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { ONE, ZERO } from '../../shared/financial/decimal.js';
 import { decidePosScanMatch, normalizePosScanCode } from '../pos/pos-scan-code.js';
+import { PosStockPreviewError, previewPosStock, validatePosStockLines } from '../pos/pos-stock-preview.js';
 import { convertToFunctional, functionalizeBalancedLedgerLines, resolveFxContext } from '../../shared/financial/fx.js';
 import { copyLedgerLineSnapshotsForReversal, getFxPolicy, recordDocumentSnapshot, recordLedgerLineSnapshots } from '../currency/fx.repository.js';
 
@@ -76,6 +77,44 @@ router.get('/pos/product-lookup', requirePermission('sales.view'), asyncHandler(
   if (decision.kind === 'not_found') throw new HttpError(404, 'Producto no encontrado para el código.');
   if (decision.kind === 'ambiguous') throw new HttpError(409, 'Código asociado a más de un producto. Requiere revisión.');
   ok(res, decision.value);
+}));
+
+const posStockSchema = z.object({
+  lines:z.array(z.object({
+    productId:z.string().uuid(),
+    quantity:z.string()
+  }).strict()).min(1).max(100)
+}).strict();
+
+router.post('/pos/stock-preview', requirePermission('sales.view'), validateBody(posStockSchema), asyncHandler(async (req, res) => {
+  // Read-only POS information, never a checkout authorization or inventory lock.
+  res.setHeader('Cache-Control', 'private, no-store');
+  const tenantId = context(req).tenantId;
+  let lines;
+  try {
+    lines = validatePosStockLines(req.body.lines);
+  } catch (error) {
+    if (error instanceof PosStockPreviewError) throw new HttpError(400, 'Carrito POS inválido.', { code:error.code });
+    throw error;
+  }
+
+  const products = await prisma.product.findMany({
+    where:{tenantId,active:true,id:{in:lines.map(line=>line.productId)}},
+    select:{id:true,stock:true,reserved:true}
+  });
+  try {
+    const preview = previewPosStock(lines, products.map(item=>({
+      id:item.id,
+      stock:item.stock.toFixed(3),
+      reserved:item.reserved.toFixed(3)
+    })));
+    ok(res, preview);
+  } catch (error) {
+    if (error instanceof PosStockPreviewError) {
+      throw new HttpError(409, 'La disponibilidad del carrito no puede confirmarse con este catálogo.', { code:error.code });
+    }
+    throw error;
+  }
 }));
 
 router.get('/', requirePermission('sales.view'), asyncHandler(async (req, res) => {
