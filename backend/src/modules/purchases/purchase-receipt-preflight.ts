@@ -11,6 +11,13 @@ export function preparePurchaseReceipt(input:{tenantId:string;actorTenantId:stri
  if(ordered===0n||requested===0n||received>ordered||pending>ordered-received||requested>ordered-received-pending)throw new TypeError('RECEIPT_OVER_RECEIPT_FORBIDDEN');
  const after=received+requested;
  return Object.freeze({tenantId:input.tenantId,orderId:input.orderId,lineId:input.lineId,idempotencyKey:input.idempotencyKey,expectedRevision:input.expectedRevision,proposedRevision:input.expectedRevision+1,
-  requestedExact:exact(requested),receivedAfterExact:exact(after),outstandingAfterExact:exact(ordered-after),availableForFurtherReceiptExact:exact(ordered-after-pending),nextOrderStatus:after===ordered?'received':'partially_received',requiresTenantScopedSerializableTransaction:true as const,
+  requestedExact:exact(requested),receivedAfterExact:exact(after),outstandingAfterExact:exact(ordered-after),availableForFurtherReceiptExact:exact(ordered-after-pending),
+  // Deprecated legacy suggestion: based on ONE line and never proof that the
+  // multi-line PurchaseOrder is globally received.
+  nextOrderStatus:after===ordered?'received':'partially_received',
+  nextLineReceiptStatus:after===ordered?'received':'partially_received',
+  orderWideStatusAuthorized:false as const,
+  requiresOrderWideStatusReconciliation:true as const,
+  requiresTenantScopedSerializableTransaction:true as const,
   persisted:false as const,inventoryMovementAuthorized:false as const,supplierInvoiceAuthorized:false as const,ledgerAuthorized:false as const});
 }
