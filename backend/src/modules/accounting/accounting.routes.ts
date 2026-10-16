@@ -54,16 +54,20 @@ const openItemQuerySchema = z.object({
 router.get('/open-items/readiness', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const args = openItemQuerySchema.parse(req.query);
   const tenantId = context(req).tenantId;
+  const asOfInstant = new Date(args.asOf + 'T23:59:59.999Z');
+  if (asOfInstant.toISOString().slice(0,10) !== args.asOf) {
+    throw new HttpError(422, 'Fecha de corte inválida.', { code: 'OPEN_ITEM_AS_OF_INVALID' });
+  }
   const select = {
     id: true, tenantId: true, number: true, status: true,
     issueDate: true, currency: true, total: true
   } as const;
   const rows = args.kind === 'ar'
     ? await prisma.salesInvoice.findMany({
-      where:{tenantId},select,orderBy:[{issueDate:'desc'},{id:'desc'}],take:args.take+1,skip:args.skip
+      where:{tenantId,issueDate:{lte:asOfInstant}},select,orderBy:[{issueDate:'desc'},{id:'desc'}],take:args.take+1,skip:args.skip
     })
     : await prisma.purchaseInvoice.findMany({
-      where:{tenantId},select,orderBy:[{issueDate:'desc'},{id:'desc'}],take:args.take+1,skip:args.skip
+      where:{tenantId,issueDate:{lte:asOfInstant}},select,orderBy:[{issueDate:'desc'},{id:'desc'}],take:args.take+1,skip:args.skip
     });
   const hasMore = rows.length > args.take;
   const report = projectOpenItemCoverage({
