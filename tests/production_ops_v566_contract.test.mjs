@@ -55,9 +55,9 @@ test('#566 migration promotion is fail-closed and deployment workflow has isolat
   assert.match(workflow, /migration-state-v566\.mjs/);
   // The recovery target must itself satisfy the ephemeral DB allowlist.
   // A missing suffix risks an accidental non-disposable restore target.
-  assert.match(workflow, /createdb -h 127\\.0\\.0\\.1 -U postgres contagest_recovery_v566_restore/);
-  assert.match(workflow, /pg_restore[^\\n]* -d contagest_recovery_v566_restore /);
-  assert.match(workflow, /psql[^\\n]* -d contagest_recovery_v566_restore -Atc/);
+  assert.match(workflow, /createdb -h 127\.0\.0\.1 -U postgres contagest_recovery_v566_restore/);
+  assert.match(workflow, /pg_restore[^\n]* -d contagest_recovery_v566_restore /);
+  assert.match(workflow, /psql[^\n]* -d contagest_recovery_v566_restore -Atc/);
   assert.doesNotMatch(workflow, /contagest_recovery_v566(?!_restore)/);
   assert.match(workflow, /pg_dump/);
   assert.match(workflow, /pg_restore/);
