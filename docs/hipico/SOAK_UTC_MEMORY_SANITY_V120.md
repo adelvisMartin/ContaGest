@@ -17,7 +17,7 @@ node --test tests/hipico_soak_metric_physical_v120.test.mjs
 node --check scripts/hipico-soak-metric-integrity-v120.mjs
 ```
 
-Resultado: **9/9 PASS** en el aislamiento local (5 tests nuevos y 4 tests existentes de `hipico_soak_temporal_budget_v120.test.mjs`, copiados sin cambios de un archivo ya fusionado en main), source exactamente correspondiente al Git blob `358d03e9b3655e8ba624dcf48c072e690a6fb4c5`, test blob `e65a4f4568a7540c489519f2b55482b67c75824b`. La prueba de memoria modifica también las tasas derivadas, para demostrar que el rechazo procede de incoherencia física y no de un error aritmético. Mutación negativa retirando el guard de memoria: **1 test FAIL esperado**; código restaurado: **5/5 PASS**.
+Resultado: **9/9 PASS** en el aislamiento local (5 tests nuevos y 4 tests existentes de `hipico_soak_temporal_budget_v120.test.mjs`, reproducidos con los mismos casos y aserciones del archivo ya fusionado en main), source exactamente correspondiente al Git blob `358d03e9b3655e8ba624dcf48c072e690a6fb4c5`, test blob `e65a4f4568a7540c489519f2b55482b67c75824b`. La prueba de memoria modifica también las tasas derivadas, para demostrar que el rechazo procede de incoherencia física y no de un error aritmético. Mutación negativa retirando el guard de memoria: **1 test FAIL esperado**; código restaurado: **5/5 PASS**.
 
 No se ha ejecutado un soak de 24–72 horas, instalación de QA en Windows/Android, sesiones reales, backend completo ni acciones remotas en esta ejecución. Este incremento valida metadatos de un reporte, **no prueba que las mediciones procedan de una jornada real**. Pruebas globales existentes de #120 y #839 deben correrse en un checkout completo y corroborar los archivos originales firmados/ligados a candidate SHA.
 
