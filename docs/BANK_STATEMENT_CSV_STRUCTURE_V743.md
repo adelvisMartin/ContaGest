@@ -1,0 +1,9 @@
+# #743 · Validación estricta de estructura CSV bancaria
+
+**Incremento acotado** del importador de conciliación bancaria. El backend continúa usando su autoridad existente `bank-reconciliation.service.ts` para deduplicación, estado de conciliación, decimal, audit y posting: no se crea otro motor bancario.
+
+El nuevo `statement-csv-structure.ts` separa la **lectura estructural** del CSV de la interpretación de fecha/importe. Rechaza comillas sin cerrar, comillas dentro de celdas sin entrecomillar y texto añadido después de la comilla de cierre. Respeta escape de comillas dobles, comas y saltos de línea dentro de celdas citadas, finales de línea CRLF y campos vacíos. El adaptador existente `statement-parser.ts` transforma el error en HTTP 422 `BANK_STATEMENT_CSV_MALFORMED` y rechaza filas con distinta cantidad de columnas de sus cabeceras, evitando asignación silenciosamente errónea de importes.
+
+**Pruebas ejecutadas:** Node v22.16 `node --experimental-strip-types --test tests/bank_statement_csv_structure_v743.test.mjs` => 9/9 PASS sobre archivos cuyo Git blob SHA coincidió con la rama; TypeScript 5.8 global aislado strict => PASS. El adaptador no pudo verificarse con `npm ci`/PostgreSQL 17/HTTP porque no hay checkout completo con dependencias ni conexión de base real; son NOT_EXECUTED, no PASS. En producción **no se alteran** modelos de banco, efectos fiscales, ledger, reversos ni workflows CI.
+
+**Rollback:** revertir los cuatro archivos, sin migración ni tocar datos. Ciertos CSV anteriormente aceptados pese a estructura inválida producirán ahora HTTP 422 intencionalmente. Integración real de los extractos, estados y reconciliación GL, RBAC, dos tenants y QA quedan pendientes en #743; **issue OPEN** hasta DoD. `SOURCE_REUSE=NONE`.
