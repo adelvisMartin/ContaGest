@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, copyFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import {
   SOURCE_AUTO_READ_POLICY_NO_GO,
@@ -112,4 +115,26 @@ test('#1011: no remote IO or service credential is in the read-gate implementati
   const code = source('source-read-policy-gate.mjs');
   assert.doesNotMatch(code, /\bfetch\s*\(|launchPersistentContext|process\.env\s*\[/);
   assert.doesNotMatch(code, /service_role|SUPABASE_SERVICE_ROLE_KEY|HIPICO_GROUP_BRIDGE_TOKEN/);
+});
+
+test('#1011: ESM first-import denial prevents execution of a side-effecting dependency', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hipico-source-read-'));
+  try {
+    copyFileSync(new URL('../src/source-read-policy-gate.mjs', import.meta.url), join(root, 'source-read-policy-gate.mjs'));
+    copyFileSync(new URL('../src/source-read-startup-denial.mjs', import.meta.url), join(root, 'startup.mjs'));
+    const marker = join(root, 'unauthorized-source-profile');
+    writeFileSync(join(root, 'side-effect.mjs'),
+      "import { writeFileSync } from 'node:fs'; writeFileSync(" + JSON.stringify(marker) + ", 'bad');\n");
+    writeFileSync(join(root, 'entry.mjs'),
+      "import './startup.mjs';\nimport './side-effect.mjs';\n");
+    const result = spawnSync(process.execPath, [join(root, 'entry.mjs')], {
+      env: {...process.env, HIPICO_SOURCE_READ_ALLOWED: 'true', HIPICO_RUNTIME_MODE: 'shadow-local'},
+      timeout: 5000, encoding: 'utf8'
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /SOURCE_AUTO_READ_POLICY_NO_GO/);
+    assert.equal(existsSync(marker), false, 'dependency effects must be unreachable');
+  } finally {
+    rmSync(root, {recursive: true, force: true});
+  }
 });
