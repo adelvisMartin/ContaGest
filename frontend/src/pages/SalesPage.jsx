@@ -41,6 +41,9 @@ function SalesWorkspace({state,context}){
   const [posDraftError,setPosDraftError]=useState('');
   const [posChecking,setPosChecking]=useState(false);
   const [posVerification,setPosVerification]=useState(null);
+  const [posStockPreview,setPosStockPreview]=useState(null);
+  const [posStockChecking,setPosStockChecking]=useState(false);
+  const posStockBusyRef=useRef(false);
   const posVerifyBusyRef=useRef(false);
   const posCartRevisionRef=useRef(0);
   const [posCart,setPosCart]=useState([]);
@@ -56,6 +59,7 @@ function SalesWorkspace({state,context}){
   const posTenantRef=useRef(posTenantId);
   const visiblePosCart=posTenantRef.current===posTenantId?posCart:[];
   const visiblePosVerification=posTenantRef.current===posTenantId?posVerification:null;
+  const visiblePosStockPreview=posTenantRef.current===posTenantId?posStockPreview:null;
   const visiblePosHeld=posTenantRef.current===posTenantId?posHeld:[];
   const visiblePosFavorites=posTenantRef.current===posTenantId?posFavorites:[];
   React.useEffect(()=>{
@@ -63,6 +67,7 @@ function SalesWorkspace({state,context}){
     posCartRef.current=[];
     posCartRevisionRef.current+=1;
     setPosVerification(null);
+    setPosStockPreview(null);
     setPosCart([]);
     setPosNames({});
     setPosQuantityInputs({});
@@ -149,6 +154,52 @@ function SalesWorkspace({state,context}){
   function invalidatePosVerification(){
     posCartRevisionRef.current+=1;
     setPosVerification(null);
+    setPosStockPreview(null);
+  }
+
+  async function checkPosStockPreview(){
+    if(posStockBusyRef.current || posBusyRef.current || posVerifyBusyRef.current
+        || posLoading || posChecking || posTenantRef.current!==BackendApi.tenantId)return;
+    const snapshot=posCartRef.current;
+    if(!snapshot.length){
+      setPosDraftError('Agrega productos antes de consultar existencias.');
+      return;
+    }
+    if(snapshot.some((line)=>(posQuantityInputs[line.productId]??line.quantity)!==line.quantity)){
+      setPosDraftError('Aplica las cantidades pendientes antes de consultar existencias.');
+      return;
+    }
+    const tenantAtStart=BackendApi.tenantId;
+    const revision=posCartRevisionRef.current;
+    const isCurrent=()=>tenantAtStart===BackendApi.tenantId
+      && posTenantRef.current===tenantAtStart
+      && posCartRevisionRef.current===revision
+      && posCartRef.current===snapshot;
+    posStockBusyRef.current=true;
+    setPosStockChecking(true);
+    setPosStockPreview(null);
+    setPosDraftError('');
+    try{
+      const result=await BackendApi.post('/sales/pos/stock-preview',{
+        lines:snapshot.map((line)=>({productId:line.productId,quantity:line.quantity}))
+      });
+      if(!isCurrent())return;
+      if(!result || result.readOnly!==true || typeof result.ready!=='boolean'
+        || !Array.isArray(result.lines) || result.lines.length!==snapshot.length
+        || result.lines.some((line,index)=>line.productId!==snapshot[index].productId
+          || line.requested!==snapshot[index].quantity
+          || !['available','shortage'].includes(line.status)
+          || !/^(?:0|[1-9]\d*)\.\d{3}$/.test(line.available)
+          || !/^(?:0|[1-9]\d*)\.\d{3}$/.test(line.shortfall))){
+        throw new Error('POS_STOCK_INVALID_PREVIEW');
+      }
+      setPosStockPreview(result);
+    }catch{
+      if(isCurrent())setPosDraftError('No se pudieron consultar las existencias del servidor. El carrito sigue sin modificar.');
+    }finally{
+      posStockBusyRef.current=false;
+      setPosStockChecking(false);
+    }
   }
 
   async function verifyCurrentPosDraft(){
@@ -479,6 +530,31 @@ function SalesWorkspace({state,context}){
                   ?'No se pudo completar la comprobación. Revisa permisos y conexión; el borrador no ha cambiado.'
                   :'No se pudo comprobar este borrador. Revisa cantidades y productos antes de repetir.'}
           </CgState>:null}
+      </Box>
+      <Box component="section" aria-label="Disponibilidad orientativa de stock" sx={{mt:1,display:'grid',gap:1}}>
+        <CgButton type="button" variant="outlined" onClick={()=>void checkPosStockPreview()}
+          disabled={posStockChecking||posChecking||posLoading||visiblePosCart.length===0}
+          sx={{minHeight:44,justifySelf:'start'}}>
+          {posStockChecking?'Consultando existencias…':'Consultar stock disponible'}
+        </CgButton>
+        {visiblePosStockPreview?
+          <>
+            <CgState severity={visiblePosStockPreview.ready?'info':'warning'}
+              title={visiblePosStockPreview.ready?'Stock orientativo suficiente':'Hay cantidades sin disponibilidad'}>
+              Consulta momentánea del inventario global descontando reservas. No bloquea stock, no valida lotes/sedes y no autoriza el cobro.
+            </CgState>
+            <Box sx={{maxWidth:'100%',overflowX:'auto'}}>
+              <CgDataTable rows={visiblePosStockPreview.lines.map((line)=>({
+                ...line,sku:posNames[line.productId]?.sku||'—'
+              }))} columns={[
+                {key:'sku',label:'SKU'},
+                {key:'requested',label:'Solicitado'},
+                {key:'available',label:'Disponible'},
+                {key:'shortfall',label:'Faltante'},
+                {key:'status',label:'Resultado',render:(line)=>line.status==='available'?'Orientativamente disponible':'Faltante'}
+              ]}/>
+            </Box>
+          </>:null}
       </Box>
       <Box sx={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:1,mt:1}}>
         <CgButton type="button" variant="outlined" onClick={holdCurrentPosDraft}
