@@ -58,9 +58,25 @@ Registrar:
 
 No guardar QR, cookies, tokens, números personales, chats completos ni identificadores reales innecesarios.
 
-## Dos jornadas
+## Dos jornadas — fechas y evidencia independientes (hardening #119)
 
-`source-to-lab-e2e-day-1` y `day-2` son independientes. Una sola prueba no satisface el DoD.
+`source-to-lab-e2e-day-1` y `source-to-lab-e2e-day-2` **no pueden apuntar a la misma grabación**. Para cada entorno/device que marque ambos escenarios `PASS`, se requieren:
+
+- `observedAtUtc` para ambos escenarios, en formato ISO UTC canónico `YYYY-MM-DDTHH:mm:ss.sssZ`, nunca fecha futura;
+- jornada 2 posterior a jornada 1 con separación **mínima de 24 horas**;
+- evidencia material con **huellas SHA-256 diferentes** en ambos días. Copiar el mismo video bajo otro nombre no acredita dos jornadas;
+- todas las demás exigencias habituales: operador, identidades hash SOURCE/LAB separadas, tres modos, escenario completo, APK versión/hash, SHA candidato vigente, y no saltarse los bloqueos de política #1011.
+
+Registrar desde la CLI (ejemplo de sintaxis, **no prueba ejecutada**):
+
+```sh
+node scripts/hipico-physical-qa-v119.mjs record --env=apk --scenario=source-to-lab-e2e-day-1 --status=PASS --evidence=day1-sanitized.log --observed-at=2026-10-14T14:00:00.000Z
+node scripts/hipico-physical-qa-v119.mjs record --env=apk --scenario=source-to-lab-e2e-day-2 --status=PASS --evidence=day2-sanitized.log --observed-at=2026-10-15T15:00:00.000Z
+```
+
+`status` y `check` devuelven `twoDayEvidenceComplete` y `twoDayEvidenceErrors`; si hay evidencia duplicada o faltan fechas la puerta es `NOT_READY`. **Esto solo valida metadatos y archivos aportados por la persona, no demuestra que se efectuaran pruebas físicas.** La autorización para automatizar SOURCE sigue denegada por #1011; por tanto, si el escenario requiere esa conexión, debe registrarse `BLOCKED`, nunca fabricarse `PASS`.
+
+Los fixtures automáticos del repositorio son sintéticos y prueban el validador, no teléfonos, sesiones ni dos jornadas reales.
 
 ## Estado real actual
 
