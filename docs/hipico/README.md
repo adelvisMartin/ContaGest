@@ -17,7 +17,8 @@ Se preservan Resumen, Captura, Participantes, Chat WhatsApp, Adelantadas, Histor
 - `TESTING.md`: matriz y evidencia.
 - `DEPLOYMENT.md`: Preview/Production/rollback.
 - `MODERNIZATION_V1.md`: estado de implementación y fases abiertas.
-- `LIVE_INGESTION.md` y `SHADOW_VALIDATION.md`: WhatsApp/Bridge.
+- `LIVE_INGESTION.md` y `SHADOW_VALIDATION.md`: WhatsApp/Bridge (contrato histórico sujeto a NO-GO para fuente real).
+- [`SOURCE_AUTO_READ_NO_GO_V1011.md`](SOURCE_AUTO_READ_NO_GO_V1011.md): bloqueo técnico independiente de lectura automatizada en WhatsApp Messenger, también para histórico/servidor y captura de grupos; LAB sólo sintético offline.
 - `OFFLINE_AND_RECOVERY.md`: continuidad operativa.
 - `RELEASE_CHECKLIST.md`: release gate.
 - [`WHATSAPP_RECREATIONAL_BOT_SCOPE_2026-10-15.md`](WHATSAPP_RECREATIONAL_BOT_SCOPE_2026-10-15.md): alcance aprobado del chatbot en grupo privado recreativo, plan LAB/manual y gate de Messenger.
