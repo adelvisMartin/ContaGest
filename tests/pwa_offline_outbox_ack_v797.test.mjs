@@ -46,7 +46,7 @@ test('#797 rejected Promise retains record and stops ordered flush',async()=>{
 });
 test('#797 ambiguous responses cannot be acknowledged',()=>{
  const h=harness([]);
- for(const response of [null,undefined,false,{ok:false},{delivered:false},{status:400}])
+ for(const response of [null,undefined,false,{},'OK',{ok:false},{delivered:false},{status:400}])
   assert.throws(()=>h.assertOfflineDeliveryAcknowledged(response),/OFFLINE_DELIVERY_NOT_ACKNOWLEDGED/);
 });
 test('#797 gym workout mutation remains disabled absent idempotent server consumer',async()=>{
@@ -54,7 +54,7 @@ test('#797 gym workout mutation remains disabled absent idempotent server consum
  assert.doesNotMatch(source,/['"]gym\.workout['"]\s*:/);
  assert.match(source,/'analytics.event': Object\.freeze/);
  await assert.rejects(h.enqueueOfflineOperation({session:h.session,operation:'gym.workout.create',
-    payload:{sessionId:'x'},idempotencyKey:'EVENT-0003'}),/OFFLINE_OPERATION_NOT_ALLOWED/);
+    payload:{sessionId:'x'},idempotencyKey:'EVENT-0003'}),error=>error.code==='OFFLINE_OPERATION_NOT_ALLOWED');
 });
 test('#797 duplicate queued event uses indexedDB add, never destructive put',()=>{
  assert.match(source,/store\.add\(record\)/);
