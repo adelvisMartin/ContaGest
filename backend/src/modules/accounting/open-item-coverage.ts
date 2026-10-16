@@ -35,6 +35,7 @@ export function projectOpenItemCoverage(input:OpenItemEvidenceInput) {
        !STATES.has(row.status) || typeof row.issueDate!=='string' ||
        !ISO.test(row.issueDate) || !Number.isFinite(Date.parse(row.issueDate)) ||
        new Date(row.issueDate).toISOString()!==row.issueDate ||
+       row.issueDate.slice(0,10)>input.asOf ||
        !CURRENCY.test(row.currency) || !MONEY.test(row.totalExact))fail();
     seen.add(row.id);
     return Object.freeze({
