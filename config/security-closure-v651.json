@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 651,
+  "controls": [
+    {"id":"media-bola","issue":569,"owner":"media signed URL authority #569","checks":["object-authorization","tenant-a-b-negative"]},
+    {"id":"health-disclosure","issue":570,"owner":"health information disclosure authority #570","checks":["no-sensitive-response","underprivileged-denial"]},
+    {"id":"runtime-tenant-rls","issue":739,"owner":"trusted runtime tenant/RLS #739 #843 #845 #846","checks":["tenant-a-b-select","tenant-b-a-select","tenant-cross-write"]},
+    {"id":"auth-sessions","issue":851,"owner":"historical #636 plus session-surface follow-up #851 #844","checks":["revoked-session","cookie-surface-purpose"]},
+    {"id":"tenant-api","issue":641,"owner":"tenant adversarial matrix #641","checks":["underprivileged-role","cross-tenant-resource"]},
+    {"id":"infra-secrets","issue":648,"owner":"infrastructure/runtime dependency #648","checks":["no-client-secret","safe-image-runtime"]},
+    {"id":"telemetry-redaction","issue":650,"owner":"canonical telemetry/Problem Details #650 #979","checks":["redaction-sentinel","error-contract-v2"]},
+    {"id":"async-tenant","issue":853,"owner":"job/outbox #853 and notifications #854","checks":["background-tenant-boundary","background-secret-redaction"]},
+    {"id":"integration-replay","issue":772,"owner":"provider adapters and signed webhook #772","checks":["signature-negative","replay-negative"]},
+    {"id":"security-backlog","issue":651,"owner":"security verification umbrella #651","checks":["all-findings-owned","release-blockers-reviewed"]}
+  ]
+}
