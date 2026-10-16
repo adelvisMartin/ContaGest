@@ -110,6 +110,14 @@ export const evaluateGymProgression = (input:GymProgressionEvaluationInput) => {
     return base;
   }
 
+  // The request schema checks this too, but domain consumers may call the
+  // evaluator directly. Contradictory effort must never trigger a reset or
+  // a load recommendation even when the failure counter is high.
+  if(!isRirRpePairCoherent(input.performance.rir,input.performance.rpe)){
+    base.reasons.push('incoherent_effort_evidence');
+    return base;
+  }
+
   if(input.performance.consecutiveMisses>=stallAfter){
     base.action='reset_load';
     base.next.loadKg=roundToIncrement(currentLoad*(1-resetPct/100),increment);
