@@ -23,9 +23,11 @@ export type PosStockPreviewErrorCode =
   | 'DUPLICATE_STOCK_ROW' | 'INVALID_DATA';
 
 export class PosStockPreviewError extends Error {
-  constructor(public readonly code:PosStockPreviewErrorCode) {
+  readonly code:PosStockPreviewErrorCode;
+  constructor(code:PosStockPreviewErrorCode) {
     super('POS_STOCK_' + code);
     this.name = 'PosStockPreviewError';
+    this.code = code;
   }
 }
 
