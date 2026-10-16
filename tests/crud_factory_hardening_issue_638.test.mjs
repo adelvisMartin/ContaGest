@@ -103,7 +103,11 @@ test('#638: router has one bounded delegate authority, strict Zod and tenant sco
   const policy = read('backend/src/modules/crud-policy.ts');
   assert.doesNotMatch(factory, /as any|tenantScoped\s*\?/);
   assert.doesNotMatch(manifest, /model:'(?:client|supplier|product|bankAccount|taxPeriod)' as any/);
-  assert.equal([...manifest.matchAll(/router: createCrudRouter\(/g)].length, 5);
+  // One client router is now registered through a named constant while the
+  // other four remain inline. Count model delegates, not incidental layout.
+  const crudModels=[...manifest.matchAll(/createCrudRouter\\(\\{\\s*model:'(client|supplier|product|bankAccount|taxPeriod)'/g)].map((match)=>match[1]);
+  assert.equal(crudModels.length, 5);
+  assert.deepEqual([...new Set(crudModels)].sort(), ['bankAccount','client','product','supplier','taxPeriod']);
   assert.match(factory, /schema\.strict\(\)/);
   assert.match(factory, /schema\.partial\(\)\.strict\(\)/);
   assert.match(factory, /data: \{ \.\.\.req\.body, tenantId: ctx\.tenantId \}/);
