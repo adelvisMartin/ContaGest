@@ -34,7 +34,7 @@ export function buildFiscalBookReadiness(input: Readonly<{
     return Object.freeze({ sourceId: row.id, number: row.number,
       issueDate: row.issueDate, sourceStatus: row.status,
       blockers: Object.freeze(reasons) });
-  }).sort((a, b) => a.sourceId.localeCompare(b.sourceId));
+  }).sort((a, b) => a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0);
   const digest = createHash('sha256').update(JSON.stringify({
     tenantId: input.tenantId, fiscalPeriod: input.fiscalPeriod, book: input.book, evidence,
   }), 'utf8').digest('hex');
