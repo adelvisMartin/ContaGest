@@ -33,7 +33,9 @@ export function projectEntitlementLedger(input) {
   const tenantId=uuid(input.tenantId,'TENANT'), entitlementId=uuid(input.entitlementId,'ENTITLEMENT'),
     beneficiaryId=uuid(input.beneficiaryId,'BENEFICIARY');
   if(!Array.isArray(input.events)||input.events.length<1||input.events.length>10000)throw new EntitlementProjectionError('INVALID_EVENTS');
-  let balance=0n,granted=0n,previous=0,grantCount=0;
+  // A RELEASE restores only a previous CONSUME. Refunded/expired rights are
+  // irrevocable here; recovering those needs a distinct authorized event.
+  let balance=0n,granted=0n,consumedOutstanding=0n,previous=0,grantCount=0;
   const eventIds=new Set(),effects=new Set();
   for(const row of input.events){
     if(!row||typeof row!=='object'||Array.isArray(row))throw new EntitlementProjectionError('INVALID_EVENT');
@@ -51,11 +53,17 @@ export function projectEntitlementLedger(input) {
     if(row.type==='GRANT'){
       if(++grantCount!==1||previous!==1)throw new EntitlementProjectionError('INVALID_GRANT');
       granted=amount;balance=amount;
-    }else if(row.type==='CONSUME'||row.type==='REFUND_REVOKE'||row.type==='EXPIRE'){
+    }else if(row.type==='CONSUME'){
+      if(grantCount!==1||balance<amount)throw new EntitlementProjectionError('INSUFFICIENT_BALANCE');
+      balance-=amount;
+      consumedOutstanding+=amount;
+    }else if(row.type==='REFUND_REVOKE'||row.type==='EXPIRE'){
       if(grantCount!==1||balance<amount)throw new EntitlementProjectionError('INSUFFICIENT_BALANCE');
       balance-=amount;
     }else if(row.type==='RELEASE'){
-      if(grantCount!==1||balance+amount>granted)throw new EntitlementProjectionError('EXCEEDS_GRANT');
+      if(grantCount!==1||consumedOutstanding<amount||balance+amount>granted)
+        throw new EntitlementProjectionError('EXCEEDS_GRANT');
+      consumedOutstanding-=amount;
       balance+=amount;
     }else throw new EntitlementProjectionError('INVALID_TYPE');
   }
