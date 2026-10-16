@@ -70,6 +70,21 @@ for(const file of tests){
 }
 
 console.log(`[authoritative-contracts] implementations=${implementations.length} tests=${tests.length} concurrency=${CONTRACT_CONCURRENCY} batchSize=${CONTRACT_BATCH_SIZE}`);
+// Additive Gym regression checks in disposable QA branch, absent from feature PRs.
+for (const suite of ['746','787','794','797']) {
+  const file={
+    '746':'tests/gym_checkin_atomic_v746.test.mjs',
+    '787':'tests/gym_booking_atomic_v787.test.mjs',
+    '794':'tests/gym_member_cache_boundary_v794.test.mjs',
+    '797':'tests/gym_workout_queue_policy_v797.test.mjs'
+  }[suite];
+  console.log('[GYM_NEXT4_START] '+file);
+  const check=spawnSync(process.execPath,['--test',file],{stdio:'inherit',env:process.env,shell:false});
+  if(check.error)throw check.error;
+  if(check.status!==0){process.exitCode=check.status??1;process.exit();}
+  console.log('[GYM_NEXT4_PASS] '+file);
+}
+
 for(let offset=0;offset<tests.length;offset+=CONTRACT_BATCH_SIZE){
   const batch=tests.slice(offset,offset+CONTRACT_BATCH_SIZE);
   console.log(`[authoritative-contracts] batch=${Math.floor(offset/CONTRACT_BATCH_SIZE)+1} files=${batch.length}`);
