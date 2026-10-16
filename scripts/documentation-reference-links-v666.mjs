@@ -39,6 +39,13 @@ export function collectReferenceLinks(markdown) {
       continue;
     }
     for (const match of visible.matchAll(/(?<!!)\[([^\]\n]+)\]\[([^\]\n]*)\]/g)) {
+      // An odd number of backslashes escapes the opening bracket in Markdown.
+      // Two backslashes encode a literal slash, leaving the link operative.
+      let precedingSlashes = 0;
+      for (let cursor = match.index - 1; cursor >= 0 && visible[cursor] === '\\'; cursor--) {
+        precedingSlashes++;
+      }
+      if (precedingSlashes % 2 === 1) continue;
       const label = normalize(match[2] || match[1]);
       uses.push({ line: index + 1, label });
     }
