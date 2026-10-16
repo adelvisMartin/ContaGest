@@ -119,3 +119,43 @@ export function assertBalancedVePostingPreview(lines: readonly Readonly<{
   if (debit === 0n || debit !== credit || debit > BigInt(Number.MAX_SAFE_INTEGER)) rejected();
   return Object.freeze({ balanced: true, totalMinor: Number(debit) });
 }
+
+/**
+ * Read-only Venezuela fiscal preview boundary for #775/#776/#778/#780.
+ *
+ * This method intentionally does not turn a reviewed rule into permission to
+ * issue a document, withhold funds, post journal lines or alter a tenant profile.
+ * Callers must derive tenant/selector/event date from authenticated server data.
+ * Policy activation remains owned by #751/#774 and the canonical fiscal service.
+ */
+export const VE_EVENT_PREVIEW_FAMILIES = Object.freeze([
+  'IVA', 'RET_IVA', 'ISLR', 'IGTF', 'MUNICIPAL',
+] as const);
+export type VeEventPreviewFamily = typeof VE_EVENT_PREVIEW_FAMILIES[number];
+
+export function previewReviewedVeTaxEvent(
+  rules: readonly VeReviewedRule[],
+  event: Readonly<{
+    tenantId: string;
+    family: VeEventPreviewFamily;
+    selector: string;
+    eventDate: string;
+    baseMinor: number;
+  }>,
+) {
+  if (!event || typeof event !== 'object' ||
+      !VE_EVENT_PREVIEW_FAMILIES.includes(event.family) ||
+      !stringId(event.tenantId) || !stringId(event.selector) ||
+      !isDate(event.eventDate) || !int(event.baseMinor)) rejected();
+
+  // Resolution must precede calculation: no family substitution, tenant
+  // spoofing, ambiguous effective intervals, unreviewed source or stale rate.
+  const rule = resolveReviewedVeRule(rules, {
+    tenantId: event.tenantId, family: event.family,
+    selector: event.selector, eventDate: event.eventDate,
+  });
+  const result = calculateReviewedVeTaxPreview(rule, {
+    tenantId: event.tenantId, eventDate: event.eventDate, baseMinor: event.baseMinor,
+  });
+  return Object.freeze({ ...result, previewOnly: true as const });
+}
