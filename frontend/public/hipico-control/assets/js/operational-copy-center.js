@@ -105,6 +105,45 @@ function copyButtonContent(copied = false) {
   return `${icon(copied ? 'check' : 'copy')}<span>${copied ? 'Copiado' : 'Copiar texto'}</span>`;
 }
 
+// An intentionally blank human-only draft. No incoming chat, financial ledger,
+// LLM text, or persistent participant data is used to prefill this surface.
+export function mayCopyManualSuggestion(text, confirmation) {
+  return typeof text === 'string' && text.trim().length > 0 &&
+    text.length <= 1200 && confirmation === true;
+}
+
+function manualSuggestionCard() {
+  const date = new Intl.DateTimeFormat('es-VE', {
+    day: '2-digit', month: 'long', year: 'numeric'
+  }).format(new Date());
+  return `<section class="ops-participant" data-ops-manual>
+    <div class="ops-participant__head"><div><span class="ops-kicker">Asistencia manual · Messenger</span>
+      <h3>Respuesta escrita por ti</h3>
+      <p>Fuente: texto introducido por una persona · Fecha: ${escapeHtml(date)}</p>
+      <p>Solo para el grupo recreativo, sin dinero real. Nunca lee WhatsApp ni envía mensajes.</p>
+    </div></div>
+    <label><span>Escribe o edita tu sugerencia (máximo 1200 caracteres)</span>
+      <textarea data-ops-manual-text maxlength="1200" rows="5" spellcheck="true"
+        aria-label="Respuesta manual editable" placeholder="Escribe aquí un mensaje informativo..."></textarea>
+    </label>
+    <label><input type="checkbox" data-ops-manual-confirm>
+      He revisado el contenido y decidiré personalmente dónde compartirlo.</label>
+    <div class="ops-message__body">
+      <button type="button" class="ops-button ops-button--primary" data-ops-manual-copy disabled>
+        ${copyButtonContent(false)}</button>
+      <button type="button" class="ops-button" data-ops-manual-clear>Cancelar y borrar</button>
+    </div>
+    <small>Copiar no abre WhatsApp ni produce entregas automáticas. El borrador se borra al cerrar el panel.</small>
+  </section>`;
+}
+
+function updateManualSuggestionControls(dialog) {
+  const draft = dialog?.querySelector('[data-ops-manual-text]');
+  const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
+  const copy = dialog?.querySelector('[data-ops-manual-copy]');
+  if (copy) copy.disabled = !mayCopyManualSuggestion(draft?.value, confirmation?.checked);
+}
+
 function messageCard(id, title, hint, text, open = false) {
   const disabled = !String(text || '').trim();
   return `<details class="ops-message" ${open ? 'open' : ''}>
@@ -145,6 +184,7 @@ function renderDialog(root) {
         ${messageCard('balances', 'Pozo · TERCIO / DISPONIBLE', 'Saldo operativo + aval según la tasa vigente', messages.balances, true)}
         ${messageCard('daily', 'Cierre diario', 'Resumen de jornada desde datos persistidos', messages.daily)}
       </section>
+      ${manualSuggestionCard()}
       <section class="ops-participant">
         <div class="ops-participant__head"><div><span class="ops-kicker">Privado manual</span><h3>Estado de participante</h3><p>Se genera desde el histórico persistido. No se envía automáticamente.</p></div>
           <button type="button" class="ops-button" data-ops-export ${participants.length ? '' : 'disabled'}>${icon('report')}<span>Archivo del día (.txt)</span></button>
@@ -156,6 +196,14 @@ function renderDialog(root) {
   </div>`;
   root.append(dialog);
   dialog.addEventListener('cancel', (event) => { event.preventDefault(); dialog.close(); });
+  dialog.addEventListener('close', () => {
+    // Do not retain private drafts in hidden DOM after dismissing the panel.
+    const draft = dialog.querySelector('[data-ops-manual-text]');
+    const confirmation = dialog.querySelector('[data-ops-manual-confirm]');
+    if (draft) draft.value = '';
+    if (confirmation) confirmation.checked = false;
+    updateManualSuggestionControls(dialog);
+  });
   dialog.showModal?.();
   if (!dialog.open) dialog.setAttribute('open', '');
   dialog.querySelector('[data-ops-close]')?.focus();
@@ -227,6 +275,25 @@ export function mountOperationalCopyCenter() {
       if (target.closest('[data-ops-close]')) return void target.closest('dialog')?.close();
       if (target.closest('[data-ops-refresh]')) return void await refreshCenter();
       if (target.closest('[data-ops-export]')) return void await exportDailyStatements();
+      if (target.closest('[data-ops-manual-clear]')) {
+        const dialog = target.closest('dialog');
+        const draft = dialog?.querySelector('[data-ops-manual-text]');
+        const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
+        if (draft) draft.value = '';
+        if (confirmation) confirmation.checked = false;
+        updateManualSuggestionControls(dialog);
+        return;
+      }
+      if (target.closest('[data-ops-manual-copy]')) {
+        const dialog = target.closest('dialog');
+        const draft = dialog?.querySelector('[data-ops-manual-text]');
+        const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
+        if (!mayCopyManualSuggestion(draft?.value, confirmation?.checked)) return;
+        await copyText(draft.value.trim());
+        const button = target.closest('[data-ops-manual-copy]');
+        button.innerHTML = copyButtonContent(true);
+        return;
+      }
       if (copy) {
         const id = copy.getAttribute('data-ops-copy');
         const text = target.closest('dialog')?.querySelector(`[data-ops-text="${CSS.escape(id || '')}"]`)?.value || '';
@@ -238,7 +305,18 @@ export function mountOperationalCopyCenter() {
       window.dispatchEvent(new CustomEvent('hipico:notice', { detail: { message: error?.message || 'No se pudo completar la acción.' } }));
     }
   });
+  root.addEventListener('input', (event) => {
+    if (root.dataset.opsAuthorized !== 'true') return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.matches('[data-ops-manual-text]')) updateManualSuggestionControls(target.closest('dialog'));
+  });
   root.addEventListener('change', async (event) => {
+    if (root.dataset.opsAuthorized !== 'true') return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.matches('[data-ops-manual-confirm]')) {
+      updateManualSuggestionControls(target.closest('dialog'));
+      return;
+    }
     if (root.dataset.opsAuthorized !== 'true') return;
     const select = event.target instanceof Element ? event.target.closest('[data-ops-participant]') : null;
     if (!select) return;
