@@ -47,3 +47,15 @@ test('#852 no balance field in entitlement snapshot; counter is never authority'
   assert.equal(r.availableUnits,5);assert.equal(r.mode,'NON_PERSISTING_LEDGER_PROJECTION');
   assert.ok(Object.isFrozen(r));assert.equal('remainingUses' in r,false);
 });
+test('#852 fractional UTC seconds obey numeric chronological and expiration boundaries',()=>{
+  const snapshot={...ent,validUntil:'2026-06-01T00:00:00.200Z'};
+  const valid=deriveEntitlementBalance(snapshot,[
+    evt('GRANT','g',3,'2026-06-01T00:00:00Z'),
+    evt('CONSUME','c',1,'2026-06-01T00:00:00.100Z')
+  ]);
+  assert.equal(valid.availableUnits,2);
+  fail(()=>deriveEntitlementBalance(snapshot,[
+    evt('GRANT','g',3,'2026-06-01T00:00:00Z'),
+    evt('CONSUME','c',1,'2026-06-01T00:00:00.200Z')
+  ]));
+});
