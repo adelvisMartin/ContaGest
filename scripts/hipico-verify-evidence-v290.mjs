@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
+import { validHipicoDrRestoreEvidence } from './hipico-dr-restore-policy-v839.mjs';
 import { validSoakMetricEvidence } from './hipico-soak-metric-integrity-v120.mjs';
 
 const SHA40 = /^[0-9a-f]{40}$/i;
@@ -8,6 +10,10 @@ const STATUSES = Object.freeze(['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
 const evidenceRoot = path.resolve(process.env.HIPICO_EVIDENCE_ROOT || 'artifacts/qa');
 const outputRoot = path.resolve('artifacts/qa/hipico-v290');
 const soakPolicy = JSON.parse(await fs.readFile(path.resolve('products/hipico-control/soak-policy-v120.json'), 'utf8'));
+const canonicalInventoryBytes = await fs.readFile(path.resolve('ops/backup/hipico-public-tables.txt'));
+const canonicalInventorySha256 = crypto.createHash('sha256').update(canonicalInventoryBytes).digest('hex');
+const canonicalInventoryTables = canonicalInventoryBytes.toString('utf8').split(/\r?\n/)
+  .map(row=>row.trim()).filter(row=>row&&!row.startsWith('#'));
 
 function gitHead() {
   try {
@@ -227,6 +233,12 @@ const optionalDescriptors = [
           && item.path.length > 0
           && /^[a-f0-9]{64}$/i.test(String(item?.sha256 || '')))
     }
+  },
+  {
+    id: 'drRestore',
+    name: 'backup-evidence.json',
+    schemas: ['hipico-schema-backup-evidence.v17'],
+    validate: (data) => validHipicoDrRestoreEvidence(data, canonicalInventorySha256, canonicalInventoryTables)
   },
   {
     id: 'authRecovery',

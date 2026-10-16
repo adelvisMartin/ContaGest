@@ -131,3 +131,24 @@ test('#119 physical release requires tested APK version and SHA-256, not only sc
     assert.equal(wrongVersion.releasePhysicalGate,'NOT_READY');
   }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+
+test('#119 status preview never reports PASS for a different candidate SHA',()=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hipico-v119-stale-status-'));
+  try{
+    const file=path.join(dir,'physical.json'),initial='a'.repeat(40),other='b'.repeat(40);
+    prepareCompleteEvidence(dir,file,initial,'proof.log');
+    fs.writeFileSync(path.join(dir,'proof.log'),'synthetic fixture; not physical QA');
+    const current=run(['status',`--file=${file}`],initial);
+    assert.equal(current.status,0,current.stderr);
+    assert.equal(JSON.parse(current.stdout).releasePhysicalGate,'PASS');
+    const stale=run(['status',`--file=${file}`],other);
+    assert.equal(stale.status,0,stale.stderr);
+    const report=JSON.parse(stale.stdout);
+    assert.equal(report.candidateShaMatchesCurrent,false);
+    assert.equal(report.releasePhysicalGate,'NOT_READY');
+    const strict=run(['check',`--file=${file}`],other);
+    assert.equal(strict.status,1);
+    assert.match(strict.stderr,/CANDIDATE_SHA_MISMATCH/);
+  }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});

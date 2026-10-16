@@ -25,12 +25,18 @@ export function validSoakMetricEvidence(data,minimumHours=24,sampleSeconds=30){
   if(COUNT_FIELDS.some(key=>!Number.isSafeInteger(s[key])))return false;
   // A reported 24h wall clock with a handful of samples cannot prove soak.
   // Require at least 90% of the policy's configured sample cadence.
-  if(s.samples<Math.floor(s.durationMs/(sampleSeconds*1000)*0.9))return false;
+  const nominalSamples=s.durationMs/(sampleSeconds*1000);
+  if(s.samples<Math.floor(nominalSamples*0.9))return false;
+  // A 24-hour artifact cannot honestly contain millions of samples from a
+  // 30-second sampler. Allow ordinary scheduler jitter, not impossible density.
+  if(s.samples>Math.ceil(nominalSamples*1.25)+2)return false;
   if(s.samples===0 || s.healthChecks>s.samples || s.spoolChecks>s.samples ||
      s.healthFailures>s.healthChecks || s.spoolAvailableChecks>s.spoolChecks)return false;
   const start=Date.parse(data.startedAt),end=Date.parse(data.completedAt);
   if(!Number.isFinite(start)||!Number.isFinite(end)||
      end-start<minimumHours*3600000||
+     // A future-dated artifact is not evidence of an executed 24h soak.
+     end>Date.now()+60000||
      Math.abs((end-start)-s.durationMs)>60000)return false;
   const hours=s.durationMs/3600000,divisor=Math.max(hours,1/3600);
   const derived={
