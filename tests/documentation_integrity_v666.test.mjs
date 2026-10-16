@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { auditDocumentation, CRITICAL_DOCUMENTS } from '../scripts/documentation-integrity-v666.mjs';
@@ -48,4 +48,36 @@ test('#666 is deterministic and errors cannot leak filesystem secrets', () => fi
   assert.deepEqual(check(), check());
   assert.ok(CRITICAL_DOCUMENTS.includes('AGENTS.md'));
   assert.equal(JSON.stringify(check()).includes('cg-docs-666-'), false);
+}));
+
+test('#666 refuses symlinked local documentation links escaping the checkout', () => fixture(({ root, put, check }) => {
+  const external = mkdtempSync(path.join(tmpdir(), 'cg-docs-external-'));
+  try {
+    writeFileSync(path.join(external, 'secret.md'), 'secret outside the checkout');
+    mkdirSync(path.join(root, 'docs', 'aliases'), { recursive: true });
+    symlinkSync(path.join(external, 'secret.md'), path.join(root, 'docs', 'aliases', 'secret.md'));
+    symlinkSync(external, path.join(root, 'docs', 'outside'));
+    put('README.md', '[File](docs/aliases/secret.md)\n[Directory](docs/outside/secret.md)');
+    assert.deepEqual(check().findings.map(x => x.code), ['LINK_TRAVERSAL', 'LINK_TRAVERSAL']);
+    assert.equal(JSON.stringify(check()).includes('cg-docs-external-'), false);
+  } finally { rmSync(external, { recursive: true, force: true }); }
+}));
+
+test('#666 refuses to read a critical document symlinked outside checkout', () => fixture(({ root, check }) => {
+  const external = mkdtempSync(path.join(tmpdir(), 'cg-docs-secret-'));
+  try {
+    const secret = path.join(external, 'secrets.md');
+    writeFileSync(secret, 'TOP_SECRET_DO_NOT_READ\n[nasty](../../real.md)');
+    symlinkSync(secret, path.join(root, 'README.md'));
+    const report = check();
+    assert.deepEqual(report.findings.map(x => x.code), ['DOCUMENT_TRAVERSAL']);
+    assert.equal(JSON.stringify(report).includes('TOP_SECRET_DO_NOT_READ'), false);
+  } finally { rmSync(external, { recursive: true, force: true }); }
+}));
+
+test('#666 still accepts symlinks with targets contained in the checkout', () => fixture(({ root, put, check }) => {
+  put('docs/actual.md', '# Existing internal file');
+  symlinkSync('actual.md', path.join(root, 'docs', 'alias.md'));
+  put('README.md', '[Internal](docs/alias.md)');
+  assert.deepEqual(check().findings, []);
 }));
