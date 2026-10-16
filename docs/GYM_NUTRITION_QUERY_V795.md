@@ -1,0 +1,7 @@
+# #795 · Filtros seguros del listado de planes nutricionales
+
+Antes el GET `/gym/nutrition` usaba `String(req.query.memberId || '')`, permitiendo convertir inadvertidamente arreglos u objetos en identificadores de texto. Ahora reutiliza `parseGymMemberQuery` publicado desde #793, manteniendo únicamente `memberId` escalar opcional. Rechaza filtros desconocidos y entradas no planas mediante HTTP 422, antes de consultar PostgreSQL. El listado sin filtro de usuarios con `gym.manage` sigue funcionando y la consulta SQL conserva `p.tenantId` y los joins anidados por tenant.
+
+Este cambio **no** crea/edita planes, no prescribe dietas, no toca alergias/restricciones, cálculos de macros ni datos clínicos. El permiso `gym.manage` y el control de pertenencia al tenant permanecen en la ruta; el parser no autoriza lectura adicional.
+
+Evidencia: 6/6 casos de prueba del fichero publicado evaluados contra la fuente exacta de `gym-member-query.ts` y `gym-nutrition.routes.ts` en V8 con anotaciones TS eliminadas y shim de assertions. La validación es lógica y de código; backend Node/tsx completo, PostgreSQL 17 con tenants A/B, HTTP autenticado, navegador y GitHub Actions **NOT_EXECUTED**. El incremento no demuestra el DoD completo del #795, que continúa OPEN por planes versionados, sustituciones, UI y QA. Rollback: revertir tres archivos propios; el helper compartido de #793 se conserva. `SOURCE_REUSE=NONE`.
