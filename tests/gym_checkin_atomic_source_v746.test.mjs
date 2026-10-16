@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const file=readFileSync(new URL('../backend/src/modules/verticals/gym-core.routes.ts',import.meta.url),'utf8');
+const block=file.slice(file.indexOf("router.post('/gym/checkins'"),file.indexOf("router.get('/gym/assessments'"));
+test('check-in uses one serializable prisma transaction',()=>{assert.match(block,/prisma\.\$transaction\(async\(tx\)=>/);assert.match(block,/isolationLevel:'Serializable'/)});
+test('active membership is locked before stock decrement',()=>{assert.match(block,/FOR UPDATE/);assert.ok(block.indexOf('FOR UPDATE')<block.indexOf('SET "remainingAccesses"'))});
+test('access decrement is conditional and scoped to tenant, member and membership',()=>assert.match(block,/WHERE "id"=\$1 AND "tenantId"=\$2 AND "memberId"=\$3\s+AND "status"='active' AND "remainingAccesses">0/));
+test('unsuccessful decrement aborts check-in insert',()=>{assert.match(block,/if\(affected!==1\)throw new HttpError\(409/);assert.ok(block.indexOf('if(affected!==1)')<block.indexOf('INSERT INTO public."GymCheckIn"'))});
+test('no legacy independent prisma insert or saturated GREATEST update',()=>{assert.doesNotMatch(block,/prisma\.\$executeRawUnsafe/);assert.doesNotMatch(block,/GREATEST\(0/);assert.doesNotMatch(block,/prisma\.\$queryRawUnsafe/)});
+test('zero or invalid accesses cannot generate accepted result',()=>{assert.match(block,/Number\(remaining\)>0/);assert.match(block,/entitled\?'accepted':'rejected'/)});
