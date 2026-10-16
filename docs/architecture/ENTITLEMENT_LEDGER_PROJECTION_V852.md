@@ -1,0 +1,7 @@
+# #852 — Entitlement-ledger projection (parcial, sin persistencia)
+
+En main no existe todavía Entitlement ni BenefitDefinition en el schema canónico. No es seguro introducir un contador `remainingAccesses` alternativo ni usar `Product` como tabla de derechos. Este módulo puro define la **semántica de eventos append-only** `GRANT/CONSUME/RELEASE/REVOKE`: efecto único por `effectKey`, beneficiario separado del pagador, alcance `targetId`, fechas UTC con expiración exclusiva, unidades enteras y validación de saldo no negativo en **orden original del ledger**. El replay exacto no duplica un consumo; el mismo effectKey con otro contenido falla.
+
+Los saldos no se almacenan: se derivan por fold BigInt; los release necesitan un consume concreto y no pueden superar unidades consumidas. Los datos aquí son sintéticos. Sin datos de identidad del servidor no se puede autorizar un grant o booking: este helper **no acepta una llamada de producción**, no expone API ni modifica Gym, comercio, RLS o inventario.
+
+Pendientes del #852 DoD: DDL append-only con FK tenant/provenance, versionado de grants, firma/revisión de source, mutex/unique transaccional de effectKey, reserva/consumo en misma transacción de booking Gym (#746/#787), refund, RBAC, API, reconciliación y PG17 concurrente A/B. Ninguna prueba unitaria demuestra ejecución DB idempotente; **NO MERGE / OPEN / PARTIAL** hasta integración y pruebas materiales.
