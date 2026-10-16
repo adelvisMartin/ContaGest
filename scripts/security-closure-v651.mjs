@@ -13,6 +13,12 @@ const EXPECTED = Object.freeze([
   'tenant-api', 'infra-secrets', 'telemetry-redaction', 'async-tenant',
   'integration-replay', 'security-backlog'
 ]);
+const ISSUE_BY_ID = Object.freeze({
+  'media-bola':569, 'health-disclosure':570, 'runtime-tenant-rls':739,
+  'auth-sessions':851, 'tenant-api':641, 'infra-secrets':648,
+  'telemetry-redaction':650, 'async-tenant':853, 'integration-replay':772,
+  'security-backlog':651
+});
 const SHA = /^[a-f0-9]{40}$/i;
 const DIGEST = /^[a-f0-9]{64}$/i;
 const ID = /^[a-z][a-z0-9-]{2,79}$/;
@@ -26,7 +32,7 @@ export function validateSecurityCatalog(catalog) {
   const seen = new Set();
   for (const control of catalog.controls) {
     if (!object(control) || !EXPECTED.includes(control.id) || seen.has(control.id)
-        || !Number.isInteger(control.issue) || control.issue < 1
+        || !Number.isInteger(control.issue) || control.issue !== ISSUE_BY_ID[control.id]
         || typeof control.owner !== 'string' || control.owner.trim().length < 3
         || !Array.isArray(control.checks) || control.checks.length < 2
         || control.checks.some(check => typeof check !== 'string' || !ID.test(check))
