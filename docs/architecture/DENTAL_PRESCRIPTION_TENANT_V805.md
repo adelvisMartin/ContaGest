@@ -1,0 +1,5 @@
+# Dental #805 — referencias tenant-safe de prescripciones
+
+El endpoint POST /health/prescriptions usaba valores enviados por el cliente para patientId, encounterId y professionalId sin comprobar relaciones cruzadas antes del INSERT. Ahora INSERT...SELECT desde CarePatient del tenant, activo, con dos predicados EXISTS para encounter perteneciente al mismo paciente y profesional perteneciente al mismo tenant. Ninguna referencia extranjera produce una prescripción; devuelve 422 sin confirmación 201. No se modifica el formato de prescripción ni permisos vigentes.
+
+Evidencia focal: 4/4 pruebas V8 de contrato sobre la fuente real del branch; la semántica SQL se debe verificar en PostgreSQL17 aislado con pacientes/tenants A/B, concurrencia y HTTP RBAC antes de cierre. No es una firma digital ni cumplimiento completo #805. No checks debilitados.
