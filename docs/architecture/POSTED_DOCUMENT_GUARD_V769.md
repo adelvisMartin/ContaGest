@@ -1,0 +1,7 @@
+# #769 · Posted document lifecycle — immutable intent
+
+The one-way transition graph applies to sales/purchase docs: draft → issued → posted → reversed; draft/issued → cancelled. Terminal states cannot be reopened through ordinary commands. `issue` requires a number **already allocated by #762** and a 64-hex snapshot proof; `post`/ `reverse` require period-open evidence; reversal also requires the original ledger entry and reason. Enforces actor/tenant IDs and expected revision.
+
+This pure proposal does not mutate invoice rows, allocate sequences, create notes, publish fiscal documents, post a journal or send messages. Production routes must NOT accept the verification flags as trusted HTTP fields: calculate them server-side from tenant/period/transaction authorities. The hash is not calculated here and must bind the actual immutable snapshot.
+
+**Still needed for #769 DONE:** persistent snapshots, real invoices + note/reversal FK and append-only ledger effects under #637; concurrent sequence #762; transaction/CAS/idempotency; tenant A/B, closed-period PostgreSQL17 + browser/print E2E. **Source reuse:** NONE. Test with `node --test tests/posted_document_lifecycle_v769.test.mjs`. Rollback deletes only new guard/test/docs without DB effects.
