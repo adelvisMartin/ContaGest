@@ -21,7 +21,7 @@ export function proposeAssetStraightLine(input){
   if(ident(input.actorTenantId)!==tenantId||input.sourceVerified!==true)throw new AssetScheduleError('SCOPE_OR_SOURCE_UNVERIFIED');
   if(input.method!=='straight-line'||typeof input.currency!=='string'||!/^[A-Z]{3}$/.test(input.currency))throw new AssetScheduleError('POLICY_INVALID');
   if(!Number.isSafeInteger(input.usefulLifeMonths)||input.usefulLifeMonths<1||input.usefulLifeMonths>360)throw new AssetScheduleError('LIFE_INVALID');
-  if(typeof input.inServiceMonth!=='string'||! /^\d{4}-(?:0[1-9]|1[0-2])-01$/.test(input.inServiceMonth))throw new AssetScheduleError('SERVICE_MONTH_INVALID');
+  if(typeof input.inServiceMonth!=='string'||!/^\d{4}-(?:0[1-9]|1[0-2])-01$/.test(input.inServiceMonth))throw new AssetScheduleError('SERVICE_MONTH_INVALID');
   const start=new Date(input.inServiceMonth+'T00:00:00.000Z');
   if(!Number.isFinite(start.getTime())||start.toISOString().slice(0,10)!==input.inServiceMonth)throw new AssetScheduleError('SERVICE_MONTH_INVALID');
   const firstYear=start.getUTCFullYear(),firstMonth=start.getUTCMonth();
