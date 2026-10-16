@@ -9,8 +9,17 @@ const canonicalText=fs.readFileSync(path.join(root,canonical),'utf8');
 const ledger=JSON.parse(fs.readFileSync(path.join(root,ledgerPath),'utf8'));
 const required=['CgButton','CgIconButton','CgTextField','CgTextarea','CgPageHeader','CgSection','CgStatusChip','CgBadge','CgMoney','CgLoadingState','CgEmptyState','CgErrorState','CgPermissionState'];
 
+// State primitives are defined once in states.js and explicitly re-exported
+// by the canonical index. Checking only direct declarations rejects that valid
+// API and hides a missing source export behind a brittle text search.
+const stateSource=fs.readFileSync(path.join(root,'frontend/src/components/vnext/states.js'),'utf8');
+const stateExports=canonicalText.match(/export\s*\{([^}]+)\}\s*from\s*['"]\.\/states\.js['"]/m)?.[1]||'';
+const reexportedNames=new Set(stateExports.split(',').map((name)=>name.trim()));
 for(const name of required){
-  if(!canonicalText.includes(`export function ${name}`)&&!canonicalText.includes(`export const ${name}`)) throw new Error(`MISSING_CANONICAL_COMPONENT:${name}`);
+  const direct=new RegExp('export (?:function|const) '+name+'\\b').test(canonicalText);
+  const imported=reexportedNames.has(name) &&
+    new RegExp('export (?:function|const) '+name+'\\b').test(stateSource);
+  if(!direct&&!imported) throw new Error('MISSING_CANONICAL_COMPONENT:'+name);
 }
 if(ledger.canonicalOwner!==canonical) throw new Error('INVALID_COMPONENT_LIBRARY_OWNER');
 if(ledger.themeOwner!=='frontend/src/design-system/semanticTokens.v1.js') throw new Error('INVALID_THEME_OWNER');
