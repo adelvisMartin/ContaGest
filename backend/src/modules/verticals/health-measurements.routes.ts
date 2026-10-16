@@ -33,6 +33,14 @@ router.post('/health/measurements', requirePermission('health.manage'), asyncHan
     LIMIT 1
   `,tenantId,b.patientId);
   if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
+  if(b.encounterId){
+    const encounterRows=await prisma.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CareEncounter"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "patientId"=$3
+      LIMIT 1
+    `,tenantId,b.encounterId,b.patientId);
+    if(!encounterRows.length)throw new HttpError(422,'El encuentro no pertenece al paciente y tenant activos.');
+  }
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareMeasurement" ("id","tenantId","patientId","encounterId","kind","value","unit","measuredAt","metadata")
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,COALESCE($7::timestamptz,now()),$8::jsonb) RETURNING *
