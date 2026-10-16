@@ -24,7 +24,7 @@ export function prepareFefoAllocation(input:{tenantId:string;productId:string;lo
  }
  eligible.sort((a,b)=>(a.lot.expiresOn??'9999-12-31').localeCompare(b.lot.expiresOn??'9999-12-31')||a.lot.receivedAtUtc.localeCompare(b.lot.receivedAtUtc)||a.lot.id.localeCompare(b.lot.id));
  let remaining=quantity;const selections=[] as {lotId:string;quantityExact:string}[];
- for(const item of eligible){if(remaining===0n)break;const take=item.available<remaining?item.available:remaining;selections.push({lotId:item.lot.id,quantityExact:exact(take)});remaining-=take;}
+ for(const item of eligible){if(remaining===0n)break;const take=item.available<remaining?item.available:remaining;selections.push(Object.freeze({lotId:item.lot.id,quantityExact:exact(take)}));remaining-=take;}
  return Object.freeze({tenantId:input.tenantId,productId:input.productId,locationId:input.locationId,
   requestedExact:exact(quantity),allocatedExact:exact(quantity-remaining),backorderExact:exact(remaining),
   lots:Object.freeze(selections),persisted:false as const,stockMovementAuthorized:false as const});
