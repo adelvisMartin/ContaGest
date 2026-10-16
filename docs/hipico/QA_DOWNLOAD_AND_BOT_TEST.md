@@ -73,75 +73,23 @@ Verifica:
 
 Los visual baselines de Playwright se revisan explícitamente; CI no debe fabricarlos con `--update-snapshots`.
 
-## 4. Preparar WhatsApp Bridge v1.6.0
+## 4. WhatsApp Messenger real: lectura y envío automáticos bloqueados (#1011)
 
-Primera vez:
+**Decisión vigente 2026-10-16:** No ejecutar `CONFIGURAR-GRUPOS-HIPICO.cmd`, `INICIAR-HIPICO-AUTONOMO.cmd`, `PROBAR-HIPICO-LAB.cmd`, `history:v130`, backfill, captura de IDs ni Browser/Playwright sobre una cuenta o grupo real de WhatsApp Messenger. El runtime cuenta con un gate de inicio `SOURCE_AUTO_READ_POLICY_NO_GO` (PR #1120) independiente del gate `SOURCE_AUTO_REPLY_POLICY_NO_GO`. Ambos deniegan lectura y envío automatizados aunque el grupo sea recreativo y sin dinero real.
 
-```text
-CONFIGURAR-GRUPOS-HIPICO.cmd
-```
-
-El helper prepara el runtime local, abre WhatsApp Web con perfil dedicado y captura SOURCE/LAB como IDs `@g.us` distintos sin enviar mensajes.
-
-Datos locales sensibles:
-
-```text
-%LOCALAPPDATA%\ControlHipicoBridge\data\group-bindings.json
-%LOCALAPPDATA%\ControlHipicoBridge\data\group-bindings.env
-```
-
-No subirlos a Git.
-
-## 5. Verificar política/capacidades antes de iniciar
-
-Desde `tools\hipico-whatsapp-web-bridge`:
+Para consultar la decisión **sin abrir un navegador, crear un perfil ni leer conversaciones**, usar desde el Bridge:
 
 ```powershell
 npm run source:policy
 ```
 
-Esperado para la prueba actual:
+La salida esperada declara `NO_GO` y puede terminar con código **2** (significa bloqueo por política, no éxito de integración con Messenger). No introducir un flag, otro cliente o una sesión personal para eludirlo. Consultar [SOURCE_AUTO_READ_NO_GO_V1011.md](SOURCE_AUTO_READ_NO_GO_V1011.md).
 
-- adapter `playwright-web` implementado;
-- LAB técnicamente disponible;
-- SOURCE auto-reply `DISABLED` si no fue solicitado;
-- si alguien intenta habilitar SOURCE, estado `NO_GO` con `SOURCE_AUTO_REPLY_POLICY_NO_GO`.
+## 5. LAB sintético y pruebas de dominio sin WhatsApp real
 
-El alcance actual es WhatsApp Messenger normal para un grupo privado de amigos, recreativo y sin dinero real. Sus [Condiciones del servicio](https://www.whatsapp.com/legal/terms-of-service?lang=es) restringen mensajería automática/uso no personal salvo autorización expresa; por eso un flag `.env`, la operación desde una cuenta normal o el carácter recreativo no convierten el autoenvío en GO. WhatsApp Business queda excluido.
+Se permiten tests locales con fixtures sintéticos y pruebas de contratos que no importen ni arranquen el Bridge de captura. Verifica cada comando antes de ejecutarlo para asegurar que no lanza Chromium ni WhatsApp Web. Los resultados de QA físico con dos sesiones reales permanecen `BLOCKED` por la política mientras no exista un mecanismo autorizado, no `PASS`.
 
-## 6. Probar autonomía segura
-
-Después del binding:
-
-```text
-PROBAR-HIPICO-LAB.cmd
-```
-
-O:
-
-```text
-INICIAR-HIPICO-AUTONOMO.cmd
-```
-
-Esto significa **autonomía LAB**, no escritura SOURCE.
-
-El Bridge puede:
-
-- leer SOURCE;
-- excluir mensajes propios;
-- deduplicar;
-- persistir/spoolear;
-- clasificar y producir respuesta;
-- responder automáticamente en LAB;
-- leer entradas directas del LAB;
-- reintentar sólo trabajo seguro;
-- mantener entregas inciertas como `ambiguous`;
-- reconectar/reiniciar conservando journals/colas.
-
-No recibe autoridad automática para apostar, modificar saldos, escribir ledger, liquidar premios o publicar resultados definitivos.
-
-### Corpus mínimo LAB
-
+Ejemplos de texto ficticio para pruebas de parser sin credenciales ni cuentas:
 ```text
 hola
 ayuda
@@ -150,6 +98,10 @@ LLEGADA 4-2-1
 JUEGA 30K AL 5
 CONSIGUE 20K 2N AL 3
 ```
+
+## 6. Sugerencia manual editable en la PWA
+
+El Centro Operativo incorpora un campo **vacío**, escrito por una persona. Muestra fuente y fecha, permite editar, exige confirmación explícita para **copiar** y tiene botón **Cancelar y borrar**. El borrador se borra al cerrar. Ni copiar ni cerrar abren WhatsApp, invocan un envío, leen el grupo o registran movimientos financieros. La persona decide por su cuenta si usa la función de compartir nativa y dónde colocar el texto; nunca se automatiza el chat.
 
 ## 7. Resiliencia obligatoria
 
@@ -160,7 +112,7 @@ Durante QA:
 3. deja backend inaccesible y recupéralo;
 4. cierra/reabre el bridge;
 5. reinicia Windows;
-6. cambia de LAB a otro chat justo antes de un envío;
+6. valida una transición de destino LAB sintético usando fixtures, sin conectar una cuenta real;
 7. prueba contexto de texto y, cuando aplique, media/PDF sin conceder autoridad financiera;
 8. confirma visualmente cero mensajes automáticos en SOURCE.
 
@@ -206,4 +158,4 @@ PASS local sólo si:
 - las colas convergen;
 - no hay dead letters inexplicadas.
 
-El LAB verde no cambia el estado de política SOURCE. Mientras la política oficial mantenga el caso prohibido, SOURCE permanece read-only por diseño.
+El LAB verde no cambia el estado de política SOURCE. Mientras la política oficial mantenga el caso prohibido, SOURCE real permanece NO_GO para lectura y escritura automatizadas.

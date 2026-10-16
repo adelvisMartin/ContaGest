@@ -16,7 +16,7 @@ El usuario pidió auto-respuestas en WhatsApp normal. Las [Condiciones del servi
 - La [experiencia oficial de agentes de terceros](https://faq.whatsapp.com/1050934623978152) está disponible solo en países limitados y funciona en un chat directo usuario-agente; no puede añadirse ni acceder a otros grupos. No satisface el requisito de responder dentro del grupo.
 - No simular un cliente oficial mediante WhatsApp Web DOM/Playwright/RPA, API privada, Baileys u otra vía no autorizada.
 - Hasta documentar una autorización expresa aplicable a Messenger, no conectar ningún proceso automatizado a grupos Messenger para lectura o escritura de `SOURCE`; toda prueba se alimenta manualmente con fixtures sintéticos.
-- **Estado técnico actual:** el guard merged para #1011 bloquea autoenvío, pero aún hay rutas Playwright históricas/de ejecución que pueden leer SOURCE. El gate de lectura todavía no está implementado; no ejecutar `start`, `history:v130`, backfill ni otros lectores sobre una cuenta o grupo real. Este gap debe cerrarse como primer ticket técnico de #1011, antes de continuar integraciones del canal.
+- **Estado técnico confirmado 2026-10-16:** el PR #1120 integró el gate independiente `SOURCE_AUTO_READ_POLICY_NO_GO` en los entrypoints de Bridge, history, live, group capture, server runner y preflight, además del gate de envío `SOURCE_AUTO_REPLY_POLICY_NO_GO`. Ambos deniegan el acceso automatizado al Messenger real antes del navegador/perfil. Los scripts históricos permanecen **NO-GO para uso real**; ninguna prueba ni variable de entorno levanta ese bloqueo. Véase [SOURCE_AUTO_READ_NO_GO_V1011.md](SOURCE_AUTO_READ_NO_GO_V1011.md).
 - No hay, en las fuentes oficiales revisadas, una integración autorizada que permita a un agente de Messenger leer y responder dentro del grupo solicitado.
 - Seguir implementando motor, clasificación, consultas canónicas, inbox durable y evaluación con datos sintéticos en `LAB`.
 - Construir una respuesta sugerida editable con fuente y fecha, botón copiar/compartir a través de la acción nativa y envío confirmado manualmente por una persona. No enviar en background.
@@ -38,10 +38,10 @@ El usuario pidió auto-respuestas en WhatsApp normal. Las [Condiciones del servi
 
 | Fase | Entrega | Owner/gate |
 | --- | --- | --- |
-| 0 | Deshabilitar lectura automática SOURCE en Bridge, backfill e invocadores programados; probar rechazo antes de abrir navegador | #1011 (P0, pendiente) |
+| 0 | Gate independiente de lectura automática SOURCE previo a navegador: implementado por PR #1120; pruebas de release exact-SHA pendientes | #1011 (P0, incrementado) |
 | A | Completar entradas LAB y conversación determinista; usar datos de prueba sintéticos, sin sesión de Messenger | [#892](https://github.com/adelvisMartin/ContaGest/issues/892) |
 | B | Inbox durable, handoff, recuperación, dedupe y ACK sin doble respuesta | [#907](https://github.com/adelvisMartin/ContaGest/issues/907) |
-| C | UI de respuesta sugerida/compartir manual con contenido ingresado por una persona; prueba de privacidad/UX | #837 / #1011 |
+| C | UI de respuesta manual editable, fuente y fecha, confirmación para copiar, cancelar y borrado en cierre; QA visual/privacidad aún pendiente | #837 / #1011 |
 | D | Revisar autorización de auto-mensajería de Messenger con fuente oficial y prueba autorizada; solo después considerar escritura | #1011, sujeto a seguridad y owner |
 | E | Physical QA, soak, backup/restore, aislamiento y release exact-SHA | #837 / #839 / #842 |
 
