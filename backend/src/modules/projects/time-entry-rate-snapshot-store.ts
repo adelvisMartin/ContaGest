@@ -7,7 +7,7 @@ export const PROJECT_TIME_RATE_SNAPSHOT_SLUG = 'project-time-rate-snapshot-v761'
 const PROJECT_SLUG = 'project-workspace-v761';
 const TASK_SLUG = 'project-task-v761';
 const ENTRY_SLUG = 'project-time-entry-v761';
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export class SnapshotNotFound extends Error { constructor(){super('PROJECT_SNAPSHOT_NOT_FOUND');} }
 export class SnapshotForbidden extends Error { constructor(){super('PROJECT_SNAPSHOT_MANAGER_REQUIRED');} }
 export class SnapshotConflict extends Error { constructor(){super('PROJECT_SNAPSHOT_ALREADY_CAPTURED_OR_CHANGED');} }
@@ -49,7 +49,7 @@ export function serializeTimeRateSnapshot(row:any,tenantId:string,projectId:stri
 export async function captureApprovedTimeRateSnapshot({db,tenantId,actorId,projectId,taskId,
   entryId,expectedRevision,ipAddress,userAgent}:{db:any;tenantId:string;actorId:string;
   projectId:string;taskId:string;entryId:string;expectedRevision:number;
-  ipAddress?:string;userAgent?:string|string[]}) {
+  ipAddress?:string;userAgent?:string|string[]}){
   for(const [value,label] of [[tenantId,'TENANT'],[actorId,'ACTOR'],[projectId,'PROJECT'],
     [taskId,'TASK'],[entryId,'ENTRY']] as const)validId(value,`PROJECT_SNAPSHOT_${label}_INVALID`);
   if(!Number.isSafeInteger(expectedRevision)||expectedRevision<2)throw new TypeError('PROJECT_SNAPSHOT_REVISION_INVALID');
