@@ -1,4 +1,26 @@
 /** Read-only FIFO estimate from reconciled physical movements, NOT lot provenance. */
+export type FifoCohortErrorCode =
+  | 'FIFO_COHORT_QUERY_INVALID'
+  | 'FIFO_COHORT_QUANTITY_INVALID'
+  | 'FIFO_COHORT_INPUT_INVALID'
+  | 'FIFO_COHORT_INVALID'
+  | 'FIFO_COHORT_RECONCILIATION_FAILED';
+
+/**
+ * Expected FIFO projection failure. Preserve TypeError compatibility for
+ * existing pure callers, but distinguish it from unexpected DB/programming
+ * TypeErrors before translating it to an HTTP stock conflict.
+ */
+export class FifoCohortError extends TypeError {
+  readonly code: FifoCohortErrorCode;
+  constructor(code: FifoCohortErrorCode) {
+    super(code);
+    this.code = code;
+    this.name = 'FifoCohortError';
+  }
+}
+
+
 export const FIFO_COHORT_DRILLDOWN_VERSION = 'fifo-surviving-cohorts-v1';
 export const FIFO_COHORT_PAGE_MAX = 100;
 export const FIFO_COHORT_SKIP_MAX = 5000;
@@ -21,10 +43,10 @@ export type RemainingFifoCohort = Readonly<{
 function field(raw: unknown, fallback: number, min: number, max: number): number {
   if (raw === undefined) return fallback;
   if (typeof raw !== 'string' || !/^(0|[1-9]\d*)$/.test(raw))
-    throw new TypeError('FIFO_COHORT_QUERY_INVALID');
+    throw new FifoCohortError('FIFO_COHORT_QUERY_INVALID');
   const n = Number(raw);
   if (!Number.isSafeInteger(n) || n < min || n > max)
-    throw new TypeError('FIFO_COHORT_QUERY_INVALID');
+    throw new FifoCohortError('FIFO_COHORT_QUERY_INVALID');
   return n;
 }
 
@@ -35,16 +57,16 @@ export function parseFifoCohortOptions(
 ): FifoCohortOptions | null {
   if (enabled === undefined || enabled === 'false') {
     if (rawTake !== undefined || rawSkip !== undefined || rawBucket !== undefined || rawRange !== undefined)
-      throw new TypeError('FIFO_COHORT_QUERY_INVALID');
+      throw new FifoCohortError('FIFO_COHORT_QUERY_INVALID');
     return null;
   }
-  if (enabled !== 'true') throw new TypeError('FIFO_COHORT_QUERY_INVALID');
+  if (enabled !== 'true') throw new FifoCohortError('FIFO_COHORT_QUERY_INVALID');
   if (rawBucket !== undefined &&
       (typeof rawBucket !== 'string' || !FIXED_BUCKETS.includes(rawBucket)))
-    throw new TypeError('FIFO_COHORT_QUERY_INVALID');
+    throw new FifoCohortError('FIFO_COHORT_QUERY_INVALID');
   if (rawRange !== undefined && (rawBucket !== undefined ||
       typeof rawRange !== 'string' || !/^[0-3]$/.test(rawRange) ||
-      !validCustomCutoffs(customCutoffs))) throw new TypeError('FIFO_COHORT_QUERY_INVALID');
+      !validCustomCutoffs(customCutoffs))) throw new FifoCohortError('FIFO_COHORT_QUERY_INVALID');
   return {
     take: field(rawTake, 25, 1, FIFO_COHORT_PAGE_MAX),
     skip: field(rawSkip, 0, 0, FIFO_COHORT_SKIP_MAX),
@@ -69,7 +91,7 @@ function customRangeIndex(ageDays: number, [a, b, c]: readonly [number, number, 
 }
 
 function exact(units: bigint): string {
-  if (units < 0n) throw new TypeError('FIFO_COHORT_QUANTITY_INVALID');
+  if (units < 0n) throw new FifoCohortError('FIFO_COHORT_QUANTITY_INVALID');
   return String(units / 1000n) + '.' + String(units % 1000n).padStart(3, '0');
 }
 
@@ -98,7 +120,7 @@ export function projectFifoCohortDrilldown(input: {
         options.customRange.rangeIndex < 0 || options.customRange.rangeIndex > 3 ||
         !validCustomCutoffs(options.customRange.cutoffsDays)
       )))
-    throw new TypeError('FIFO_COHORT_INPUT_INVALID');
+    throw new FifoCohortError('FIFO_COHORT_INPUT_INVALID');
 
   let sum = 0n;
   let previousTime = -Infinity;
@@ -109,14 +131,14 @@ export function projectFifoCohortDrilldown(input: {
         c.receivedAt > now! || c.receivedAt < previousTime ||
         (c.receivedAt === previousTime && c.movementId <= previousMovementId) ||
         typeof c.quantity !== 'bigint' || c.quantity <= 0n) {
-      throw new TypeError('FIFO_COHORT_INVALID');
+      throw new FifoCohortError('FIFO_COHORT_INVALID');
     }
     previousTime = c.receivedAt;
     previousMovementId = c.movementId;
     uniqueIds.add(c.movementId);
     sum += c.quantity;
   }
-  if (sum !== onHandUnits) throw new TypeError('FIFO_COHORT_RECONCILIATION_FAILED');
+  if (sum !== onHandUnits) throw new FifoCohortError('FIFO_COHORT_RECONCILIATION_FAILED');
 
   // Validate/reconcile ALL cohorts before filtering; filtered totals never
   // replace canonical full-stock totals or make an incomplete ledger pass.
