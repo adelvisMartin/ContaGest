@@ -288,10 +288,20 @@ export function mountOperationalCopyCenter() {
         const dialog = target.closest('dialog');
         const draft = dialog?.querySelector('[data-ops-manual-text]');
         const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
-        if (!mayCopyManualSuggestion(draft?.value, confirmation?.checked)) return;
-        await copyText(draft.value.trim());
         const button = target.closest('[data-ops-manual-copy]');
-        button.innerHTML = copyButtonContent(true);
+        // A pending clipboard write cannot count as fresh review of an edited
+        // draft. Disable reentry and retain the exact human-approved snapshot.
+        if (button.disabled || !mayCopyManualSuggestion(draft?.value, confirmation?.checked)) return;
+        const reviewedText = draft.value.trim();
+        button.disabled = true;
+        try {
+          await copyText(reviewedText);
+        } finally {
+          updateManualSuggestionControls(dialog);
+        }
+        if (draft.value.trim() === reviewedText && confirmation.checked && button.isConnected) {
+          button.innerHTML = copyButtonContent(true);
+        }
         return;
       }
       if (copy) {
@@ -308,13 +318,24 @@ export function mountOperationalCopyCenter() {
   root.addEventListener('input', (event) => {
     if (root.dataset.opsAuthorized !== 'true') return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.matches('[data-ops-manual-text]')) updateManualSuggestionControls(target.closest('dialog'));
+    if (target?.matches('[data-ops-manual-text]')) {
+      const dialog = target.closest('dialog');
+      const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
+      const copy = dialog?.querySelector('[data-ops-manual-copy]');
+      // Explicit review applies to a particular draft, never to later edits.
+      if (confirmation) confirmation.checked = false;
+      if (copy) copy.innerHTML = copyButtonContent(false);
+      updateManualSuggestionControls(dialog);
+    }
   });
   root.addEventListener('change', async (event) => {
     if (root.dataset.opsAuthorized !== 'true') return;
     const target = event.target instanceof Element ? event.target : null;
     if (target?.matches('[data-ops-manual-confirm]')) {
-      updateManualSuggestionControls(target.closest('dialog'));
+      const dialog = target.closest('dialog');
+      const copy = dialog?.querySelector('[data-ops-manual-copy]');
+      if (copy) copy.innerHTML = copyButtonContent(false);
+      updateManualSuggestionControls(dialog);
       return;
     }
     if (root.dataset.opsAuthorized !== 'true') return;
