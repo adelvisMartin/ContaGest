@@ -2,6 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { chromium } from 'playwright-core';
+import { assertSourceAutoReadDenied } from './source-read-policy-gate.mjs';
+
+// #1011: legacy live runner must refuse real SOURCE reads before spool mkdir.
+assertSourceAutoReadDenied();
 
 const VERSION = '1.3.0';
 const DATA_DIR = path.resolve(process.cwd(), 'data');
