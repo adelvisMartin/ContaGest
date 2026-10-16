@@ -25,7 +25,13 @@ export function preparePostedDocumentTransition(input){
    throw new TypeError('DOCUMENT_TRANSITION_SCOPE_INVALID');
  if(!Number.isSafeInteger(input.expectedRevision)||input.expectedRevision<1||input.expectedRevision>=Number.MAX_SAFE_INTEGER)
    throw new TypeError('DOCUMENT_TRANSITION_REVISION_INVALID');
- const target=transitions[/** @type {keyof typeof transitions} */ (input.from)]?.[/** @type {'issue'|'cancel'|'post'|'reverse'} */ (input.action)];
+ // Never allow Object.prototype names to masquerade as document states/actions.
+ const state=typeof input.from==='string'&&Object.hasOwn(transitions,input.from)
+   ? transitions[/** @type {keyof typeof transitions} */ (input.from)]
+   : null;
+ const target=state&&typeof input.action==='string'&&Object.hasOwn(state,input.action)
+   ? state[/** @type {'issue'|'cancel'|'post'|'reverse'} */ (input.action)]
+   : null;
  if(!target)throw new TypeError('DOCUMENT_TRANSITION_NOT_ALLOWED');
  if(input.action==='issue'||input.action==='post'||input.action==='reverse'){
    if(typeof input.documentNumber!=='string'||!ID.test(input.documentNumber)||input.sequenceIssuedByServer!==true)
