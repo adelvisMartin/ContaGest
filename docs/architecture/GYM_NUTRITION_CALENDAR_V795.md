@@ -1,0 +1,7 @@
+# Gym #795 — Fechas de vigencia de plan nutricional no clínico
+
+La autoridad existente `completeNutritionSchema` aceptaba fechas arbitrarias para `startsAt` y `endsAt` y las enviaba a SQL `::date`. Esto permitía formatos locales ambiguos o días inexistentes antes de calcular el período. Se reutiliza `validGymCalendarDay` del ticket #793 para comprobar ambos días de forma exacta, sin crear otro motor ni registro clínico.
+
+La interfaz Gym existente envía `endsAt:''` al dejar la fecha final en blanco: ese valor sigue siendo válido como ausencia de fecha, igual que null/undefined. Una fecha presente debe ser `YYYY-MM-DD` real. La restricción previa que impide finalizar antes de comenzar sigue activa, así como el parse del schema y el tenant extraído de la sesión del servidor.
+
+Evidencia ejecutada: función exacta de calendario del repo evaluada en V8 sobre 8/8 fechas válidas e inválidas, comprobación de ambas integraciones de schema y del uso en la ruta existente; pruebas nuevas versionadas. No se ejecutaron PostgreSQL17, UI Gym, empaquetado backend ni cálculo completo de macros en este contexto. Ticket #795 OPEN hasta completar QA/plan versionado/adhesión/portal. Sin cambios en Care, dinero, SQL, migraciones o checks.
