@@ -45,3 +45,12 @@ test('#666 never performs I/O; HTTP links remain for existing skip policy', () =
     { kind: 'target', line: 2, reference: 'https://example.com/' },
   ]);
 });
+
+test('#666 ignores escaped Markdown brackets but retains an operative link after a literal slash', () => {
+  const document = String.raw`\[Literal][missing]
+\\[Active][exists]
+[exists]: docs/guide.md`;
+  assert.deepEqual(collectReferenceLinks(document), [
+    { kind: 'target', line: 3, reference: 'docs/guide.md' },
+  ]);
+});
