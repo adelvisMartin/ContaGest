@@ -1,9 +1,11 @@
 # Control Hípico — WhatsApp Production Compliance Gate (#154)
 
+> **Aclaración vigente del propietario (2026-10-15):** el caso actualmente solicitado es un grupo privado de amigos, con actividad hípica recreativa sin dinero real, depósitos, pagos, retiros, premios canjeables ni efecto económico, usando WhatsApp Messenger normal. WhatsApp Business no se utilizará. Las conclusiones históricas de abajo sobre apuestas monetarias aplicaban a un alcance Business anterior; no describen este grupo ni son el motivo actual del bloqueo. Las [Condiciones de Messenger](https://www.whatsapp.com/legal/terms-of-service?lang=es) restringen mensajería automática/uso no personal salvo autorización; hasta verificar permiso expreso, no conectar el grupo para lectura ni envío automatizados. Avanzar solo con harness LAB sintético y sugerencias manuales. No volver a pedir al propietario que clasifique el dinero.
+
 **Revisión:** 2026-09-29  
 **Decisión actual:** **NO-GO para escritura automatizada al grupo real SOURCE**.
 
-> **Revalidación 2026-10-15 (#1011):** [matriz oficial por caso de uso y estado de verificación](WHATSAPP_ELIGIBILITY_REVIEW_2026-10-15.md). El NO-GO permanece vigente. Los requisitos de Groups API y la elegibilidad de la cuenta/grupo no se han verificado; no considerar la existencia de una API como autorización de apuestas ni de envío al grupo real. Esta revisión añade transparencia, no permisos de escritura.
+> **Revalidación 2026-10-15 (#1011):** [matriz oficial por caso de uso y estado de verificación](WHATSAPP_ELIGIBILITY_REVIEW_2026-10-15.md). El owner confirmó grupo privado de amigos, actividad recreativa sin dinero real y WhatsApp Messenger normal; WhatsApp Business queda excluido. El NO-GO actual aplica porque los términos de Messenger restringen mensajería automática/uso no personal salvo autorización y no se ha documentado una autorización para este caso. El texto histórico inferior describía un perfil monetario/Business anterior; no se atribuye al grupo recreativo.
 
 ## Qué está demostrado
 
@@ -34,7 +36,8 @@ Una promoción futura exige evidencia fresca (<30 días) y una decisión explíc
 
 El dominio/bot permanece separado del transporte. La política productiva se aplica en más de una capa:
 
-- SOURCE se mantiene read-only para QA/operación actual;
+- SOURCE conserva contratos de lectura para compatibilidad, pero no se debe conectar a Messenger real hasta verificar autorización;
+- el código todavía permite iniciar algunas rutas de lectura SOURCE; el bloqueo técnico independiente aún no está integrado y debe preceder a cualquier prueba conectada;
 - LAB puede responder automáticamente con identidad de grupo pinneada;
 - el Bridge valida nombre + ID `@g.us`, backend y readiness;
 - `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true` falla cerrado en `runtime-config.mjs` con `SOURCE_AUTO_REPLY_POLICY_NO_GO`;

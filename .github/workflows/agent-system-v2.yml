@@ -40,6 +40,8 @@ jobs:
         run: npm run agent:system:verify
       - name: Run Agent System v2 contracts
         run: npm run agent:system:test
+      - name: Verify advisory context skill contracts
+        run: node --test tests/agent_context_tooling_v1.test.mjs
       - name: Verify duplicate exclusive work claims
         if: github.event_name == 'pull_request'
         env:

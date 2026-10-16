@@ -33,8 +33,9 @@ const payload = {
     reasons: sourcePolicy.reasons,
     reviewedAt: SOURCE_POLICY_REVIEW.reviewedAt,
     nextReviewBy: SOURCE_POLICY_REVIEW.nextReviewBy,
-    groupApiAccountEligibility: SOURCE_POLICY_REVIEW.groupApiAccountEligibility,
-    officialGroupsApiDetails: SOURCE_POLICY_REVIEW.officialGroupsApiDetails,
+    selectedChannel: SOURCE_POLICY_REVIEW.selectedChannel,
+    businessProductsSelected: SOURCE_POLICY_REVIEW.businessProductsSelected,
+    messengerAuthorization: SOURCE_POLICY_REVIEW.messengerAuthorization,
     legalReview: SOURCE_POLICY_REVIEW.legalReview
   },
   useCaseEligibility: WHATSAPP_USE_CASES_1011.map((useCase) => evaluateWhatsAppUseCase1011(useCase))

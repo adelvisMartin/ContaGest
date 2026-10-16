@@ -18,6 +18,7 @@ import { parseReorderSalesOptions, projectReorderSalesEvidence } from './reorder
 import { parseGrossInvoiceLeadTime, projectGrossInvoiceLeadTimeReview } from './gross-invoice-leadtime-review.js';
 import { calculateStockAgeing, StockAgeingError, STOCK_AGEING_MAX_MOVEMENTS } from './stock-ageing-fifo.js';
 import { parseAgeingCutoffs } from './configurable-ageing.js';
+import { parseFifoCohortOptions } from './fifo-cohort-drilldown.js';
 import { LOT_EXPIRY_RISK_VERSION, expiryUtcBounds, projectLotExpiryRisk } from './lot-expiry-risk.js';
 import { summarizePhysicalOutbound } from './stock-movement-activity.js';
 import { calculateObservedStockCoverage } from './stock-coverage.js';
@@ -181,7 +182,15 @@ router.get('/inventory', (_req, res) => {
 
 // Estimate only: FIFO cohorts are inferred from complete physical-movement
 // history and cannot be used as physical lot provenance or inventory valuation.
-const stockAgeingQuery = z.object({ productId: z.string().uuid(), bucketDays: z.string().optional() }).strict();
+const stockAgeingQuery = z.object({
+  productId: z.string().uuid(),
+  bucketDays: z.string().optional(),
+  includeCohorts: z.enum(['true', 'false']).optional(),
+  cohortTake: z.string().optional(),
+  cohortSkip: z.string().optional(),
+  cohortBucket: z.string().optional(),
+  cohortRange: z.string().optional()
+}).strict();
 // Commercial activity is sourced from actual issued/paid/overdue invoice lines.
 // It is not physical stock movement, estimated demand or approval to purchase.
 const invoiceActivityInteger = z.string()
@@ -260,6 +269,15 @@ router.get('/inventory/ageing', asyncHandler(async (req, res) => {
   } catch {
     throw new HttpError(400, 'Intervalos de antigüedad inválidos: use tres días crecientes.', { code: 'AGEING_BUCKET_QUERY_INVALID' });
   }
+  let cohortOptions;
+  try {
+    cohortOptions = parseFifoCohortOptions(
+      query.data.includeCohorts, query.data.cohortTake, query.data.cohortSkip,
+      query.data.cohortBucket, query.data.cohortRange, bucketCutoffs
+    );
+  } catch {
+    throw new HttpError(400, 'Parámetros de detalle FIFO inválidos.', { code: 'AGEING_COHORT_QUERY_INVALID' });
+  }
   const ctx = context(req);
   const asOf = new Date();
   try {
@@ -279,13 +297,17 @@ router.get('/inventory/ageing', asyncHandler(async (req, res) => {
         throw new HttpError(409, 'Historial de movimientos supera el límite del cálculo.', { code: 'AGEING_HISTORY_LIMIT' });
       return {
         product: { id: product.id, sku: product.sku, name: product.name, unit: product.unit },
-        stockAgeing: calculateStockAgeing({ movements, stockExact: product.stock, asOf, bucketCutoffs })
+        stockAgeing: calculateStockAgeing({ movements, stockExact: product.stock, asOf, bucketCutoffs, cohortOptions })
       };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     ok(res, result);
   } catch (error) {
     if (error instanceof StockAgeingError)
       throw new HttpError(409, 'La antigüedad de stock no se puede reconciliar; se omitió la estimación.', { code: error.code });
+    if (error instanceof TypeError)
+      throw new HttpError(409, 'El detalle FIFO no puede reconciliarse con el stock canónico.', {
+        code: 'AGEING_COHORT_RECONCILIATION_INVALID'
+      });
     throw error;
   }
 }));

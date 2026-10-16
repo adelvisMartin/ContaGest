@@ -8,6 +8,8 @@ import {
   createOpportunityFromQualifiedLead, listCrmOpportunities,
   CrmOpportunityConflictError, CrmOpportunityLeadNotFoundError
 } from './crm-opportunity-store.mjs';
+import { markCrmOpportunityLost, CrmOpportunityNotFoundError, CrmOpportunityStaleError, CrmOpportunityStageError } from './crm-opportunity-stage.mjs';
+import { summarizeCrmForecast, CrmForecastLimitError } from './crm-forecast.mjs';
 
 const router=Router();
 router.use(requireTenant);
@@ -24,6 +26,20 @@ const pageSchema=z.object({
   take:z.coerce.number().int().min(1).max(100).default(50),
   skip:z.coerce.number().int().min(0).max(10000).default(0)
 }).strict();
+
+
+router.get('/forecast',requirePermission('sales.view'),asyncHandler(async(req,res)=>{
+  const ctx=(req as any).context as {tenantId:string};
+  try {
+    const data=await summarizeCrmForecast({db:prisma,tenantId:ctx.tenantId});
+    res.setHeader('Cache-Control','private, no-store');
+    ok(res,data);
+  } catch(error) {
+    if(error instanceof CrmForecastLimitError)
+      throw new HttpError(503,'El informe supera el límite seguro; aplica una solución de agregación dedicada.');
+    throw error;
+  }
+}));
 
 router.get('/', requirePermission('sales.view'), asyncHandler(async(req,res)=>{
   const page=pageSchema.safeParse(req.query);
@@ -54,6 +70,34 @@ router.post('/from-lead/:leadId',requirePermission('sales.manage'),validateBody(
   }
   res.setHeader('Cache-Control','private, no-store');
   ok(res,created,201);
+}));
+
+
+const lossSchema=z.object({
+  expectedUpdatedAt:z.string().datetime({offset:false,local:false})
+}).strict();
+
+router.patch('/:id/lost',requirePermission('sales.manage'),validateBody(lossSchema),asyncHandler(async(req,res)=>{
+  const ctx=(req as any).context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
+  if(!ctx.userId) throw new HttpError(403,'Se requiere usuario autenticado.');
+  let result;
+  try {
+    result=await markCrmOpportunityLost({
+      db:prisma,tenantId:ctx.tenantId,actorId:ctx.userId,
+      opportunityId:req.params.id,expectedUpdatedAt:req.body.expectedUpdatedAt,
+      ipAddress:ctx.ip,userAgent:ctx.userAgent
+    });
+  } catch(error) {
+    if(error instanceof CrmOpportunityNotFoundError) throw new HttpError(404,'Oportunidad no encontrada.');
+    if(error instanceof CrmOpportunityStaleError) throw new HttpError(409,'Otro usuario modificó la oportunidad. Actualiza el listado.');
+    if(error instanceof CrmOpportunityStageError) throw new HttpError(409,'La etapa comercial no admite este cambio.');
+    if(error instanceof TypeError &&
+      ['CRM_OPPORTUNITY_ID_INVALID','CRM_OPPORTUNITY_REVISION_REQUIRED'].includes(error.message))
+      throw new HttpError(400,'Identificador o revisión CRM inválida.');
+    throw error;
+  }
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,result);
 }));
 
 export default router;

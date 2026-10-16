@@ -11,6 +11,7 @@ import { allocateDocumentNumber, SALES_INVOICE_SEQUENCE_KEY } from '../../shared
 import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { ONE, ZERO } from '../../shared/financial/decimal.js';
+import { decidePosScanMatch, normalizePosScanCode } from '../pos/pos-scan-code.js';
 import { convertToFunctional, functionalizeBalancedLedgerLines, resolveFxContext } from '../../shared/financial/fx.js';
 import { copyLedgerLineSnapshotsForReversal, getFxPolicy, recordDocumentSnapshot, recordLedgerLineSnapshots } from '../currency/fx.repository.js';
 
@@ -51,6 +52,31 @@ const requireActor = (ctx: ReturnType<typeof context>) => {
   if (!actorId) throw new HttpError(401, 'La operación financiera requiere un actor autenticado.');
   return actorId;
 };
+
+router.get('/pos/product-lookup', requirePermission('sales.view'), asyncHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  const tenantId = context(req).tenantId;
+  const code = normalizePosScanCode(req.query.code);
+  if (!code) throw new HttpError(400, 'Código de producto inválido.');
+
+  const matches = await prisma.product.findMany({
+    where: {
+      tenantId,
+      active: true,
+      OR: [
+        { sku: code },
+        { barcode: code },
+        { productCodes: { some: { tenantId, active: true, kind: 'barcode', value: code } } }
+      ]
+    },
+    select: { id: true, sku: true, barcode: true, name: true, unit: true },
+    take: 2
+  });
+  const decision = decidePosScanMatch(matches);
+  if (decision.kind === 'not_found') throw new HttpError(404, 'Producto no encontrado para el código.');
+  if (decision.kind === 'ambiguous') throw new HttpError(409, 'Código asociado a más de un producto. Requiere revisión.');
+  ok(res, decision.value);
+}));
 
 router.get('/', requirePermission('sales.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;

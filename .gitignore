@@ -44,3 +44,7 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Local-only optional REA CLI and untrusted external capture evidence
+/.local-tools/rea/
+/rea-evidence/

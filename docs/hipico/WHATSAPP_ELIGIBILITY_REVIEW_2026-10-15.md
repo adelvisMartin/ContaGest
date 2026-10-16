@@ -1,76 +1,83 @@
-# Control Hípico — elegibilidad WhatsApp y revisión de política #1011
+# Control Hípico — elegibilidad para chatbot en WhatsApp Messenger (#1011)
 
-**Corte:** 2026-10-15 · **Issue:** [#1011](https://github.com/adelvisMartin/ContaGest/issues/1011) · **BASE_SHA:** `5c1b4a940867aac1581dcf2c2deb7e4a4145431a`  
-**Decisión sobre SOURCE (grupo real): NO-GO** para envío automatizado. **Account/capability/legal review: BLOCKED/NOT_VERIFIED.** Este documento no habilita ningún mensaje, ni reemplaza los términos oficiales.
+**Corte:** 2026-10-15 · **Issue:** [#1011](https://github.com/adelvisMartin/ContaGest/issues/1011) · **BASE_SHA:** `1d0d97d2175eb09deba0a40c4b5555add75793b3` (base Git incorporada a esta revisión documental; no constituye evidencia de release)
+**Canal elegido:** WhatsApp Messenger normal. **Alcance del grupo:** privado, amigos, recreativo, sin dinero real ni efecto económico. **WhatsApp Business:** excluido. **Decisión de envío automático SOURCE:** `NO_GO` mientras no haya autorización expresa verificable para Messenger.
 
-## 1. Fuente, evidencia y confianza
+Esta revisión fija la premisa del propietario. No preguntar nuevamente si se usa dinero real. La clasificación del grupo no altera otros módulos contables o financieros de Control Hípico/ContaGest.
 
-| Fuente oficial / fecha de revisión | Hallazgo documentado | Estado |
+## 1. Política aplicable
+
+La fuente primaria consultada es [Condiciones del servicio de WhatsApp Messenger](https://www.whatsapp.com/legal/terms-of-service?lang=es), en español, el 15-10-2026. En “Uso aceptable de nuestros Servicios”, limita las comunicaciones inadmisibles incluyendo mensajería automática y el uso no personal salvo autorización; la sección siguiente prohíbe acceso o uso automatizado/no autorizado que afecte al servicio.
+
+WhatsApp documenta una experiencia oficial de [agentes de terceros](https://faq.whatsapp.com/1050934623978152) sujeta a sus [términos](https://www.whatsapp.com/legal/third-party-agents-terms). La disponibilidad se limita a ciertos países y la documentación indica que el usuario conversa con el agente en su chat 1:1; el agente no puede añadirse a grupos ni acceder a otros chats. Es una vía a investigar solo si el producto cambia a consulta privada directa. **No resuelve el requisito actual de contestar dentro del grupo** y no habilita lectura o respuesta automatizada a un grupo existente.
+
+La norma de WhatsApp Business sobre apuestas con dinero real no se presenta como regla aplicable a este caso, porque el canal pedido no es Business y el grupo no mueve dinero. Las funciones Business Platform/Groups API tampoco forman parte del diseño seleccionado. El benchmark no demuestra permiso para automatizar Messenger.
+
+| Pregunta | Evidencia/estado | Decisión de implementación |
 |---|---|---|
-| [WhatsApp Business Messaging Policy](https://business.whatsapp.com/policy/preview?lang=es_LA) · 2026-10-15 | La política vigente (23-09-2026), §4, restringe las apuestas con dinero real, **pero §§5–6 definen excepciones acotadas** para mensajes promocionales de apuestas en línea mediante Business Platform sólo en **Australia, Japón, Colombia, México y Perú**, sujetas a jurisdicción, edad, licencias y aprobación explícita de Meta. **Venezuela no figura en la lista de excepciones para apuestas en línea**; la presencia de Perú en esa lista tampoco habilita el grupo real ni elimina requisitos de elegibilidad. Exige consentimiento/opt-out y escalamiento humano en supuestos permitidos. | `VERIFIED_POLICY_TEXT` vía fuente oficial accesible |
-| [WhatsApp Business Solution Terms](https://www.whatsapp.com/legal/business-solution-terms) · revisado 2026-10-15; página indexada: último cambio 2026-03-06 | Términos para proveedores terceros y de IA. Business Solution Data no debe utilizarse para entrenar/mejorar modelos externos generales; la excepción descrita para fine-tuning exclusivo tiene condiciones. Un producto de IA principal tiene restricciones específicas, distintas de una IA meramente auxiliar. | `PARTIAL`: texto oficial indexado; la URL de lectura directa puede exigir autenticación |
-| [Meta Terms for WhatsApp Business](https://www.whatsapp.com/legal/meta-terms-whatsapp-business?lang=es) · 2026-10-15 | La página remite a cambios con vigencia anunciada el 2026-09-23; no asumimos que el aviso/banner sea prueba de aprobación del caso. | `PARTIAL` texto oficial visible |
-| [WhatsApp Groups API](https://developers.facebook.com/documentation/business-messaging/whatsapp/groups/) · 2026-10-15 | La consulta oficial de Groups API respondió HTTP 429. **No verificamos** con éxito los requisitos actualizados de OBA, tamaño, coexistencia, formatos de mensaje o autorización para el grupo existente. Las cifras de documentación secundaria se consideran hipótesis pendientes de comprobación. | `NOT_VERIFIED_RATE_LIMITED` |
-| [Third Party Agent Terms](https://www.whatsapp.com/legal/third-party-agents-terms) · texto fechado 2026-08-25 | Existen términos para agentes de terceros operando en una plataforma de WhatsApp. No se confirma que el Bridge actual esté autorizado como tal por disponer de código técnico. | `REVIEW_REQUIRED` |
+| ¿Qué canal pidió el propietario? | WhatsApp Messenger normal | No diseñar el producto sobre Business ni sus APIs |
+| ¿Qué actividad contiene el grupo? | Amigos; juego/apuestas solo recreativas, sin dinero real, pagos, depósitos, retiros, premios canjeables o efecto económico | Puntuación, si existiera, se mantiene virtual y fuera del ledger financiero |
+| ¿Las condiciones actuales permiten bots automáticos en la app normal? | Términos oficiales restringen mensajería automática y uso no personal salvo autorización | Sin autorización explícita documentada, bloquear SOURCE auto-send |
+| ¿La experiencia oficial de agentes de terceros puede leer o responder dentro del grupo? | Help Center: solo chat entre el usuario y el agente; no acceso a otros chats/grupos; disponibilidad regional limitada | No es una solución para auto-respuesta grupal |
+| ¿Se ha verificado una excepción o mecanismo autorizado para este caso/grupo? | No | `NOT_VERIFIED`; no inferir permiso de que el bot funcione técnicamente |
+| ¿Puede continuar la implementación del producto? | Sí, con LAB sintético y asistencia humana de compartir/copiar | Continuar #892/#907 y diseñar sugerencias editables bajo los gates existentes |
 
-### Excepciones limitadas no son autorización para este SOURCE
+## 2. Matriz ejecutable de uso
 
-La política distingue **promoción de apuestas en línea** (exige lista territorial, aprobación Meta y otras condiciones) de **actividades presenciales** y otras categorías mencionadas en §6. Es incorrecto afirmar una prohibición absoluta en todas las regiones o que poseer una licencia local automáticamente convierta una operación en autorizada. Ninguna excepción se ha acreditado para la cuenta/grupo/actividad de este proyecto. `SOURCE=NO_GO` se mantiene por evaluación concreta y falta de evidencia, no por negar las excepciones de la política.
+| Caso | Estado | Motivo |
+|---|---|---|
+| Respuesta automática a preguntas recreativas en SOURCE Messenger | `NO_GO` | No se ha verificado autorización expresa para mensajería automática en Messenger |
+| Respuesta automática de programa/resultados en SOURCE Messenger | `NO_GO` | Mismo límite de automatización; la fuente y carácter recreativo no autorizan autoenvío |
+| Consulta financiera (saldo, depósitos, pagos, retiros) desde el grupo recreativo | `NO_GO` | Fuera del alcance del grupo; no exponer ni crear autoridad financiera desde mensajes |
+| Sugerencia editable y compartida manualmente por una persona | `HUMAN_ACTION_REQUIRED` | Vista previa/edición; acción nativa manual, sin envío en background |
+| WhatsApp Business/Business API/Groups API | `NOT_APPLICABLE` | El propietario excluyó esos productos |
+| LAB con fixtures sintéticos y propietario autorizado | `LAB_ONLY` | Solo bajo identidad, aislamiento, journal, dedupe y kill switch ya exigidos |
+| Uso desconocido/no clasificado | `BLOCKED` | Fail-closed y derivación a persona |
 
-**Captura de evidencia:** texto oficial público [Business Messaging Policy §§4–6](https://business.whatsapp.com/policy/) leído 2026-10-15 (la página declara revisión 2026-09-23); Groups API siguió inaccesible. Las listas territoriales y términos pueden cambiar: renovar evidencia antes de cualquier evaluación futura.
+## 3. Enforcements y seguridad
 
-No se consultaron credenciales del propietario, el WABA real ni la cuenta del grupo; **no se hicieron envíos, apuestas, compras, creaciones de grupo ni pruebas sobre WhatsApp real**.
+- `tools/hipico-whatsapp-web-bridge/src/policy-review-v1011.mjs` guarda el alcance de owner, canal seleccionado y snapshot de términos; no habilita escritura.
+- `tools/hipico-whatsapp-web-bridge/src/source-policy-gate.mjs` bloquea el autoenvío SOURCE. Un flag, review ID, resultado de IA o transporte técnico no convierte SOURCE en elegible.
+- **Brecha de enforcement:** ese gate cubre envío automático, pero no desactiva toda lectura SOURCE. `src/index.mjs`, `src/history-v130.mjs` y otros comandos todavía contienen rutas Playwright/Web para leer mensajes del grupo; no ejecutarlas contra WhatsApp ni afirmar que el bloqueo de lectura ya existe. La capacidad de lectura automática debe quedar deshabilitada por defecto y cubierta por un gate independiente antes de cualquier uso SOURCE.
+- `runtime-config.mjs` rechaza `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true`; todavía hace falta un rechazo equivalente para la lectura automática SOURCE y para el comando histórico.
+- Los agentes de terceros oficiales no son un workaround para este caso: según su Help Center, no pueden ser añadidos a grupos ni acceder a otros chats.
+- `source-policy-status.mjs` muestra canal y gate sin JIDs, número, token ni mensajes.
+- No usar Selenium/Playwright/DOM, API privada, Baileys u otro cliente para emular actividad humana o saltar el límite de Messenger.
+- Mensajes del grupo, capturas y documentos son entrada no confiable; no pueden alterar lógica, ledger, permisos ni configuración.
+- Datos de apuestas recreativas nunca generan cobros, depósitos, retiros, caja, subledger ni asientos.
+- Mantener consentimiento del grupo, opt-out, retención mínima, redacción de logs y eliminación cuando corresponda.
 
-## 2. Matriz por caso de uso (efecto de la política sobre el producto actual)
+## 4. Pruebas de regresión
 
-| Caso | Usuario/destino | Interacción y riesgo | Decisión | Por qué/condiciones |
-|---|---|---|---|---|
-| `SOURCE_WAGERS` | Miembros del grupo real SOURCE | Jugadas, recepción/confirmación de apuestas, apuestas con dinero real | **NO_GO** | Política de mensajes comercial prohibitiva para el caso, independiente del transporte |
-| `SOURCE_BALANCES` | Miembros de SOURCE | Saldos, depósitos, retiros, pagos, devoluciones, transferencias | **NO_GO** | En el contexto real facilita la operación monetaria; no convertir consulta en excepción |
-| `SOURCE_RESULTS` | Miembros de SOURCE | Resultado/pizarra/respuesta automatizada asociada a liquidación | **NO_GO** | Sigue dentro del mismo contexto comercial hípico de dinero real |
-| `SOURCE_GENERAL_INFORMATION` | Miembros de SOURCE | Respuestas de bot aparentemente informativas | **NO_GO** | No hay aprobación separada del caso ni del grupo existente; no inferir autorización por texto neutro |
-| `PRIVATE_INFORMATIONAL_ONE_TO_ONE` | Destinatario individual hipotético | Consulta genuinamente no monetaria, sin referencia al grupo de apuestas | **BLOCKED** | Account/consent/opt-out/plantilla/ventana 24h/región/uso permitido y proveedor no verificados |
-| `OFFICIAL_GROUPS_API_TEST` | Grupo sandbox oficial hipotético | Pruebas de grupos/Cloud API, webhook y delivery receipts | **BLOCKED** | Groups API dio 429 y elegibilidad WABA/OBA/capacidades no verificada |
-| `THIRD_PARTY_AI_AGENT` | Procesador tercero | Modelo IA, mensajes y datos de usuarios | **BLOCKED** | Falta analizar términos del proveedor, contrato y destino de los datos |
-| `LAB_SYNTHETIC` | LAB de QA explícitamente autorizado | Corpus sintético, respuestas sin efectos monetarios | **LAB_ONLY** condicionado | No concede permiso de plataforma ni sustituye identity/handoff/pinning, antivirus de duplicados, consentimiento ni kill switch |
+La suite `tests/hipico_whatsapp_policy_review_v1011.test.mjs` debe comprobar:
 
-`NO_GO` y `BLOCKED` nunca se transforman en `GO` al configurar `HIPICO_SOURCE_AUTO_REPLY_ENABLED=true`, activar un transport/cloud API, marcar edad, adjuntar un «permiso» en un env var o rebautizar un mensaje de apuesta como «informativo».
+1. Perfil `PRIVATE_FRIENDS`, `RECREATIONAL_HORSE_RACING`, `realMoney=false` y canal normal.
+2. Business products excluidos y link al ToS de Messenger como fuente de política.
+3. Las intenciones SOURCE recreativas no permiten autoenvío incluso con credenciales/flags/evidencia falsos.
+4. Los datos financieros están fuera del perfil recreativo y no producen mutaciones.
+5. La sugerencia manual requiere acción humana y no declara `productionSourceWritingAuthorized`.
+6. LAB funciona únicamente con contexto sintético y sus gates independientes.
+7. CLI redacted: sin tokens, JIDs, teléfonos o textos privados.
+8. El gate conserva los mismos resultados ante replay, timeout y reintento; no se duplica un mensaje ambiguo.
+9. Los comandos de lectura y backfill SOURCE fallan cerrados antes de abrir Chromium o navegar a WhatsApp; las fixtures sintéticas LAB siguen disponibles sin sesión de Messenger.
 
-## 3. Implementación, alcance y pruebas de regresión
-
-- `tools/hipico-whatsapp-web-bridge/src/policy-review-v1011.mjs` es el **snapshot de producto/eligibilidad** con referencia oficial, fecha, clasificación conservadora y razones sanitizadas. No crea otro canal, motor de conversación ni autoriza enviar mensajes.
-- `tools/hipico-whatsapp-web-bridge/src/source-policy-gate.mjs` sigue siendo la **única autoridad ejecutable** de bloqueo SOURCE. El review v1011 renueva su fecha/snapshot, sin habilitar `eligible` ni `sourceAutoReplyEnabled`.
-- `tools/hipico-whatsapp-web-bridge/src/source-policy-status.mjs` muestra `NO_GO`, fecha/revisión, caso de uso y requisitos no verificados sin imprimir JIDs, número, token ni mensajes. Es el indicador de estado disponible para operaciones mientras no exista UX visual aprobada.
-- `tests/hipico_whatsapp_policy_review_v1011.test.mjs` entra automáticamente en `node scripts/hipico-root-contracts.mjs` por convención `hipico*.test.mjs`. Verifica default-deny, aislamiento LAB, imposibilidad de transformar SOURCE a GO y redacción del CLI.
-- El Bridge tiene otras protecciones de identidad, journal y de LAB ya existentes. Este ticket **no las reemplaza ni valida físicamente**.
-
-Para probar localmente con Node 22:
+Ejecutar en la raíz:
 
 ```bash
 node --test tests/hipico_whatsapp_policy_review_v1011.test.mjs
-node scripts/hipico-root-contracts.mjs
-cd tools/hipico-whatsapp-web-bridge
-npm run source:policy
-npm run qa
+node --test tests/hipico_whatsapp_v160_readiness_contract.test.mjs
+npm run test:hipico
 ```
 
-`source:policy` con SOURCE habilitado debe salir con código 2 y explicar el NO-GO; sin solicitud presenta `DISABLED`, no `GO`. El resto del QA tiene estado `NOT_EXECUTED` hasta probarlo realmente en un checkout completo.
+Registrar resultados reales con el SHA probado. El estado del código no equivale a autorización de WhatsApp ni a release.
 
-## 4. Aprobaciones y dependencias para futuras decisiones
+## 5. Próximos pasos canónicos
 
-1. Legal/compliance y titular documentan propósito real, apuestas frente a información separable, jurisdicción, tipo de organización y permisos; un cambio de nombre de endpoint no cambia la actividad.
-2. Meta/WhatsApp oficial: confirmación vigente de política y de elegibilidad por caso, WABA/OBA, región, participantes/grupo, consentimiento, tipo de mensaje y términos de grupos. **Actualmente NOT_VERIFIED.**
-3. Protección de Business Solution Data: contrato proveedor, inventario/redacción/retención, propósito, aislamiento, solicitudes de borrado, IA no entrenada con datos ajenos y no exposición de información personal.
-4. Sólo tras autorización independiente, un sandbox oficial permitido puede verificar webhooks/receipts; nunca realizar una prueba de envío sobre SOURCE para demostrar disponibilidad.
-5. Cualquier cambio `GO` exige nuevo PR revisado por seguridad, jurídico/producto, evidencia fechada, pruebas negativas, decisión firmada y release gate exact-SHA. Sin todo ello continuar `NO_GO`.
-6. Los desarrollos #892/#907 siguen en LAB y SOURCE read-only. Si los términos prohíben el caso, se elige otro canal autorizado o una consola propia; no un bypass DOM/Cloud API/Baileys.
+1. Seguir con el motor de conversación y consultas canónicas LAB de [#892](https://github.com/adelvisMartin/ContaGest/issues/892).
+2. Completar inbox durable, handoff y recuperación de [#907](https://github.com/adelvisMartin/ContaGest/issues/907).
+3. Diseñar respuesta sugerida editable, con cita/fuente/fecha, botón copiar/compartir nativo, cancelar y registro mínimo.
+4. Implementar el gate independiente de lectura SOURCE; verificar por prueba que ni `start`, `history:v130` ni tareas programadas abren Messenger o recopilan mensajes en este perfil.
+5. Mantener SOURCE no automatizado mientras la autorización expresa para Messenger no esté comprobada.
+6. Ejecutar QA PWA/Android, privacidad, soak y DR bajo #837/#839/#842 cuando corresponda.
 
-## 5. Pendientes del issue #1011 (no presentarlos como completados)
-
-- Acceso/lectura confirmada de Groups API oficial y tabla de capacidades vigentes; sesión devolvió 429.
-- Titular de WABA y operator, tipo de cuenta, región, número, grupo y consentimiento: no se solicitó ni almacenó PII.
-- Revisión jurídica/producto; validación con cuenta y grupo sandbox oficial, sólo cuando se justifique.
-- Revisión independiente de seguridad; UX operacional integrada más allá del CLI, si el owner la requiere.
-- QA física Windows/Android/WhatsApp real y estabilidad #119/#120: pendientes por decisión del propietario y gates de seguridad.
-
-**Resultado verificable de este incremento:** código y documentación que reproducen un bloqueo existente con mayor transparencia y pruebas; **no es habilitación de WhatsApp productivo**, ni certificación completa del issue.
+**Criterio para cambiar el `NO_GO`:** una fuente oficial vigente que autorice este mecanismo de Messenger, evidencia del alcance/cuenta/grupo exactos, revisión legal/producto, revisión independiente de seguridad, pruebas negativas y nuevo PR con gates exact-SHA. El carácter recreativo/no monetario ya está confirmado y no es un requisito pendiente.

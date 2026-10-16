@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "products": [
+    {
+      "id": "contagest",
+      "name": "ContaGest VE (ERP)",
+      "objectives": [
+        {
+          "id": "CG-IDENTITY",
+          "risk": "P0",
+          "goal": "Identidad, roles, licenciamiento y aislamiento de tenants",
+          "acceptance": "Sesión/tenant/RBAC/entitlement exigidos por servidor; pruebas A→B y B→A; UI comunica denegaciones.",
+          "owners": [
+            "backend/",
+            "frontend/src/",
+            "supabase/"
+          ]
+        },
+        {
+          "id": "CG-FINANCE",
+          "risk": "P0",
+          "goal": "Contabilidad, impuestos, bancos y cierres financieros íntegros",
+          "acceptance": "Decimal, partida doble, períodos cerrados, reversos, idempotencia y trazabilidad verificables en PostgreSQL real.",
+          "owners": [
+            "backend/",
+            "supabase/",
+            "qa/"
+          ]
+        },
+        {
+          "id": "CG-COMMERCE",
+          "risk": "P1",
+          "goal": "Ventas, compras, inventario, POS y documentos conectados",
+          "acceptance": "Flujo UI→API→persistencia→respuesta visible con estados, autorización y regresiones sin duplicados.",
+          "owners": [
+            "frontend/src/",
+            "backend/",
+            "qa/"
+          ]
+        },
+        {
+          "id": "CG-UX",
+          "risk": "P1",
+          "goal": "Experiencia ERP responsive, accesible y claro/oscuro",
+          "acceptance": "Matriz de rutas, loading/empty/error, foco/teclado, 360/390/430/768/1440 y sin CSS paralelo.",
+          "owners": [
+            "frontend/src/",
+            "scripts/",
+            "qa/"
+          ]
+        },
+        {
+          "id": "CG-RECOVERY",
+          "risk": "P1",
+          "goal": "Resiliencia, reportes, exportaciones y recuperación de datos",
+          "acceptance": "Recuperación probada mediante restore drill; reportes/extracciones respetan permisos y tenant.",
+          "owners": [
+            "backend/",
+            "scripts/",
+            "docs/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "control-hipico",
+      "name": "Control Hípico (producto independiente)",
+      "objectives": [
+        {
+          "id": "CH-RACES",
+          "risk": "P1",
+          "goal": "Operación de carreras, participantes, llegadas, pizarras y pozos",
+          "acceptance": "Flujos reales trazables mediante API canónica /api/v1/hipico/* y estado consistente tras reconectar.",
+          "owners": [
+            "frontend/public/hipico-control/",
+            "backend/",
+            "frontend/api/hipico/"
+          ]
+        },
+        {
+          "id": "CH-FINANCE",
+          "risk": "P0",
+          "goal": "Saldos, liquidaciones y cierres seguros",
+          "acceptance": "Efectos monetarios exclusivamente en servidor, atómicos, idempotentes y auditables; pruebas con PostgreSQL efímero.",
+          "owners": [
+            "backend/",
+            "supabase/",
+            "qa/"
+          ]
+        },
+        {
+          "id": "CH-OFFLINE",
+          "risk": "P1",
+          "goal": "PWA/Android offline-first, outbox y sincronización",
+          "acceptance": "Sin pérdida ni duplicados ante red intermitente, reinicio y replay; pruebas dispositivo físico separadas.",
+          "owners": [
+            "frontend/public/hipico-control/",
+            "android/",
+            "qa/"
+          ]
+        },
+        {
+          "id": "CH-WHATSAPP",
+          "risk": "P0",
+          "goal": "WhatsApp Bridge seguro con SOURCE de solo lectura y LAB autorizado",
+          "acceptance": "Identidad/destino allowlisted, sin envíos automáticos SOURCE, ACK persistente, dedupe y recuperación.",
+          "owners": [
+            "tools/hipico-whatsapp-bridge/",
+            "tools/hipico-whatsapp-web-bridge/",
+            "backend/"
+          ]
+        },
+        {
+          "id": "CH-AGENT",
+          "risk": "P1",
+          "goal": "Agente conversacional con propuestas contextualizadas y sin autoridad financiera",
+          "acceptance": "Modo DISABLED→SHADOW→ASSISTED sujeto a gates; ninguna IA ejecuta SQL, settlement ni acciones no autorizadas.",
+          "owners": [
+            "backend/",
+            "frontend/api/hipico/",
+            "tools/"
+          ]
+        },
+        {
+          "id": "CH-RELEASE",
+          "risk": "P1",
+          "goal": "QA/release reproducible en web, Android y Bridge",
+          "acceptance": "Evidencia ligada al SHA: pruebas de integración, Chromium/Firefox/WebKit, WhatsApp LAB y dispositivos físicos como gates diferenciados.",
+          "owners": [
+            "scripts/",
+            "qa/",
+            "docs/"
+          ]
+        }
+      ]
+    }
+  ]
+}

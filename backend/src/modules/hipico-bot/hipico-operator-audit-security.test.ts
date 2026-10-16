@@ -29,6 +29,6 @@ test('weak or missing operator secrets cannot produce an auditable actor identit
 test('canonical mutation route never persists the client supplied operatorId as actorRef',()=>{
   const source=readFileSync(new URL('./hipico-canonical.routes.ts',import.meta.url),'utf8');
   assert.match(source,/const actorRef = operatorActorRef\(\)/);
-  assert.match(source,/actorRef,\n\s*source: 'canonical_operator_api'/);
+  assert.match(source,/actorRef,\r?\n\s*source: 'canonical_operator_api'/);
   assert.doesNotMatch(source,/actorRef:\s*input\.operatorId/);
 });

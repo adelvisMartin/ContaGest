@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-v1.6.0 separa explícitamente **capacidad técnica de transporte** de **permiso de negocio/política**. El Bridge puede observar SOURCE y ejecutar conversación automática en LAB, pero SOURCE permanece read-only porque la Política de mensajes de WhatsApp Business revisada el 2026-09-29 prohíbe facilitar apuestas con dinero real.
+v1.6.0 separa explícitamente **capacidad técnica de transporte** de **permiso de política**. El perfil vigente es un grupo privado de amigos con actividad recreativa sin dinero real y WhatsApp Messenger normal; WhatsApp Business no se usará. Las condiciones de Messenger restringen mensajería automática/uso no personal salvo autorización expresa, así que SOURCE auto-send se mantiene NO-GO. El LAB de este plan significa harness local/sintético, no autorización para enviar mensajes por WhatsApp.
 
 ## Controles v1.6.0
 

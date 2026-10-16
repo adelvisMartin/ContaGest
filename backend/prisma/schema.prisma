@@ -99,6 +99,7 @@ model Tenant {
   regulatoryFeeds RegulatoryFeed[]
   idempotencyRecords IdempotencyRecord[]
   documentSequences DocumentSequence[]
+  asyncJobIntents AsyncJobIntent[]
   businessLocations BusinessLocation[]
   schedulingResources SchedulingResource[]
   schedulingBookings SchedulingBooking[]

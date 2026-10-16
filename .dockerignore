@@ -1,0 +1,28 @@
+# Issue #648: exclude local credentials and generated artifacts from BOTH image build contexts.
+# Keep the two Dockerfile COPY inputs (workspace manifests, Prisma and source) available.
+.git
+**/.git
+**/.git/**
+**/node_modules
+**/node_modules/**
+**/dist
+**/dist/**
+**/build
+**/build/**
+**/coverage
+**/coverage/**
+**/artifacts
+**/artifacts/**
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/id_rsa
+**/id_ed25519
+**/*service-account*.json
+**/*credentials*.json
