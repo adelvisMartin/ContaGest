@@ -133,9 +133,11 @@ function manualSuggestionCard() {
       <p>Solo para el grupo recreativo, sin dinero real. Nunca lee WhatsApp ni envía mensajes.</p>
     </div></div>
     <label><span>Escribe o edita tu sugerencia (máximo 1200 caracteres)</span>
-      <textarea data-ops-manual-text maxlength="1200" rows="5" spellcheck="true"
+      <textarea data-ops-manual-text maxlength="1200" rows="5" spellcheck="true" autocomplete="off"
         aria-label="Respuesta manual editable" placeholder="Escribe aquí un mensaje informativo..."></textarea>
     </label>
+    <label><input type="checkbox" data-ops-manual-consent>
+      Declaro que el grupo ha autorizado compartir este contenido y que no incluyo datos privados de terceros sin permiso.</label>
     <label><input type="checkbox" data-ops-manual-confirm>
       He revisado el contenido y decidiré personalmente dónde compartirlo.</label>
     <div class="ops-message__body">
@@ -143,15 +145,16 @@ function manualSuggestionCard() {
         ${copyButtonContent(false)}</button>
       <button type="button" class="ops-button" data-ops-manual-clear>Cancelar y borrar</button>
     </div>
-    <small>Copiar no abre WhatsApp ni produce entregas automáticas. El borrador se borra al cerrar el panel.</small>
+    <small>Ambas confirmaciones son necesarias. Si no cuentas con consentimiento, no compartas. Copiar no abre WhatsApp ni produce entregas automáticas. El borrador se borra al cerrar el panel.</small>
   </section>`;
 }
 
 function updateManualSuggestionControls(dialog) {
   const draft = dialog?.querySelector('[data-ops-manual-text]');
   const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
+  const consent = dialog?.querySelector('[data-ops-manual-consent]');
   const copy = dialog?.querySelector('[data-ops-manual-copy]');
-  if (copy) copy.disabled = pendingManualClipboardWrites.has(copy) || !mayCopyManualSuggestion(draft?.value, confirmation?.checked);
+  if (copy) copy.disabled = pendingManualClipboardWrites.has(copy) || consent?.checked !== true || !mayCopyManualSuggestion(draft?.value, confirmation?.checked);
 }
 
 function messageCard(id, title, hint, text, open = false) {
@@ -214,6 +217,8 @@ function renderDialog(root) {
     const confirmation = dialog.querySelector('[data-ops-manual-confirm]');
     if (draft) draft.value = '';
     if (confirmation) confirmation.checked = false;
+    const consent = dialog.querySelector('[data-ops-manual-consent]');
+    if (consent) consent.checked = false;
     const copy = dialog.querySelector('[data-ops-manual-copy]');
     if (copy) copy.innerHTML = copyButtonContent(false);
     updateManualSuggestionControls(dialog);
@@ -296,6 +301,8 @@ export function mountOperationalCopyCenter() {
         invalidateManualDraftReview(dialog);
         if (draft) draft.value = '';
         if (confirmation) confirmation.checked = false;
+        const consent = dialog?.querySelector('[data-ops-manual-consent]');
+        if (consent) consent.checked = false;
         const copy = dialog?.querySelector('[data-ops-manual-copy]');
         if (copy) copy.innerHTML = copyButtonContent(false);
         updateManualSuggestionControls(dialog);
@@ -305,10 +312,11 @@ export function mountOperationalCopyCenter() {
         const dialog = target.closest('dialog');
         const draft = dialog?.querySelector('[data-ops-manual-text]');
         const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
+        const consent = dialog?.querySelector('[data-ops-manual-consent]');
         const button = target.closest('[data-ops-manual-copy]');
         // A pending clipboard write cannot count as fresh review of an edited
         // draft. Disable reentry and retain the exact human-approved snapshot.
-        if (button.disabled || pendingManualClipboardWrites.has(button) ||
+        if (button.disabled || pendingManualClipboardWrites.has(button) || consent?.checked !== true ||
             !mayCopyManualSuggestion(draft?.value, confirmation?.checked)) return;
         const reviewedText = draft.value.trim();
         const reviewedRevision = manualDraftRevisions.get(dialog) ?? 0;
@@ -318,7 +326,7 @@ export function mountOperationalCopyCenter() {
           await copyText(reviewedText);
           // Re-typing identical text is NOT the same reviewed version.
           if ((manualDraftRevisions.get(dialog) ?? 0) === reviewedRevision &&
-              draft.value.trim() === reviewedText && confirmation.checked &&
+              draft.value.trim() === reviewedText && confirmation.checked && consent.checked &&
               button.isConnected && root.dataset.opsAuthorized === 'true') {
             button.innerHTML = copyButtonContent(true);
           }
@@ -356,10 +364,14 @@ export function mountOperationalCopyCenter() {
   root.addEventListener('change', async (event) => {
     if (root.dataset.opsAuthorized !== 'true') return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.matches('[data-ops-manual-confirm]')) {
+    if (target?.matches('[data-ops-manual-confirm]') || target?.matches('[data-ops-manual-consent]')) {
       const dialog = target.closest('dialog');
-      // A changed confirmation invalidates any asynchronous old approval.
+      // Any consent/review change invalidates asynchronous clipboard results.
       invalidateManualDraftReview(dialog);
+      if (target.matches('[data-ops-manual-consent]')) {
+        const confirmation = dialog?.querySelector('[data-ops-manual-confirm]');
+        if (confirmation) confirmation.checked = false;
+      }
       const copy = dialog?.querySelector('[data-ops-manual-copy]');
       if (copy) copy.innerHTML = copyButtonContent(false);
       updateManualSuggestionControls(dialog);
