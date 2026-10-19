@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
 import { listFiscalRuleVersions } from '../backend/src/modules/fiscal/fiscal.repository.ts';
+import { signAccessToken } from '../backend/src/shared/auth/jwt.ts';
 
 const RUN = `QA561-${Date.now().toString(36).toUpperCase()}`;
 const PERIOD = '2099-06';
@@ -25,17 +26,44 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   await h.prisma.closingPeriod.deleteMany({ where: { tenantId: h.tenant.id, period: PERIOD, module: 'fiscal' } });
   await h.ok('/fiscal/periods', { method: 'POST', body: JSON.stringify({ period: PERIOD, module: 'fiscal', note: `${RUN} exact SHA ${sha}` }) });
 
-  const ruleV1 = await h.ok('/fiscal/rules', {
-    method: 'POST',
-    body: JSON.stringify({
-      ruleKey: `${RUN.toLowerCase()}.iva`,
-      effectiveFrom: '2099-01-01T00:00:00.000Z',
-      effectiveTo: '2099-07-01T00:00:00.000Z',
-      source: 'QA Gazette v1',
-      documentation: 'QA provenance fixture for historical rule v1',
-      definition: { rate: '16.00', basis: 'net' }
-    })
+  const administratorRole = await h.prisma.userRole.findFirstOrThrow({
+    where: { userId: h.admin.id, role: { permissions: { some: { permission: { key: 'fiscal.close' } } } } }
   });
+  const reviewer = await h.prisma.userProfile.create({
+    data: { tenantId: h.tenant.id, email: `reviewer-${RUN.toLowerCase()}@qa.local`, fullName: 'Fiscal QA independent reviewer',
+      userRoles: { create: { roleId: administratorRole.roleId } } }
+  });
+  const publisher = await h.prisma.userProfile.create({
+    data: { tenantId: h.tenant.id, email: `publisher-${RUN.toLowerCase()}@qa.local`, fullName: 'Fiscal QA independent publisher',
+      userRoles: { create: { roleId: administratorRole.roleId } } }
+  });
+  const reviewerToken = signAccessToken({ id: reviewer.id, email: reviewer.email }, h.tenant.id);
+  const publisherToken = signAccessToken({ id: publisher.id, email: publisher.email }, h.tenant.id);
+  const legalSource = async (reference: string) => {
+    const created = await h.ok('/fiscal/legal-sources', { method: 'POST', body: JSON.stringify({
+      sourceType: 'other', reference, title: `QA simulated provenance ${reference}`,
+      contentSha256: createHash('sha256').update(`${RUN}-${reference}`).digest('hex'),
+      snapshotMetadata: { captureMethod: 'manual' }
+    }) });
+    await h.status(`/fiscal/legal-sources/${created.id}/review`, 409, { method: 'POST',
+      body: JSON.stringify({ reason: 'El autor no puede aprobar su captura.' }) });
+    await h.ok(`/fiscal/legal-sources/${created.id}/review`, { method: 'POST',
+      body: JSON.stringify({ reason: 'Revisión independiente para fixture fiscal sintético.' }) }, reviewerToken);
+    return created;
+  };
+  const draftRule = async (reference: string, effectiveFrom: string, effectiveTo?: string) => {
+    const source = await legalSource(reference);
+    const draft = await h.ok('/fiscal/rules', { method: 'POST', body: JSON.stringify({
+      ruleKey: `${RUN.toLowerCase()}.iva`, effectiveFrom, effectiveTo,
+      legalSourceId: source.id, documentation: `QA provenance fixture ${reference}`,
+      definition: { formula: 'RATIONAL_RATE', base: 'TAXABLE_AMOUNT', numerator: 1, denominator: 8 }
+    }) });
+    await h.status(`/fiscal/rules/${draft.id}/activate`, 409, { method: 'POST' });
+    await h.ok(`/fiscal/rules/${draft.id}/review`, { method: 'POST' }, reviewerToken);
+    return h.ok(`/fiscal/rules/${draft.id}/activate`, { method: 'POST' }, publisherToken);
+  };
+
+  const ruleV1 = await draftRule('QA Gazette v1', '2099-01-01T00:00:00.000Z', '2099-07-01T00:00:00.000Z');
   assert.equal(ruleV1.version, 1);
 
   const concurrent = 12;
@@ -69,17 +97,11 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   const historicalBefore = await h.ok(`/fiscal/documents/${first.id}/rules`);
   assert.equal(historicalBefore[0].ruleVersion, 1);
   assert.equal(historicalBefore[0].source, 'QA Gazette v1');
+  assert.match(String(historicalBefore[0].sourceContentSha256), /^[0-9a-f]{64}$/);
+  assert.equal(historicalBefore[0].reviewedBy, reviewer.id);
+  assert.equal(historicalBefore[0].activatedBy, publisher.id);
 
-  const ruleV2 = await h.ok('/fiscal/rules', {
-    method: 'POST',
-    body: JSON.stringify({
-      ruleKey: `${RUN.toLowerCase()}.iva`,
-      effectiveFrom: '2099-07-01T00:00:00.000Z',
-      source: 'QA Gazette v2',
-      documentation: 'QA provenance fixture for rule v2; historical documents must keep v1',
-      definition: { rate: '17.00', basis: 'net' }
-    })
-  });
+  const ruleV2 = await draftRule('QA Gazette v2', '2099-07-01T00:00:00.000Z');
   assert.equal(ruleV2.version, 2);
   const historicalAfter = await h.ok(`/fiscal/documents/${first.id}/rules`);
   assert.equal(historicalAfter[0].ruleVersion, 1, 'historical snapshot must not be reinterpreted with a new rule');

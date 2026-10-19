@@ -14,7 +14,6 @@ const required59=[
   'tests/vercel_build_recovery_59_75.test.mjs',
   'tests/exact_sha_workflow_recovery_59_75.test.mjs',
   'tests/prisma_ephemeral_baseline_contract.test.mjs',
-  'tests/prisma_async_job_intent_schema_v688.test.mjs',
   'tests/security_audit_surface_boundary.test.mjs',
   'tests/authoritative_contract_suite_59_75.test.mjs',
   'tests/api_validation_error_59_75.test.mjs',

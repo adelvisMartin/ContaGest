@@ -21,6 +21,13 @@ export const FISCAL_DOCUMENT_KINDS=[
 
 export const FiscalService={
   periods(){return BackendApi.get('/fiscal/periods');},
+  legalSources(){return BackendApi.get('/fiscal/legal-sources');},
+  createLegalSource(data){return BackendApi.post('/fiscal/legal-sources',data);},
+  reviewLegalSource(id,reason){return BackendApi.post(`/fiscal/legal-sources/${encodeURIComponent(id)}/review`,{reason});},
+  rules(){return BackendApi.get('/fiscal/rules');},
+  createRule(data){return BackendApi.post('/fiscal/rules',data);},
+  reviewRule(id){return BackendApi.post(`/fiscal/rules/${encodeURIComponent(id)}/review`,{});},
+  activateRule(id){return BackendApi.post(`/fiscal/rules/${encodeURIComponent(id)}/activate`,{});},
   createPeriod(data){return BackendApi.post('/fiscal/periods',data);},
   closePeriod(data){return BackendApi.post('/fiscal/close-period',data);},
   reopenPeriod(data){return BackendApi.post('/fiscal/reopen-period',data);},

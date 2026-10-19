@@ -8,8 +8,9 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
-import { createFiscalLegalSourceDraft, listFiscalLegalSources } from './fiscal-legal-source.repository.js';
+import { createFiscalLegalSourceDraft, listFiscalLegalSources, reviewFiscalLegalSource } from './fiscal-legal-source.repository.js';
 import {
+  activateFiscalRuleVersion,
   allocateFiscalNumber,
   assertFiscalClosePreconditions,
   buildCloseEvidence,
@@ -20,6 +21,7 @@ import {
   listFiscalRuleVersions,
   persistCloseEvidence,
   recordDocumentRuleSnapshots,
+  reviewFiscalRuleVersion,
   resolveFiscalRules
 } from './fiscal.repository.js';
 
@@ -27,6 +29,12 @@ const router = Router();
 router.use(requireTenant);
 
 const periodSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Usa formato AAAA-MM.');
+const utcInstantSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/, 'Se requiere fecha ISO-8601 UTC explícita.')
+  .refine(value => {
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) && date.toISOString().replace(/\.000Z$/, 'Z') === value.replace(/\.000Z$/, 'Z');
+  }, 'Fecha UTC inválida.')
+  .transform(value => new Date(value));
 const moduleSchema = z.enum(['fiscal', 'iva', 'islr', 'igtf', 'retiva', 'municipal']);
 const documentKindSchema = z.enum(['invoice', 'credit_note', 'debit_note', 'withholding', 'tax_return', 'supporting_document', 'other']);
 const createPeriodSchema = z.object({ period: periodSchema, module: moduleSchema, note: z.string().trim().max(500).optional() }).strict();
@@ -41,11 +49,17 @@ const fiscalSchema = z.object({
 }).strict();
 const fiscalRuleSchema = z.object({
   ruleKey: z.string().trim().regex(/^[a-z0-9][a-z0-9._:-]{1,79}$/i),
-  effectiveFrom: z.coerce.date(),
-  effectiveTo: z.coerce.date().nullable().optional(),
-  source: z.string().trim().min(3).max(240),
+  effectiveFrom: utcInstantSchema,
+  effectiveTo: utcInstantSchema.nullable().optional(),
+  legalSourceId: z.string().uuid(),
+  supersedesId: z.string().uuid().nullable().optional(),
   documentation: z.string().trim().min(3).max(1000),
-  definition: z.record(z.string(), z.unknown())
+  definition: z.object({
+    formula: z.literal('RATIONAL_RATE'),
+    base: z.literal('TAXABLE_AMOUNT'),
+    numerator: z.number().int().min(0).max(1_000_000_000),
+    denominator: z.number().int().min(1).max(1_000_000_000)
+  }).strict().refine(v => v.numerator <= v.denominator, 'La fracción debe estar entre 0 y 1.')
 }).strict().superRefine((value, ctx) => {
   if (value.effectiveTo && value.effectiveTo <= value.effectiveFrom) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['effectiveTo'], message: 'effectiveTo debe ser posterior a effectiveFrom.' });
@@ -63,6 +77,7 @@ const fiscalLegalSourceSchema = z.object({
     contentBytes: z.number().int().min(0).max(50_000_000).optional()
   }).strict().optional()
 }).strict();
+const fiscalSourceReviewSchema = z.object({ reason: z.string().trim().min(10).max(1000) }).strict();
 
 const issueDocumentSchema = z.object({
   kind: documentKindSchema,
@@ -70,7 +85,7 @@ const issueDocumentSchema = z.object({
   module: moduleSchema,
   payload: z.record(z.string(), z.unknown()).default({}),
   ruleKeys: z.array(z.string().trim().min(2).max(80)).min(1).max(20),
-  effectiveAt: z.coerce.date().optional(),
+  effectiveAt: utcInstantSchema.optional(),
   prefix: z.string().trim().max(20).optional(),
   width: z.number().int().min(1).max(18).default(8)
 }).strict();
@@ -134,7 +149,7 @@ router.post('/periods', requirePermission('fiscal.close'), validateBody(createPe
   ok(res, created);
 }));
 
-// Legal evidence is operator-supplied DRAFT only. No rule activation or tax rates.
+// Operator-supplied captures are immutable; independent reviewer attestation is append-only.
 router.get('/legal-sources', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
   const ctx = context(req);
   ok(res, await listFiscalLegalSources(ctx.tenantId));
@@ -154,6 +169,21 @@ router.post('/legal-sources', requirePermission('fiscal.close'), validateBody(fi
   res.status(201).json({ ok: true, data: created });
 }));
 
+router.post('/legal-sources/:id/review', requirePermission('fiscal.close'), validateBody(fiscalSourceReviewSchema), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  if (!ctx.userId) throw new HttpError(401, 'Se requiere un revisor autenticado.', { code: 'FISCAL_REVIEW_ACTOR_REQUIRED' });
+  const reviewed = await reviewFiscalLegalSource({
+    tenantId: ctx.tenantId, id: z.string().uuid().parse(String(req.params.id)),
+    reviewedBy: ctx.userId, reason: req.body.reason
+  });
+  await writeAudit({
+    tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.legal_source.reviewed',
+    entity: 'FiscalLegalSource', entityId: reviewed.legalSourceId,
+    after: reviewed, ipAddress: ctx.ip, userAgent: ctx.userAgent
+  });
+  ok(res, reviewed);
+}));
+
 router.get('/rules', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const ruleKey = req.query.ruleKey ? String(req.query.ruleKey).trim() : undefined;
@@ -162,15 +192,17 @@ router.get('/rules', requirePermission('fiscal.read'), asyncHandler(async (req, 
 
 router.post('/rules', requirePermission('fiscal.close'), validateBody(fiscalRuleSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
+  if (!ctx.userId) throw new HttpError(401, 'Se requiere un autor autenticado.', { code: 'FISCAL_RULE_ACTOR_REQUIRED' });
   const created = await createFiscalRuleVersion({
     tenantId: ctx.tenantId,
     ruleKey: req.body.ruleKey,
     effectiveFrom: req.body.effectiveFrom,
     effectiveTo: req.body.effectiveTo || null,
-    source: req.body.source,
+    legalSourceId: req.body.legalSourceId,
+    supersedesId: req.body.supersedesId || null,
     documentation: req.body.documentation,
     definition: req.body.definition,
-    createdBy: ctx.userId || null
+    createdBy: ctx.userId
   });
   await writeAudit({
     tenantId: ctx.tenantId,
@@ -183,6 +215,32 @@ router.post('/rules', requirePermission('fiscal.close'), validateBody(fiscalRule
     userAgent: ctx.userAgent
   });
   res.status(201).json({ ok: true, data: created });
+}));
+
+router.post('/rules/:id/review', requirePermission('fiscal.close'), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  if (!ctx.userId) throw new HttpError(401, 'Se requiere un revisor autenticado.', { code: 'FISCAL_REVIEW_ACTOR_REQUIRED' });
+  const reviewed = await reviewFiscalRuleVersion({ tenantId: ctx.tenantId, id: z.string().uuid().parse(String(req.params.id)), userId: ctx.userId });
+  await writeAudit({
+    tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.rule.reviewed',
+    entity: 'FiscalRuleVersion', entityId: reviewed.id,
+    after: { id: reviewed.id, status: reviewed.status, reviewedAt: reviewed.reviewedAt, reviewedBy: reviewed.reviewedBy },
+    ipAddress: ctx.ip, userAgent: ctx.userAgent
+  });
+  ok(res, reviewed);
+}));
+
+router.post('/rules/:id/activate', requirePermission('fiscal.close'), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  if (!ctx.userId) throw new HttpError(401, 'Se requiere un activador autenticado.', { code: 'FISCAL_ACTIVATION_ACTOR_REQUIRED' });
+  const active = await activateFiscalRuleVersion({ tenantId: ctx.tenantId, id: z.string().uuid().parse(String(req.params.id)), userId: ctx.userId });
+  await writeAudit({
+    tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.rule.activated',
+    entity: 'FiscalRuleVersion', entityId: active.id,
+    after: { id: active.id, status: active.status, activatedAt: active.activatedAt, activatedBy: active.activatedBy, supersedesId: active.supersedesId },
+    ipAddress: ctx.ip, userAgent: ctx.userAgent
+  });
+  ok(res, active);
 }));
 
 router.post('/close-period', requirePermission('fiscal.close'), validateBody(closeSchema), asyncHandler(async (req, res) => {

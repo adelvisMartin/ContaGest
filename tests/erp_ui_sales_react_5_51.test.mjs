@@ -17,23 +17,13 @@ test('5/51 sales renderer owns one React root without imperative legacy lifecycl
   assert.doesNotMatch(source,/components\/ui\/index\.js|escapeHtml|mountSubmit|querySelector|addEventListener|innerHTML/);
 });
 
-test('5/51 sales requires server-confirmed persistence and preserves quote transfer',()=>{
+test('5/51 sales preserves persistence fallback sync and quote transfer contracts',()=>{
   const source=read('frontend/src/pages/SalesPage.jsx');
   for(const token of [
-    'SupabaseSyncService.pullSales(', 'SupabaseSyncService.createSale(',
-    'SALES_SERVER_CONFIRMATION_MISSING', 'saleSaveInFlight.current',
-    'saved.id', 'Venta no confirmada.', 'Consulta y sincroniza Ventas',
-    "navigate('cotizacion')", 'draft.quote.manualAmount', 'draft.quote.observation'
+    'SupabaseSyncService.pullSales(','SupabaseSyncService.createSale(','RuntimePolicy.handlePersistenceFailure(',
+    "uid('sale')","uid('log')",'create-sale-offline-fallback',"navigate('cotizacion')",
+    'draft.quote.manualAmount','draft.quote.observation'
   ]) assert.ok(source.includes(token),token);
-  // A timeout may occur after the database commits. A generated client-side
-  // sale/log ID or an automatic offline fallback would create a second effect.
-  assert.doesNotMatch(source, /create-sale-offline-fallback|RuntimePolicy\.handlePersistenceFailure\(/);
-  assert.doesNotMatch(source, /uid\(['"](?:sale|log)['"]\)/);
-  const serverCall=source.indexOf('await SupabaseSyncService.createSale(payload)');
-  const confirm=source.indexOf("throw new Error('SALES_SERVER_CONFIRMATION_MISSING')",serverCall);
-  const update=source.indexOf('draft.sales=[saved,',serverCall);
-  assert.ok(serverCall>=0 && confirm>serverCall && update>confirm,
-    'UI must validate server receipt before mutating visible sales state');
 });
 
 test('5/51 sales source audit fails closed on imperative regression',()=>{

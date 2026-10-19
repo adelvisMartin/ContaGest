@@ -14,6 +14,8 @@ function TaxesWorkspace({state,context}){
   const [taxes,setTaxes]=useState(()=>structuredClone(state.quote?.taxes||{}));
   const [governance,setGovernance]=useState(state.fiscalGovernance||{capabilities:{}});
   const [documents,setDocuments]=useState(Array.isArray(state.fiscalDocuments)?state.fiscalDocuments:[]);
+  const [legalSources,setLegalSources]=useState([]);
+  const [fiscalRules,setFiscalRules]=useState([]);
   const [loading,setLoading]=useState(!state.fiscalGovernance?.loaded||state.fiscalDocuments===undefined);
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
@@ -31,15 +33,18 @@ function TaxesWorkspace({state,context}){
   async function loadFiscal({silent=true}={}){
     setLoading(true);setError('');
     try{
-      const status=await FiscalService.periods();
-      const docs=await FiscalService.documents();
+      const [status,docs,sources,rules]=await Promise.all([
+        FiscalService.periods(),FiscalService.documents(),FiscalService.legalSources(),FiscalService.rules()
+      ]);
       const next={...status,denied:false,loaded:true};
       setGovernance(next);setDocuments(docs||[]);
+      setLegalSources(sources||[]);setFiscalRules(rules||[]);
       Store.set({fiscalGovernance:next,fiscalDocuments:docs||[]});
     }catch(error){
       if(error.status===403){
         const denied={periods:[],capabilities:{},denied:true,loaded:true};
         setGovernance(denied);setDocuments([]);
+        setLegalSources([]);setFiscalRules([]);
         Store.set({fiscalGovernance:denied,fiscalDocuments:[]});
         return;
       }
@@ -103,6 +108,31 @@ function TaxesWorkspace({state,context}){
           </Box>
           :<CgState severity={governance.denied?'error':'info'} title={governance.denied?'PERMISSION DENIED':'SOLO LECTURA'}>El servidor no habilitó <code>fiscal.manage_documents</code> para esta sesión.</CgState>}
       </Box>
+    </Paper>
+
+    <Paper variant="outlined" sx={{p:1.5}}>
+      <Typography variant="h6">Autoridad fiscal y fuentes revisadas</Typography>
+      <Typography variant="caption" color="text.secondary">Las capturas son inmutables. Una regla necesita fuente revisada, revisión independiente y activación antes de poder aplicarse. No hay tasas legales precargadas.</Typography>
+      <Typography variant="subtitle2" sx={{mt:1.5}}>Fuentes legales y evidencia</Typography>
+      <CgDataTable columns={[
+        {key:'reference',label:'Referencia'},
+        {key:'title',label:'Título'},
+        {key:'status',label:'Revisión',render:(source)=><CgStatusChip size="small" label={source.reviewedBy?'REVISADA':'BORRADOR'} tone={source.reviewedBy?'success':'warning'}/>},
+        {key:'contentSha256',label:'Huella SHA-256',render:(source)=><Typography variant="caption" sx={{fontFamily:'monospace'}} title={source.contentSha256}>{String(source.contentSha256||'').slice(0,16)}…</Typography>},
+        {key:'reviewedBy',label:'Revisor',render:(source)=>source.reviewedBy||'—'},
+        {key:'reviewedAt',label:'Fecha revisión',render:(source)=>source.reviewedAt?new Date(source.reviewedAt).toLocaleString('es-VE'):'—'}
+      ]} rows={legalSources} empty="Sin fuentes legales capturadas"/>
+      <Typography variant="subtitle2" sx={{mt:1.5}}>Versiones de reglas</Typography>
+      <CgDataTable columns={[
+        {key:'ruleKey',label:'Selector'},
+        {key:'version',label:'Versión'},
+        {key:'status',label:'Estado',render:(rule)=><CgStatusChip size="small" label={rule.status||'DRAFT'} tone={rule.status==='ACTIVE'?'success':'warning'}/>},
+        {key:'source',label:'Fuente'},
+        {key:'effectiveFrom',label:'Vigente desde',render:(rule)=>String(rule.effectiveFrom||'').slice(0,10)},
+        {key:'effectiveTo',label:'Vigente hasta',render:(rule)=>rule.effectiveTo?String(rule.effectiveTo).slice(0,10):'Sin fin'},
+        {key:'reviewedBy',label:'Revisor',render:(rule)=>rule.reviewedBy||'—'},
+        {key:'hash',label:'Snapshot hash',render:(rule)=><Typography variant="caption" sx={{fontFamily:'monospace'}} title={rule.hash}>{String(rule.hash||'').slice(0,12)}…</Typography>}
+      ]} rows={fiscalRules} empty="Sin versiones fiscales registradas"/>
     </Paper>
 
     <Box sx={{maxWidth:'100%',overflowX:'auto'}}>
