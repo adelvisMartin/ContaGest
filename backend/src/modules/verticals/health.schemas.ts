@@ -70,6 +70,19 @@ export const appointmentPatchSchema = z.object({
   notes:optionalText
 }).strict().refine((value)=>Object.keys(value).length>0,{message:'Indica al menos un cambio.'});
 
+// Commands require a client-generated request identity; tenant and actor come from auth context.
+export const ambulatoryCommandSchema = z.object({
+  idempotencyKey: z.string().uuid()
+}).strict();
+
+export const ambulatoryCompletionSchema = ambulatoryCommandSchema.extend({
+  subjective: z.string().trim().max(8000).optional(),
+  objective: z.string().trim().max(8000).optional(),
+  assessment: z.string().trim().min(5).max(8000),
+  plan: z.string().trim().min(5).max(8000),
+  diagnosisCodes: z.array(z.string().trim().min(2).max(32)).max(30).default([])
+}).strict();
+
 const DENTAL_PERMANENT_TEETH = new Set(['11','12','13','14','15','16','17','18','21','22','23','24','25','26','27','28','31','32','33','34','35','36','37','38','41','42','43','44','45','46','47','48']);
 const DENTAL_PRIMARY_TEETH = new Set(['51','52','53','54','55','61','62','63','64','65','71','72','73','74','75','81','82','83','84','85']);
 export const dentalClinicalDataSchema = z.object({
@@ -138,6 +151,16 @@ export const dentalTreatmentPlanClinicalDataSchema = z.object({
     status:z.literal('proposed').default('proposed'),
     acceptance:z.object({ status:z.literal('pending') }).default({status:'pending'})
   }).superRefine((value, refinement) => {
+    // Stable phase positions are necessary for the consent/budget snapshot.
+    // Do not accept ambiguous ordering that can change invoice composition.
+    const phaseOrders=new Set<number>();
+    value.phases.forEach((phase,index)=>{
+      if(phaseOrders.has(phase.order))refinement.addIssue({
+        code:'custom',path:['phases',index,'order'],
+        message:'Cada fase de tratamiento debe tener un orden único.'
+      });
+      phaseOrders.add(phase.order);
+    });
     const allTeeth = new Set([...DENTAL_PERMANENT_TEETH,...DENTAL_PRIMARY_TEETH]);
     value.phases.forEach((phase, phaseIndex) => phase.procedures.forEach((procedure, procedureIndex) => {
       const tooth = String(procedure.tooth || '').trim();
@@ -162,8 +185,8 @@ export const acceptedDentalTreatmentPlanClinicalDataSchema = z.object({
 }).passthrough();
 
 export const dentalFinancialQuerySchema = z.object({
-  patientId:z.string().min(10).optional()
-});
+  patientId:z.string().trim().min(10).max(160).optional()
+}).strict();
 
 export const treatmentPlanDecisionSchema = z.object({
   decision:z.enum(['accepted','rejected']),

@@ -78,4 +78,6 @@ test('#751 SQL and API keep review tenant-scoped, append an atomic audit and nev
   assert.match(repository, /"status" = 'DRAFT'/);
   assert.match(routes, /\/legal-sources\/:id\/review/);
   assert.match(routes, /requirePermission\('fiscal\.close'\)/);
+  assert.match(routes, /const fiscalLegalSourceSchema = z\.object\(/,
+    'the legal-source create route must retain its strict Zod schema after taxpayer-profile merges');
 });
