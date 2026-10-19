@@ -17,6 +17,14 @@ function appointmentCards(appointments = []) {
     <time>${new Date(appointment.startsAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})}</time>
     <div><strong>${safe(appointment.patientName || 'Paciente')}</strong><span>${safe(appointment.professionalName || 'Profesional por asignar')} · ${safe(appointment.reason || appointment.type || 'Consulta')}</span></div>
     ${Badge(appointment.status || 'scheduled', statusTone(appointment.status))}
+    ${['scheduled','confirmed'].includes(appointment.status) ? `<button type="button" class="cgx-icon-action" data-care-appt-checkin="${safe(appointment.id)}">Registrar llegada</button>` : ''}
+    ${appointment.status==='checked_in' ? `<button type="button" class="cgx-icon-action" data-care-appt-start="${safe(appointment.id)}">Iniciar consulta</button>` : ''}
+    ${appointment.status==='in_progress' ? `<form data-care-appt-complete="${safe(appointment.id)}" class="cg-record-form">
+      <div class="cg-record-fields">
+        ${Textarea({labelKey:'Evaluación clínica',name:'assessment',required:true,attrs:'required minlength="5"'})}
+        ${Textarea({labelKey:'Plan y recomendaciones de alta',name:'plan',required:true,attrs:'required minlength="5"'})}
+      </div><div class="cg-record-actions">${Button({text:'Firmar alta clínica',type:'submit',variant:'secondary'})}</div>
+    </form>` : ''}
   </article>`).join('')}</div>`;
 }
 
@@ -183,6 +191,41 @@ export const HealthcarePage = {
       load({silent:true});
     }
     document.getElementById('btnCareRefresh')?.addEventListener('click',()=>load());
+    for(const [selector,action,success] of [
+      ['[data-care-appt-checkin]',HealthVerticalService.checkInAppointment,'Llegada registrada.'],
+      ['[data-care-appt-start]',HealthVerticalService.startAmbulatoryEncounter,'Consulta ambulatoria iniciada.']
+    ]){
+      document.querySelectorAll(selector).forEach((button)=>button.addEventListener('click',async()=>{
+        if(!button.dataset.careRequestKey)button.dataset.careRequestKey=crypto.randomUUID();
+        button.setAttribute('disabled','disabled');
+        try{
+          const appointmentId=selector.includes('checkin')?button.dataset.careApptCheckin:button.dataset.careApptStart;
+          await action(appointmentId,button.dataset.careRequestKey);
+          delete button.dataset.careRequestKey;
+          Toast.show(success,'success');
+          await load({silent:true});
+        }catch(error){Toast.show(error.message,'error');}
+        finally{button.removeAttribute('disabled');}
+      }));
+    }
+    document.querySelectorAll('[data-care-appt-complete]').forEach((form)=>form.addEventListener('submit',async(event)=>{
+      event.preventDefault();
+      if(!form.reportValidity())return;
+      if(!form.dataset.careRequestKey)form.dataset.careRequestKey=crypto.randomUUID();
+      const submit=form.querySelector('[type="submit"]');
+      submit?.setAttribute('disabled','disabled');
+      try{
+        const data=Object.fromEntries(new FormData(form));
+        await HealthVerticalService.completeAmbulatoryEncounter(form.dataset.careApptComplete,{
+          idempotencyKey:form.dataset.careRequestKey,
+          assessment:String(data.assessment||'').trim(),plan:String(data.plan||'').trim(),diagnosisCodes:[]
+        });
+        delete form.dataset.careRequestKey;
+        Toast.show('Alta firmada. Pendiente de integración de facturación.','success');
+        await load({silent:true});
+      }catch(error){Toast.show(error.message,'error');}
+      finally{submit?.removeAttribute('disabled');}
+    }));
     document.querySelectorAll('[data-toggle-panel]').forEach((button)=>button.addEventListener('click',()=>document.getElementById(button.dataset.togglePanel)?.classList.toggle('is-collapsed')));
     document.querySelectorAll('[data-care-patient]').forEach((button)=>button.addEventListener('click',async()=>{
       try { const encounters=await HealthVerticalService.encounters(button.dataset.carePatient); Store.update((draft)=>{draft.healthVertical={...(draft.healthVertical||{}),selectedPatientId:button.dataset.carePatient,encounters};}); }
