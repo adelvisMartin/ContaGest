@@ -50,9 +50,12 @@ function harness(writeText = async () => {}) {
   const cancel = new Element('manual-clear', dialog);
   draft.value = '';
   copy.disabled = true;
+  const consent = new Element('manual-consent', dialog);
+  consent.checked = true; // Pre-existing clipboard-review regression fixture.
   const controls = {
     '[data-ops-manual-text]': draft,
     '[data-ops-manual-confirm]': confirmation,
+    '[data-ops-manual-consent]': consent,
     '[data-ops-manual-copy]': copy
   };
   const document = {

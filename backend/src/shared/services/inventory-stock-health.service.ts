@@ -54,7 +54,7 @@ export function buildInventoryStockHealth(product: InventoryStockInput): Invento
   };
 }
 
-export function summarizeInventoryStockHealth(rows: InventoryStockHealthRow[]) {
+export function summarizeInventoryStockHealth(rows: readonly InventoryStockHealthRow[]) {
   const counts: Record<InventoryStockHealthStatus, number> = {
     out_of_stock: 0,
     below_minimum: 0,
