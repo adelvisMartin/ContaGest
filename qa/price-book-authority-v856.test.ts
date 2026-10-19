@@ -172,7 +172,7 @@ test('#856 PostgreSQL authority serializes overlapping entry races and optimisti
     assert.ok(rejected && rejected.status==='rejected','one overlapping insert must fail closed');
     assert.match(
       String((rejected as PromiseRejectedResult).reason?.message || (rejected as PromiseRejectedResult).reason),
-      /PRICE_ENTRY_EFFECTIVE_OVERLAP|PriceEntry_no_active_overlap|conflicting key value violates exclusion constraint|duplicate key value violates unique constraint "PriceEntry_target_version_key"/,
+      /PRICE_ENTRY_EFFECTIVE_OVERLAP|PriceEntry_no_active_overlap|conflicting key value violates exclusion constraint|PriceEntry_target_version_key/,
     );
     // Both simultaneous writers use version 1, so its unique key may win the
     // race before the exclusion constraint. Prove independently that version 2

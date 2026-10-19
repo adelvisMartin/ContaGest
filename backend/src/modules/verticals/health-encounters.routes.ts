@@ -34,6 +34,7 @@ router.get('/health/encounters', requirePermission('health.manage'), asyncHandle
 router.post('/health/encounters', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   const b = encounterSchema.parse(req.body || {});
+  if (b.type==='ambulatory-visit') throw new HttpError(422,'La consulta ambulatoria requiere cita, check-in e inicio clínico autorizados.');
   // No general-purpose client-signed anamnesis: clinical review requires its
   // own audited workflow and cannot be asserted by an arbitrary POST body.
   if (b.type==='anamnesis' && b.status!=='draft') {

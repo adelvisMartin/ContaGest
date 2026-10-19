@@ -86,10 +86,12 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
     if (!members.length) throw new HttpError(404, 'Miembro no encontrado en esta empresa.');
     const existingRows = await tx.$queryRawUnsafe<any[]>(`
       SELECT * FROM public."GymClassBooking"
-      WHERE "tenantId"=$1 AND "classId"=$2 AND "memberId"=$3 LIMIT 1
+      WHERE "tenantId"=$1 AND "classId"=$2 AND "memberId"=$3 LIMIT 1 FOR UPDATE
     `, tenantId, body.classId, body.memberId);
     const existing = existingRows[0];
     if (existing?.status === body.status) return {booking:existing,replayed:true};
+    // An attendance record is final; a different status cannot rewrite it.
+    if (existing?.status === 'attended') throw new HttpError(409, 'La asistencia registrada no puede modificarse.');
     if (body.status === 'booked') {
       if (existing && existing.status !== 'cancelled') throw new HttpError(409, 'La reserva finalizada no se puede reabrir como nueva.');
       if (gymClass.status !== 'scheduled') throw new HttpError(409, 'La clase no admite nuevas reservas.');
@@ -120,6 +122,7 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
       WHERE public."GymClassBooking"."tenantId" = EXCLUDED."tenantId"
       RETURNING *
     `, tenantId, body.classId, body.memberId, body.status);
+    if (!rows.length) throw new HttpError(409, 'Conflicto de empresa en reserva.');
     return {booking:one(rows),replayed:false};
   });
   ok(res, outcome.booking, outcome.replayed ? 200 : 201);
