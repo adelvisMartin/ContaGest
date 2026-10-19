@@ -9,7 +9,7 @@ const localDateTime = (minutes = 0) => {
 };
 const specialtyOptions = ['Medicina general','Psicología','Traumatología','Pediatría','Cardiología','Nutrición','Fisioterapia'];
 const optionList = (items, label) => items.map((item) => ({ value:item.id, label:label(item) }));
-const statusTone = (status='') => ['confirmed','completed','signed','active'].includes(String(status).toLowerCase()) ? 'success' : ['cancelled','inactive'].includes(String(status).toLowerCase()) ? 'danger' : 'warning';
+const statusTone = (status='') => ['confirmed','completed','signed','reviewed','active'].includes(String(status).toLowerCase()) ? 'success' : ['cancelled','inactive','entered_in_error'].includes(String(status).toLowerCase()) ? 'danger' : 'warning';
 
 function appointmentCards(appointments = []) {
   if (!appointments.length) return EmptyState({ title:'Sin citas próximas', description:'Las citas agendadas aparecerán aquí.', iconName:'fa-calendar-day' });
@@ -37,6 +37,32 @@ function encounterCards(encounters = []) {
     ${encounter.assessment ? `<p><b>Evaluación:</b> ${safe(encounter.assessment)}</p>` : ''}
     ${encounter.plan ? `<p><b>Plan:</b> ${safe(encounter.plan)}</p>` : ''}
     ${encounter.confidential ? '<small><i class="fa-solid fa-lock"></i> Nota confidencial</small>' : ''}
+  </article>`).join('')}</div>`;
+}
+
+function longitudinalFactCards(facts = []) {
+  if (!facts.length) return EmptyState({title:'Sin hechos clínicos estructurados',description:'Registra problemas, alergias, medicamentos, diagnósticos o procedimientos para este paciente.',iconName:'fa-notes-medical'});
+  const labels = {problem:'Problema',allergy:'Alergia',medication:'Medicamento',diagnosis:'Diagnóstico',procedure:'Procedimiento'};
+  return `<div class="cg-clinical-timeline">${facts.map((fact) => `<article class="cg-clinical-note">
+    <header><div><strong>${safe(labels[fact.kind] || fact.kind)}</strong><span>${safe(new Date(fact.effectiveAt).toLocaleString('es-VE'))}</span></div>${Badge(fact.isSuperseded?'Versión reemplazada':safe(fact.status || 'draft'),fact.isSuperseded?'warning':statusTone(fact.status))}</header>
+    <p>${safe(fact.detail?.description || JSON.stringify(fact.detail || {}))}</p>
+    ${fact.supersedesId ? '<small>Enmienda enlazada: el original se conserva.</small>' : ''}
+    ${fact.hasAmendment && !fact.isSuperseded ? '<small>Ya existe una corrección pendiente.</small>' : ''}
+    ${fact.status === 'draft' ? `<button type="button" class="cgx-icon-action" data-care-fact-review="${safe(fact.id)}">Revisar y firmar</button>` : ''}
+    ${fact.status === 'reviewed' && !fact.isSuperseded && !fact.hasAmendment ? `<details><summary>Registrar corrección</summary><form data-care-amend-form="${safe(fact.id)}" class="cg-record-form">
+      <div class="cg-record-fields">
+        ${Textarea({labelKey:'Contenido corregido',name:'description',required:true,attrs:'required',value:String(fact.detail?.description || '')})}
+        ${Textarea({labelKey:'Motivo de la corrección',name:'reason',required:true,attrs:'required minlength="10"'})}
+      </div><div class="cg-record-actions">${Button({text:'Guardar nueva versión',type:'submit',variant:'secondary'})}</div>
+    </form></details>` : ''}
+  </article>`).join('')}</div>`;
+}
+
+function longitudinalTimelineCards(timeline = []) {
+  if (!timeline.length) return EmptyState({title:'Sin eventos longitudinales',description:'Las consultas, hechos clínicos, mediciones, laboratorio e imágenes aparecerán aquí.',iconName:'fa-clock-rotate-left'});
+  const labels = {fact:'Hecho clínico',encounter:'Consulta',measurement:'Medición',prescription:'Prescripción',lab_order:'Orden de laboratorio',lab_result:'Resultado de laboratorio',study:'Estudio diagnóstico',hospitalization:'Hospitalización',procedure:'Procedimiento',immunization:'Vacuna'};
+  return `<div class="cg-clinical-timeline">${timeline.map((event) => `<article class="cg-clinical-note">
+    <header><div><strong>${safe(labels[event.sourceType] || event.sourceType)}</strong><span>${safe(new Date(event.effectiveAt).toLocaleString('es-VE'))}</span></div>${Badge(safe(event.status || 'registrado'),statusTone(event.status))}</header>
   </article>`).join('')}</div>`;
 }
 
@@ -154,6 +180,36 @@ export const HealthcarePage = {
         })}
 
         ${selectedPatient ? Section({
+          title:'Expediente longitudinal',
+          subtitle:'Hechos estructurados con revisión, versiones y trazabilidad por paciente.',
+          className:'cg-health-wide',
+          children:`${data.clinicalLoading ? '<p role="status">Cargando expediente…</p>' : ''}
+            ${data.clinicalError ? `<p role="alert">${safe(data.clinicalError)}</p>` : ''}
+            <form id="careClinicalFactForm" class="cg-record-form">
+              <input type="hidden" name="patientId" value="${safe(selectedPatient.id)}">
+              <div class="cg-record-fields">
+                ${Select({labelKey:'Tipo de registro',name:'kind',options:[
+                  {value:'problem',label:'Problema'},{value:'allergy',label:'Alergia'},
+                  {value:'medication',label:'Medicación'},{value:'diagnosis',label:'Diagnóstico'},
+                  {value:'procedure',label:'Procedimiento'}
+                ]})}
+                ${Field({labelKey:'Fecha clínica efectiva',name:'effectiveAt',type:'datetime-local',value:localDateTime(),required:true})}
+                ${Textarea({labelKey:'Descripción clínica',name:'description',className:'cg-field-wide',required:true,attrs:'required'})}
+              </div><div class="cg-record-actions">${Button({text:'Guardar borrador',type:'submit',icon:'fa-floppy-disk'})}</div>
+            </form>
+            ${longitudinalFactCards(data.clinicalFacts || [])}
+            ${data.clinicalFactsNextCursor ? `<div class="cg-record-actions">${Button({text:'Ver versiones anteriores',variant:'secondary',attrs:'data-care-facts-more'})}</div>` : ''}`
+        }) : ''}
+
+        ${selectedPatient ? Section({
+          title:'Línea de tiempo clínica',
+          subtitle:'Referencias registradas en el paciente; los detalles se consultan con su autorización propia.',
+          className:'cg-health-wide',
+          children:`${longitudinalTimelineCards(data.patientTimeline?.items || [])}
+            ${data.patientTimeline?.nextCursor ? `<div class="cg-record-actions">${Button({text:'Ver eventos anteriores',variant:'secondary',attrs:'data-care-timeline-more'})}</div>` : ''}`
+        }) : ''}
+
+        ${selectedPatient ? Section({
           title:'Mediciones',
           subtitle:`Controles de ${selectedPatient.displayName}.`,
           children:`<form id="careMeasurementForm" class="cg-record-form"><input type="hidden" name="patientId" value="${safe(selectedPatient.id)}"><div class="cg-record-fields">
@@ -170,6 +226,32 @@ export const HealthcarePage = {
   },
 
   mount(state, { Store, Toast }) {
+    const loadPatient = async (patientId,{activate=true}={}) => {
+      if(!patientId || (!activate && Store.get().healthVertical?.selectedPatientId!==patientId))return;
+      Store.update((draft)=>{
+        if(!activate && draft.healthVertical?.selectedPatientId!==patientId)return;
+        draft.healthVertical={...(draft.healthVertical||{}),selectedPatientId:patientId,clinicalLoading:true,clinicalError:null,clinicalFacts:[],clinicalFactsNextCursor:null,patientTimeline:{items:[],nextCursor:null},encounters:[]};
+      });
+      const settled = await Promise.allSettled([
+        HealthVerticalService.encounters(patientId),
+        HealthVerticalService.clinicalFacts(patientId),
+        HealthVerticalService.patientTimeline(patientId)
+      ]);
+      const [encounterResult,factResult,timelineResult]=settled;
+      const errors=settled.filter((result)=>result.status==='rejected').map((result)=>result.reason?.message||'Recurso clínico no disponible.');
+      Store.update((draft)=>{
+        if(draft.healthVertical?.selectedPatientId!==patientId)return;
+        draft.healthVertical={
+          ...(draft.healthVertical||{}),
+          encounters:encounterResult.status==='fulfilled'?encounterResult.value:[],
+          clinicalFacts:factResult.status==='fulfilled'?(factResult.value.items||[]):[],
+          clinicalFactsNextCursor:factResult.status==='fulfilled'?(factResult.value.nextCursor||null):null,
+          patientTimeline:timelineResult.status==='fulfilled'?timelineResult.value:{items:[],nextCursor:null},
+          clinicalLoading:false,clinicalError:errors.length?errors.join(' · '):null
+        };
+      });
+      if(errors.length && Store.get().healthVertical?.selectedPatientId===patientId)Toast.show(errors.join(' · '),'error');
+    };
     const load = async ({silent=false}={}) => {
       try {
         const [summary,patients,professionals,appointments] = await Promise.all([
@@ -227,10 +309,7 @@ export const HealthcarePage = {
       finally{submit?.removeAttribute('disabled');}
     }));
     document.querySelectorAll('[data-toggle-panel]').forEach((button)=>button.addEventListener('click',()=>document.getElementById(button.dataset.togglePanel)?.classList.toggle('is-collapsed')));
-    document.querySelectorAll('[data-care-patient]').forEach((button)=>button.addEventListener('click',async()=>{
-      try { const encounters=await HealthVerticalService.encounters(button.dataset.carePatient); Store.update((draft)=>{draft.healthVertical={...(draft.healthVertical||{}),selectedPatientId:button.dataset.carePatient,encounters};}); }
-      catch(error){Toast.show(error.message,'error');}
-    }));
+    document.querySelectorAll('[data-care-patient]').forEach((button)=>button.addEventListener('click',()=>loadPatient(button.dataset.carePatient)));
 
     const handle = (id,service,transform=(data)=>data,success='Registro guardado.') => document.getElementById(id)?.addEventListener('submit',async(event)=>{
       event.preventDefault();
@@ -249,5 +328,89 @@ export const HealthcarePage = {
     handle('careAppointmentForm',HealthVerticalService.createAppointment,(data)=>({...data,status:'scheduled',channel:'onsite'}),'Cita agendada.');
     handle('careEncounterForm',HealthVerticalService.createEncounter,(data,form)=>({...data,confidential:Boolean(form.confidential?.checked),status:'signed',diagnosisCodes:[],clinicalData:{}}),'Historia clínica actualizada.');
     handle('careMeasurementForm',HealthVerticalService.createMeasurement,(data)=>({...data,metadata:{}}),'Medición registrada.');
+
+    document.getElementById('careClinicalFactForm')?.addEventListener('submit',async(event)=>{
+      event.preventDefault();
+      const form=event.currentTarget;
+      if(!form.reportValidity())return;
+      const submit=form.querySelector('[type="submit"]');
+      submit?.setAttribute('disabled','disabled');
+      try {
+        const data=Object.fromEntries(new FormData(form));
+        if(!form.dataset.careRequestKey)form.dataset.careRequestKey=crypto.randomUUID();
+        await HealthVerticalService.createClinicalFact({
+          idempotencyKey:form.dataset.careRequestKey,
+          patientId:data.patientId,kind:data.kind,detail:{description:String(data.description).trim()},
+          effectiveAt:new Date(data.effectiveAt).toISOString(),provenance:'clinician'
+        });
+        delete form.dataset.careRequestKey;
+        Toast.show('Hecho clínico guardado como borrador.','success');
+        await loadPatient(data.patientId,{activate:false});
+      } catch(error){Toast.show(error.message,'error');}
+      finally{submit?.removeAttribute('disabled');}
+    });
+    document.querySelectorAll('[data-care-fact-review]').forEach((button)=>button.addEventListener('click',async()=>{
+      button.setAttribute('disabled','disabled');
+      try {
+        await HealthVerticalService.reviewClinicalFact(button.dataset.careFactReview);
+        Toast.show('Registro clínico revisado y firmado.','success');
+        await loadPatient(Store.get().healthVertical?.selectedPatientId,{activate:false});
+      }catch(error){Toast.show(error.message,'error');}
+      finally{button.removeAttribute('disabled');}
+    }));
+    document.querySelectorAll('[data-care-amend-form]').forEach((form)=>form.addEventListener('submit',async(event)=>{
+      event.preventDefault();
+      if(!form.reportValidity())return;
+      const submit=form.querySelector('[type="submit"]');
+      const original=(state.healthVertical?.clinicalFacts||[]).find((fact)=>fact.id===form.dataset.careAmendForm);
+      if(!original)return Toast.show('La versión original no está disponible.','error');
+      submit?.setAttribute('disabled','disabled');
+      try {
+        const data=Object.fromEntries(new FormData(form));
+        await HealthVerticalService.amendClinicalFact(original.id,{
+          kind:original.kind,encounterId:original.encounterId||null,
+          detail:{description:String(data.description).trim()},
+          effectiveAt:new Date(original.effectiveAt).toISOString(),
+          provenance:'clinician',reason:String(data.reason).trim()
+        });
+        Toast.show('Corrección creada como nueva versión pendiente de revisión.','success');
+        await loadPatient(Store.get().healthVertical?.selectedPatientId,{activate:false});
+      }catch(error){Toast.show(error.message,'error');}
+      finally{submit?.removeAttribute('disabled');}
+    }));
+    document.querySelector('[data-care-timeline-more]')?.addEventListener('click',async(event)=>{
+      const button=event.currentTarget;
+      const patientId=state.healthVertical?.selectedPatientId;
+      const cursor=state.healthVertical?.patientTimeline?.nextCursor;
+      if(!patientId||!cursor)return;
+      button.setAttribute('disabled','disabled');
+      try {
+        const next=await HealthVerticalService.patientTimeline(patientId,cursor);
+        Store.update((draft)=>{
+          if(draft.healthVertical?.selectedPatientId!==patientId || draft.healthVertical?.patientTimeline?.nextCursor!==cursor)return;
+          draft.healthVertical.patientTimeline={
+            items:[...(draft.healthVertical.patientTimeline.items||[]),...(next.items||[])],
+            nextCursor:next.nextCursor||null
+          };
+        });
+      }catch(error){Toast.show(error.message,'error');}
+      finally{button.removeAttribute('disabled');}
+    });
+    document.querySelector('[data-care-facts-more]')?.addEventListener('click',async(event)=>{
+      const button=event.currentTarget;
+      const patientId=Store.get().healthVertical?.selectedPatientId;
+      const cursor=Store.get().healthVertical?.clinicalFactsNextCursor;
+      if(!patientId||!cursor)return;
+      button.setAttribute('disabled','disabled');
+      try {
+        const next=await HealthVerticalService.clinicalFacts(patientId,cursor);
+        Store.update((draft)=>{
+          if(draft.healthVertical?.selectedPatientId!==patientId || draft.healthVertical?.clinicalFactsNextCursor!==cursor)return;
+          draft.healthVertical.clinicalFacts=[...(draft.healthVertical.clinicalFacts||[]),...(next.items||[])];
+          draft.healthVertical.clinicalFactsNextCursor=next.nextCursor||null;
+        });
+      }catch(error){Toast.show(error.message,'error');}
+      finally{button.removeAttribute('disabled');}
+    });
   }
 };
