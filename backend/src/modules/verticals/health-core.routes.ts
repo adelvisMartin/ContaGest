@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createHash } from 'node:crypto';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
@@ -8,8 +9,11 @@ import {
   patientSchema,
   professionalSchema,
   appointmentSchema,
-  appointmentPatchSchema
+  appointmentPatchSchema,
+  ambulatoryCommandSchema,
+  ambulatoryCompletionSchema
 } from './health.schemas.js';
+import { assertCareAppointmentTransition, assertCareAppointmentPatchTransition } from './care-appointment-transition.js';
 import {
   ACTIVE_APPOINTMENT_STATUSES,
   assertAppointmentSlotAvailable,
@@ -92,6 +96,7 @@ router.post('/health/appointments', requirePermission('health.manage'), asyncHan
   const tenantId=ctx(req).tenantId;
   const actor={userId:ctx(req).userId||null,email:ctx(req).email||null};
   const b = appointmentSchema.parse(req.body || {});
+  if(!['scheduled','confirmed','waitlisted'].includes(b.status))throw new HttpError(422,'La cita debe empezar programada, confirmada o en espera.');
   const created=await prisma.$transaction(async (tx)=>{
     await lockAppointmentSchedule(tx,tenantId);
     const patientRows=await tx.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true LIMIT 1`,tenantId,b.patientId);
@@ -139,6 +144,7 @@ router.patch('/health/appointments/:id', requirePermission('health.manage'), asy
     const professionalId=b.professionalId===undefined?current.professionalId:b.professionalId;
     const room=b.room===undefined?current.room:b.room;
     const status=b.status||current.status;
+    assertCareAppointmentPatchTransition(current.status, status);
     if(professionalId){
       const professionalRows=await tx.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 AND "status"='active' LIMIT 1`,tenantId,professionalId);
       if(!professionalRows.length)throw new HttpError(422,'El profesional no está disponible en el tenant activo.');
@@ -174,6 +180,161 @@ router.patch('/health/appointments/:id', requirePermission('health.manage'), asy
     return one(rows);
   });
   ok(res,updated);
+}));
+
+router.post('/health/appointments/:id/check-in', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId = ctx(req).tenantId;
+  const actorUserId = ctx(req).userId;
+  if(!actorUserId)throw new HttpError(403,'Se requiere un operador autenticado.');
+  const command = ambulatoryCommandSchema.parse(req.body || {});
+  const appointmentId = String(req.params.id);
+  const result = await prisma.$transaction(async (tx) => {
+    const appointments = await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareAppointment"
+      WHERE "tenantId"=$1 AND "id"=$2 FOR UPDATE
+    `, tenantId, appointmentId);
+    const appointment = one(appointments, 'Cita no encontrada.');
+    const priorMeta = appointment.schedulingMeta && typeof appointment.schedulingMeta === 'object' ? appointment.schedulingMeta : {};
+    const priorKey = priorMeta.checkIn?.idempotencyKey;
+    if(priorKey) {
+      if(priorKey !== command.idempotencyKey)throw new HttpError(409,'La cita ya tiene un check-in diferente.');
+      return { appointment, replayed:true };
+    }
+    assertCareAppointmentTransition(appointment.status, 'checked_in');
+    const patient = await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CarePatient"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true LIMIT 1
+    `, tenantId, appointment.patientId);
+    if(!patient.length)throw new HttpError(422,'El paciente no pertenece al tenant o está inactivo.');
+    const changedAt = new Date().toISOString();
+    const meta = {...priorMeta,checkIn:{idempotencyKey:command.idempotencyKey,at:changedAt,byUserId:actorUserId}};
+    const updated = await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."CareAppointment" SET "status"='checked_in', "schedulingMeta"=$3::jsonb, "updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2 AND "status" IN ('scheduled','confirmed')
+      RETURNING *
+    `, tenantId, appointmentId, JSON.stringify(meta));
+    return {appointment:one(updated), replayed:false};
+  });
+  res.setHeader('Idempotency-Replayed',result.replayed?'true':'false');
+  res.setHeader('Cache-Control','no-store');
+  ok(res,result.appointment);
+}));
+
+router.post('/health/appointments/:id/start-encounter', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+  const tenantId = ctx(req).tenantId;
+  const actorUserId = ctx(req).userId;
+  if(!actorUserId)throw new HttpError(403,'Se requiere un profesional autenticado.');
+  const command = ambulatoryCommandSchema.parse(req.body || {});
+  const appointmentId = String(req.params.id);
+  const result = await prisma.$transaction(async (tx) => {
+    const appointments = await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareAppointment"
+      WHERE "tenantId"=$1 AND "id"=$2 FOR UPDATE
+    `,tenantId,appointmentId);
+    const appointment = one(appointments,'Cita no encontrada.');
+    const existing = await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id", "patientId", "professionalId", "clinicalData", "status"
+      FROM public."CareEncounter"
+      WHERE "tenantId"=$1 AND "appointmentId"=$2 AND "type"='ambulatory-visit'
+      LIMIT 1
+    `,tenantId,appointmentId);
+    if(existing.length){
+      if(existing[0].clinicalData?.workflow?.startIdempotencyKey !== command.idempotencyKey){
+        throw new HttpError(409,'La cita ya tiene otro encuentro ambulatorio.');
+      }
+      return {encounter:existing[0],appointment,replayed:true};
+    }
+    assertCareAppointmentTransition(appointment.status,'in_progress');
+    if(!appointment.professionalId)throw new HttpError(422,'Asigna un profesional antes de iniciar la consulta.');
+    const patient = await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true LIMIT 1
+    `,tenantId,appointment.patientId);
+    if(!patient.length)throw new HttpError(422,'El paciente no pertenece al tenant o está inactivo.');
+    const professional = await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CareProfessional"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "userId"=$3
+        AND "status"='active' AND NULLIF(trim("licenseNumber"),'') IS NOT NULL LIMIT 1
+    `,tenantId,appointment.professionalId,actorUserId);
+    if(!professional.length)throw new HttpError(403,'Solo el profesional activo y matriculado asignado puede iniciar esta consulta.');
+    const changedAt = new Date().toISOString();
+    const meta = appointment.schedulingMeta && typeof appointment.schedulingMeta === 'object' ? appointment.schedulingMeta : {};
+    const workflow = {startIdempotencyKey:command.idempotencyKey,startedAt:changedAt,startedByUserId:actorUserId};
+    const encounters = await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."CareEncounter"
+        ("tenantId","patientId","professionalId","appointmentId","type","specialty","subjective","status","clinicalData")
+      VALUES ($1,$2,$3,$4,'ambulatory-visit','general',$5,'draft',$6::jsonb)
+      RETURNING *
+    `,tenantId,appointment.patientId,appointment.professionalId,appointment.id,appointment.reason||null,JSON.stringify({workflow}));
+    const updated = await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."CareAppointment"
+      SET "status"='in_progress',"schedulingMeta"=$3::jsonb,"updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2 AND "status"='checked_in' RETURNING *
+    `,tenantId,appointmentId,JSON.stringify({...meta,encounterStart:workflow}));
+    return {encounter:one(encounters),appointment:one(updated),replayed:false};
+  });
+  res.setHeader('Idempotency-Replayed',result.replayed?'true':'false');
+  res.setHeader('Cache-Control','no-store');
+  ok(res,result,result.replayed?200:201);
+}));
+
+router.post('/health/appointments/:id/complete-encounter', requirePermission('health.manage'), asyncHandler(async (req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const actorUserId=ctx(req).userId;
+  if(!actorUserId)throw new HttpError(403,'Se requiere el profesional autenticado.');
+  const command=ambulatoryCompletionSchema.parse(req.body||{});
+  const appointmentId=String(req.params.id);
+  const digest=createHash('sha256').update(JSON.stringify(command)).digest('hex');
+  const result=await prisma.$transaction(async(tx)=>{
+    const appointments=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareAppointment" WHERE "tenantId"=$1 AND "id"=$2 FOR UPDATE
+    `,tenantId,appointmentId);
+    const appointment=one(appointments,'Cita no encontrada.');
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT * FROM public."CareEncounter"
+      WHERE "tenantId"=$1 AND "appointmentId"=$2 AND "patientId"=$3
+        AND "type"='ambulatory-visit' FOR UPDATE
+    `,tenantId,appointmentId,appointment.patientId);
+    const encounter=one(rows,'No existe una consulta ambulatoria iniciada.');
+    const workflow=encounter.clinicalData?.workflow||{};
+    if(encounter.status==='signed'){
+      if(workflow.completeIdempotencyKey!==command.idempotencyKey || workflow.completionDigest!==digest)
+        throw new HttpError(409,'El alta ya se registró con otro contenido o solicitud.');
+      return {encounter,appointment,replayed:true};
+    }
+    if(appointment.status!=='in_progress'||encounter.status!=='draft')
+      throw new HttpError(409,'El alta requiere cita en curso y nota clínica en borrador.');
+    assertCareAppointmentTransition(appointment.status,'completed');
+    const professional=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CareProfessional"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "userId"=$3 AND "status"='active'
+        AND NULLIF(trim("licenseNumber"),'') IS NOT NULL LIMIT 1
+    `,tenantId,encounter.professionalId,actorUserId);
+    if(!professional.length)throw new HttpError(403,'Solo el profesional asignado y matriculado puede firmar el alta.');
+    const signedAt=new Date().toISOString();
+    const nextClinicalData={...encounter.clinicalData,workflow:{...workflow,
+      completeIdempotencyKey:command.idempotencyKey,completionDigest:digest,
+      completedAt:signedAt,completedByUserId:actorUserId,
+      billingStatus:'pending'
+    }};
+    const signed=await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."CareEncounter"
+      SET "subjective"=$3,"objective"=$4,"assessment"=$5,"plan"=$6,
+          "diagnosisCodes"=$7::jsonb,"clinicalData"=$8::jsonb,
+          "status"='signed',"signedAt"=now(),"updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2 AND "status"='draft' RETURNING *
+    `,tenantId,encounter.id,command.subjective||null,command.objective||null,
+      command.assessment,command.plan,JSON.stringify(command.diagnosisCodes),JSON.stringify(nextClinicalData));
+    const updated=await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."CareAppointment"
+      SET "status"='completed',"schedulingMeta"=$3::jsonb,"updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2 AND "status"='in_progress' RETURNING *
+    `,tenantId,appointment.id,JSON.stringify({...(appointment.schedulingMeta||{}),
+      discharge:{at:signedAt,byUserId:actorUserId,encounterId:encounter.id,billingStatus:'pending'}}));
+    return {encounter:one(signed),appointment:one(updated),replayed:false};
+  });
+  res.setHeader('Idempotency-Replayed',result.replayed?'true':'false');
+  res.setHeader('Cache-Control','no-store');
+  ok(res,result);
 }));
 
 

@@ -25,7 +25,7 @@ router.get('/health/encounters', requirePermission('health.manage'), asyncHandle
   if (!patientId) throw new HttpError(422, 'patientId es obligatorio.');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT e.*, pr."fullName" AS "professionalName" FROM public."CareEncounter" e
-    LEFT JOIN public."CareProfessional" pr ON pr."id"=e."professionalId"
+    LEFT JOIN public."CareProfessional" pr ON pr."tenantId"=e."tenantId" AND pr."id"=e."professionalId"
     WHERE e."tenantId"=$1 AND e."patientId"=$2 ORDER BY e."createdAt" DESC LIMIT 500
   `, ctx(req).tenantId, patientId);
   ok(res, rows);
@@ -34,6 +34,7 @@ router.get('/health/encounters', requirePermission('health.manage'), asyncHandle
 router.post('/health/encounters', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   const b = encounterSchema.parse(req.body || {});
+  if (b.type==='ambulatory-visit') throw new HttpError(422,'La consulta ambulatoria requiere cita, check-in e inicio clínico autorizados.');
   // No general-purpose client-signed anamnesis: clinical review requires its
   // own audited workflow and cannot be asserted by an arbitrary POST body.
   if (b.type==='anamnesis' && b.status!=='draft') {
@@ -41,6 +42,14 @@ router.post('/health/encounters', requirePermission('health.manage'), asyncHandl
   }
   const patientRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,b.patientId);
   if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
+  if(b.appointmentId){
+    const appointmentRows=await prisma.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CareAppointment"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "patientId"=$3
+      LIMIT 1
+    `,tenantId,b.appointmentId,b.patientId);
+    if(!appointmentRows.length)throw new HttpError(422,'La cita no pertenece al paciente y tenant activos.');
+  }
   if(b.professionalId){
     const professionalRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,b.professionalId);
     if(!professionalRows.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');

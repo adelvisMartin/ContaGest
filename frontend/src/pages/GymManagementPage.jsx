@@ -35,7 +35,9 @@ function GymWorkspace({state,context}){
   const [ingredients,setIngredients]=useState(rows(initial.ingredients));
   const [nutritionRecipes,setNutritionRecipes]=useState(rows(initial.nutritionRecipes));
   const [exerciseLibrary,setExerciseLibrary]=useState(rows(initial.exerciseLibrary));
-  const [loading,setLoading]=useState(false);
+  const [loading,setLoading]=useState(true);
+  // Cached state is never proof of identity or freshness after a PWA restart.
+  const [serverVerified,setServerVerified]=useState(false);
   const [error,setError]=useState('');
   const Toast=context.Toast;
 
@@ -57,16 +59,19 @@ function GymWorkspace({state,context}){
   const planOpts=useMemo(()=>planOptions(plans),[plans]);
 
   async function loadMemberData(memberId){
+    setServerVerified(false);
     setSelectedMemberId(memberId);
-    if(!memberId){setAssessments([]);setRoutines([]);setNutrition([]);return;}
+    if(!memberId){setAssessments([]);setRoutines([]);setNutrition([]);setServerVerified(true);return;}
     const [assessmentResponse,routineResponse,nutritionResponse]=await Promise.all([
       GymVerticalService.assessments(memberId),GymVerticalService.routines(memberId),GymVerticalService.nutrition(memberId)
     ]);
     setAssessments(rows(assessmentResponse));setRoutines(rows(routineResponse));setNutrition(rows(nutritionResponse));
+    setServerVerified(true);
   }
 
   async function loadAll({silent=false,memberId=selectedMemberId}={}){
-    if(!silent)setLoading(true);setError('');
+    // A disconnected refresh must not leave a previous tenant/member preview exposed.
+    setServerVerified(false);setLoading(true);setError('');
     try{
       const [summaryResponse,membersResponse,trainersResponse,plansResponse,classesResponse,exerciseResponse,ingredientResponse,recipeResponse]=await Promise.all([
         GymVerticalService.summary(),GymVerticalService.members(),GymVerticalService.trainers(),GymVerticalService.plans(),GymVerticalService.classes(),GymVerticalService.exercises({active:'true'}),GymVerticalService.ingredients({active:'true'}),GymVerticalService.recipes()
@@ -83,7 +88,7 @@ function GymWorkspace({state,context}){
       await loadMemberData(nextMemberId);
       if(!silent)notify('Control de gimnasio actualizado.','success');
     }catch(cause){const message=cause?.message||'No se pudo actualizar gimnasio.';setError(message);if(!silent)notify(message,'error');}
-    finally{if(!silent)setLoading(false);}
+    finally{setLoading(false);}
   }
 
   useEffect(()=>{void loadAll({silent:true});},[]);
@@ -283,6 +288,12 @@ function GymWorkspace({state,context}){
   </Box>;
 
   const panels={overview,members:panelMembers,trainers:panelTrainers,assessments:panelAssessments,routines:panelRoutines,nutrition:panelNutrition,classes:panelClasses};
+
+  if (!serverVerified) return <Stack className="cg-vertical-page cg-gym-page" gap={1.5}>
+    <CgPageHeader eyebrow="Vertical Fitness" title="Datos del gimnasio pendientes de verificación" description="No mostramos perfiles, evaluaciones ni rutinas almacenadas sin comprobar la sesión y la respuesta actual del servidor."/>
+    <CgState severity={error?'error':'info'} title={error?'No se pudo verificar el acceso': 'Verificando datos del gimnasio'}>{error||'Validando información autorizada antes de presentar los datos del miembro.'}</CgState>
+    <CgButton variant="outlined" onClick={()=>void loadAll()} disabled={loading}>Reintentar verificación</CgButton>
+  </Stack>;
 
   return <Stack className="cg-vertical-page cg-gym-page" gap={1.5} sx={{minWidth:0,maxWidth:'100%',width:'100%',overflowX:'hidden'}}>
     <CgPageHeader eyebrow="Vertical Fitness" title="Control integral de gimnasio" description="Clientes, instructores, membresías, asistencia, evaluaciones, rutinas, nutrición y clases desde una sola vista funcional." actions={<Stack direction="row" gap={.8} flexWrap="wrap" sx={{minWidth:0,maxWidth:'100%'}}><CgButton variant="outlined" onClick={()=>void loadAll()} disabled={loading}>Actualizar</CgButton><CgButton variant="outlined" onClick={()=>context.navigate('mensajes')}>Mensajes WhatsApp</CgButton></Stack>}/>

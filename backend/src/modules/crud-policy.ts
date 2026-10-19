@@ -53,7 +53,19 @@ export class CrudPolicyError extends Error {
   }
 }
 
+export function parseCrudRouteId(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new CrudPolicyError('Identificador de ruta inválido.');
+  }
+  return value;
+}
+
 export function assertCrudOperation(model: CrudModel, operation: CrudMutation): void {
+  // External JS callers do not receive TypeScript's static model/operation checks.
+  if (!Object.prototype.hasOwnProperty.call(MUTABLE_FIELDS, model) ||
+      !['create', 'update', 'delete'].includes(operation)) {
+    throw new CrudPolicyError('Operación de catálogo no permitida.');
+  }
   if (operation === 'delete' && NON_DELETABLE_MODELS.has(model)) {
     throw new CrudPolicyError('La eliminación requiere un servicio de dominio autorizado.', 405);
   }
@@ -99,6 +111,9 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
 }
 
 export function parseCrudListWindow(query: Record<string, unknown>): { take: number; skip: number } {
+  if (!query || typeof query !== 'object' || Array.isArray(query)) {
+    throw new CrudPolicyError('Parámetros de consulta inválidos.');
+  }
   for (const key of Object.keys(query)) {
     if (!LIST_QUERY_FIELDS.has(key)) throw new CrudPolicyError('Filtro u orden no permitido.');
   }

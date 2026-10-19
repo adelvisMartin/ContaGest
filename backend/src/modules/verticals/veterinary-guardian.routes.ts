@@ -8,14 +8,16 @@ import { ctx, one } from './verticals.shared.js';
 import {
   veterinaryGuardianPortalGrantSchema
 } from './veterinary.schemas.js';
+import { vetGuardianGrantsPatientId } from './veterinary-guardian-query.js';
 
 const router = Router();
 const sha256=(value:string)=>createHash('sha256').update(value).digest('hex');
 
 router.get('/guardian-portal/grants', requirePermission('communications.manage'), asyncHandler(async (req,res)=>{
   const tenantId=ctx(req).tenantId;
-  const patientId=String(req.query.patientId||'').trim();
-  if(!patientId)throw new HttpError(422,'patientId es obligatorio.');
+  let patientId: string;
+  try { patientId=vetGuardianGrantsPatientId(req.query); }
+  catch { throw new HttpError(422,'Consulta de permisos de tutor inválida.'); }
   const patientRows=await prisma.$queryRawUnsafe<any[]>(`
     SELECT "id"
     FROM public."CarePatient"

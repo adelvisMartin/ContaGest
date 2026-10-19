@@ -13,8 +13,14 @@ if(/components\/ui\/index\.js|escapeHtml|mountSubmit|querySelector|addEventListe
 for(const primitive of ['CgProvider','CgPageHeader','CgButton','CgTextField','CgSelect','CgStatusChip','CgDataTable','CgMoney','CgState']){
   if(!source.includes(primitive))fail(`sales missing canonical primitive ${primitive}`);
 }
-for(const contract of ['SupabaseSyncService.pullSales(','SupabaseSyncService.createSale(','RuntimePolicy.handlePersistenceFailure(',"navigate('cotizacion')"]){
+for(const contract of ['SupabaseSyncService.pullSales(','SupabaseSyncService.createSale(',"navigate('cotizacion')"]){
   if(!source.includes(contract))fail(`sales missing preserved contract ${contract}`);
+}
+for(const contract of ['saleSaveInFlight.current','SALES_SERVER_CONFIRMATION_MISSING',"typeof saved.id !== 'string'"]){
+  if(!source.includes(contract))fail(`sales missing fail-closed confirmation ${contract}`);
+}
+if(/RuntimePolicy\.handlePersistenceFailure\(|create-sale-offline-fallback|uid\(['"]sale['"]\)/.test(source)){
+  fail('sales must not fabricate local sales after failed server confirmation');
 }
 if(fs.existsSync(path.join(root,'frontend/src/pages/SalesPage.js')))fail('legacy SalesPage.js still exists');
 if(!process.exitCode)console.log('[erp-ui-sales][PASS] Sales is React/Cg/MUI with persistence and quote contracts preserved.');

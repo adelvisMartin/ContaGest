@@ -4,7 +4,10 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx, one } from './verticals.shared.js';
 import { evaluateGymProgression } from './gym.progression.js';
+import { nextPeriodizationVersion } from './gym-program-version.js';
 import { parseGymExerciseFilters } from './gym-exercise-filters.js';
+import { gymPerformanceSessionDay } from './gym-performance-day.mjs';
+import { parseGymMemberQuery } from './gym-member-query.js';
 import {
   exerciseLibrarySchema,
   exerciseLibraryPatchSchema,
@@ -76,13 +79,16 @@ router.get('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async
 router.post('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   const b=exerciseLibrarySchema.parse(req.body||{});
-  const existing=await prisma.$queryRawUnsafe<any[]>(`
+  const created=await prisma.$transaction(async tx=>{
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      'gym-exercise-name:'+tenantId+':'+b.name.trim().toLowerCase());
+    const existing=await tx.$queryRawUnsafe<any[]>(`
     SELECT "id" FROM public."GymExercise"
     WHERE "tenantId"=$1 AND lower("name")=lower($2)
     LIMIT 1
   `,tenantId,b.name);
   if(existing.length)throw new HttpError(409,'Ya existe un ejercicio con ese nombre.');
-  const rows=await prisma.$queryRawUnsafe<any[]>(`
+  const rows=await tx.$queryRawUnsafe<any[]>(`
     INSERT INTO public."GymExercise"
       ("id","tenantId","name","category","muscleGroup","equipment","instructions","mediaUrl","defaultSets","defaultReps","active","createdAt","updatedAt")
     VALUES
@@ -91,35 +97,42 @@ router.post('/gym/exercises', requirePermission('gym.manage'), asyncHandler(asyn
     RETURNING *
   `,tenantId,b.name,b.category||null,b.muscleGroup||null,b.equipment||null,b.instructions||null,b.mediaUrl||null,b.defaultSets??null,b.defaultReps||null,b.active);
   if(!rows.length)throw new HttpError(409,'Ya existe un ejercicio con ese nombre.');
-  ok(res,one(rows),201);
+    return one(rows);
+  });
+  ok(res,created,201);
 }));
 
 router.patch('/gym/exercises/:id', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   const b=exerciseLibraryPatchSchema.parse(req.body||{});
+  const updated=await prisma.$transaction(async tx=>{
   if(b.name){
-    const duplicate=await prisma.$queryRawUnsafe<any[]>(`
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      'gym-exercise-name:'+tenantId+':'+b.name.trim().toLowerCase());
+    const duplicate=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymExercise"
       WHERE "tenantId"=$1 AND lower("name")=lower($2) AND "id"<>$3
       LIMIT 1
     `,tenantId,b.name,String(req.params.id));
     if(duplicate.length)throw new HttpError(409,'Ya existe otro ejercicio con ese nombre.');
   }
-  const currentRows=await prisma.$queryRawUnsafe<any[]>(`
+  const currentRows=await tx.$queryRawUnsafe<any[]>(`
     SELECT * FROM public."GymExercise"
     WHERE "tenantId"=$1 AND "id"=$2
     LIMIT 1
   `,tenantId,String(req.params.id));
   const current=one(currentRows,'Ejercicio no encontrado.');
   const next={...current,...b};
-  const rows=await prisma.$queryRawUnsafe<any[]>(`
+  const rows=await tx.$queryRawUnsafe<any[]>(`
     UPDATE public."GymExercise"
     SET "name"=$3,"category"=$4,"muscleGroup"=$5,"equipment"=$6,"instructions"=$7,
         "mediaUrl"=$8,"defaultSets"=$9,"defaultReps"=$10,"active"=$11,"updatedAt"=now()
     WHERE "tenantId"=$1 AND "id"=$2
     RETURNING *
   `,tenantId,current.id,next.name,next.category||null,next.muscleGroup||null,next.equipment||null,next.instructions||null,next.mediaUrl||null,next.defaultSets??null,next.defaultReps||null,Boolean(next.active));
-  ok(res,one(rows));
+  return one(rows);
+  });
+  ok(res,updated);
 }));
 
 router.post('/gym/progression/evaluate', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
@@ -247,9 +260,16 @@ router.post('/gym/periodization/programs/:id/version', requirePermission('gym.ma
       FROM public."GymPeriodizationProgram"
       WHERE "tenantId"=$1 AND "programKey"=$2
     `,tenantId,source.programKey);
-    const maxVersion=Number(versionRows[0]?.maxVersion||0);
-    if(Number(source.version)!==maxVersion)throw new HttpError(409,'Solo la versión más reciente puede generar una nueva revisión.');
-    const nextVersion=maxVersion+1;
+    const maxVersion=Number(versionRows[0]?.maxVersion);
+    let nextVersion:number;
+    try {
+      nextVersion=nextPeriodizationVersion(Number(source.version),maxVersion);
+    } catch(error) {
+      if(!(error instanceof TypeError))throw error;
+      throw new HttpError(409,error.message==='GYM_PERIODIZATION_STALE_VERSION'
+        ?'Solo la versión más reciente puede generar una nueva revisión.'
+        :'La numeración de versiones del programa no es segura.');
+    }
     const rows=await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."GymPeriodizationProgram"
         ("id","tenantId","routineId","programKey","version","name","startsAt","structure","sourceTemplateId","supersedesId","notes","createdBy","createdAt")
@@ -403,6 +423,14 @@ router.post('/gym/workout-sessions/:id/complete', requirePermission('gym.manage'
     `,tenantId,sessionId);
     const session=one(sessionRows,'Sesión de entrenamiento no encontrada.');
     if(session.status!=='in_progress')throw new HttpError(409,'La sesión ya está completada.');
+    // Only recorded session sets constitute workout completion evidence.
+    // Checked under the same transaction and row lock as the status change.
+    const setCountRows=await tx.$queryRawUnsafe<Array<{recorded:number}>>(`
+      SELECT COUNT(*)::int AS recorded FROM public."GymWorkoutSet"
+      WHERE "tenantId"=$1 AND "sessionId"=$2 AND "status" IN ('completed','skipped')
+    `,tenantId,session.id);
+    if(!Number.isSafeInteger(setCountRows[0]?.recorded)||setCountRows[0].recorded<1)
+      throw new HttpError(409,'Registra al menos una serie realizada u omitida antes de completar la sesión.');
     const rows=await tx.$queryRawUnsafe<any[]>(`
       UPDATE public."GymWorkoutSession"
       SET "status"='completed',"completedAt"=now(),"updatedAt"=now()
@@ -418,11 +446,10 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
   const today=new Date();
   const defaultTo=today.toISOString().slice(0,10);
   const defaultFrom=new Date(today.getTime()-89*86400000).toISOString().slice(0,10);
-  const q=performanceQuerySchema.parse({
-    memberId:String(req.query.memberId||''),
-    from:req.query.from?String(req.query.from):undefined,
-    to:req.query.to?String(req.query.to):undefined
-  });
+  let transport:ReturnType<typeof parseGymMemberQuery>;
+  try { transport=parseGymMemberQuery(req.query,{requireMember:true,allowDates:true}); }
+  catch { throw new HttpError(422,'Filtros de performance inválidos.'); }
+  const q=performanceQuerySchema.parse(transport);
   const from=q.from||defaultFrom;
   const to=q.to||defaultTo;
   const fromDate=new Date(`${from}T00:00:00.000Z`);
@@ -515,14 +542,14 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     exercise.bestEstimated1RmKg=estimated==null?exercise.bestEstimated1RmKg:Math.max(Number(exercise.bestEstimated1RmKg||0),estimated);
     exercise.lastPerformedAt=row.recordedAt;
 
-    const date=new Date(row.recordedAt).toISOString().slice(0,10);
+    const date=gymPerformanceSessionDay(row.startedAt);
     if(!dailyMap.has(date))dailyMap.set(date,{date,completedSets:0,totalVolume:0});
     const day=dailyMap.get(date);
     day.completedSets+=1;
     day.totalVolume+=volume;
   }
 
-  const trainingDays=new Set(sessions.map((session:any)=>new Date(session.startedAt).toISOString().slice(0,10))).size;
+  const trainingDays=new Set(sessions.map((session:any)=>gymPerformanceSessionDay(session.startedAt))).size;
   const completedSessions=sessions.length;
   const sessionsPerWeek=periodDays>0?Number((completedSessions/(periodDays/7)).toFixed(2)):0;
   const setAdherencePct=plannedSets>0?Number((Math.min(1,completedSets/plannedSets)*100).toFixed(1)):0;

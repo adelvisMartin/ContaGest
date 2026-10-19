@@ -25,6 +25,13 @@ function sessionScope(session = readAuthSession()) {
 }
 function storageKey(session) { return `${STORAGE_KEY_PREFIX}:${sessionScope(session)}`; }
 
+// Clinical records are server-owned PHI, never offline snapshots or user-export data.
+// This also strips legacy persisted Care payloads during the next hydration.
+function withoutClinicalCache(snapshot) {
+  const { healthVertical: _clinicalRecords, ...durable } = snapshot || {};
+  return durable;
+}
+
 function deepMerge(target, source) {
   if (!source || typeof source !== 'object') return target;
   const output = Array.isArray(target) ? [...target] : { ...target };
@@ -60,13 +67,13 @@ function hydrate(session) {
   try {
     // Legacy unscoped state is intentionally not migrated: its tenant provenance is unknown.
     const saved = JSON.parse(localStorage.getItem(storageKey(session)) || 'null');
-    return normalize(saved ? deepMerge(base, saved) : base);
+    return normalize(saved ? deepMerge(base, withoutClinicalCache(saved)) : base);
   } catch { return normalize(base); }
 }
 
 let activeScope = sessionScope();
 let state = hydrate();
-function persist() { localStorage.setItem(`${STORAGE_KEY_PREFIX}:${activeScope}`, JSON.stringify(state)); }
+function persist() { localStorage.setItem(`${STORAGE_KEY_PREFIX}:${activeScope}`, JSON.stringify(withoutClinicalCache(state))); }
 function emit() { listeners.forEach((listener) => listener(clone(state))); }
 function shouldEmitLoginSet(previousRoute, partial) {
   if (previousRoute !== 'login' || state.route !== 'login') return true;
@@ -108,10 +115,10 @@ export const Store = {
       emit();
     }
   },
-  export() { return JSON.stringify(state, null, 2); },
+  export() { return JSON.stringify(withoutClinicalCache(state), null, 2); },
   import(json) {
     const parsed = typeof json === 'string' ? JSON.parse(json) : json;
-    state = normalize(deepMerge(createDefaultState(), parsed));
+    state = normalize(deepMerge(createDefaultState(), withoutClinicalCache(parsed)));
     persist(); emit();
   }
 };
