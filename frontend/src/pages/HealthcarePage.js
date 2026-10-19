@@ -138,12 +138,12 @@ export const HealthcarePage = {
 
         ${Section({
           title:'Profesionales',
-          subtitle:'Equipo disponible para agenda e historia clínica.',
+          subtitle:'El alta del directorio requiere administración. Registrar una matrícula no habilita firmas clínicas.',
           children:`<form id="careProfessionalForm" class="cg-record-form"><div class="cg-record-fields">
             ${Field({labelKey:'Nombre del profesional',name:'fullName',required:true})}
             ${Select({labelKey:'Especialidad',name:'specialty',options:specialtyOptions.map((value)=>({value,label:value}))})}
             ${Field({labelKey:'Matrícula / licencia',name:'licenseNumber'})}
-          </div><div class="cg-record-actions">${Button({text:'Agregar profesional',icon:'fa-user-doctor',type:'submit',variant:'secondary'})}</div></form>${professionalRows.length ? DataTable({columns:[{key:'name',label:'Profesional',render:(row)=>row.name},{key:'specialty',label:'Especialidad'},{key:'status',label:'Estado',render:(row)=>row.status}],rows:professionalRows}) : EmptyState({title:'Sin profesionales',description:'Registra el primer profesional.',iconName:'fa-user-doctor'})}`
+          </div><div class="cg-record-actions">${Button({text:'Registrar profesional (administración)',icon:'fa-user-doctor',type:'submit',variant:'secondary'})}</div></form>${professionalRows.length ? DataTable({columns:[{key:'name',label:'Profesional',render:(row)=>row.name},{key:'specialty',label:'Especialidad'},{key:'status',label:'Estado',render:(row)=>row.status}],rows:professionalRows}) : EmptyState({title:'Sin profesionales',description:'La administración debe registrar el primer profesional.',iconName:'fa-user-doctor'})}`
         })}
 
         ${Section({
@@ -175,7 +175,7 @@ export const HealthcarePage = {
               ${Textarea({labelKey:'Plan / seguimiento',name:'plan',className:'cg-field-wide'})}
               <label class="cg-check-row cg-field-wide"><input type="checkbox" name="confidential"><span>Nota confidencial (psicología u observación restringida)</span></label>
             </div>
-            <div class="cg-record-actions">${Button({text:'Guardar nota clínica',icon:'fa-file-medical',type:'submit'})}</div>
+            <div class="cg-record-actions">${Button({text:'Guardar borrador clínico',icon:'fa-file-medical',type:'submit'})}</div>
           </form>` : ''}${encounterCards(data.encounters || [])}`
         })}
 
@@ -326,7 +326,7 @@ export const HealthcarePage = {
     handle('carePatientForm',HealthVerticalService.createPatient,(data)=>({...data,kind:'human',active:true}),'Paciente registrado.');
     handle('careProfessionalForm',HealthVerticalService.createProfessional,(data)=>({...data,status:'active',schedule:{}}),'Profesional registrado.');
     handle('careAppointmentForm',HealthVerticalService.createAppointment,(data)=>({...data,status:'scheduled',channel:'onsite'}),'Cita agendada.');
-    handle('careEncounterForm',HealthVerticalService.createEncounter,(data,form)=>({...data,confidential:Boolean(form.confidential?.checked),status:'signed',diagnosisCodes:[],clinicalData:{}}),'Historia clínica actualizada.');
+    handle('careEncounterForm',HealthVerticalService.createEncounter,(data,form)=>({...data,confidential:Boolean(form.confidential?.checked),status:'draft',diagnosisCodes:[],clinicalData:{}}),'Borrador clínico guardado.');
     handle('careMeasurementForm',HealthVerticalService.createMeasurement,(data)=>({...data,metadata:{}}),'Medición registrada.');
 
     document.getElementById('careClinicalFactForm')?.addEventListener('submit',async(event)=>{

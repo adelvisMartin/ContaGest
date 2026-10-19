@@ -61,12 +61,14 @@ router.get('/health/professionals', requirePermission('health.manage'), asyncHan
   ok(res, rows);
 }));
 
-router.post('/health/professionals', requirePermission('health.manage'), asyncHandler(async (req, res) => {
+// A directory record is never evidence that the caller has a clinical license.
+// Credential-to-user association must be separately verified/provisioned.
+router.post('/health/professionals', requirePermission('health.manage'), requirePermission('admin.manage'), asyncHandler(async (req, res) => {
   const b = professionalSchema.parse(req.body || {});
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareProfessional" ("id","tenantId","userId","fullName","specialty","licenseNumber","email","phone","status","schedule","createdAt","updatedAt")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,now(),now()) RETURNING *
-  `, ctx(req).tenantId,ctx(req).userId||null,b.fullName,b.specialty,b.licenseNumber||null,b.email||null,b.phone||null,b.status,JSON.stringify(b.schedule));
+    VALUES (gen_random_uuid()::text,$1,NULL,$2,$3,$4,$5,$6,$7,$8::jsonb,now(),now()) RETURNING *
+  `, ctx(req).tenantId,b.fullName,b.specialty,b.licenseNumber||null,b.email||null,b.phone||null,b.status,JSON.stringify(b.schedule));
   ok(res, one(rows), 201);
 }));
 

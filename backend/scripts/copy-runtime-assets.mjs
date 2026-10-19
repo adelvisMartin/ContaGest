@@ -6,6 +6,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const backendRoot = resolve(here, '..');
 const assets = [
   {
+    source: 'src/modules/verticals/care-clinical-write-policy.mjs',
+    target: 'dist/src/modules/verticals/care-clinical-write-policy.mjs'
+  },
+  {
     source: 'src/shared/contracts/accessManifestRuntime.js',
     target: 'dist/src/shared/contracts/accessManifestRuntime.js'
   },

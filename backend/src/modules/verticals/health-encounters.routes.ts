@@ -3,6 +3,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx, one } from './verticals.shared.js';
+import { generalEncounterCreationError } from './care-clinical-write-policy.mjs';
 import { careAnamnesisClinicalDataSchema } from './care-anamnesis-schema.js';
 import {
   dentalTreatmentPlanClinicalDataSchema,
@@ -19,6 +20,17 @@ import {
 } from './health.route-helpers.js';
 
 const router = Router();
+
+async function requireAssignedClinicalProfessional(tx: any, tenantId: string, professionalId: string | null, actorUserId: string | null) {
+  if(!professionalId || !actorUserId)throw new HttpError(403,'La firma requiere un profesional asignado y autenticado.');
+  const rows=await tx.$queryRawUnsafe<any[]>(`
+    SELECT "id" FROM public."CareProfessional"
+    WHERE "tenantId"=$1 AND "id"=$2 AND "userId"=$3
+      AND "status"='active' AND NULLIF(trim("licenseNumber"),'') IS NOT NULL
+    LIMIT 1 FOR SHARE
+  `,tenantId,professionalId,actorUserId);
+  if(!rows.length)throw new HttpError(403,'Solo el profesional clínico matriculado y asignado puede firmar.');
+}
 
 router.get('/health/encounters', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const patientId = String(req.query.patientId || '');
@@ -40,8 +52,10 @@ router.post('/health/encounters', requirePermission('health.manage'), asyncHandl
   if (b.type==='anamnesis' && b.status!=='draft') {
     throw new HttpError(422,'La anamnesis nueva debe registrarse primero como borrador.');
   }
-  const patientRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,b.patientId);
+  const patientRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id","kind" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,b.patientId);
   if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
+  const creationError=generalEncounterCreationError({ patientKind:patientRows[0].kind, type:b.type, status:b.status });
+  if(creationError)throw new HttpError(422,creationError);
   if(b.appointmentId){
     const appointmentRows=await prisma.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."CareAppointment"
@@ -224,6 +238,7 @@ router.post('/health/encounters/:id/workflow', requirePermission('health.manage'
     }
 
     if(previous.status!=='review')throw new HttpError(409,'Solo una versión en revisión puede firmarse.');
+    await requireAssignedClinicalProfessional(tx,tenantId,previous.professionalId,actor.userId);
     const previousEncounterId=String(
       clinicalData?.versioning?.previousEncounterId ||
       lifecycle?.previousEncounterId ||
@@ -289,6 +304,9 @@ router.post('/health/encounters/:id/treatment-plan-decision', requirePermission(
     if(previous.status!=='draft')throw new HttpError(409,'El plan ya tiene una decisión terminal.');
 
     const clinicalData=dentalTreatmentPlanClinicalDataSchema.parse(previous.clinicalData||{});
+    if(b.decision==='accepted'){
+      await requireAssignedClinicalProfessional(tx,tenantId,previous.professionalId,actorUserId);
+    }
     const decidedAt=new Date().toISOString();
     const nextStatus=b.decision==='accepted'?'signed':'cancelled';
     const nextClinicalData={
