@@ -12,6 +12,7 @@ import { today } from '../utils/dom.js';
 import { holdPosCart, resumePosCart, discardHeldPosCart } from '../services/posHeldCartPolicy.mjs';
 import { addPosFavorite, removePosFavorite, matchesPosFavorite } from '../services/posFavoritePolicy.mjs';
 import { verifyPosDraftCart } from '../services/posDraftVerification.mjs';
+import { decidePosScannerKey } from '../services/posScannerKeyboard.mjs';
 
 const rows=(value)=>Array.isArray(value)?value:[];
 const statusTone=(status)=>status==='Cobrada'?'success':status==='Anulada'?'error':'warning';
@@ -37,6 +38,8 @@ function SalesWorkspace({state,context}){
   const [error,setError]=useState('');
   const clientRef=useRef(null);
   const [posCode,setPosCode]=useState('');
+  const posScannerInputRef=useRef(null);
+  const posScannerRefocusPendingRef=useRef(false);
   const [posLoading,setPosLoading]=useState(false);
   const [posDraftError,setPosDraftError]=useState('');
   const [posChecking,setPosChecking]=useState(false);
@@ -81,8 +84,18 @@ function SalesWorkspace({state,context}){
     posFavoritesRef.current=[];
     setPosFavorites([]);
     setPosCode('');
+    posScannerRefocusPendingRef.current=false;
     setPosDraftError('');
   },[posTenantId]);
+  React.useEffect(()=>{
+    if(posLoading || !posScannerRefocusPendingRef.current)return;
+    posScannerRefocusPendingRef.current=false;
+    if(posTenantRef.current!==BackendApi.tenantId || typeof document==='undefined')return;
+    const scanner=posScannerInputRef.current;
+    if(scanner && (document.activeElement===document.body || document.activeElement===scanner)){
+      scanner.focus();
+    }
+  },[posLoading]);
   const saleSaveInFlight=useRef(false);
   const [form,setForm]=useState({
     date:today(),
@@ -177,6 +190,11 @@ function SalesWorkspace({state,context}){
       setPosDraftError('Aplica las cantidades pendientes antes de consultar los importes.');
       return;
     }
+    const expectedSkus=snapshot.map((line)=>posNames[line.productId]?.sku);
+    if(expectedSkus.some((sku)=>!sku || normalizePosLookupCode(sku)!==sku)){
+      setPosDraftError('El carrito no tiene un SKU confirmado para todos los productos. Vuelve a escanearlos.');
+      return;
+    }
     const tenantAtStart=BackendApi.tenantId;
     const revision=posCartRevisionRef.current;
     const isCurrent=()=>tenantAtStart===BackendApi.tenantId
@@ -189,7 +207,7 @@ function SalesWorkspace({state,context}){
     setPosDraftError('');
     try{
       const result=await BackendApi.post('/sales/pos/catalog-quote-preview',{
-        lines:snapshot.map((line)=>({productId:line.productId,quantity:line.quantity}))
+        lines:snapshot.map((line,index)=>({productId:line.productId,quantity:line.quantity,expectedSku:expectedSkus[index]}))
       });
       if(!isCurrent())return;
       const moneyPattern=/^(?:0|[1-9]\d*)\.\d{2}$/;
@@ -202,7 +220,7 @@ function SalesWorkspace({state,context}){
         || result.lines.some((line,index)=>line.productId!==snapshot[index].productId
           || line.quantity!==snapshot[index].quantity
           || typeof line.name!=='string' || !line.name.trim()
-          || typeof line.sku!=='string' || !line.sku.trim()
+          || line.sku!==expectedSkus[index]
           || !moneyPattern.test(line.unitAmount) || !moneyPattern.test(line.lineSubtotal))){
         throw new Error('POS_CATALOG_QUOTE_INVALID_RESPONSE');
       }
@@ -303,7 +321,25 @@ function SalesWorkspace({state,context}){
   // The client never authorizes a sale, calculates IVA or posts stock/payments.
   async function addPosDraftProduct(event){
     event.preventDefault();
-    await lookupAndAddPosProduct(posCode);
+    // Scanner Enter submits the existing form; no synthetic second submission.
+    await lookupAndAddPosProduct(posCode,null,true);
+  }
+
+  function handlePosScannerKeyboard(event){
+    const target=event.target;
+    const action=decidePosScannerKey({
+      key:event.key,ctrlKey:event.ctrlKey,altKey:event.altKey,metaKey:event.metaKey,
+      repeat:event.repeat,isComposing:event.isComposing,
+      busy:posBusyRef.current||posVerifyBusyRef.current||posLoading||posChecking||posQuoteBusyRef.current||posStockBusyRef.current,
+      targetIsScanner:target===posScannerInputRef.current,
+      targetIsEditable:Boolean(target?.closest?.('input,textarea,select,[contenteditable="true"],[role="textbox"],[role="combobox"]')),
+      modalOpen:Boolean(target?.closest?.('[role="dialog"],[aria-modal="true"]'))
+    });
+    if(action==='ignore')return;
+    event.preventDefault();
+    event.stopPropagation();
+    if(action==='focus')posScannerInputRef.current?.focus?.();
+    else if(action==='clear')setPosCode('');
   }
 
   async function addPosFavoriteToCart(favorite){
@@ -311,7 +347,7 @@ function SalesWorkspace({state,context}){
     await lookupAndAddPosProduct(favorite.sku,favorite);
   }
 
-  async function lookupAndAddPosProduct(value,favorite=null){
+  async function lookupAndAddPosProduct(value,favorite=null,refocusAfterSuccess=false){
     if(posBusyRef.current || posVerifyBusyRef.current)return;
     posBusyRef.current=true;
     setPosLoading(true);
@@ -350,7 +386,15 @@ function SalesWorkspace({state,context}){
       setPosNames((current)=>({...current,[decision.product.id]:{
         sku:decision.product.sku,name:decision.product.name
       }}));
-      if(!favorite)setPosCode('');
+      if(!favorite){
+        setPosCode('');
+        // Focus only after React re-enables the scanner, not while disabled.
+        // A later effect also checks that the operator has not moved to another field.
+        if(refocusAfterSuccess && tenantAtStart===BackendApi.tenantId
+          && posTenantRef.current===tenantAtStart){
+          posScannerRefocusPendingRef.current=true;
+        }
+      }
       notify('Producto agregado al borrador. La venta aún no está confirmada.','success');
     }catch(cause){
       if(tenantAtStart!==BackendApi.tenantId || posTenantRef.current!==tenantAtStart){
@@ -528,15 +572,19 @@ function SalesWorkspace({state,context}){
       <Metric label="Ticket promedio" value={<CgMoney value={total/Math.max(sales.length,1)} currency="VES"/>} tone="primary"/>
     </Box>
 
-    <Paper component="section" variant="outlined" aria-label="Carrito POS de borrador" sx={{p:1.5}}>
+    <Paper component="section" variant="outlined" aria-label="Carrito POS de borrador" onKeyDown={handlePosScannerKeyboard} sx={{p:1.5}}>
       <Typography variant="h6">Venta rápida · carrito en preparación</Typography>
       <Typography variant="caption" color="text.secondary">
         Consulta productos del servidor por SKU, código de barras o alias. Este carrito no crea facturas, no reserva inventario y no procesa cobros.
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{display:'block',mt:0.5}}>
+        Lector de códigos: Enter agrega un producto; / enfoca el lector dentro de esta sección; Escape limpia el campo.
       </Typography>
       <Box component="form" onSubmit={addPosDraftProduct} sx={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:1,mt:1.25}}>
         <CgTextField
           size="small"
           label="SKU o código de barras"
+          inputRef={posScannerInputRef}
           placeholder="Ej. 000123456789"
           value={posCode}
           onChange={(event)=>setPosCode(event.target.value)}
@@ -545,6 +593,10 @@ function SalesWorkspace({state,context}){
         />
         <CgButton type="submit" disabled={posLoading||posChecking||!posCode.trim()} sx={{minHeight:44}}>
           {posLoading?'Consultando…':'Agregar al borrador'}
+        </CgButton>
+        <CgButton type="button" variant="outlined" disabled={posLoading||posChecking}
+          onClick={()=>posScannerInputRef.current?.focus?.()} sx={{minHeight:44,mt:0.5}}>
+          Enfocar lector
         </CgButton>
       </Box>
       <Box component="section" aria-label="Favoritos POS de la sesión" sx={{mt:1.25}}>

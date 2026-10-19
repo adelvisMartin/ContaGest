@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {prepareDeliveryQuantity as plan} from '../backend/src/modules/fulfillment/delivery-quantity-preflight.ts';
+const b={tenantId:'tenant-a',orderTenantId:'tenant-a',orderId:'order-a',ownerType:'sales-order',ownerId:'order-a',orderedExact:'10',previouslyFulfilledExact:'2',reservedOutstandingExact:'8',requestedDeliveryExact:'3'};
+test('partial delivery derives unfulfilled quantity without changing stock',()=>{const r=plan(b);assert.equal(r.deliverExact,'3');assert.equal(r.fulfilledAfterExact,'5');assert.equal(r.outstandingAfterExact,'5');assert.equal(r.stockMovementAuthorized,false);assert.equal(r.invoiceAuthorized,false);});
+test('last delivery finishes order exactly',()=>{const r=plan({...b,requestedDeliveryExact:'8'});assert.equal(r.fullyFulfilled,true);assert.equal(r.outstandingAfterExact,'0');});
+test('cannot consume more than outstanding reservation or order',()=>{for(const p of [{requestedDeliveryExact:'9'},{requestedDeliveryExact:'9.000001'},{previouslyFulfilledExact:'11'},{reservedOutstandingExact:'2'}])assert.throws(()=>plan({...b,...p}),/OVERFULFILL/);});
+test('reservation owner must be exact same sales order',()=>{for(const p of [{orderTenantId:'tenant-b'},{ownerId:'order-b'},{ownerType:'invoice'},{tenantId:'invalid key'}])assert.throws(()=>plan({...b,...p}),/SCOPE/);});
+test('finite precision no rounding or float drift',()=>{const r=plan({...b,orderedExact:'1.000002',previouslyFulfilledExact:'0.000001',reservedOutstandingExact:'1.000001',requestedDeliveryExact:'1.000001'});assert.equal(r.fullyFulfilled,true);assert.equal(r.fulfilledAfterExact,'1.000002');});
+test('zero, negative, scientific and excessive decimal scales fail closed',()=>{for(const requestedDeliveryExact of ['0','-1','1e3','1.0000001',''])assert.throws(()=>plan({...b,requestedDeliveryExact}));});
+test('no duplicate effects can be authorized by pure preflight alone',()=>{const r=plan(b);assert.equal(r.requiresTransactionalReservationConsume,true);assert.equal(r.persisted,false);assert.equal(Object.isFrozen(r),true);});

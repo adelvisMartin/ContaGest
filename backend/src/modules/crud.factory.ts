@@ -11,6 +11,7 @@ import {
   CrudPolicyError,
   assertCrudMutationFields,
   assertCrudOperation,
+  parseCrudRouteId,
   parseCrudListWindow,
   parseCrudSearchText
 } from './crud-policy.js';
@@ -126,7 +127,7 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
-    const data = await delegate.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId } });
+    const data = await delegate.findFirst({ where: { id: parseCrudRouteId(req.params.id), tenantId: ctx.tenantId } });
     if (!data) throw new HttpError(404, `${options.entity} no encontrado`);
     ok(res, data);
   }));
@@ -140,7 +141,7 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.put('/:id', mutationGate(options.model, 'update'), validateBody(options.schema.partial().strict()), asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
-    const where = { id: req.params.id, tenantId: ctx.tenantId };
+    const where = { id: parseCrudRouteId(req.params.id), tenantId: ctx.tenantId };
     const before = await delegate.findFirst({ where });
     if (!before) throw new HttpError(404, `${options.entity} no encontrado`);
     // Guard the mutation itself against a tenant change between read and write.
@@ -151,7 +152,7 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.delete('/:id', mutationGate(options.model, 'delete'), asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
-    const where = { id: req.params.id, tenantId: ctx.tenantId };
+    const where = { id: parseCrudRouteId(req.params.id), tenantId: ctx.tenantId };
     const before = await delegate.findFirst({ where });
     if (!before) throw new HttpError(404, `${options.entity} no encontrado`);
     const data = await delegate.delete({ where });

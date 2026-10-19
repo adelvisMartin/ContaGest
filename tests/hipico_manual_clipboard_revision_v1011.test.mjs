@@ -48,6 +48,9 @@ function harness(writeText = async () => {}) {
   const clear = new Element('manual-clear', dialog);
   controls['[data-ops-manual-text]'] = draft;
   controls['[data-ops-manual-confirm]'] = confirm;
+  // Existing review tests simulate an operator who has already attested consent.
+  const consent = new Element('manual-consent', dialog); consent.checked = true;
+  controls['[data-ops-manual-consent]'] = consent;
   controls['[data-ops-manual-copy]'] = copy;
   let root;
   const document = {

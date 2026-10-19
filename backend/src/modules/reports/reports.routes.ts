@@ -11,6 +11,7 @@ import {
 import { SALES_KPI_STATUSES, SALES_KPI_VERSION, salesKpiDocumentRows, salesKpiRows } from './sales-kpi.js';
 import { summarizeInvoicedUnitActivity } from './invoiced-unit-activity.js';
 import { PURCHASE_KPI_VERSION, purchaseKpiDocumentRows, purchaseKpiRows } from './purchase-kpi.js';
+import { reconcileKpiPage } from './kpi-page-reconciliation.mjs';
 import { prepareReorderStockPage } from './replenishment-candidates.js';
 import { previewReorderPolicy } from './reorder-policy-preview.js';
 import { parseReorderScanQuery, reorderScanPageMeta } from './reorder-scan-page.js';
@@ -89,6 +90,9 @@ router.get('/operational/purchases', asyncHandler(async (req, res) => {
     })
   ]), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   const hasMore = documents.length > take;
+  const summary = purchaseKpiRows(groups);
+  const rows = purchaseKpiDocumentRows(documents.slice(0, take));
+  const drillDownReconciliation = reconcileKpiPage({summary, rows, skip, hasMore});
   ok(res, {
     version: PURCHASE_KPI_VERSION,
     sourceAuthority: 'PurchaseInvoice',
@@ -102,8 +106,9 @@ router.get('/operational/purchases', asyncHandler(async (req, res) => {
       isolation: 'repeatable-read'
     },
     filters: { period, currency: currency ?? null, take, skip },
-    summary: purchaseKpiRows(groups),
-    rows: purchaseKpiDocumentRows(documents.slice(0, take)),
+    summary,
+    rows,
+    drillDownReconciliation,
     pagination: { hasMore, nextSkip: hasMore ? skip + take : null }
   });
 }));
@@ -136,6 +141,9 @@ router.get('/operational/sales', asyncHandler(async (req, res) => {
     })
   ]), { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   const hasMore = documents.length > take;
+  const summary = salesKpiRows(groups);
+  const rows = salesKpiDocumentRows(documents.slice(0, take));
+  const drillDownReconciliation = reconcileKpiPage({summary, rows, skip, hasMore});
   ok(res, {
     version: SALES_KPI_VERSION,
     sourceAuthority: 'SalesInvoice',
@@ -148,8 +156,9 @@ router.get('/operational/sales', asyncHandler(async (req, res) => {
       isolation: 'repeatable-read'
     },
     filters: { period, currency: currency ?? null, take, skip },
-    summary: salesKpiRows(groups),
-    rows: salesKpiDocumentRows(documents.slice(0, take)),
+    summary,
+    rows,
+    drillDownReconciliation,
     pagination: { hasMore, nextSkip: hasMore ? skip + take : null }
   });
 }));
@@ -199,9 +208,9 @@ const invoiceActivityInteger = z.string()
   .transform(value => Number(value));
 const invoiceActivityQuery = z.object({
   productId: z.string().uuid(),
-  windowDays: invoiceActivityInteger.refine(value => value >= 1 && value <= 365).default('90'),
-  take: invoiceActivityInteger.refine(value => value >= 1 && value <= 100).default('25'),
-  skip: invoiceActivityInteger.refine(value => value >= 0 && value <= 1_000_000).default('0')
+  windowDays: invoiceActivityInteger.refine(value => value >= 1 && value <= 365).default(90),
+  take: invoiceActivityInteger.refine(value => value >= 1 && value <= 100).default(25),
+  skip: invoiceActivityInteger.refine(value => value >= 0 && value <= 1_000_000).default(0)
 }).strict();
 
 router.get('/inventory/invoiced-activity', asyncHandler(async (req, res) => {
@@ -556,10 +565,21 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
   // Invalid balances remain in the original rows/summary, not candidates.
   const { rows, stockReview, reorderCandidates } = scan;
   const filteredRows = onlyNeedsReorder ? rows.filter(row => row.needsReorder) : rows;
-  const pagination = reorderScanPageMeta({
-    skip, take, scannedProducts: rows.length, activeProducts,
-    matchesInPage: rows.filter(row => row.needsReorder).length
-  });
+  const pagination = (() => {
+    try {
+      return reorderScanPageMeta({
+        skip, take, scannedProducts: rows.length, activeProducts,
+        matchesInPage: rows.filter(row => row.needsReorder).length
+      });
+    } catch (error) {
+      if (error instanceof TypeError && error.message === 'REORDER_SCAN_OFFSET_WINDOW_EXCEEDED') {
+        throw new HttpError(422, 'El catálogo supera la ventana de paginación; reduce el tamaño del lote o usa otra estrategia de exportación.', {
+          code: 'REORDER_SCAN_OFFSET_WINDOW_EXCEEDED'
+        });
+      }
+      throw error;
+    }
+  })();
 
   const salesEvidence = salesOptions.includeSalesEvidence
     ? projectReorderSalesEvidence({

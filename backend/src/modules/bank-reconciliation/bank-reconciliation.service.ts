@@ -7,6 +7,8 @@ import { canonicalRequestHash, normalizeIdempotencyKey } from '../../shared/serv
 import { createLedgerEntry, postLedgerEntry, reverseLedgerEntry } from '../accounting/accounting.service.js';
 import { claimApproval, finishApprovalClaim, releaseApprovalClaim } from '../approvals/approvals.service.js';
 import { parseBankStatement, statementLineHash, statementSourceHash } from './statement-parser.js';
+import { evaluateBankClosingReadiness } from './bank-closing-readiness.mjs';
+import { projectBankReconciliationExceptions } from './bank-exception-window.js';
 
 export const BANK_RECONCILIATION_AUTO_THRESHOLD = '0.9500';
 export type ReconciliationStatus = 'unmatched'|'suggested'|'partial'|'reconciled'|'conflict';
@@ -406,11 +408,38 @@ export async function reverseReconciliation(input:{tenantId:string;userId:string
 export async function getClosingBalanceSummary(tenantId:string,accountId:string,importId?:string) {
   const account=await prisma.bankAccount.findFirst({where:{id:accountId,tenantId,active:true}});if(!account)throw new HttpError(404,'Cuenta bancaria no encontrada.');
   const importRows=await prisma.$queryRaw<Array<{id:string;closingBalance:Prisma.Decimal|null;openingBalance:Prisma.Decimal|null;currency:string;createdAt:Date}>>(importId?Prisma.sql`SELECT "id","closingBalance","openingBalance","currency","createdAt" FROM "BankStatementImport" WHERE "tenantId"=${tenantId} AND "accountId"=${accountId} AND "id"=${importId} LIMIT 1`:Prisma.sql`SELECT "id","closingBalance","openingBalance","currency","createdAt" FROM "BankStatementImport" WHERE "tenantId"=${tenantId} AND "accountId"=${accountId} ORDER BY "createdAt" DESC LIMIT 1`);
-  const statement=importRows[0];if(!statement)throw new HttpError(404,'No existe extracto importado para la cuenta.');if(statement.closingBalance===null)return {importId:statement.id,currency:statement.currency,closingBalance:null,ledgerBalance:exact(account.balance),difference:null,exact:false,reason:'statement_closing_balance_unavailable'};
+  const statement=importRows[0];if(!statement)throw new HttpError(404,'No existe extracto importado para la cuenta.');if(statement.closingBalance===null)return {importId:statement.id,currency:statement.currency,closingBalance:null,ledgerBalance:exact(account.balance),difference:null,exact:false,reason:'statement_closing_balance_unavailable',reconciliationReady:false,readinessReason:'CLOSING_BALANCE_MISSING'};
   const difference=subtract(statement.closingBalance,account.balance);const coverage=await prisma.$queryRaw<Array<{firstDate:Date|null;lastDate:Date|null;lines:number;unmatched:number}>>(Prisma.sql`SELECT MIN("bookedAt") AS "firstDate",MAX("bookedAt") AS "lastDate",COUNT(*)::int AS lines,COUNT(*) FILTER (WHERE "status"<>'reconciled')::int AS unmatched FROM "BankStatementLine" WHERE "tenantId"=${tenantId} AND "importId"=${statement.id}`);
-  return {importId:statement.id,currency:statement.currency,closingBalance:exact(statement.closingBalance),ledgerBalance:exact(account.balance),difference:exact(difference),exact:difference.isZero(),coverage:coverage[0]||null};
+  const readiness=evaluateBankClosingReadiness({
+    statementCurrency:statement.currency,accountCurrency:account.currency,
+    hasClosingBalance:true,lineCount:coverage[0]?.lines,unmatchedCount:coverage[0]?.unmatched,
+    amountsEqual:difference.isZero()
+  });
+  return {importId:statement.id,currency:statement.currency,closingBalance:exact(statement.closingBalance),
+    ledgerBalance:exact(account.balance),difference:exact(difference),exact:difference.isZero(),
+    coverage:coverage[0]||null,...readiness};
 }
 
 export async function getReconciliationHistory(tenantId:string,lineId:string) {
   await getLine(tenantId,lineId);return prisma.$queryRaw<Array<any>>(Prisma.sql`SELECT e.*,r."kind",r."status" AS "reconciliationStatus",r."matchedAmount",r."ledgerEntryId",r."reversalLedgerEntryId" FROM "BankReconciliationEvent" e LEFT JOIN "BankReconciliation" r ON r."id"=e."reconciliationId" AND r."tenantId"=e."tenantId" WHERE e."tenantId"=${tenantId} AND e."statementLineId"=${lineId} ORDER BY e."createdAt" ASC`);
+}
+
+
+export async function getReconciliationExceptionWindow(tenantId:string,accountId:string,take=50) {
+  const account=await prisma.bankAccount.findFirst({
+    where:{id:accountId,tenantId},select:{id:true}
+  });
+  if(!account)throw new HttpError(404,'Cuenta bancaria no encontrada.');
+  const bounded=Math.min(Math.max(Math.trunc(take),1),99);
+  const rows=await listStatementLines(tenantId,{accountId,take:bounded+1});
+  const hasMore=rows.length>bounded;
+  const report=projectBankReconciliationExceptions({
+    tenantId,accountId,
+    lines:rows.slice(0,bounded).map(row=>({
+      id:row.id,tenantId:row.tenantId,accountId:row.accountId,status:row.status,
+      amount:row.amount,allocated:row.allocated,remaining:row.remaining,
+      bookedAt:row.bookedAt
+    }))
+  });
+  return {...report,windowSize:bounded,hasMore};
 }

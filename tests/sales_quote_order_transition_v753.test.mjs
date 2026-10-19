@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {prepareQuoteOrderTransition as plan} from '../backend/src/modules/sales/quote-order-transition-intent.ts';
+const q={kind:'quote',tenantId:'tenant-a',actorTenantId:'tenant-a',documentId:'quote-a',from:'draft',action:'send',expectedRevision:1};
+test('draft quote sends with CAS and no downstream money writes',()=>{const r=plan(q);assert.equal(r.to,'sent');assert.equal(r.proposedRevision,2);assert.deepEqual([r.persisted,r.invoiceAuthorized,r.reservationAuthorized,r.ledgerAuthorized],[false,false,false,false]);});
+test('quote accepted only after sent',()=>{assert.equal(plan({...q,from:'sent',action:'accept'}).to,'accepted');assert.throws(()=>plan({...q,action:'accept'}),/NOT_ALLOWED/);});
+test('quote rejected, expired, or cancelled cannot be reaccepted',()=>{for(const s of ['rejected','expired','cancelled','accepted'])assert.throws(()=>plan({...q,from:s,action:'accept'}),/NOT_ALLOWED/);});
+test('draft order can confirm but cannot fulfill directly',()=>{const o={...q,kind:'order',documentId:'order-a'};assert.equal(plan({...o,action:'confirm'}).to,'confirmed');assert.throws(()=>plan({...o,action:'fulfill'}),/NOT_ALLOWED/);});
+test('partially fulfilled order may later fulfill without creating invoice',()=>{const r=plan({...q,kind:'order',from:'partially_fulfilled',action:'fulfill'});assert.equal(r.to,'fulfilled');assert.equal(r.invoiceAuthorized,false);});
+test('tenant and document IDs cannot be spoofed',()=>{for(const value of [{actorTenantId:'tenant-b'},{documentId:'../another'},{tenantId:' '},{kind:'ledger'}])assert.throws(()=>plan({...q,...value}));});
+test('CAS revision bounds and terminal statuses reject changes',()=>{for(const revision of [0,-1,1.5,Number.MAX_SAFE_INTEGER])assert.throws(()=>plan({...q,expectedRevision:revision}),/REVISION/);assert.throws(()=>plan({...q,kind:'order',from:'fulfilled',action:'cancel'}),/NOT_ALLOWED/);});

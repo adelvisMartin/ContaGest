@@ -35,3 +35,26 @@ La verificación sin dependencias en contenedor aislado se realizó compilando l
 **Faltan para cerrar #761:** migraciones/schema Project/Task/TimeEntry/RateCard, carga server-authenticated, RBAC/tenant RLS, actualización CAS y aprobación **atómicas**, audit/`approvedAt`, snapshot persistente por aprobación, reglas monetarias/decimales aceptadas, generación idempotente de borrador `SalesInvoice` y pruebas PG17/API/browser/financieras. Ningún check en cola es PASS; no desactivar checks requeridos por cuota de proveedor.
 
 Rollback: revertir únicamente este helper, su test y la presente documentación. No hay migración, API, estado de datos ni permiso nuevo.
+
+## Corrección de vigencia al inicio del trabajo (2026-10-16)
+
+El contrato puro `prepareProjectTimeRateSnapshotIntent` tenía una brecha:
+comprobaba únicamente que la tarifa estuviese vigente a la hora de la
+**captura**. Eso permitía elegir una tarifa activada después de que comenzó
+el turno (por ejemplo, 13:15 para horas de 13:00 a 13:45) y aplicar el
+prorrateo retroactivamente. Ahora la tarifa debe entrar en vigor **a más
+tardar en el instante UTC de inicio del período**. Una tarifa iniciada
+a mitad del turno se rechaza con `PROJECT_TIME_RATE_EFFECTIVE_AFTER_START`:
+no se hace split ni se inventa política de redondeo. La captura del servidor
+tampoco puede anteceder al fin real del período; se rechaza con
+`PROJECT_TIME_RATE_CAPTURE_BEFORE_END`. Los bordes exactamente iguales
+sí son válidos. Las regresiones incluyen transición DST de noviembre.
+
+Esta validación solo comprueba un `quote` ya cargado por autoridad server.
+**No verifica el historial completo de versiones**: el selector real de
+RateCard sigue siendo responsable de rechazar otra vigencia que empiece
+dentro de un turno, y PostgreSQL/tenant/RBAC son requisitos previos para
+activar #761. `persisted:false`, `billableAuthorized:false` e
+`invoiceAuthorized:false` se conservan; sin facturas ni operaciones
+financieras. El PR #1126 continúa pendiente de validación PostgreSQL17 y
+autenticación antes de poder fusionarse.
