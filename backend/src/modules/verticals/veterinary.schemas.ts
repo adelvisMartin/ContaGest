@@ -79,7 +79,7 @@ export const veterinaryFinancialInvoiceSchema =z.object({
 export const veterinaryFinancialQuerySchema =z.object({
   patientId:z.string().min(10).optional()
 });
-export const VETERINARY_GUARDIAN_PORTAL_SCOPES =['appointments','reminders','discharge','documents','payments','communications'] as const;
+export const VETERINARY_GUARDIAN_PORTAL_SCOPES =['appointments','reminders','discharge','documents','payments','communications','vaccines'] as const;
 export const veterinaryGuardianPortalGrantSchema =z.object({
   patientId:z.string().min(10),
   expiresInHours:z.coerce.number().int().min(1).max(168).default(48),

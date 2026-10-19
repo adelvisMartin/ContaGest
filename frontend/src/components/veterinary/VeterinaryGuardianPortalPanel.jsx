@@ -8,6 +8,7 @@ import { reportVeterinaryError } from './veterinaryError.js';
 
 const SCOPE_OPTIONS=[
   ['appointments','Citas'],
+  ['vaccines','Vacunas'],
   ['reminders','Recordatorios'],
   ['discharge','Alta / estancia'],
   ['documents','Documentos'],

@@ -42,13 +42,20 @@ router.post('/session', asyncHandler(async (req, res) => {
   const scopes = Array.isArray(grant.scopes) ? grant.scopes.map(String) : [];
   const allowed = (scope: string) => scopes.includes(scope);
 
-  const [appointmentRows, dischargeRows, documentRows, billingRows, communicationRows] = await Promise.all([
+  const [appointmentRows, vaccineRows, dischargeRows, documentRows, billingRows, communicationRows] = await Promise.all([
     (allowed('appointments') || allowed('reminders')) ? prisma.$queryRawUnsafe<any[]>(`
       SELECT "startsAt","endsAt","status","reason","channel","reminderStatus"
       FROM public."CareAppointment"
       WHERE "tenantId"=$1 AND "patientId"=$2
         AND "startsAt">=now()-interval '30 days'
       ORDER BY "startsAt" ASC
+      LIMIT 40
+    `, tenantId, patientId) : Promise.resolve([]),
+    allowed('vaccines') ? prisma.$queryRawUnsafe<any[]>(`
+      SELECT "vaccine","dose","administeredAt","nextDueAt"
+      FROM public."CareImmunization"
+      WHERE "tenantId"=$1 AND "patientId"=$2
+      ORDER BY "administeredAt" DESC
       LIMIT 40
     `, tenantId, patientId) : Promise.resolve([]),
     allowed('discharge') ? prisma.$queryRawUnsafe<any[]>(`
@@ -110,6 +117,12 @@ router.post('/session', asyncHandler(async (req, res) => {
       startsAt:row.startsAt, endsAt:row.endsAt, status:String(row.status || ''),
       reason:row.reason ? String(row.reason) : null, channel:String(row.channel || 'onsite'),
       reminderStatus:String(row.reminderStatus || 'pending')
+    })),
+    vaccines:vaccineRows.map((row) => ({
+      vaccine:String(row.vaccine||''),
+      dose:row.dose?String(row.dose):null,
+      administeredAt:row.administeredAt,
+      nextDueAt:row.nextDueAt||null
     })),
     discharges:dischargeRows.map((row) => ({
       admissionNumber:String(row.admissionNumber || ''),
