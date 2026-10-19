@@ -7,9 +7,11 @@ const uiSource=readFileSync(new URL('../frontend/src/pages/SalesPage.jsx',import
 const start=routeSource.indexOf("router.post('/pos/catalog-quote-preview'");
 const end=routeSource.indexOf("router.get('/', requirePermission('sales.view')",start);
 assert.ok(start>0&&end>start,'route exists immediately before generic sales read');
-const snippet=routeSource.slice(start,end);
+// Isolated function-source regression runs under Node without transpiling the TS route.
+// Remove only this audited type annotation from the mock-executed route excerpt.
+const snippet=routeSource.slice(start,end).replace('line: {productId:string;expectedSku:string}','line');
 const A='a5b468dc-347d-416a-80a7-8184e657db61';
-const requestLines=[{productId:A,quantity:'1.125'}];
+const requestLines=[{productId:A,quantity:'1.125',expectedSku:'SKU-001'}];
 const price=(value)=>({toFixed:()=>value});
 const product=()=>({id:A,sku:'SKU-001',name:'Producto',
   price:price('2.25'),taxRate:price('16.00'),
@@ -17,7 +19,7 @@ const product=()=>({id:A,sku:'SKU-001',name:'Producto',
 class PosStockPreviewError extends Error {constructor(code){super(code);this.code=code;}}
 class HttpError extends Error {constructor(status,message,details){super(message);this.status=status;this.details=details;}}
 
-function setup({rows=[product()],invalid=false,stockInvalid=false,calculationInvalid=false}={}){
+function setup({rows=[product()],invalid=false,stockInvalid=false,calculationInvalid=false,requested=requestLines}={}){
   const calls={};
   let handler;
   const router={post:(path,permission,validate,callback)=>{
@@ -42,7 +44,7 @@ function setup({rows=[product()],invalid=false,stockInvalid=false,calculationInv
     };
   };
   const prisma={product:{findMany:async (query)=>{calls.query=query;return rows;}}};
-  const execute=new Function('router','requirePermission','validateBody','posStockSchema',
+  const execute=new Function('router','requirePermission','validateBody','posCatalogQuoteSchema',
     'asyncHandler','context','validatePosStockLines','PosStockPreviewError',
     'HttpError','prisma','previewPosStock','calculateInvoiceTotals','ok',snippet);
   execute(router,x=>x,x=>x,{strict:true},x=>x,
@@ -50,7 +52,7 @@ function setup({rows=[product()],invalid=false,stockInvalid=false,calculationInv
     prisma,stock,calculate,(res,data)=>{calls.response=data;});
   return {calls,run:async ()=>{
     const res={setHeader:(key,value)=>{calls[key]=value;}};
-    await handler({body:{lines:requestLines}},res);
+    await handler({body:{lines:requested}},res);
     return calls;
   }};
 }
@@ -124,4 +126,44 @@ test('Sales UI clears prior quote on quantity edit and tenant switch',()=>{
   assert.match(uiSource,/function invalidatePosVerification\(\)\{[\s\S]*?setPosQuotePreview\(null\)/);
   assert.match(uiSource,/posTenantRef\.current===posTenantId\?posQuotePreview:null/);
   assert.match(uiSource,/setPosQuotePreview\(null\)/);
+});
+test('rejects stale SKU for the same product UUID before quoting price',async()=>{
+  const x=setup({rows:[{...product(),sku:'SKU-002'}]});
+  await assert.rejects(x.run(),err=>err instanceof HttpError
+    && err.status===409 && err.details?.code==='POS_CATALOG_SKU_CHANGED');
+  assert.equal(x.calls.calcInput,undefined);
+  assert.equal(x.calls.response,undefined);
+});
+test('validates product identity without case folding or trimming, keeping leading zeros',async()=>{
+  const x=setup({rows:[{...product(),sku:'0000123'}],requested:[{...requestLines[0],expectedSku:'0000123'}]});
+  const c=await x.run();
+  assert.equal(c.response.lines[0].sku,'0000123');
+  assert.equal(c.response.estimatedTotal,'2.93');
+});
+test('SKU differing only by case still rejects stale identity',async()=>{
+  const x=setup({rows:[{...product(),sku:'sku-001'}]});
+  await assert.rejects(x.run(),err=>err instanceof HttpError&&err.status===409
+    && err.details?.code==='POS_CATALOG_SKU_CHANGED');
+  assert.equal(x.calls.calcInput,undefined);
+});
+test('missing expected SKU rejects stale snapshot before canonical invoice calculation',async()=>{
+  const x=setup({requested:[{productId:A,quantity:'1.125'}]});
+  await assert.rejects(x.run(),err=>err instanceof HttpError&&err.status===409
+    && err.details?.code==='POS_CATALOG_SKU_CHANGED');
+  assert.equal(x.calls.calcInput,undefined);
+});
+test('new route uses strict request schema with normalized expected SKU',()=>{
+  assert.match(routeSource,/const posCatalogQuoteSchema = z\.object\(\{/);
+  assert.match(routeSource,/expectedSku:z\.string\(\)\.min\(1\)\.max\(64\)\.refine\(sku=>normalizePosScanCode\(sku\)===sku\)/);
+  assert.match(routeSource,/validateBody\(posCatalogQuoteSchema\)/);
+  assert.match(routeSource,/\.strict\(\)\)\.min\(1\)\.max\(100\)/);
+});
+test('Sales quote sends exact previously confirmed SKU and checks echo',()=>{
+  const start=uiSource.indexOf('async function checkPosCatalogQuote');
+  const end=uiSource.indexOf('async function checkPosStockPreview',start);
+  const code=uiSource.slice(start,end);
+  assert.match(code,/expectedSkus=snapshot\.map\(\(line\)=>posNames\[line\.productId\]\?\.sku\)/);
+  assert.match(code,/expectedSku:expectedSkus\[index\]/);
+  assert.match(code,/line\.sku!==expectedSkus\[index\]/);
+  assert.match(code,/posCartRevisionRef\.current===revision/);
 });

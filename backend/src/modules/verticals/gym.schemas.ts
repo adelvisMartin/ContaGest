@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { optionalText, dateText, jsonRecord } from './verticals.shared.js';
 import { gymProgressionConfigIssues, isRirRpePairCoherent } from './gym.progression.js';
+import { validGymCalendarDay } from './gym-calendar-date.js';
+import { validGymMealClockTime } from './gym-meal-clock.mjs';
 
 /**
  * Validation authority for the Gym vertical.
@@ -133,6 +135,12 @@ export const progressionEvaluationSchema = z.object({
   for (const issue of gymProgressionConfigIssues(value.strategy, value.config || {})) {
     refinement.addIssue({ code:'custom', path:['config', issue.field], message:issue.message });
   }
+  // Completed-session effort must agree with itself before it may inform load
+  // progression; checking prescribed RIR/RPE alone is insufficient.
+  if (!isRirRpePairCoherent(value.performance.rir, value.performance.rpe)) {
+    refinement.addIssue({ code:'custom', path:['performance','rpe'],
+      message:'La evidencia RPE y RIR del entrenamiento es contradictoria.' });
+  }
 });
 
 export const routineExerciseSchema = z.object({
@@ -241,8 +249,8 @@ export const workoutSetSchema = z.object({
 
 export const performanceQuerySchema = z.object({
   memberId: z.string().min(10),
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+  from: z.string().refine(validGymCalendarDay, {message:'Fecha desde inválida.'}).optional(),
+  to: z.string().refine(validGymCalendarDay, {message:'Fecha hasta inválida.'}).optional()
 });
 
 export const routineSchema = z.object({
@@ -363,7 +371,7 @@ export const nutritionMealSchema = z.object({
   dayOfWeek:z.coerce.number().int().min(1).max(7),
   sortOrder:z.coerce.number().int().min(1).max(50),
   mealType:z.string().trim().min(2).max(80),
-  plannedAt:z.string().optional().nullable(),
+  plannedAt:z.string().refine(validGymMealClockTime, {message:'Usa una hora válida en formato HH:mm o HH:mm:ss.'}).optional().nullable(),
   recipeId:z.string().min(10).optional().nullable(),
   servings:z.coerce.number().positive().max(100).default(1),
   preparation:optionalText,
@@ -398,8 +406,10 @@ export const completeNutritionSchema = z.object({
   fatG:z.coerce.number().min(0).optional().nullable(),
   waterMl:z.coerce.number().int().min(0).optional().nullable(),
   notes:optionalText,
-  startsAt:z.string().optional().nullable(),
-  endsAt:z.string().optional().nullable(),
+  startsAt:z.string().refine((value)=>value===''||validGymCalendarDay(value),
+    {message:'Fecha inicial del plan inválida.'}).optional().nullable(),
+  endsAt:z.string().refine((value)=>value===''||validGymCalendarDay(value),
+    {message:'Fecha final del plan inválida.'}).optional().nullable(),
   meals:z.array(nutritionMealSchema).min(1).max(1400)
 }).superRefine((value, refinement) => {
   if(value.startsAt&&value.endsAt&&new Date(value.endsAt).getTime()<new Date(value.startsAt).getTime()){

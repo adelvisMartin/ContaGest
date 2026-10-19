@@ -4,6 +4,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx, one } from './verticals.shared.js';
+import { parseGymMemberQuery } from './gym-member-query.js';
 import {
   ingredientSchema,
   ingredientPatchSchema,
@@ -379,7 +380,9 @@ router.post('/gym/recipes', requirePermission('gym.manage'), asyncHandler(async 
 }));
 
 router.get('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
-  const memberId = String(req.query.memberId || '');
+  let memberId:string;
+  try { memberId=parseGymMemberQuery(req.query).memberId; }
+  catch { throw new HttpError(422,'Filtro de planes nutricionales inválido.'); }
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT p.*,
       COALESCE((

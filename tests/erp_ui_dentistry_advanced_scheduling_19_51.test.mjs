@@ -75,7 +75,8 @@ test('19/51 appointment reads include typed dentistry filter and future recall r
   const start=source.indexOf("router.get('/health/appointments'");
   const end=source.indexOf("router.post('/health/appointments'",start);
   const block=source.slice(start,end);
-  assert.match(block,/req\.query\.type/);
+  assert.match(block,/parseCareAppointmentReadWindow\(req\.query\)/);
+  assert.match(block,/const \{from,to,type\}=range/);
   assert.match(block,/a\."recallDueAt" IS NOT NULL/);
   assert.match(block,/a\."type"=\$4/);
   assert.match(block,/LIMIT 1000/);

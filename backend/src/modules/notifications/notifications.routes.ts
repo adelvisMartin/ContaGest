@@ -4,6 +4,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { NotificationTemplateError, renderNotificationTemplate, evaluateNotificationQuietHours, listNotificationTemplateDescriptors } from './notification-template-catalog.js';
+import { classifyWhatsAppProviderAck } from './notification-provider-ack.mjs';
 
 const router = Router();
 router.use(requireTenant);
@@ -33,7 +34,8 @@ async function sendWhatsAppCloud(to: string, message: string) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new HttpError(response.status, 'WhatsApp Cloud API rechazó la solicitud.');
-  return { ok: true, provider: 'whatsapp-cloud', data };
+  const acknowledgement=classifyWhatsAppProviderAck(response.ok,data);
+  return { ok:acknowledgement.providerAccepted, provider:'whatsapp-cloud', status:acknowledgement.status, delivered:false };
 }
 
 router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
@@ -47,7 +49,7 @@ router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(a
       moduleSlug: 'notification-log',
       title: 'Notificación WhatsApp',
       // A provider HTTP acknowledgement does not prove delivery to the recipient.
-      status: result.ok ? 'provider_accepted' : 'skipped',
+      status: result.ok ? 'provider_accepted' : result.status==='provider_unverified' ? 'provider_unverified' : 'skipped',
       // Never store phone, arbitrary order fields, message body or raw provider JSON.
       payload: { channel: 'whatsapp', provider: 'whatsapp-cloud', providerAccepted: result.ok, deliveryConfirmed: false }
     }

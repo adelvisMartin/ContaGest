@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {classifyLotExpiryWindow} from '../backend/src/modules/inventory/lot-expiry-evidence.ts';
+const row=(date,id='lot-1')=>({id,tenantId:'A',productId:'prod-1',lotNumber:'B-12',active:true,receivedAt:new Date('2026-09-01T00:00:00.000Z'),expiresAt:date?new Date(date+'T00:00:00.000Z'):null});
+const q=lots=>classifyLotExpiryWindow({tenantId:'A',asOf:'2026-10-16',horizonDays:30,lots});
+const err=fn=>assert.throws(fn,{message:'LOT_EXPIRY_EVIDENCE_INVALID'});
+test('#755 date boundaries classify expired, today, horizon and outside',()=>{const a=q([row('2026-10-15'),row('2026-10-16','b'),row('2026-11-15','c'),row('2026-11-16','d')]);assert.deepEqual(a.lots.map(x=>x.expiryStatus),['EXPIRED','EXPIRING','EXPIRING','OUTSIDE_WINDOW']);});
+test('#755 no expiry known cannot be silently treated as usable',()=>{const a=q([row(null)]);assert.equal(a.lots[0].expiryStatus,'UNKNOWN_EXPIRY');assert.equal(a.lots[0].allocationAuthorized,false);});
+test('#755 tenant contamination and duplicate lots are rejected',()=>{err(()=>q([{...row('2026-10-20'),tenantId:'B'}]));err(()=>q([row('2026-10-20'),row('2026-10-20')]));});
+test('#755 inactive or invalid dates fail closed',()=>{err(()=>q([{...row('2026-10-20'),active:false}]));err(()=>q([{...row('2026-10-20'),expiresAt:new Date('oops')}]));});
+test('#755 invalid asOf, negative/unbounded horizon rejected',()=>{err(()=>classifyLotExpiryWindow({tenantId:'A',asOf:'2026-02-30',horizonDays:30,lots:[]}));err(()=>classifyLotExpiryWindow({tenantId:'A',asOf:'2026-10-16',horizonDays:366,lots:[]}));});
+test('#755 no claim to location, stock quantities or physical allocation',()=>{const a=q([row('2026-10-20')]);assert.equal(a.status,'READ_ONLY_EXPIRY_DIAGNOSTIC');assert.equal(a.lots[0].availableQuantityVerified,false);assert.equal('stock' in a.lots[0],false);});

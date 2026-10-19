@@ -1,0 +1,7 @@
+# #746 · Atomic Gym check-in increment
+
+Source-characterized bug: old `/gym/checkins` selected active membership, inserted GymCheckIn and decremented remainingAccesses in **three separate queries**, allowing a committed check-in without decrement or concurrent accepts at the last access.
+
+Increment: one Prisma transaction; lock existing GymMember by (tenantId,id) before selecting and locking the eligible GymMembership, re-evaluate the remaining access count inside that transaction, require positive access for limited memberships, conditional decrement with tenant/member predicates and affected-row assertion, then insert the check-in in the same transaction. Invalid balances fail closed. No new billing, tax, membership renewal, idempotency key or schema authority is introduced.
+
+**Still required before merge/DoD:** PostgreSQL 17 test reproducing two concurrent check-ins at last seat and rollback on INSERT failure, RLS tenant A/B, membership renewal race, duplicate HTTP retry/idempotency (not solved), explicit check-in window policy, actor/audit and payment linkage; backend full typecheck/build. This is NOT yet an idempotent end-to-end solution. No production DB used. Rollback: revert route and source test. `SOURCE_REUSE=NONE`.

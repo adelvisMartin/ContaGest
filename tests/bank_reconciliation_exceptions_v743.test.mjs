@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {projectBankReconciliationExceptions} from '../backend/src/modules/bank-reconciliation/bank-exception-window.ts';
+const r=(patch={})=>({id:'id-1',tenantId:'t-A',accountId:'acc-1',status:'partial',amount:'-12.30',allocated:'4.20',remaining:'8.10',bookedAt:new Date('2026-09-01T00:00:00Z'),...patch});
+const go=rows=>projectBankReconciliationExceptions({tenantId:'t-A',accountId:'acc-1',lines:rows});
+const bad=fn=>assert.throws(fn,{message:'BANK_EXCEPTION_EVIDENCE_INVALID'});
+test('#743 exact signed amount and partial match remain exception, not GL proof',()=>{const a=go([r()]);assert.equal(a.exceptionCount,1);assert.equal(a.exceptions[0].remainingExact,'8.10');assert.equal(a.reconciliationCertified,false);assert.equal(a.scope,'PAGE_ONLY');});
+test('#743 fully reconciled exact line is omitted, mismatched reconciled is surfaced',()=>{const a=go([r({status:'reconciled',allocated:'12.30',remaining:'0.00'})]);assert.equal(a.exceptionCount,0);const b=go([r({status:'reconciled',allocated:'4.20',remaining:'8.10'})]);assert.equal(b.exceptions[0].blockers[0],'STATUS_AMOUNT_MISMATCH');});
+test('#743 over-allocation is visible without changing history',()=>{const a=go([r({allocated:'13.00',remaining:'-0.70'})]);assert.equal(a.overallocatedCount,1);assert.equal(a.exceptions[0].remainingExact,'-0.70');});
+test('#743 cross-account and cross-tenant fail closed',()=>{bad(()=>go([r({tenantId:'t-B'})]));bad(()=>go([r({accountId:'acc-B'})]));});
+test('#743 forged values or duplicate rows rejected',()=>{bad(()=>go([r({allocated:'5',remaining:'8.10'})]));bad(()=>go([r(),r()]));bad(()=>go([r({amount:'NaN'})]));});
+test('#743 empty page never means certified reconciliation',()=>{const a=go([]);assert.equal(a.inspectedCount,0);assert.equal(a.reconciliationCertified,false);});

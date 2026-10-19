@@ -190,6 +190,11 @@ function SalesWorkspace({state,context}){
       setPosDraftError('Aplica las cantidades pendientes antes de consultar los importes.');
       return;
     }
+    const expectedSkus=snapshot.map((line)=>posNames[line.productId]?.sku);
+    if(expectedSkus.some((sku)=>!sku || normalizePosLookupCode(sku)!==sku)){
+      setPosDraftError('El carrito no tiene un SKU confirmado para todos los productos. Vuelve a escanearlos.');
+      return;
+    }
     const tenantAtStart=BackendApi.tenantId;
     const revision=posCartRevisionRef.current;
     const isCurrent=()=>tenantAtStart===BackendApi.tenantId
@@ -202,7 +207,7 @@ function SalesWorkspace({state,context}){
     setPosDraftError('');
     try{
       const result=await BackendApi.post('/sales/pos/catalog-quote-preview',{
-        lines:snapshot.map((line)=>({productId:line.productId,quantity:line.quantity}))
+        lines:snapshot.map((line,index)=>({productId:line.productId,quantity:line.quantity,expectedSku:expectedSkus[index]}))
       });
       if(!isCurrent())return;
       const moneyPattern=/^(?:0|[1-9]\d*)\.\d{2}$/;
@@ -215,7 +220,7 @@ function SalesWorkspace({state,context}){
         || result.lines.some((line,index)=>line.productId!==snapshot[index].productId
           || line.quantity!==snapshot[index].quantity
           || typeof line.name!=='string' || !line.name.trim()
-          || typeof line.sku!=='string' || !line.sku.trim()
+          || line.sku!==expectedSkus[index]
           || !moneyPattern.test(line.unitAmount) || !moneyPattern.test(line.lineSubtotal))){
         throw new Error('POS_CATALOG_QUOTE_INVALID_RESPONSE');
       }

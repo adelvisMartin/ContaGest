@@ -1,0 +1,18 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {previewProductCsvImport as run} from '../backend/src/modules/portability/product-csv-import-preview.mjs';
+const base={tenantId:'tenant-a',actorTenantId:'tenant-a',entity:'products'};
+const go=(csv,overrides={})=>run({...base,csv,...overrides});
+test('valid SKU/name CSV gives dry run only, no authority to commit',()=>{const r=go('sku,name\nSKU-1,Producto 1\nSKU-2,Producto 2\n');assert.equal(r.validCount,2);assert.equal(r.committable,false);assert.equal(r.persisted,false);assert.ok(Object.isFrozen(r.rows));});
+test('accepts quoted comma and escaped quote in description',()=>{const r=go('description,name,sku\n"Excelente, nuevo","Café ""A""",ABC\n');assert.equal(r.rows[0].description,'Excelente, nuevo');assert.equal(r.rows[0].name,'Café "A"');});
+test('accepts UTF8 BOM and CRLF',()=>assert.equal(go('\uFEFFsku,name\r\nA1,Producto\r\n').rowCount,1));
+test('strict missing/extra/repeated headers rejected',()=>{for(const v of ['sku,price\nA,2\n','sku,sku,name\nA,A,P\n','sku\nA\n'])assert.throws(()=>go(v),/HEADERS_INVALID/);});
+test('does not allow tenant columns to be mass-assigned',()=>assert.throws(()=>go('sku,name,tenantId\nA,Producto,tenant-b'),/HEADERS_INVALID/));
+test('prevents formula injection in name/description',()=>{const p=go('sku,name,description\nA1,=cmd,txt\nA2,Seguro,+formula\nA3,Producto,Normal');assert.equal(p.errorCount,2);assert.equal(p.validCount,1);});
+test('rejects case insensitive repeated SKU inside batch',()=>{const p=go('sku,name\nab-12,Primero\nAB-12,Segundo');assert.equal(p.errorCount,1);assert.equal(p.errors[0].code,'DUPLICATE_SKU');});
+test('rejects inconsistent row length without losing good rows',()=>{const p=go('sku,name\nA1,Producto\nA2\nA3,Otro');assert.equal(p.errorCount,1);assert.equal(p.validCount,2);});
+test('scope tenant must match server actor and entity is products',()=>{assert.throws(()=>go('sku,name\nA1,Producto',{actorTenantId:'tenant-b'}),/SCOPE_INVALID/);assert.throws(()=>go('sku,name\nA1,Producto',{entity:'clients'}),/SCOPE_INVALID/);});
+test('unbalanced quotes and quote outside cell boundaries fail closed',()=>{for(const csv of ['sku,name\nA1,"bad','sku,name\nA1,Val"ue','sku,name\nA1,"bad"stuff'])assert.throws(()=>go(csv),/MALFORMED_QUOTE|UNCLOSED_QUOTE/);});
+test('bounded payload and empty data cannot silently import',()=>{assert.throws(()=>go('sku,name\n'),/NO_ROWS/);assert.throws(()=>go('a'.repeat(262145)),/SIZE_INVALID/);});
+test('null bytes and control text never accepted',()=>{assert.throws(()=>go('sku,name\nA1,Pro\0ducto'),/NULL_BYTE/);assert.equal(go('sku,name\nA1,"Line\nbreak"').errors[0].code,'UNSAFE_TEXT');});
+test('CSV content remains read-only and never contains explicit price/stock mapping',()=>{const p=go('sku,name\nA1,Producto');assert.ok(!('price' in p.rows[0]));assert.ok(!('stock' in p.rows[0]));});

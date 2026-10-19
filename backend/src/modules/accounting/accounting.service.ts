@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
+import { assertManualPostingAccounts } from './manual-posting-policy.js';
 import {
   ONE,
   ZERO,
@@ -142,77 +143,94 @@ export async function createLedgerEntry(
   });
 }
 
+async function lockScopedLedgerEntry(tx: Prisma.TransactionClient, tenantId: string, entryId: string): Promise<void> {
+  const rows = await tx.$queryRaw<Array<{ id: string }>>`
+    SELECT "id" FROM public."LedgerEntry"
+    WHERE "id" = ${entryId} AND "tenantId" = ${tenantId}
+    FOR UPDATE
+  `;
+  if (rows.length !== 1) throw new HttpError(404, 'Asiento contable no encontrado.');
+}
+
 export async function updateDraftLedgerEntry(input: {
-  tenantId: string;
-  entryId: string;
-  fiscalPeriod: string;
-  description: string;
-  lines: LedgerLineInput[];
+  tenantId: string; entryId: string; fiscalPeriod: string; description: string; lines: LedgerLineInput[];
 }) {
-  const entry = await prisma.ledgerEntry.findFirst({
-    where: { id: input.entryId, tenantId: input.tenantId },
-    include: { lines: true, reversalOf: true, reversedBy: true }
-  });
-  if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
-  assertLedgerActionAllowed(entry, 'edit');
-  if (entry.source !== 'manual') throw new HttpError(409, 'Solo los asientos manuales en borrador pueden editarse.');
-
-  const normalizedLines = normalizeLedgerLines(input.lines);
-  assertBalanced(normalizedLines);
-  await assertPeriodOpen(input.tenantId, input.fiscalPeriod);
-
-  return prisma.ledgerEntry.update({
-    where: { id: entry.id },
-    data: {
-      fiscalPeriod: input.fiscalPeriod,
-      description: input.description,
-      lines: {
-        deleteMany: {},
-        create: normalizedLines.map((line) => ({
-          accountCode: line.accountCode,
-          accountName: line.accountName,
-          debit: line.debit,
-          credit: line.credit,
-          currency: line.currency || 'VES',
-          exchangeRate: line.exchangeRate
-        }))
-      }
-    },
-    include: { lines: true, reversalOf: true, reversedBy: true }
+  return prisma.$transaction(async (tx) => {
+    await lockScopedLedgerEntry(tx, input.tenantId, input.entryId);
+    const entry = await tx.ledgerEntry.findFirst({
+      where: { id: input.entryId, tenantId: input.tenantId },
+      include: { lines: true, reversalOf: true, reversedBy: true }
+    });
+    if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
+    assertLedgerActionAllowed(entry, 'edit');
+    if (entry.source !== 'manual') throw new HttpError(409, 'Solo los asientos manuales en borrador pueden editarse.');
+    const normalizedLines = normalizeLedgerLines(input.lines);
+    assertBalanced(normalizedLines);
+    await assertPeriodOpen(input.tenantId, entry.fiscalPeriod, tx);
+    await assertPeriodOpen(input.tenantId, input.fiscalPeriod, tx);
+    return tx.ledgerEntry.update({
+      where: { id: entry.id, tenantId: input.tenantId },
+      data: {
+        fiscalPeriod: input.fiscalPeriod, description: input.description,
+        lines: {
+          deleteMany: {},
+          create: normalizedLines.map((line) => ({
+            accountCode: line.accountCode, accountName: line.accountName,
+            debit: line.debit, credit: line.credit,
+            currency: line.currency || 'VES', exchangeRate: line.exchangeRate
+          }))
+        }
+      },
+      include: { lines: true, reversalOf: true, reversedBy: true }
+    });
   });
 }
 
 export async function deleteDraftLedgerEntry(input: { tenantId: string; entryId: string }) {
-  const entry = await prisma.ledgerEntry.findFirst({
-    where: { id: input.entryId, tenantId: input.tenantId },
-    include: { lines: true, reversalOf: true, reversedBy: true }
+  return prisma.$transaction(async (tx) => {
+    await lockScopedLedgerEntry(tx, input.tenantId, input.entryId);
+    const entry = await tx.ledgerEntry.findFirst({
+      where: { id: input.entryId, tenantId: input.tenantId },
+      include: { lines: true, reversalOf: true, reversedBy: true }
+    });
+    if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
+    assertLedgerActionAllowed(entry, 'delete');
+    if (entry.source !== 'manual') throw new HttpError(409, 'Solo los asientos manuales en borrador pueden eliminarse.');
+    await assertPeriodOpen(input.tenantId, entry.fiscalPeriod, tx);
+    await tx.ledgerEntry.delete({ where: { id: entry.id, tenantId: input.tenantId } });
+    return entry;
   });
-  if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
-  assertLedgerActionAllowed(entry, 'delete');
-  if (entry.source !== 'manual') throw new HttpError(409, 'Solo los asientos manuales en borrador pueden eliminarse.');
-  await assertPeriodOpen(input.tenantId, entry.fiscalPeriod);
-  await prisma.ledgerEntry.delete({ where: { id: entry.id } });
-  return entry;
 }
 
 export async function postLedgerEntry(input: {
-  tenantId: string;
-  entryId: string;
-  postedBy?: string;
-  audit?: LedgerAuditContext;
+  tenantId: string; entryId: string; postedBy?: string; audit?: LedgerAuditContext;
 }) {
   const actorId = requirePostingActor(input.postedBy || input.audit?.userId);
-  const entry = await prisma.ledgerEntry.findFirst({
-    where: { id: input.entryId, tenantId: input.tenantId },
-    include: { lines: true, reversalOf: true, reversedBy: true }
-  });
-  if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
-  assertLedgerActionAllowed(entry, 'post');
-  assertBalanced(entry.lines);
-  await assertPeriodOpen(input.tenantId, entry.fiscalPeriod);
-
-  const postedAt = new Date();
   return prisma.$transaction(async (tx) => {
+    await lockScopedLedgerEntry(tx, input.tenantId, input.entryId);
+    const entry = await tx.ledgerEntry.findFirst({
+      where: { id: input.entryId, tenantId: input.tenantId },
+      include: { lines: true, reversalOf: true, reversedBy: true }
+    });
+    if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
+    assertLedgerActionAllowed(entry, 'post');
+    assertBalanced(entry.lines);
+    await assertPeriodOpen(input.tenantId, entry.fiscalPeriod, tx);
+    if (entry.source === 'manual') {
+      const accountCodes = [...new Set(entry.lines.map(line => line.accountCode))];
+      const accounts = await tx.chartAccount.findMany({
+        where: { tenantId: input.tenantId, code: { in: accountCodes } },
+        select: { tenantId: true, code: true, active: true, allowPosting: true }
+      });
+      try {
+        assertManualPostingAccounts(input.tenantId, entry.lines, accounts);
+      } catch {
+        throw new HttpError(422, 'El asiento contiene cuentas inexistentes, inactivas o que no permiten contabilización.', {
+          code: 'MANUAL_POSTING_ACCOUNT_NOT_AUTHORIZED'
+        });
+      }
+    }
+    const postedAt = new Date();
     const updated = await tx.ledgerEntry.updateMany({
       where: { id: entry.id, tenantId: input.tenantId, posted: false },
       data: { posted: true, postedAt, postedBy: actorId }
@@ -224,15 +242,11 @@ export async function postLedgerEntry(input: {
     });
     await tx.auditLog.create({
       data: {
-        tenantId: input.tenantId,
-        userId: actorId,
-        action: 'ledger.entry.posted',
-        entity: 'LedgerEntry',
-        entityId: posted.id,
+        tenantId: input.tenantId, userId: actorId, action: 'ledger.entry.posted',
+        entity: 'LedgerEntry', entityId: posted.id,
         before: { posted: false, fiscalPeriod: entry.fiscalPeriod },
         after: { posted: true, postedAt: postedAt.toISOString(), postedBy: actorId, fiscalPeriod: entry.fiscalPeriod },
-        ipAddress: input.audit?.ipAddress || null,
-        userAgent: input.audit?.userAgent || null
+        ipAddress: input.audit?.ipAddress || null, userAgent: input.audit?.userAgent || null
       }
     });
     return posted;
