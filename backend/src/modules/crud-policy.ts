@@ -53,9 +53,15 @@ export class CrudPolicyError extends Error {
   }
 }
 
+export function parseCrudRouteId(value: unknown): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new CrudPolicyError('Identificador de ruta inválido.');
+  }
+  return value;
+}
+
 export function assertCrudOperation(model: CrudModel, operation: CrudMutation): void {
-  // TypeScript callers are typed, but external JS and future adapters may
-  // reach this boundary at runtime. Never let unknown delegates fall through.
+  // External JS callers do not receive TypeScript's static model/operation checks.
   if (!Object.prototype.hasOwnProperty.call(MUTABLE_FIELDS, model) ||
       !['create', 'update', 'delete'].includes(operation)) {
     throw new CrudPolicyError('Operación de catálogo no permitida.');

@@ -208,9 +208,9 @@ const invoiceActivityInteger = z.string()
   .transform(value => Number(value));
 const invoiceActivityQuery = z.object({
   productId: z.string().uuid(),
-  windowDays: invoiceActivityInteger.refine(value => value >= 1 && value <= 365).default('90'),
-  take: invoiceActivityInteger.refine(value => value >= 1 && value <= 100).default('25'),
-  skip: invoiceActivityInteger.refine(value => value >= 0 && value <= 1_000_000).default('0')
+  windowDays: invoiceActivityInteger.refine(value => value >= 1 && value <= 365).default(90),
+  take: invoiceActivityInteger.refine(value => value >= 1 && value <= 100).default(25),
+  skip: invoiceActivityInteger.refine(value => value >= 0 && value <= 1_000_000).default(0)
 }).strict();
 
 router.get('/inventory/invoiced-activity', asyncHandler(async (req, res) => {
