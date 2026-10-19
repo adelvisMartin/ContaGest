@@ -4,7 +4,8 @@ import fs from 'node:fs';
 
 const migration=fs.readFileSync('backend/prisma/migrations/20260827052000_issue_30_service_restriction_governance/migration.sql','utf8');
 const routes=fs.readFileSync('backend/src/modules/commercial/service-restrictions.routes.ts','utf8');
-const modules=fs.readFileSync('backend/src/modules/index.ts','utf8');
+const commercial=fs.readFileSync('backend/src/modules/commercial/commercial.routes.ts','utf8');
+const modules=fs.readFileSync('backend/src/modules/route-manifest.ts','utf8');
 const service=fs.readFileSync('frontend/src/services/commercialService.js','utf8');
 const enhancer=fs.readFileSync('frontend/src/services/commercialAccessEnhancer.js','utf8');
 const backup=fs.readFileSync('ops/backup/contagest-public-tables.txt','utf8');
@@ -42,11 +43,20 @@ test('issue 30 database independently enforces billing grace, cure and allowed r
 });
 
 test('issue 30 governance router precedes legacy commercial routes and closes status bypasses',()=>{
-  const governed=modules.indexOf("router.use('/commercial', serviceRestrictionRoutes)");
-  const legacy=modules.indexOf("router.use('/commercial', commercialRoutes)");
+  const governed=modules.indexOf("id: 'service-restrictions', domain: 'commercial', path: '/commercial', router: serviceRestrictionRoutes");
+  const legacy=modules.indexOf("id: 'commercial', domain: 'commercial', path: '/commercial', router: commercialRoutes");
   assert.ok(governed>=0&&legacy>governed);
   assert.match(routes,/endpoint genérico de estado fue retirado/);
   assert.match(routes,/Subscription\.status no puede modificarse por PATCH/);
+  assert.match(routes,/export function rejectLegacySubscriptionStatusPatch/);
+  assert.match(commercial,/router\.patch\('\/subscriptions\/:id',rejectLegacySubscriptionStatusPatch,/);
+  assert.doesNotMatch(routes,/router\.patch\('\/subscriptions\/:id'/);
+  assert.match(routes,/export function rejectRestrictedSubscriptionCreation/);
+  assert.match(commercial,/router\.post\('\/subscriptions',rejectRestrictedSubscriptionCreation,/);
+  assert.match(routes,/export const governedPaymentInterceptor=asyncHandler/);
+  assert.match(commercial,/router\.post\('\/payments',governedPaymentInterceptor,/);
+  assert.match(routes,/router\.post\('\/subscriptions\/:id\/status'/);
+  assert.doesNotMatch(commercial,/router\.post\('\/subscriptions\/:id\/status'/);
   assert.match(routes,/no puede nacer suspendida, cancelada ni expirada/);
   for(const endpoint of ['/suspend','/reactivate','/terminate','/restriction-cases']) assert.ok(routes.includes(endpoint),`missing ${endpoint}`);
 });

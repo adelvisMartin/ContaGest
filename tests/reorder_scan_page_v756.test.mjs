@@ -85,7 +85,8 @@ test('route: authenticated scoped snapshot and no automatic stock writes',()=>{
   const text=readFileSync(new URL('../backend/src/modules/reports/reports.routes.ts',import.meta.url),'utf8');
   const segment=text.slice(text.indexOf("router.get('/inventory/reorder'"),text.indexOf("router.get('/taxes'"));
   assert.match(text,/router\.use\(requireTenant, requirePermission\('reports.view'\)\)/);
-  assert.match(segment,/parseReorderScanQuery\(req\.query\)/);
+  assert.match(segment,/parseReorderScanQuery\(scanParams\)/);
+  assert.match(segment,/const \{ includeSalesEvidence, salesWindowDays, leadTimeDays, \.\.\.scanParams \} = req\.query/);
   assert.match(segment,/tenantId: ctx\.tenantId/);
   assert.match(segment,/Prisma\.TransactionIsolationLevel\.RepeatableRead/);
   assert.match(segment,/skip,/);

@@ -94,6 +94,19 @@ test('source projection follows app mounts, module manifest, CRUD generation, RB
   assert.ok(contract.conventions.errorEnvelope.required.includes('detail'));
 });
 
+test('the composed client router contributes CRUD and scoped CRM preflight to the source contract', () => {
+  const contract = buildApiContract();
+  const keys = new Set(contract.routes.map((item) => `${item.method} ${item.path}`));
+  for (const key of [
+    'GET /api/v1/clients', 'GET /api/v1/clients/:id',
+    'POST /api/v1/clients', 'PUT /api/v1/clients/:id',
+    'DELETE /api/v1/clients/:id', 'POST /api/v1/clients/preflight'
+  ]) assert.ok(keys.has(key), `missing canonical client route: ${key}`);
+  const preflight = contract.routes.find((item) => item.path === '/api/v1/clients/preflight');
+  assert.deepEqual(preflight.auth, { tenantRequired: true, permissions: ['clients.manage'] });
+  assert.deepEqual(contract.conflicts, []);
+});
+
 test('#652 is in the authoritative contracts consumed by #630 backend/full verification', async () => {
   const runner = await readFile(new URL('../scripts/local-verification-runner-v630.mjs', import.meta.url), 'utf8');
   const authoritative = await readFile(new URL('../scripts/run-authoritative-contracts.mjs', import.meta.url), 'utf8');
