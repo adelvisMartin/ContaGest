@@ -5,6 +5,7 @@ import {
   CgButton, CgDataTable, CgPageHeader, CgProvider, CgSelect, CgState, CgStatusChip, CgTextField
 } from '../components/ui/cg/CgPrimitives.jsx';
 import { FiscalService, FISCAL_MODULES, FISCAL_DOCUMENT_KINDS } from '../services/fiscalService.js';
+import { buildTaxpayerDraftSubmission } from '../services/taxpayerDraftForm.js';
 
 const currentPeriod=()=>new Date().toISOString().slice(0,7);
 const taxLabel=(key,item)=>({iva:'IVA',igtf:'IGTF',islr:'ISLR',retIva:'Retención IVA',retIslr:'Retención ISLR',custom:item.label||'Otro tributo'}[key]||key);
@@ -17,6 +18,14 @@ function TaxesWorkspace({state,context}){
   const [loading,setLoading]=useState(!state.fiscalGovernance?.loaded||state.fiscalDocuments===undefined);
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
+  const [profiles,setProfiles]=useState([]);
+  const [profilesLoading,setProfilesLoading]=useState(true);
+  const [profilesError,setProfilesError]=useState('');
+  const [profileSaving,setProfileSaving]=useState(false);
+  const [profileDraft,setProfileDraft]=useState({
+    effectiveFrom:new Date().toISOString().slice(0,10),effectiveTo:'',jurisdiction:'',
+    taxpayerCategory:'',activityCodes:'',sourceReference:'',sourceContentSha256:''
+  });
   const [form,setForm]=useState({kind:FISCAL_DOCUMENT_KINDS[0]?.value||'invoice',number:'',period:currentPeriod(),module:FISCAL_MODULES[0]?.value||'fiscal',payloadJson:'{}'});
   const notify=(message,tone='success')=>Toast?.show?.(message,tone);
 
@@ -50,6 +59,32 @@ function TaxesWorkspace({state,context}){
 
   useEffect(()=>{if(!state.fiscalGovernance?.loaded||state.fiscalDocuments===undefined)void loadFiscal({silent:true});},[]);
 
+  async function loadProfiles(){
+    setProfilesLoading(true);setProfilesError('');
+    try{
+      const records=await FiscalService.taxpayerProfiles();
+      setProfiles(Array.isArray(records)?records:[]);
+    }catch(cause){
+      setProfiles([]);
+      setProfilesError(cause.status===403?'PERMISSION DENIED: el perfil requiere fiscal.read.':cause.message||'No fue posible cargar los perfiles.');
+    }finally{setProfilesLoading(false);}
+  }
+  useEffect(()=>{void loadProfiles();},[]);
+
+  async function submitProfileDraft(event){
+    event.preventDefault();
+    if(!governance.capabilities?.close)return notify('El servidor no habilitó fiscal.close.','error');
+    setProfileSaving(true);
+    try{
+      const payload=buildTaxpayerDraftSubmission(profileDraft);
+      const saved=await FiscalService.captureTaxpayerProfileDraft(payload);
+      if(saved?.status!=='DRAFT')throw new Error('Respuesta fiscal inesperada; no se confirmó el borrador.');
+      await loadProfiles();
+      notify('Perfil tributario guardado como BORRADOR, sin activar reglas fiscales.','success');
+    }catch(cause){notify(`No se guardó el borrador tributario: ${cause.message}`,'error');}
+    finally{setProfileSaving(false);}
+  }
+
   async function submitDocument(event){
     event.preventDefault();setSaving(true);
     try{
@@ -70,11 +105,47 @@ function TaxesWorkspace({state,context}){
     {key:'status',label:'Estado',render:(doc)=><CgStatusChip size="small" label={String(doc.status||'issued').toUpperCase()} tone="success"/>},
     {key:'hash',label:'Hash',render:(doc)=><Typography variant="caption" sx={{fontFamily:'monospace'}} title={doc.hash}>{String(doc.hash||'').slice(0,12)}{doc.hash?'…':''}</Typography>}
   ];
+  const profileColumns=[
+    {key:'version',label:'Versión'},
+    {key:'rifSnapshot',label:'RIF de captura'},
+    {key:'jurisdiction',label:'Jurisdicción'},
+    {key:'taxpayerCategory',label:'Categoría propuesta'},
+    {key:'activityCodes',label:'Actividades',render:(record)=>Array.isArray(record.activityCodes)?record.activityCodes.join(', '):'—'},
+    {key:'effectiveFrom',label:'Vigente desde (propuesto)',render:(record)=>String(record.effectiveFrom||'').slice(0,10)},
+    {key:'status',label:'Estado',render:(record)=><CgStatusChip size="small" label={String(record.status||'DRAFT')} tone="warning"/>},
+    {key:'sourceReference',label:'Referencia de origen'}
+  ];
+  const updateProfile=(key)=>(event)=>setProfileDraft((current)=>({...current,[key]:event.target.value}));
 
   return <Stack gap={1.5}>
     <CgPageHeader eyebrow="Tributos" title="Configuración tributaria y documentos fiscales" description="Alícuotas operativas separadas del registro fiscal tenant-scoped y auditable." actions={<CgButton onClick={saveTaxes}>Guardar</CgButton>}/>
     {error?<CgState severity="warning" title="Carga fiscal incompleta">{error}</CgState>:null}
     {loading?<CgState severity="info" title="Actualizando">Cargando documentos fiscales.</CgState>:null}
+
+    <Paper variant="outlined" sx={{p:1.5}}>
+      <Typography variant="h6">Perfil tributario · BORRADOR</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{mb:1}}>
+        Sólo candidatos versionados y auditados para el tenant. El registro de un borrador no activa reglas fiscales, ni determina por sí solo la clasificación legal del contribuyente.
+      </Typography>
+      {profilesLoading?<CgState severity="info" title="Cargando perfiles">Consultando los borradores del servidor.</CgState>:null}
+      {profilesError?<CgState severity="error" title="Sin acceso a perfiles">{profilesError}</CgState>:null}
+      {!profilesError&&!profilesLoading?<CgDataTable columns={profileColumns} rows={profiles} empty="Sin perfiles tributarios capturados"/>:null}
+      {governance.capabilities?.close?
+        <Box component="form" onSubmit={submitProfileDraft} sx={{mt:1.5}}>
+          <Typography variant="subtitle1">Capturar candidato documentado</Typography>
+          <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:1,mt:1}}>
+            <CgTextField label="Inicio de vigencia propuesta (UTC)" type="date" required InputLabelProps={{shrink:true}} value={profileDraft.effectiveFrom} onChange={updateProfile('effectiveFrom')}/>
+            <CgTextField label="Fin de vigencia propuesta (opcional, UTC)" type="date" InputLabelProps={{shrink:true}} value={profileDraft.effectiveTo} onChange={updateProfile('effectiveTo')}/>
+            <CgTextField label="Jurisdicción documentada" required inputProps={{minLength:3,maxLength:120}} value={profileDraft.jurisdiction} onChange={updateProfile('jurisdiction')}/>
+            <CgTextField label="Categoría tributaria propuesta" required inputProps={{minLength:3,maxLength:80}} value={profileDraft.taxpayerCategory} onChange={updateProfile('taxpayerCategory')}/>
+            <CgTextField label="Códigos de actividad (separados por coma)" required value={profileDraft.activityCodes} onChange={updateProfile('activityCodes')}/>
+            <CgTextField label="Referencia de fuente verificable" required inputProps={{minLength:3,maxLength:240}} value={profileDraft.sourceReference} onChange={updateProfile('sourceReference')}/>
+            <CgTextField label="SHA-256 del contenido de la fuente (64 hex)" required inputProps={{minLength:64,maxLength:64,pattern:'[A-Fa-f0-9]{64}'}} value={profileDraft.sourceContentSha256} onChange={updateProfile('sourceContentSha256')}/>
+          </Box>
+          <CgButton type="submit" disabled={profileSaving} sx={{mt:1}}>{profileSaving?'Guardando borrador…':'Guardar perfil como BORRADOR'}</CgButton>
+        </Box>
+        :<CgState severity="info" title="Captura restringida">Se necesita el permiso fiscal.close para registrar borradores tributarios.</CgState>}
+    </Paper>
 
     <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))',lg:'repeat(3,minmax(0,1fr))'},gap:1}}>
       {Object.entries(taxes).map(([key,item])=><Paper key={key} variant="outlined" sx={{p:1.4}}>
