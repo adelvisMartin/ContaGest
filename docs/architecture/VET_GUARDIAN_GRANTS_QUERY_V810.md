@@ -1,0 +1,5 @@
+# #810 — Validación de ámbito en consultas de permisos del tutor
+
+`GET /guardian-portal/grants` aceptaba `String(req.query.patientId||'')`, lo que convertía arreglos u objetos enviados por un cliente a cadenas arbitrarias e ignoraba parámetros como `tenantId` o `limit`. El nuevo helper `vetGuardianGrantsPatientId` exige exclusivamente un UUID escalar y ningún otro parámetro, antes de consultar datos de acceso del tutor; un error devuelve 422. Se mantienen `communications.manage`, el tenant obtenido del servidor y los predicados `CarePatient.kind='animal'` y `active=true`. Los tokens de concesión no se devuelven en el listado.
+
+Se realizaron 6/6 pruebas focales en V8 con los tres archivos exactos de la rama: válidos, malformados, arreglos, inyección de ámbito y contratos SQL/permisos. No se ejecutaron HTTP, PostgreSQL17, tenant A/B o browser. Esta entrega cubre solamente un control del maestro de guardianes; #810 continúa abierto para expediente longitudinal completo y QA. Rollback: revertir helper, ruta y pruebas/docs; sin migraciones o side effects.

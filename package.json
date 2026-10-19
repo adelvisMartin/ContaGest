@@ -45,7 +45,7 @@
     "bootstrap:zero-cost": "node scripts/zero-cost-bootstrap-v668.mjs",
     "test:bootstrap:zero-cost": "node --test tests/zero_cost_bootstrap_v668.test.mjs",
     "test:verify:local": "node --test tests/local_verification_runner_v630.test.mjs tests/zero_cost_bootstrap_v668.test.mjs tests/change_risk_classifier_v667.test.mjs",
-    "test:docs:integrity": "node --test tests/documentation_integrity_v666.test.mjs",
+    "test:docs:integrity": "node --test tests/documentation_integrity_v666.test.mjs tests/documentation_reference_links_v666.test.mjs",
     "audit:docs:integrity": "node scripts/documentation-integrity-v666.mjs",
     "test:security:closure": "node --test tests/security_closure_v651.test.mjs",
     "audit:security:closure": "node scripts/security-closure-v651.mjs",

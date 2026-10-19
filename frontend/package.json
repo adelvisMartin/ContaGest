@@ -24,7 +24,9 @@
     "test:pos:hold": "node --test ../tests/pos_held_cart_v765.test.mjs",
     "test:pos:favorites": "node --test ../tests/pos_favorites_v765.test.mjs",
     "test:pos:verify": "node --test ../tests/pos_draft_verification_v765.test.mjs",
-    "test:pos:stock": "node --experimental-strip-types --test ../tests/pos_stock_preview_v765.test.mjs"
+    "test:pos:stock": "node --experimental-strip-types --test ../tests/pos_stock_preview_v765.test.mjs",
+    "test:pos:catalog-quote": "node --test ../tests/pos_catalog_quote_preflight_v765.test.mjs",
+    "test:pos:scanner": "node --test ../tests/pos_scanner_keyboard_v765.test.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

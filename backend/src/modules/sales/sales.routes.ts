@@ -117,6 +117,76 @@ router.post('/pos/stock-preview', requirePermission('sales.view'), validateBody(
   }
 }));
 
+// Quoted catalog values are informational, not a fiscal or payment authority.
+// Fetch one tenant-scoped snapshot for quote and global stock preview together.
+const posCatalogQuoteSchema = z.object({
+  lines:z.array(z.object({
+    productId:z.string().uuid(),
+    quantity:z.string(),
+    expectedSku:z.string().min(1).max(64).refine(sku=>normalizePosScanCode(sku)===sku)
+  }).strict()).min(1).max(100)
+}).strict();
+
+router.post('/pos/catalog-quote-preview', requirePermission('sales.view'), validateBody(posCatalogQuoteSchema), asyncHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  const tenantId = context(req).tenantId;
+  let lines;
+  try {
+    lines = validatePosStockLines(req.body.lines);
+  } catch (error) {
+    if (error instanceof PosStockPreviewError) throw new HttpError(400, 'Carrito POS inválido.', { code:error.code });
+    throw error;
+  }
+  const products = await prisma.product.findMany({
+    where:{tenantId,active:true,id:{in:lines.map(line=>line.productId)}},
+    select:{id:true,sku:true,name:true,price:true,taxRate:true,stock:true,reserved:true}
+  });
+  let stock;
+  try {
+    stock = previewPosStock(lines, products.map(item=>({
+      id:item.id,stock:item.stock.toFixed(3),reserved:item.reserved.toFixed(3)
+    })));
+  } catch (error) {
+    if (error instanceof PosStockPreviewError) throw new HttpError(409, 'La cotización requiere revisar los productos y el inventario.', { code:error.code });
+    throw error;
+  }
+  // SKU is an optimistic identity assertion, not a browser-supplied price.
+  // Keep the exact case and leading zeroes; never reinterpret the code.
+  const expectedSkuById = new Map(
+    req.body.lines.map((line: {productId:string;expectedSku:string})=>
+      [line.productId.toLowerCase(),line.expectedSku])
+  );
+  const byId = new Map(products.map(product=>[product.id.toLowerCase(),product]));
+  const catalogLines = lines.map(line=>{
+    const product = byId.get(line.productId);
+    if (!product || !product.sku.trim() || !product.name.trim()) {
+      throw new HttpError(409, 'El catálogo contiene un producto sin identidad verificable.');
+    }
+    if (product.sku !== expectedSkuById.get(line.productId)) {
+      throw new HttpError(409, 'El SKU del producto cambió desde que se agregó al carrito.', {
+        code:'POS_CATALOG_SKU_CHANGED'
+      });
+    }
+    return { productId:line.productId, sku:product.sku, name:product.name,
+      quantity:line.quantity,unitAmount:product.price.toFixed(2),taxRate:product.taxRate.toFixed(2) };
+  });
+  // Reuse the SAME calculation policy as sales.create; no duplicated tax math.
+  const calculation = calculateInvoiceTotals(catalogLines);
+  const quoteLines = catalogLines.map((line,index)=>({
+    ...line,lineSubtotal:calculation.lines[index].total.toFixed(2)
+  }));
+  ok(res, {
+    readOnly:true,authoritativeForCheckout:false,pricingBasis:'current_product_catalog',
+    currency:null, // Product has no currency attribute; do not invent VES or FX authority.
+    fiscalLocalizationApplied:false,priceListsApplied:false,
+    stock,
+    lines:quoteLines,
+    subtotal:calculation.subtotal.toFixed(2),
+    estimatedTax:calculation.tax.toFixed(2),
+    estimatedTotal:calculation.total.toFixed(2)
+  });
+}));
+
 router.get('/', requirePermission('sales.view'), asyncHandler(async (req, res) => {
   const tenantId = context(req).tenantId;
   const data = await prisma.salesInvoice.findMany({ where: { tenantId }, include: { client: true, lines: true }, orderBy: { issueDate: 'desc' }, take: 100 });

@@ -56,6 +56,11 @@ export function reorderScanPageMeta(input: {
     throw new TypeError('REORDER_SCAN_INCONSISTENT_PAGE');
   }
   const hasMore = skip + scannedProducts < activeProducts;
+  // Never promise a continuation offset that parseReorderScanQuery must reject.
+  // A bounded offset scan cannot claim full coverage beyond this range.
+  if (hasMore && skip + scannedProducts > REORDER_SCAN_MAX_SKIP) {
+    throw new TypeError('REORDER_SCAN_OFFSET_WINDOW_EXCEEDED');
+  }
   return {
     skip,
     take,

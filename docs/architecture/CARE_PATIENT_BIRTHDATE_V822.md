@@ -1,0 +1,3 @@
+# #822 · Fecha de nacimiento del paciente Care
+
+La autoridad existente `CarePatient` usaba un texto sin validación para birthDate. El schema de creación ahora rechaza fechas imposibles y formatos locales ambiguos mediante calendario gregoriano exacto, preservando `null` y ausencia del dato. No se hace corrección automática ni se reescribe un expediente antiguo. Ocho casos en V8 sobre la función exacta de GitHub pasaron; la integración PostgreSQL17 y browser no se ejecutaron. Este incremento no completa el registro longitudinal #822, que permanece abierto. Sin migraciones; rollback mediante revert de schema/test/doc.

@@ -1,0 +1,7 @@
+# #801 — Consulta de agenda clínica con intervalo verificable
+
+La ruta de lectura `GET /health/appointments` convertía arbitrariamente valores `req.query.from/to/type` a cadenas y los pasaba a casts PostgreSQL `timestamptz` sin límite de amplitud ni validación de fecha de calendario. Una fecha imposible como 2026-02-30 podía convertirse silenciosamente en marzo y las listas/objetos llegaban a SQL como texto malinterpretado.
+
+El helper `parseCareAppointmentReadWindow` valida solo `from`, `to`, `type`, admite fecha gregoriana exacta YYYY-MM-DD y UTC ISO con offset Z explícito, normaliza internamente a `toISOString`, impide rango invertido/>366 días, usa defaults originales de -1/+90 días, y limita `type` a 120 caracteres sin controles. Los errores son HTTP 422 ANTES del query y no registran PII. SQL conserva `a.tenantId=$1`, permisos `health.manage`, tope de 1000 y bloqueos de POST/PATCH anteriores; no modificar la reserva transaccional sin PG17.
+
+Pruebas focales V8 ejecutadas sobre funciones publicadas en branch: 7/7 PASS (incluye validación estática de integración de ruta) y hashes exactos helper `1bdbfb41e6e15f07b450aa6e0479a91d9767193f`. No se ha ejecutado suite Node en checkout, PostgreSQL17, Browser, teclado, DST/wall-clock, conflictos provider/sillón/paciente ni waitlist. #801 sigue OPEN. Rollback de read-only guard+tests/docs, sin migración. Checks obligatorios no desactivados.

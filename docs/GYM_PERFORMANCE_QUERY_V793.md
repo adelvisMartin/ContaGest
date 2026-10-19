@@ -1,0 +1,7 @@
+# #793 · Validación estricta del filtro de rendimiento Gym
+
+El endpoint GET `/gym/performance` convertía parámetros de Express con `String(req.query.memberId||'')`, `String(req.query.from)` y `String(req.query.to)`. Arreglos, estructuras anidadas y claves extra podían transformarse silenciosamente en texto. Este incremento introduce `parseGymMemberQuery`, un boundary reutilizable, que acepta únicamente objetos planos o de prototipo nulo, una clave `memberId` escalar y, para rendimiento, `from/to` opcionales con formato ISO día. Rechaza miembros ausentes, valores demasiado largos, getters y claves no autorizadas. La validación gregoriana de fechas permanece en el contrato Zod existente; la identidad y RBAC siguen en backend.
+
+El endpoint convierte solo errores de transporte en HTTP 422, preservando filtrado SQL por tenant y permiso `gym.manage`. Esta función no concede acceso a datos ni sustituye un endpoint para miembros sin `gym.manage`.
+
+Evidencia proporcional: 10/10 casos del archivo de prueba versionado ejecutados contra la implementación exacta de GitHub en V8 con anotaciones TypeScript retiradas y test/assert shim. **NO equivale a Node/tsx nativo, PostgreSQL17, HTTP/browser o full build**, pendientes. Sin DDL ni mutación clínica/membresía. Issue #793 permanece OPEN/PARTIAL. Rollback: revertir parser, import y route snippet, prueba y documento; datos intactos. SOURCE_REUSE=NONE.

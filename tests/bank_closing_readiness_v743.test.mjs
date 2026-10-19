@@ -1,0 +1,18 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {evaluateBankClosingReadiness as ready} from '../backend/src/modules/bank-reconciliation/bank-closing-readiness.mjs';
+const base={statementCurrency:'VES',accountCurrency:'VES',hasClosingBalance:true,lineCount:2,unmatchedCount:0,amountsEqual:true};
+test('all reconciled lines + equal amounts and currency are ready',()=>{assert.deepEqual(ready(base),{reconciliationReady:true,readinessReason:'RECONCILED'});assert.ok(Object.isFrozen(ready(base)));});
+test('equal account balance but unmatched statement line NOT ready',()=>assert.deepEqual(ready({...base,unmatchedCount:1}),{reconciliationReady:false,readinessReason:'UNRECONCILED_LINES'}));
+test('empty import NOT ready despite zero difference',()=>assert.equal(ready({...base,lineCount:0,unmatchedCount:0}).reconciliationReady,false));
+test('missing closing balance NOT ready',()=>assert.equal(ready({...base,hasClosingBalance:false}).readinessReason,'CLOSING_BALANCE_MISSING'));
+test('currency mismatch NOT ready even if numerical amounts equal',()=>assert.equal(ready({...base,statementCurrency:'USD'}).readinessReason,'CURRENCY_MISMATCH'));
+test('invalid currency and missing evidence NOT ready',()=>{assert.equal(ready({...base,statementCurrency:'usd'}).reconciliationReady,false);assert.equal(ready(null).readinessReason,'INVALID_EVIDENCE');});
+test('unmatched > line count or negative rejected',()=>{for(const n of [-1,3,NaN,'0'])assert.equal(ready({...base,unmatchedCount:n}).readinessReason,'INVALID_COVERAGE')});
+test('nonzero exact difference NOT ready',()=>assert.equal(ready({...base,amountsEqual:false}).readinessReason,'BALANCE_DIFFERENCE'));
+test('integer counts required',()=>assert.equal(ready({...base,lineCount:0.5}).readinessReason,'INVALID_COVERAGE'));
+const src=readFileSync(new URL('../backend/src/modules/bank-reconciliation/bank-reconciliation.service.ts',import.meta.url),'utf8');
+test('current closing summary reads tenant-scoped line status coverage',()=>{const code=src.slice(src.indexOf('export async function getClosingBalanceSummary'),src.indexOf('export async function getReconciliationHistory'));assert.match(code,/WHERE "tenantId"=\$\{tenantId\} AND "importId"=\$\{statement\.id\}/);assert.match(code,/COUNT\(\*\) FILTER \(WHERE "status"<>'reconciled'\)/);});
+test('legacy numerical exactness retained but readiness derives from coverage',()=>{const code=src.slice(src.indexOf('export async function getClosingBalanceSummary'),src.indexOf('export async function getReconciliationHistory'));assert.match(code,/evaluateBankClosingReadiness\(\{/);assert.match(code,/accountCurrency:account\.currency/);assert.match(code,/unmatchedCount:coverage\[0\]\?\.unmatched/);assert.match(code,/exact:difference\.isZero\(\)/);assert.match(code,/\.\.\.readiness/);});
+test('missing closing balance does not pretend closing is reconciled',()=>{assert.match(src,/reconciliationReady:false,readinessReason:'CLOSING_BALANCE_MISSING'/);});

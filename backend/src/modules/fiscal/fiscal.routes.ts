@@ -129,6 +129,26 @@ router.post('/periods', requirePermission('fiscal.close'), validateBody(createPe
   ok(res, created);
 }));
 
+// Legal evidence is operator-supplied DRAFT only. No rule activation or tax rates.
+router.get('/legal-sources', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  ok(res, await listFiscalLegalSources(ctx.tenantId));
+}));
+
+router.post('/legal-sources', requirePermission('fiscal.close'), validateBody(fiscalLegalSourceSchema), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  if (!ctx.userId) throw new HttpError(401, 'Se requiere un usuario autenticado.', { code: 'FISCAL_LEGAL_SOURCE_ACTOR_REQUIRED' });
+  const draft = prepareFiscalLegalSourceDraft(req.body, { tenantId: ctx.tenantId, userId: ctx.userId });
+  const created = await createFiscalLegalSourceDraft(draft);
+  await writeAudit({
+    tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.legal_source.draft_created',
+    entity: 'FiscalLegalSource', entityId: created.id,
+    after: { id: created.id, sourceType: created.sourceType, reference: created.reference, contentSha256: created.contentSha256, status: created.status },
+    ipAddress: ctx.ip, userAgent: ctx.userAgent
+  });
+  res.status(201).json({ ok: true, data: created });
+}));
+
 router.get('/rules', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const ruleKey = req.query.ruleKey ? String(req.query.ruleKey).trim() : undefined;

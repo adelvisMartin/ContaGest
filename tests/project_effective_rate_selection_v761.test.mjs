@@ -18,3 +18,19 @@ test('reject revisions with holes or time traveling effectivity',()=>{assert.thr
 test('reject currency changes and unsafe price precision',()=>{assert.throws(()=>s(E(),[C(),{...C(2,'2026-10-10T00:00:00.000Z'),currency:'EUR'}]),/CURRENCY/);for(const hourlyRateExact of ['0.00','1.222','1e3',0])assert.throws(()=>s(E(),[{...C(),hourlyRateExact}]),/MONEY/)});
 test('reject malformed UTC, invalid intervals and more than 1024 versions',()=>{assert.throws(()=>s({...E(),startedAtUtc:'2026-10-15T12:00:00-04:00'}));assert.throws(()=>s({...E(),endedAtUtc:E().startedAtUtc}),/INTERVAL/);assert.throws(()=>s(E(),Array(1025).fill(C())),/TOO_MANY/)});
 test('reject forged rate status and tenant parameter',()=>{assert.throws(()=>s(E(),[{...C(),status:'draft'}]));assert.throws(()=>select({tenantId:card1,entry:E(),cards:[C()]}))});
+
+test('accept actual RFC4122 36-character tenant/project/client/member/card IDs',()=>{
+  for(const id of [tenantId,projectId,clientId,memberId,entryId,card1,card2]){
+    assert.equal(id.length,36);
+  }
+  const selected=s();
+  assert.equal(selected.tenantId,tenantId);
+  assert.equal(selected.entryId,entryId);
+  assert.equal(selected.rateCardId,card1);
+});
+test('reject truncated 32-character, invalid variant and malformed source IDs',()=>{
+  const shortened=tenantId.replace('-888a-','-8');
+  assert.throws(()=>s({...E(),tenantId:shortened}),/PROJECT_RATE_SELECT_ID_INVALID/);
+  assert.throws(()=>s({...E(),projectId:projectId.replace('-a286-','-0286-')}),/PROJECT_RATE_SELECT_ID_INVALID/);
+  assert.throws(()=>s(E(),[{...C(),id:card1.slice(0,32)}]),/PROJECT_RATE_SELECT_ID_INVALID/);
+});

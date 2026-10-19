@@ -1,0 +1,7 @@
+# #754 · Preflight de cantidades para entrega parcial
+
+`prepareDeliveryQuantity` valida matemáticamente, sin mutación, la cantidad solicitada de una entrega frente al total ordenado, ya entregado y reserva pendiente **del dueño sales-order verificado por el servidor**. Rechaza cantidades negativas/cero, escalas no canónicas, sobreentrega o despachar más de lo reservado; deriva cantidad cumplida futura, pendiente/backorder y cierre del pedido usando sólo BigInt con 6 decimales.
+
+Esto **no** reemplaza el servicio de reservas de inventario #738 ni la autoridad futura de `Delivery`/SalesOrder. El actor debe releer la orden, el owner de la reserva y el lote/location bajo la **misma transacción PostgreSQL17**, aplicar consumo exactamente una vez y auditar; solo después crear el delivery real y sus snapshots. El retorno declara `persisted:false`, `stockMovementAuthorized:false`, `invoiceAuthorized:false` y `requiresTransactionalReservationConsume:true`.
+
+7/7 pruebas nativas Node22 y TypeScript strict aislado PASS, exact Git blobs de fuente/test. Full PG17 tenant A/B, concurrencia entre órdenes, reversos, API/Browser, migraciones y end-to-end NOT_EXECUTED. El ticket #754 permanece OPEN/PARTIAL; no afirmar que ya se entregaron pedidos. Rollback: revert de tres archivos sin migraciones ni pérdida de datos. `SOURCE_REUSE=NONE`.

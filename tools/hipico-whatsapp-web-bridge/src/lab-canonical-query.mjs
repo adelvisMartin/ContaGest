@@ -148,20 +148,56 @@ export function resolveQuotedLabRaceScope(row,visibleRows){
   return scope;
 }
 
+// #892: A canonical read must preserve the complete original identity and
+// question. Truncating either can collide dedupe IDs or discard a dangerous
+// trailing qualifier while still allowing a LAB reply from the backend.
+function validCanonicalLabEnvelope({token,labGroupId,labChannelKey,messageId,senderId,
+  text,timestamp,race,quotedMessageId,timeoutMs}){
+  const bounded=(value,max,allowLines=false)=>typeof value==='string'&&value.length>0&&
+    value.length<=max&&value.trim().length>0&&
+    !(allowLines ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/ :
+      /[\u0000-\u001f\u007f]/).test(value);
+  if(!bounded(token,4096)||!bounded(labGroupId,160)||
+     !bounded(labChannelKey,128)||!bounded(messageId,320)||
+     !bounded(senderId,160)||!bounded(text,1200,true)||
+     !Number.isFinite(timeoutMs)||timeoutMs<0||timeoutMs>30000)return false;
+  // Input must already be a normalized server/DOM observation timestamp.
+  if(typeof timestamp!=='string'||
+     !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(timestamp))return false;
+  const parsed=Date.parse(timestamp);
+  if(!Number.isFinite(parsed)||new Date(parsed).toISOString()!==timestamp)return false;
+  if(quotedMessageId!==null&&!bounded(quotedMessageId,320))return false;
+  if(race!==null){
+    if(!race||typeof race!=='object'||Array.isArray(race)||
+       Object.keys(race).length!==3||
+       !['raceNumber','racetrack','raceDate'].every(key=>
+         Object.prototype.hasOwnProperty.call(race,key))||
+       !Number.isInteger(race.raceNumber)||race.raceNumber<1||race.raceNumber>99||
+       !bounded(race.racetrack,80)||race.racetrack.trim().length<2||
+       !/^[\p{L}\p{N} -]+$/u.test(race.racetrack)||
+       typeof race.raceDate!=='string'||
+       !/^\d{4}-\d\d-\d\d$/.test(race.raceDate))return false;
+    const date=Date.parse(race.raceDate+'T00:00:00.000Z');
+    if(!Number.isFinite(date)||new Date(date).toISOString().slice(0,10)!==race.raceDate)return false;
+  }
+  return true;
+}
+
 export async function queryCanonicalLab({
   ingestUrl,token,labGroupId,labChannelKey,messageId,senderId,text,
   timestamp=new Date().toISOString(),race=null,purpose='status',quotedMessageId=null,timeoutMs=4500,fetchImpl=fetch
 }={}){
   const url=labCanonicalQueryUrl(ingestUrl);
-  if(!url||!token||!labGroupId||!labChannelKey||!senderId||!messageId||
-     !READ_ONLY_LAB_PURPOSES.has(purpose)){
+  if(!url||!READ_ONLY_LAB_PURPOSES.has(purpose)||
+     !validCanonicalLabEnvelope({token,labGroupId,labChannelKey,messageId,
+       senderId,text,timestamp,race,quotedMessageId,timeoutMs})){
     return{available:false,reason:'LAB_CANONICAL_DISABLED'};
   }
   const payload={
-    externalMessageId:String(messageId).slice(0,320),
+    externalMessageId:messageId,
     groupId:labGroupId,channelRole:'lab',channelKey:labChannelKey,
     labChannelKey,shadowMode:true,senderId,
-    timestamp,text:String(text||'').slice(0,1200),race,purpose,
+    timestamp,text,race,purpose,
     quotedExternalMessageId:quotedMessageId
   };
   // Read-only query: a lost HTTP response has no committed send/domain effect.

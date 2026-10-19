@@ -3,6 +3,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx, one, num } from './verticals.shared.js';
+import { parseCareAppointmentReadWindow } from './care-appointment-range.js';
 import {
   patientSchema,
   professionalSchema,
@@ -66,9 +67,10 @@ router.post('/health/professionals', requirePermission('health.manage'), asyncHa
 }));
 
 router.get('/health/appointments', requirePermission('health.manage'), asyncHandler(async (req, res) => {
-  const from = String(req.query.from || new Date(Date.now() - 86400000).toISOString());
-  const to = String(req.query.to || new Date(Date.now() + 90 * 86400000).toISOString());
-  const type = String(req.query.type || '').trim();
+  let range: ReturnType<typeof parseCareAppointmentReadWindow>;
+  try { range=parseCareAppointmentReadWindow(req.query); }
+  catch { throw new HttpError(422,'Los filtros de agenda no son válidos.'); }
+  const {from,to,type}=range;
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT a.*, p."displayName" AS "patientName", p."kind" AS "patientKind", pr."fullName" AS "professionalName", pr."specialty"
     FROM public."CareAppointment" a

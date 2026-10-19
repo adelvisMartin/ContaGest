@@ -3,6 +3,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx, one } from './verticals.shared.js';
+import { careAnamnesisClinicalDataSchema } from './care-anamnesis-schema.js';
 import {
   dentalTreatmentPlanClinicalDataSchema,
   treatmentPlanDecisionSchema,
@@ -24,7 +25,7 @@ router.get('/health/encounters', requirePermission('health.manage'), asyncHandle
   if (!patientId) throw new HttpError(422, 'patientId es obligatorio.');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT e.*, pr."fullName" AS "professionalName" FROM public."CareEncounter" e
-    LEFT JOIN public."CareProfessional" pr ON pr."id"=e."professionalId"
+    LEFT JOIN public."CareProfessional" pr ON pr."tenantId"=e."tenantId" AND pr."id"=e."professionalId"
     WHERE e."tenantId"=$1 AND e."patientId"=$2 ORDER BY e."createdAt" DESC LIMIT 500
   `, ctx(req).tenantId, patientId);
   ok(res, rows);
@@ -33,8 +34,21 @@ router.get('/health/encounters', requirePermission('health.manage'), asyncHandle
 router.post('/health/encounters', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   const b = encounterSchema.parse(req.body || {});
+  // No general-purpose client-signed anamnesis: clinical review requires its
+  // own audited workflow and cannot be asserted by an arbitrary POST body.
+  if (b.type==='anamnesis' && b.status!=='draft') {
+    throw new HttpError(422,'La anamnesis nueva debe registrarse primero como borrador.');
+  }
   const patientRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,b.patientId);
   if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
+  if(b.appointmentId){
+    const appointmentRows=await prisma.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CareAppointment"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "patientId"=$3
+      LIMIT 1
+    `,tenantId,b.appointmentId,b.patientId);
+    if(!appointmentRows.length)throw new HttpError(422,'La cita no pertenece al paciente y tenant activos.');
+  }
   if(b.professionalId){
     const professionalRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,b.professionalId);
     if(!professionalRows.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
@@ -44,7 +58,9 @@ router.post('/health/encounters', requirePermission('health.manage'), asyncHandl
     ? normalizeDentalTreatmentPlan(b.clinicalData)
     : b.type==='dental-treatment'
       ? normalizeDentalTreatmentDraft(b.clinicalData,actor)
-      : b.clinicalData;
+      : b.type==='anamnesis'
+        ? careAnamnesisClinicalDataSchema.parse(b.clinicalData)
+        : b.clinicalData;
   const encounterStatus=b.type==='dental-treatment'?'draft':b.status;
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareEncounter" ("id","tenantId","patientId","professionalId","appointmentId","specialty","type","subjective","objective","assessment","plan","diagnosisCodes","clinicalData","confidential","status","signedAt","createdAt","updatedAt")

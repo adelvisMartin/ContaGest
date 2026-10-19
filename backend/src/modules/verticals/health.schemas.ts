@@ -8,7 +8,7 @@ export const patientSchema = z.object({
   lastName: optionalText,
   displayName: z.string().trim().min(2).max(180),
   idNumber: optionalText,
-  birthDate: z.string().optional().nullable(),
+  birthDate: z.string().refine(value=>/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value+'T00:00:00.000Z'))&&new Date(value+'T00:00:00.000Z').toISOString().slice(0,10)===value,{message:'Fecha de nacimiento inválida.'}).optional().nullable(),
   sex: optionalText,
   phone: optionalText,
   email: z.string().email().optional().nullable().or(z.literal('')),

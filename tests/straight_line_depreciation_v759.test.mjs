@@ -1,0 +1,17 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {proposeStraightLineDepreciation as calc} from '../backend/src/modules/assets/straight-line-schedule.mjs';
+const base={tenantId:'tenant-a',assetTenantId:'tenant-a',assetId:'asset-1',inServiceDate:'2026-01-31',originalCostExact:'100.00',residualValueExact:'0.00',usefulLifeMonths:3,scheduleVersion:1};
+const run=patch=>calc({...base,...patch});
+test('100/3 exact cent residual assigned last month',()=>{const p=run();assert.deepEqual(p.periods.map(x=>x.depreciationExact),['33.33','33.33','33.34']);assert.equal(p.periods.at(-1).carryingValueExact,'0.00');});
+test('first month after in-service, including year rollover',()=>{const p=run({inServiceDate:'2026-12-31'});assert.equal(p.periods[0].period,'2027-01');});
+test('UTC leap day valid and calendar follows',()=>{const p=run({inServiceDate:'2028-02-29'});assert.equal(p.periods[0].period,'2028-03');});
+test('invalid non-leap dates fail closed',()=>assert.throws(()=>run({inServiceDate:'2027-02-29'}),/DATE_INVALID/));
+test('residual value never depreciated',()=>{const p=run({residualValueExact:'10.01'});assert.equal(p.totalDepreciationExact,'89.99');assert.equal(p.periods.at(-1).carryingValueExact,'10.01');});
+test('zero depreciable base emits empty non-financial schedule',()=>{const p=run({residualValueExact:'100.00'});assert.equal(p.periods.length,0);assert.equal(p.posted,false);});
+test('reject residual greater than cost',()=>assert.throws(()=>run({residualValueExact:'101.00'}),/RESIDUAL_EXCEEDS_COST/));
+test('tenant spoof and missing identity rejected',()=>{assert.throws(()=>run({assetTenantId:'tenant-b'}),/SCOPE_INVALID/);assert.throws(()=>run({assetId:' '}),/SCOPE_INVALID/);});
+test('invalid cost amounts, decimals and float rejected',()=>{for(const x of ['-1.00','1.234','1e3',1.22,''])assert.throws(()=>run({originalCostExact:x}),/AMOUNT_INVALID/);});
+test('months bounded and schedule version needed',()=>{for(const v of [0,601,1.5,NaN])assert.throws(()=>run({usefulLifeMonths:v}),/PARAMETERS_INVALID/);assert.throws(()=>run({scheduleVersion:0}),/PARAMETERS_INVALID/);});
+test('no loss with 1 cent spread over 12 months',()=>{const p=run({originalCostExact:'0.01',usefulLifeMonths:12});assert.equal(p.periods.at(-1).depreciationExact,'0.01');assert.equal(p.periods.at(-1).carryingValueExact,'0.00');});
+test('returns deeply immutable proposal and no ledger authority',()=>{const p=run();assert.equal(p.readOnly,true);assert.equal(p.posted,false);assert.ok(Object.isFrozen(p)&&Object.isFrozen(p.periods)&&Object.isFrozen(p.periods[0]));});

@@ -32,9 +32,21 @@ export function validSoakMetricEvidence(data,minimumHours=24,sampleSeconds=30){
   if(s.samples>Math.ceil(nominalSamples*1.25)+2)return false;
   if(s.samples===0 || s.healthChecks>s.samples || s.spoolChecks>s.samples ||
      s.healthFailures>s.healthChecks || s.spoolAvailableChecks>s.spoolChecks)return false;
-  const start=Date.parse(data.startedAt),end=Date.parse(data.completedAt);
-  if(!Number.isFinite(start)||!Number.isFinite(end)||
-     end-start<minimumHours*3600000||
+  // Eliminate timezone-dependent Date.parse coercions and ambiguous local dates.
+  // Node's runner writes toISOString() at both boundaries, always UTC .sssZ.
+  const canonicalUtc=/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
+  const utcMillis=value=>{
+    if(typeof value!=='string'||!canonicalUtc.test(value))return null;
+    const ms=Date.parse(value);
+    return Number.isFinite(ms)&&new Date(ms).toISOString()===value?ms:null;
+  };
+  const start=utcMillis(data.startedAt),end=utcMillis(data.completedAt);
+  if(start===null||end===null)return false;
+  // The runner samples process.memoryUsage(): RSS contains the V8 heap.
+  // Missing/zero readings or heapUsed larger than RSS cannot establish growth.
+  if(s.rssStartMb<=0||s.rssEndMb<=0||s.heapStartMb<=0||s.heapEndMb<=0||
+     s.heapStartMb>s.rssStartMb||s.heapEndMb>s.rssEndMb)return false;
+  if(end-start<minimumHours*3600000||
      // A future-dated artifact is not evidence of an executed 24h soak.
      end>Date.now()+60000||
      Math.abs((end-start)-s.durationMs)>60000)return false;
