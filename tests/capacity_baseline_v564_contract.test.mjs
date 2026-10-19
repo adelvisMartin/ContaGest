@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const crud = fs.readFileSync('backend/src/modules/crud.factory.ts', 'utf8');
+const crudPolicy = fs.readFileSync('backend/src/modules/crud-policy.ts', 'utf8');
 const backend = fs.readFileSync('qa/capacity-baseline-v564.test.ts', 'utf8');
 const browser = fs.readFileSync('qa/capacity-frontend-v564.spec.mjs', 'utf8');
 const bundle = fs.readFileSync('scripts/capacity-frontend-baseline-v564.mjs', 'utf8');
@@ -10,9 +11,10 @@ const workflow = fs.readFileSync('.github/workflows/capacity-baseline-v564.yml',
 const adr = fs.readFileSync('docs/ADR_CAPACITY_BASELINE_V564.md', 'utf8');
 
 test('#564 CRUD lists are bounded and support server-side windowing', () => {
-  assert.match(crud, /MAX_LIST_TAKE = 500/);
-  assert.match(crud, /MAX_LIST_SKIP/);
-  assert.match(crud, /parseCrudListWindow/);
+  assert.match(crudPolicy, /MAX_LIST_TAKE = 500/);
+  assert.match(crudPolicy, /MAX_LIST_SKIP/);
+  assert.match(crudPolicy, /export function parseCrudListWindow/);
+  assert.match(crud, /parseCrudListWindow\(req\.query/);
   assert.match(crud, /orderBy: \[\{ createdAt: 'desc' \}, \{ id: 'desc' \}\]/);
   assert.match(crud, /X-CG-Page-Take/);
   assert.match(crud, /X-CG-Page-Skip/);
