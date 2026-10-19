@@ -9,12 +9,14 @@ Los templates de `accounting.service.ts` usan los roles `ar/revenue/vat_output/t
 ## Rollout y diagnóstico
 
 El endpoint de solo lectura `GET /chart-accounts/role-mappings/readiness?flow=sales|sales_with_tax_payable|purchases` muestra roles pendientes antes de emitir; la página Plan de Cuentas ofrece consulta y vínculo explícito. Una empresa sin todos los roles necesarios recibe `422 ACCOUNT_ROLE_POSTING_NOT_READY`; **no hay fallback silencioso** al template venezolano. El catálogo inicial `VEN-NIF PYME` permanece orientativo, no oficial ni universal. No se modifican datos de producción en QA.
+El servidor deriva la naturaleza normal del rol al vincular la cuenta: el campo opcional `expectedNature` enviado por el cliente no puede reemplazarla ni autorizar una asociación incoherente.
 
 ## Verificación y dependencias pendientes
 
 - Contratos ejecutables: `tests/semantic_posting_roles_v785.test.mjs` y `tests/semantic_posting_integration_v785.test.mjs`; regresión anterior `tests/semantic_account_role_mappings_v785.test.mjs`.
 - `qa/financial-reconciliation-v559.test.ts` configura roles de fixture en su PostgreSQL descartable y concilia contra los códigos realmente resueltos.
-- **PENDIENTE:** PostgreSQL17 from-zero/upgrade, flujo completo sales/purchases con tenant A/B, migración controlada/onboarding de QA fixtures adicionales (#91, #92, #560, #762), browser y CI exact-SHA. No declarar DoD o fusionar hasta el cierre de estos gaps.
+- `qa/support/semantic-posting-fixture.ts` permite a #90, #91, #92, #560 y al flujo financiero #17 preparar explícitamente roles sólo en bases QA descartables. Conserva bindings previos, verifica los tres flujos y rechaza nombres de base no aislados; su contrato está en `tests/semantic_posting_fixture_v785.test.mjs`. El test #762 sólo emite borradores y no requiere posting.
+- **PENDIENTE:** ejecutar y validar PostgreSQL17 from-zero/upgrade, cobertura de flujo completo sales/purchases con tenant A/B, migración controlada de mappings de clientes existentes, cambios de mappings versionados, browser y CI exact-SHA. No declarar DoD o fusionar hasta el cierre de estos gaps.
 - El `main` observado tiene errores ajenos de TypeScript en rutas fiscales (#751) que deben corregirse sin relajar chequeos.
 
 Rollback: revert de rutas/servicio; no se altera ninguna migración ni asiento histórico. El mapping append-only existente permanece como configuración auditable.

@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
 import { assertSemanticAccountBinding, type SemanticAccountRole } from './account-role-policy.js';
-import { assertSemanticPostingRoles, type SemanticPostingAccount } from './semantic-posting-policy.js';
+import { SEMANTIC_POSTING_NATURE, assertSemanticPostingRoles, type SemanticPostingAccount } from './semantic-posting-policy.js';
 
 type AccountRoleRow = { tenantId: string; role: string; accountCode: string; nature: string; createdBy: string; createdAt: Date };
 
@@ -46,12 +46,24 @@ export async function bindSemanticAccountRole(input: {
   tenantId: string; userId: string; role: SemanticAccountRole; accountCode: string;
   expectedNature?: 'debit' | 'credit'; ip?: string; userAgent?: string;
 }) {
+  // The role itself defines the permitted normal balance. A caller-provided
+  // expectedNature is an additional assertion, never an override.
+  if (input.expectedNature !== undefined && input.expectedNature !== SEMANTIC_POSTING_NATURE[input.role]) {
+    throw new HttpError(422, 'Naturaleza incompatible con el rol semántico.', { code: 'ACCOUNT_ROLE_NATURE_MISMATCH' });
+  }
   return prisma.$transaction(async (tx) => {
     const account = await tx.chartAccount.findFirst({
       where: { tenantId: input.tenantId, code: input.accountCode },
       select: { tenantId: true, code: true, active: true, allowPosting: true, nature: true, parentCode: true }
     });
-    const binding = assertSemanticAccountBinding(account, { tenantId: input.tenantId, role: input.role, expectedNature: input.expectedNature });
+    let binding: ReturnType<typeof assertSemanticAccountBinding>;
+    try {
+      binding = assertSemanticAccountBinding(account, {
+        tenantId: input.tenantId, role: input.role, expectedNature: SEMANTIC_POSTING_NATURE[input.role]
+      });
+    } catch {
+      throw new HttpError(422, 'La cuenta debe estar activa, ser imputable y respetar la naturaleza del rol.', { code: 'ACCOUNT_ROLE_MAPPING_NOT_POSTABLE' });
+    }
     const rows = await tx.$queryRaw<AccountRoleRow[]>(Prisma.sql`
       INSERT INTO public."SemanticAccountRoleMapping" ("tenantId","role","accountCode","createdBy")
       VALUES (${binding.tenantId},${binding.role},${binding.accountCode},${input.userId})

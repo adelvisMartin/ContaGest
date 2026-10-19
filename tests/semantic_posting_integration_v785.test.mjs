@@ -23,5 +23,7 @@ test('#785 resolver has same-tenant composite account lookup and refuses missing
   assert.match(resolver, /WHERE m\."tenantId"=\$\{tenantId\}/);
   assert.match(resolver, /assertSemanticPostingRoles\(tenantId, roles, rows\)/);
   assert.match(resolver, /ACCOUNT_ROLE_POSTING_NOT_READY/);
+  assert.match(resolver, /expectedNature: SEMANTIC_POSTING_NATURE\[input\.role\]/);
+  assert.match(resolver, /input\.expectedNature !== SEMANTIC_POSTING_NATURE\[input\.role\]/);
   assert.match(routes, /router\.get\('\/role-mappings\/readiness', requirePermission\('accounting\.view'\)/);
 });
