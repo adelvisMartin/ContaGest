@@ -131,7 +131,7 @@ jobs:
         run: |
           set -o pipefail
           npm run skills:check 2>&1 | tee skills-v91.log
-          npm run agent:gates -- --base "${{ github.base_ref || 'main' }}" 2>&1 | tee agent-gates-v91.log
+          npm run agent:gates -- --base "origin/${{ github.base_ref || 'main' }}" 2>&1 | tee agent-gates-v91.log
 
       - name: Typecheck + lint + contratos estáticos
         shell: bash

@@ -13,6 +13,7 @@ import { decimalSchema } from '../../shared/financial/zod.js';
 import { ONE } from '../../shared/financial/decimal.js';
 import { convertToFunctional, functionalizeBalancedLedgerLines, resolveFxContext } from '../../shared/financial/fx.js';
 import { copyLedgerLineSnapshotsForReversal, getFxPolicy, recordDocumentSnapshot, recordLedgerLineSnapshots } from '../currency/fx.repository.js';
+import { parseCrudListWindow } from '../crud-policy.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('purchases.manage'));
@@ -56,7 +57,8 @@ const requireActor = (ctx: ReturnType<typeof context>) => {
 
 router.get('/', asyncHandler(async (req, res) => {
   const { tenantId } = context(req);
-  const rows = await prisma.purchaseInvoice.findMany({ where: { tenantId }, include: { supplier: true, lines: true }, orderBy: { issueDate: 'desc' }, take: Math.min(Number(req.query.take || 100), 500) });
+  const { take } = parseCrudListWindow({ take: req.query.take });
+  const rows = await prisma.purchaseInvoice.findMany({ where: { tenantId }, include: { supplier: true, lines: true }, orderBy: { issueDate: 'desc' }, take });
   ok(res, rows);
 }));
 
