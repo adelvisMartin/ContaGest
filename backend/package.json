@@ -73,7 +73,7 @@
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
-    "@supabase/supabase-js": "2.117.3",
+    "@supabase/supabase-js": "2.118.0",
     "bcryptjs": "3.0.3",
     "bwip-js": "4.11.4",
     "cors": "2.8.6",
@@ -88,7 +88,7 @@
     "pino": "10.4.0",
     "prisma": "6.19.3",
     "qrcode": "1.5.4",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/cors": "2.8.19",
