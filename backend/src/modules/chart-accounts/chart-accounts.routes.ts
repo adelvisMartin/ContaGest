@@ -44,7 +44,8 @@ router.get('/template', requirePermission('accounting.view'), (_req, res) => res
 router.get('/', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const tenantId = getTenantId(req);
   const accounts = await prisma.chartAccount.findMany({ where:{ tenantId }, orderBy:{ code:'asc' } });
-  res.json(accounts.length ? accounts : chartAccounts);
+  // Opt-in authoritative read: role bindings must not treat the starter template as persisted tenant data.
+  res.json(req.query.persistedOnly==='true' ? accounts : (accounts.length ? accounts : chartAccounts));
 }));
 router.post('/sync-template', requirePermission('accounting.post'), asyncHandler(async (req, res) => {
   const tenantId = getTenantId(req);

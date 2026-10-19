@@ -13,7 +13,9 @@ const normalizeAccount=(account={})=>({
 });
 
 export const ChartAccountsService={
-  list(){return BackendApi.get('/chart-accounts');},
+  list(){return BackendApi.get('/chart-accounts?persistedOnly=true');},
+  listRoleMappings(){return BackendApi.get('/chart-accounts/role-mappings');},
+  bindRoleMapping(binding){return BackendApi.post('/chart-accounts/role-mappings',binding);},
   create(account){return BackendApi.post('/chart-accounts',normalizeAccount(account));},
   syncTemplate(){return BackendApi.post('/chart-accounts/sync-template',{});},
   validateEntry(lines){return BackendApi.post('/chart-accounts/validate-entry',{lines});},

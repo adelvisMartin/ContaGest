@@ -6,6 +6,13 @@ import { ExportService } from '../services/exportService.js';
 import { ChartAccountsService } from '../services/chartAccountsService.js';
 
 const safe=(value)=>escapeHtml(String(value??''));
+const SEMANTIC_ROLES=[
+  ['ar','Cuentas por cobrar'],['ap','Cuentas por pagar'],['vat_output','IVA débito fiscal'],
+  ['vat_input','IVA crédito fiscal'],['withholding_payable','Retenciones por pagar'],
+  ['payroll_payable','Nómina por pagar'],['tax_payable','Tributos por pagar'],
+  ['cash','Caja'],['bank','Banco'],['revenue','Ingresos'],['expense','Gastos'],
+  ['inventory','Inventario'],['asset','Activos'],['cost_of_sales','Costo de ventas']
+];
 const effectiveAccounts=(state)=>{
   const persisted=state.accounting?.chartAccounts;
   if(Array.isArray(persisted)&&state.accounting?.chartAccountsLoaded)return persisted;
@@ -26,6 +33,24 @@ export const ChartAccountsPage = {
       ...account,
       accountLabel:`${'· '.repeat(Math.max(0,Number(account.level||1)-1))}${account.name}`
     }));
+    const accounting=state.accounting||{};
+    const mappings=Array.isArray(accounting.roleMappings)?accounting.roleMappings:[];
+    const boundRoles=new Set(mappings.map((mapping)=>mapping.role));
+    const availableRoles=SEMANTIC_ROLES.filter(([role])=>!boundRoles.has(role));
+    // A local template is not proof that an account exists in this tenant.
+    const postableAccounts=accounting.chartAccountsLoaded&&Array.isArray(accounting.chartAccounts)
+      ?accounting.chartAccounts.filter((account)=>account.active===true&&account.allowPosting===true):[];
+    const canBind=accounting.roleMappingsLoaded&&accounting.chartAccountsLoaded
+      &&availableRoles.length>0&&postableAccounts.length>0;
+    const mappingStatus=accounting.roleMappingsError
+      ?`<p role="alert">No se pudieron cargar las vinculaciones: ${safe(accounting.roleMappingsError)}</p>`
+      :!accounting.roleMappingsLoaded?'<p role="status">Cargando vinculaciones contables…</p>'
+      :mappings.length===0?'<p>Sin roles vinculados a cuentas contables.</p>':'';
+    const mappingForm=`<form id="semanticRoleForm" class="cg-record-form"><div class="cg-record-fields">
+      ${Select({labelKey:'Rol contable',name:'role',options:availableRoles.map(([value,label])=>({value,label})),attrs:canBind?'required':'disabled'})}
+      ${Select({labelKey:'Cuenta imputable del tenant',name:'accountCode',options:postableAccounts.map((account)=>({value:account.code,label:`${account.code} · ${account.name}`})),attrs:canBind?'required':'disabled'})}
+      </div><div class="cg-record-actions">${Button({text:'Vincular rol en servidor',icon:'fa-link',type:'submit',attrs:canBind?'':'disabled'})}</div>
+      <p>Los vínculos confirmados son inmutables; una corrección requiere revisión contable y auditoría.</p></form>`;
 
     const form=`<form id="customAccountForm" class="cg-record-form"><div class="cg-record-fields">
       ${Field({labelKey:'Código',name:'code',placeholder:'1.1.01.001',required:true})}
@@ -71,6 +96,15 @@ export const ChartAccountsPage = {
           {key:'allowPosting',label:'Uso',render:(row)=>row.allowPosting?Badge('Movimiento','success'):Badge('Grupo','neutral')}
         ],rows,empty:'Sin cuentas configuradas'})
       })}
+      ${Section({
+        title:'Roles contables semánticos',
+        subtitle:'Vinculaciones autorizadas y persistidas para la empresa activa. No se utilizan cuentas de la plantilla local.',
+        children:`${mappingStatus}${accounting.roleMappingsLoaded?DataTable({columns:[
+          {key:'role',label:'Rol contable',render:(mapping)=>safe(SEMANTIC_ROLES.find(([role])=>role===mapping.role)?.[1]||mapping.role)},
+          {key:'accountCode',label:'Cuenta vinculada',render:(mapping)=>safe(`${mapping.accountCode} · ${accounting.chartAccounts?.find((account)=>account.code===mapping.accountCode)?.name||'Cuenta del tenant'}`)},
+          {key:'nature',label:'Naturaleza',render:(mapping)=>safe(mapping.nature)}
+        ],rows:mappings,empty:'Sin roles vinculados'}):''}${mappingForm}`
+      })}
       ${Section({title:'Agregar cuenta personalizada',subtitle:'La creación se confirma primero en el servidor y sólo después aparece en la interfaz.',children:form})}
     </section>`;
   },
@@ -87,8 +121,54 @@ export const ChartAccountsPage = {
         if(!silent)Toast.show(`No se pudo cargar el plan de cuentas: ${error.message}`,'error');
       }finally{loading=false;if(!silent)Loading?.unmount?.();}
     };
+    let loadingRoles=false;
+    const loadRoles=async()=>{
+      if(loadingRoles)return;
+      loadingRoles=true;
+      try{
+        const mappings=await ChartAccountsService.listRoleMappings();
+        Store.update((draft)=>{
+          draft.accounting=draft.accounting||{};
+          draft.accounting.roleMappings=Array.isArray(mappings)?mappings:[];
+          draft.accounting.roleMappingsLoaded=true;
+          draft.accounting.roleMappingsError=null;
+        });
+      }catch(error){
+        Store.update((draft)=>{
+          draft.accounting=draft.accounting||{};
+          draft.accounting.roleMappingsError=error.message||'Error de acceso';
+          draft.accounting.roleMappingsLoaded=false;
+        });
+      }finally{loadingRoles=false;}
+    };
     if(!state.accounting?.chartAccountsLoaded)load({silent:true});
-    document.getElementById('btnRefreshAccounts')?.addEventListener('click',()=>load());
+    if(!state.accounting?.roleMappingsLoaded&&!state.accounting?.roleMappingsError)loadRoles();
+    document.getElementById('btnRefreshAccounts')?.addEventListener('click',async()=>{await Promise.all([load(),loadRoles()]);});
+    document.getElementById('semanticRoleForm')?.addEventListener('submit',async(event)=>{
+      event.preventDefault();
+      const form=event.currentTarget;
+      const submit=form.querySelector('[type="submit"]');
+      const data=Object.fromEntries(new FormData(form).entries());
+      const current=Store.get().accounting||{};
+      if(!current.chartAccountsLoaded||!current.roleMappingsLoaded)return;
+      const account=current.chartAccounts?.find((item)=>item.code===data.accountCode&&item.active===true&&item.allowPosting===true);
+      if(!account||!SEMANTIC_ROLES.some(([role])=>role===data.role)||current.roleMappings?.some((item)=>item.role===data.role)){
+        Toast.show('La cuenta o el rol ya no están disponibles; actualice los datos.','error');
+        return;
+      }
+      submit?.setAttribute('disabled','disabled');
+      try{
+        const confirmed=await ChartAccountsService.bindRoleMapping({role:data.role,accountCode:data.accountCode});
+        Store.update((draft)=>{
+          draft.accounting=draft.accounting||{};
+          draft.accounting.roleMappings=[...(draft.accounting.roleMappings||[]).filter((item)=>item.role!==confirmed.role),confirmed];
+          draft.accounting.roleMappingsLoaded=true;
+          draft.accounting.roleMappingsError=null;
+        });
+        Toast.show('Vinculación contable guardada en el servidor.','success');
+      }catch(error){Toast.show(`No se pudo vincular el rol: ${error.message}`,'error');}
+      finally{submit?.removeAttribute('disabled');}
+    });
     document.getElementById('customAccountForm')?.addEventListener('submit',async(event)=>{
       event.preventDefault();
       const form=event.currentTarget;
