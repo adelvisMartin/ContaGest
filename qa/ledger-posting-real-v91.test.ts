@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
+import { prepareQaSemanticPosting } from './support/semantic-posting-fixture.ts';
 
 const RUN = `QA91-${Date.now().toString(36).toUpperCase()}`;
 const PERIOD_MANUAL = '2097-01';
@@ -41,6 +42,7 @@ function assertExactReversal(original: any, reversal: any) {
 test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on real PostgreSQL', async (t) => {
   const h = await createRealBackendHarness();
   t.after(async () => h.close());
+  await prepareQaSemanticPosting(h);
 
   const database = await h.prisma.$queryRaw<Array<{ name: string }>>`SELECT current_database() AS name`;
   assert.match(database[0]?.name || '', /_v91$/, 'Issue #91 real test must run only on the disposable *_v91 database');
