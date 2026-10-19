@@ -42,6 +42,7 @@ const required59=[
   'tests/vertical_asset_system_70_75.test.mjs',
   'tests/cloudflare_security_audit_skill_contract.test.mjs',
   'tests/fiscal_authority_v561_contract.test.mjs',
+  'tests/fiscal_legal_source_route_schema_v774.test.mjs',
   'tests/fiscal_single_source_v629_contract.test.mjs',
   'tests/local_verification_runner_v630.test.mjs',
   'tests/change_risk_classifier_v667.test.mjs',
