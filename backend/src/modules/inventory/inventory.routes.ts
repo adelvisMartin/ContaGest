@@ -10,6 +10,7 @@ import { add, compare, quantity, serializeDecimal, serializeLegacyNumber, subtra
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { classifyLotExpiryWindow } from './lot-expiry-evidence.js';
 import {
   applyInventoryStandardEffect as applyStandardEffect,
   inventoryLotBalance,
@@ -116,6 +117,36 @@ async function replayReservationConsumption(tx: Prisma.TransactionClient, tenant
     product: serializeProduct(outMovement.product)
   };
 }
+
+const lotExpiryQuerySchema = z.object({
+  asOf: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/),
+  days: z.coerce.number().int().min(0).max(365).default(30),
+  take: z.coerce.number().int().min(1).max(99).default(50),
+  skip: z.coerce.number().int().min(0).max(100000).default(0),
+  productId: z.string().uuid().optional(),
+  includeExpired: z.enum(['true','false']).default('false')
+}).strict();
+router.get('/lots/expiry',asyncHandler(async(req,res)=>{
+  const q=lotExpiryQuerySchema.parse(req.query);
+  const tenantId=context(req).tenantId;
+  const start=new Date(q.asOf+'T00:00:00.000Z');
+  if(!Number.isFinite(start.getTime())||start.toISOString().slice(0,10)!==q.asOf)
+    throw new HttpError(422,'Fecha de corte inválida.',{code:'LOT_EXPIRY_AS_OF_INVALID'});
+  const end=new Date(start.getTime()+q.days*86400000);
+  const rows=await prisma.inventoryLot.findMany({
+    where:{
+      tenantId,active:true, ...(q.productId?{productId:q.productId}:{}),
+      expiresAt:{...(q.includeExpired==='true'?{}:{gte:start}),lte:end}
+    },
+    select:{id:true,tenantId:true,productId:true,lotNumber:true,active:true,expiresAt:true,receivedAt:true},
+    orderBy:[{expiresAt:'asc'},{receivedAt:'asc'},{id:'asc'}],
+    take:q.take+1,skip:q.skip
+  });
+  const more=rows.length>q.take;
+  const report=classifyLotExpiryWindow({tenantId,asOf:q.asOf,horizonDays:q.days,lots:rows.slice(0,q.take)});
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,{...report,pagination:{take:q.take,skip:q.skip,hasMore:more}});
+}));
 
 router.get('/movements', asyncHandler(async (req, res) => {
   const ctx = context(req);

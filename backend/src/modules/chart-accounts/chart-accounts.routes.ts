@@ -6,6 +6,8 @@ import { asyncHandler, HttpError } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { assertBalanced } from '../accounting/accounting.service.js';
+import { SEMANTIC_ACCOUNT_ROLES } from './account-role-policy.js';
+import { bindSemanticAccountRole, listSemanticAccountRoles } from './account-role.repository.js';
 
 const chartAccounts = chartAccountsData as Array<{
   code: string;
@@ -30,6 +32,11 @@ const accountSchema = z.object({
   description:z.string().trim().max(500).optional().nullable(),
   active:z.boolean().default(true)
 });
+const roleMappingSchema = z.object({
+  role: z.enum(SEMANTIC_ACCOUNT_ROLES),
+  accountCode: z.string().trim().min(1).max(40),
+  expectedNature: z.enum(['debit','credit']).optional()
+}).strict();
 const validateSchema = z.object({ lines: z.array(z.object({ accountCode:z.string(), accountName:z.string().optional(), debit:z.number().optional().default(0), credit:z.number().optional().default(0) })).min(2) });
 const getTenantId = (req: any) => req.context?.tenantId;
 
@@ -57,6 +64,18 @@ router.post('/', requirePermission('accounting.post'), validateBody(accountSchem
     if(!parent)throw new HttpError(422,`La cuenta padre ${req.body.parentCode} no existe o está inactiva.`);
   }
   const record = await prisma.chartAccount.create({ data:{ tenantId, ...req.body } });
+  res.status(201).json(record);
+}));
+router.get('/role-mappings', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
+  res.json(await listSemanticAccountRoles(getTenantId(req)));
+}));
+router.post('/role-mappings', requirePermission('accounting.post'), validateBody(roleMappingSchema), asyncHandler(async (req, res) => {
+  const ctx = (req as any).context;
+  if (!ctx?.userId) throw new HttpError(401, 'Se requiere actor autenticado.');
+  const record = await bindSemanticAccountRole({
+    tenantId: ctx.tenantId, userId: ctx.userId, ...req.body,
+    ip: ctx.ip, userAgent: ctx.userAgent
+  });
   res.status(201).json(record);
 }));
 router.post('/validate-entry', requirePermission('accounting.view'), validateBody(validateSchema), asyncHandler(async (req, res) => {

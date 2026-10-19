@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const schema=fs.readFileSync('backend/src/modules/verticals/health.schemas.ts','utf8');
+const input=schema.split('\n').find(row=>row.includes('birthDate: z.string().refine('));
+assert.ok(input);
+const validator=new Function('value','return '+input.slice(input.indexOf('value=>')+7,input.indexOf(",{message:"))+';');
+test('valid calendar days accepted',()=>{for(const v of ['2024-02-29','2000-02-29','1990-10-16'])assert.equal(validator(v),true,v)});
+test('impossible days and locale strings denied',()=>{for(const v of ['2026-02-30','2025-02-29','2026-04-31','16/10/2026','2026-10-16T00:00:00Z'])assert.equal(validator(v),false,v)});
+test('patient schema keeps tenant-safe existing API fields',()=>{assert.match(schema,/displayName: z.string\(\)\.trim\(\)\.min\(2\)/);assert.match(schema,/birthDate: z.string\(\)\.refine/);});
