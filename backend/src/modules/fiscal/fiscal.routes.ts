@@ -8,7 +8,7 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
-import { createFiscalLegalSourceDraft, listFiscalLegalSources } from './fiscal-legal-source.repository.js';
+import { createFiscalLegalSourceDraft, listFiscalLegalSources, reviewFiscalLegalSource } from './fiscal-legal-source.repository.js';
 import {
   allocateFiscalNumber,
   assertFiscalClosePreconditions,
@@ -62,6 +62,10 @@ const fiscalLegalSourceSchema = z.object({
     captureMethod: z.enum(['manual', 'archive']),
     contentBytes: z.number().int().min(0).max(50_000_000).optional()
   }).strict().optional()
+}).strict();
+const fiscalLegalSourceReviewSchema = z.object({
+  approved: z.boolean(),
+  reason: z.string().trim().min(15).max(500)
 }).strict();
 
 const issueDocumentSchema = z.object({
@@ -152,6 +156,17 @@ router.post('/legal-sources', requirePermission('fiscal.close'), validateBody(fi
     ipAddress: ctx.ip, userAgent: ctx.userAgent
   });
   res.status(201).json({ ok: true, data: created });
+}));
+
+router.post('/legal-sources/:id/review', requirePermission('fiscal.close'), validateBody(fiscalLegalSourceReviewSchema), asyncHandler(async (req, res) => {
+  const ctx = context(req);
+  if (!ctx.userId) throw new HttpError(401, 'Se requiere un revisor autenticado.', { code: 'FISCAL_LEGAL_SOURCE_REVIEW_ACTOR_REQUIRED' });
+  const sourceId = z.string().uuid().parse(req.params.id);
+  const reviewed = await reviewFiscalLegalSource({
+    tenantId: ctx.tenantId, userId: ctx.userId, sourceId,
+    approved: req.body.approved, reason: req.body.reason
+  });
+  ok(res, reviewed);
 }));
 
 router.get('/rules', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {

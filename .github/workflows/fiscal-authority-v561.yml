@@ -6,6 +6,7 @@ on:
       - 'backend/src/modules/fiscal/**'
       - 'backend/prisma/migrations/**fiscal**'
       - 'qa/fiscal-authority-v561.test.ts'
+      - 'qa/fiscal-legal-source-review-v751.test.ts'
       - 'tests/fiscal_authority_v561_contract.test.mjs'
       - 'tests/fiscal_single_source_v629_contract.test.mjs'
       - 'config/fiscal-authority-v629.json'
@@ -43,7 +44,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: node --test tests/fiscal_authority_v561_contract.test.mjs tests/fiscal_single_source_v629_contract.test.mjs
+      - run: node --experimental-strip-types --test tests/fiscal_authority_v561_contract.test.mjs tests/fiscal_single_source_v629_contract.test.mjs tests/fiscal_legal_source_draft_v751.test.mjs
 
   postgres-real:
     name: PostgreSQL real · concurrency and close boundaries
@@ -83,6 +84,7 @@ jobs:
       - run: npm --workspace backend run prisma:generate
       - run: npm run seed
       - run: npm run test:backend:fiscal:authority:real
+      - run: npm --workspace backend exec -- tsx --test ../qa/fiscal-legal-source-review-v751.test.ts
       - run: npm run typecheck
       - run: npm run build:backend
       - name: Evidence
