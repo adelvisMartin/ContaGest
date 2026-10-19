@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { optionalText, dateText, jsonRecord, jsonArray } from './verticals.shared.js';
 import { immunizationDateIssues } from './veterinary-immunization-date-policy.js';
+import { dentalChartConsistencyIssues } from './dental-chart-consistency.js';
 
 export const patientSchema = z.object({
   kind: z.enum(['human','animal']).default('human'),
@@ -97,7 +98,11 @@ export const dentalClinicalDataSchema = z.object({
     const catalog = value.dentition === 'primary' ? DENTAL_PRIMARY_TEETH : DENTAL_PERMANENT_TEETH;
     if (!catalog.has(value.tooth)) refinement.addIssue({ code:'custom', path:['tooth'], message:'La pieza no pertenece a la dentición seleccionada.' });
   })
-}).passthrough();
+}).passthrough().superRefine((value, refinement)=>{
+  for (const issue of dentalChartConsistencyIssues(value)) {
+    refinement.addIssue({code:'custom',path:issue.path,message:issue.message});
+  }
+});
 
 const PERIODONTAL_SITE_KEYS = ['mesiobuccal','midbuccal','distobuccal','mesiolingual','midlingual','distolingual'] as const;
 export const periodontalSiteSchema = z.object({
