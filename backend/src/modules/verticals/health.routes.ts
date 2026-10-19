@@ -3,6 +3,7 @@ import coreRoutes from './health-core.routes.js';
 import encounterRoutes from './health-encounters.routes.js';
 import dentalFinancialRoutes from './health-dental-financial.routes.js';
 import measurementRoutes from './health-measurements.routes.js';
+import humanLabRoutes from './health-human-lab.routes.js';
 
 const router = Router();
 
@@ -12,5 +13,6 @@ router.use(coreRoutes);
 router.use(encounterRoutes);
 router.use(dentalFinancialRoutes);
 router.use(measurementRoutes);
+router.use(humanLabRoutes);
 
 export default router;
