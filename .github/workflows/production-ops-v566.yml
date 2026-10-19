@@ -97,9 +97,9 @@ jobs:
         env: { PGPASSWORD: ops-v566-ci-only }
         run: |
           pg_dump -h 127.0.0.1 -U postgres -d contagest_ops_v566_drill -Fc -f artifacts/release/recovery-v566.dump
-          createdb -h 127.0.0.1 -U postgres contagest_recovery_v566
-          pg_restore -h 127.0.0.1 -U postgres -d contagest_recovery_v566 --no-owner --no-privileges artifacts/release/recovery-v566.dump
-          psql -h 127.0.0.1 -U postgres -d contagest_recovery_v566 -Atc "SELECT count(*) FROM \"Tenant\" WHERE rif='J-V566-RESTORE'" > artifacts/release/restore-count.txt
+          createdb -h 127.0.0.1 -U postgres contagest_recovery_v566_restore
+          pg_restore -h 127.0.0.1 -U postgres -d contagest_recovery_v566_restore --no-owner --no-privileges artifacts/release/recovery-v566.dump
+          psql -h 127.0.0.1 -U postgres -d contagest_recovery_v566_restore -Atc "SELECT count(*) FROM \"Tenant\" WHERE rif='J-V566-RESTORE'" > artifacts/release/restore-count.txt
           test "$(cat artifacts/release/restore-count.txt)" = "1"
       - name: Isolated application rollback compatibility drill
         env: { PGPASSWORD: ops-v566-ci-only }
