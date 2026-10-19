@@ -2,7 +2,7 @@ const REDACTION_CENSOR = '[REDACTED]';
 const MAX_REDACTION_DEPTH = 6;
 const MAX_REDACTION_ITEMS = 64;
 
-const SENSITIVE_FIELD = /(authorization|cookie|password|passphrase|secret|token|api[-_]?key|clientsecret|email|rif|phone|fullname|clinical|subjective|objective|assessment|diagnosis|allergies|conditions|medical|notes|prompt|payload|message(content|text)?)/i;
+const SENSITIVE_FIELD = /(authorization|cookie|password|passphrase|secret|token|api[-_]?key|clientsecret|credential|private[-_]?key|email|rif|phone|fullname|clinical|subjective|objective|assessment|diagnosis|allergies|conditions|medical|notes|prompt|payload|message(content|text)?)/i;
 // Hípico report links use an opaque bearer capability named exactly "?t=".
 // Keep the single-letter exception anchored, unlike the generic secret names:
 // masking every parameter containing "t" would also destroy normal telemetry.
