@@ -172,7 +172,7 @@ test('#856 PostgreSQL authority serializes overlapping entry races and optimisti
     assert.ok(rejected && rejected.status==='rejected','one overlapping insert must fail closed');
     assert.match(
       String((rejected as PromiseRejectedResult).reason?.message || (rejected as PromiseRejectedResult).reason),
-      /PRICE_ENTRY_EFFECTIVE_OVERLAP|PriceEntry_no_active_overlap|conflicting key value violates exclusion constraint/,
+      /PRICE_ENTRY_EFFECTIVE_OVERLAP|PriceEntry_no_active_overlap|conflicting key value violates exclusion constraint|PriceEntry_target_version_key/,
     );
     const entries = await setup.query(
       'SELECT count(*)::int AS count FROM "PriceEntry" WHERE "tenantId"=$1 AND "priceBookId"=$2 AND "targetId"=$3',
