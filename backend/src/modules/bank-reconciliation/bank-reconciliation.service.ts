@@ -8,6 +8,7 @@ import { createLedgerEntry, postLedgerEntry, reverseLedgerEntry } from '../accou
 import { claimApproval, finishApprovalClaim, releaseApprovalClaim } from '../approvals/approvals.service.js';
 import { parseBankStatement, statementLineHash, statementSourceHash } from './statement-parser.js';
 import { evaluateBankClosingReadiness } from './bank-closing-readiness.mjs';
+import { projectBankReconciliationExceptions } from './bank-exception-window.js';
 
 export const BANK_RECONCILIATION_AUTO_THRESHOLD = '0.9500';
 export type ReconciliationStatus = 'unmatched'|'suggested'|'partial'|'reconciled'|'conflict';
@@ -421,4 +422,24 @@ export async function getClosingBalanceSummary(tenantId:string,accountId:string,
 
 export async function getReconciliationHistory(tenantId:string,lineId:string) {
   await getLine(tenantId,lineId);return prisma.$queryRaw<Array<any>>(Prisma.sql`SELECT e.*,r."kind",r."status" AS "reconciliationStatus",r."matchedAmount",r."ledgerEntryId",r."reversalLedgerEntryId" FROM "BankReconciliationEvent" e LEFT JOIN "BankReconciliation" r ON r."id"=e."reconciliationId" AND r."tenantId"=e."tenantId" WHERE e."tenantId"=${tenantId} AND e."statementLineId"=${lineId} ORDER BY e."createdAt" ASC`);
+}
+
+
+export async function getReconciliationExceptionWindow(tenantId:string,accountId:string,take=50) {
+  const account=await prisma.bankAccount.findFirst({
+    where:{id:accountId,tenantId},select:{id:true}
+  });
+  if(!account)throw new HttpError(404,'Cuenta bancaria no encontrada.');
+  const bounded=Math.min(Math.max(Math.trunc(take),1),99);
+  const rows=await listStatementLines(tenantId,{accountId,take:bounded+1});
+  const hasMore=rows.length>bounded;
+  const report=projectBankReconciliationExceptions({
+    tenantId,accountId,
+    lines:rows.slice(0,bounded).map(row=>({
+      id:row.id,tenantId:row.tenantId,accountId:row.accountId,status:row.status,
+      amount:row.amount,allocated:row.allocated,remaining:row.remaining,
+      bookedAt:row.bookedAt
+    }))
+  });
+  return {...report,windowSize:bounded,hasMore};
 }
