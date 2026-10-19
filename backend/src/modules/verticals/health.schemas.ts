@@ -162,8 +162,8 @@ export const acceptedDentalTreatmentPlanClinicalDataSchema = z.object({
 }).passthrough();
 
 export const dentalFinancialQuerySchema = z.object({
-  patientId:z.string().min(10).optional()
-});
+  patientId:z.string().trim().min(10).max(160).optional()
+}).strict();
 
 export const treatmentPlanDecisionSchema = z.object({
   decision:z.enum(['accepted','rejected']),
