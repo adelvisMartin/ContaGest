@@ -1,0 +1,5 @@
+# #776 · ISLR — concepto revisado, preview no transaccional
+
+El módulo `ve-reviewed-islr-preview.ts` usa el guard fiscal compartido (versión/vigencia/tenant/fuente/hash/revisor/porcentaje **externamente aprobado**) y exige que el selector de regla sea exactamente `conceptCode|beneficiaryClass|residenceClass`. Los importes son unidades menores e íntegros; cálculo y snapshot se delegan a `calculateReviewedVeTaxPreview`. Los códigos y la tasa del test son **sintéticos**, nunca tablas ISLR venezolanas.
+
+No existe endpoint productivo ni certificados, obligaciones, acumulaciones, mínimos, tope o posting. Estos requieren política legal versionada y realmente verificada (#751), clasificación confiable (#774), mapeos de cuenta y posting (#785), contrato de event time, conciliación y revisión jurídico-contable. No aceptar un objeto `rule.status=ACTIVE` enviado por el navegador: el backend debe resolver reglas con fuente revisada. #776 **OPEN/PARTIAL**, no declarar cumplimiento tributario, no merge hasta integración/test material.
