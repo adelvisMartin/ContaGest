@@ -7,6 +7,7 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
+import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts } from './taxpayer-profile.repository.js';
 import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
 import { createFiscalLegalSourceDraft, listFiscalLegalSources } from './fiscal-legal-source.repository.js';
@@ -26,6 +27,7 @@ import {
 
 const router = Router();
 router.use(requireTenant);
+router.use('/compliance', fiscalComplianceReadinessRoutes);
 
 const periodSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Usa formato AAAA-MM.');
 const moduleSchema = z.enum(['fiscal', 'iva', 'islr', 'igtf', 'retiva', 'municipal']);
