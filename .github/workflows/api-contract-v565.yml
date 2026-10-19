@@ -11,7 +11,9 @@ on:
       - 'backend/src/shared/contracts/apiGovernance.ts'
       - 'backend/src/shared/contracts/api-contract-v1.json'
       - 'scripts/generate-api-inventory-v565.mjs'
+      - 'scripts/api-contract-authority-v652.mjs'
       - 'tests/api_governance_v565_contract.test.mjs'
+      - 'tests/api_contract_authority_v652.test.mjs'
       - '.github/workflows/api-contract-v565.yml'
   workflow_dispatch:
 
@@ -29,6 +31,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -39,6 +42,8 @@ jobs:
         run: node --test tests/api_governance_v565_contract.test.mjs
       - name: Generate exact-SHA endpoint inventory
         run: node scripts/generate-api-inventory-v565.mjs
+      - name: Compare source-derived API contract against main
+        run: node scripts/api-contract-authority-v652.mjs --check --base origin/main --out artifacts/contracts/source-compatibility-v652.json
       - name: Typecheck lint and backend build
         run: |
           npm run typecheck

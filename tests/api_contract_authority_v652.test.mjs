@@ -113,10 +113,16 @@ test('#652 is in the authoritative contracts consumed by #630 backend/full verif
   assert.match(runner, /gate\('backend-tests','npm test'\)/);
   assert.match(authoritative, /tests\/api_contract_authority_v652\.test\.mjs/);
 });
-test('source-derived contract gate compares merge-base to current candidate', () => {
+test('source-derived current candidate is conflict-free in shallow CI checkouts', () => {
   const root = fileURLToPath(new URL('..', import.meta.url));
-  const result = spawnSync(process.execPath, ['scripts/api-contract-authority-v652.mjs', '--check', '--base', 'main'], { cwd: root, encoding: 'utf8', shell: false, env: process.env });
+  // Most jobs checkout only the candidate commit. A base comparison here
+  // falsely fails with "Not a valid object name main" on GitHub's detached
+  // merge ref. The dedicated API governance workflow fetches complete
+  // history and runs --check --base origin/main as the required gate.
+  const result = spawnSync(process.execPath, ['scripts/api-contract-authority-v652.mjs', '--print'], { cwd: root, encoding: 'utf8', shell: false, env: process.env });
   assert.equal(result.status, 0, `${result.stdout || ''}\n${result.stderr || ''}`);
-  assert.match(result.stdout, /"schemaVersion":\s*652/);
-  assert.match(result.stdout, /"candidateSha":\s*"[0-9a-f]{40}"/);
+  const evidence = JSON.parse(result.stdout);
+  assert.equal(evidence.manifest.schemaVersion, 652);
+  assert.match(evidence.candidateSha, /^[0-9a-f]{40}$/);
+  assert.deepEqual(evidence.manifest.conflicts, []);
 });
