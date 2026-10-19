@@ -7,8 +7,7 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
-import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
-import { createFiscalLegalSourceDraft, listFiscalLegalSources } from './fiscal-legal-source.repository.js';
+import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts } from './taxpayer-profile.repository.js';
 import {
   allocateFiscalNumber,
   assertFiscalClosePreconditions,
@@ -51,19 +50,15 @@ const fiscalRuleSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['effectiveTo'], message: 'effectiveTo debe ser posterior a effectiveFrom.' });
   }
 });
-const fiscalLegalSourceSchema = z.object({
-  sourceType: z.enum(['official_gazette', 'statute', 'regulation', 'administrative_ruling', 'other']),
-  reference: z.string().trim().min(3).max(160),
-  title: z.string().trim().min(3).max(240),
-  sourceUrl: z.string().max(2048).nullable().optional(),
-  publishedAt: z.string().nullable().optional(),
-  contentSha256: z.string().regex(/^[0-9a-f]{64}$/i),
-  snapshotMetadata: z.object({
-    captureMethod: z.enum(['manual', 'archive']),
-    contentBytes: z.number().int().min(0).max(50_000_000).optional()
-  }).strict().optional()
+const taxpayerProfileDraftSchema = z.object({
+  effectiveFrom:z.string(),
+  effectiveTo:z.string().nullable().optional(),
+  jurisdiction:z.string().trim().min(3).max(120),
+  taxpayerCategory:z.string().trim().min(3).max(80),
+  activityCodes:z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/)).min(1).max(20),
+  sourceReference:z.string().trim().min(3).max(240),
+  sourceContentSha256:z.string().regex(/^[a-f0-9]{64}$/i)
 }).strict();
-
 const issueDocumentSchema = z.object({
   kind: documentKindSchema,
   period: periodSchema,
@@ -319,4 +314,13 @@ router.get('/documents/:id/rules', requirePermission('fiscal.read'), asyncHandle
   ok(res, await getDocumentRuleSnapshots(ctx.tenantId, document.id));
 }));
 
+router.get('/taxpayer-profiles', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
+  ok(res, await listTaxpayerProfileDrafts(context(req).tenantId));
+}));
+router.post('/taxpayer-profiles', requirePermission('fiscal.close'), validateBody(taxpayerProfileDraftSchema), asyncHandler(async (req, res) => {
+  const ctx=context(req);
+  if (!ctx.userId) throw new HttpError(401, 'Se requiere identidad de operador para captura fiscal.');
+  const created=await captureTaxpayerProfileDraft(req.body, {tenantId:ctx.tenantId,userId:ctx.userId,ip:ctx.ip,userAgent:ctx.userAgent});
+  res.status(201).json({ok:true,data:created});
+}));
 export default router;
