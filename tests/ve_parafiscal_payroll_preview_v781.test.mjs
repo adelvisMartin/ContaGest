@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parafiscalRuleSelector, previewReviewedPayrollContributions } from '../backend/src/modules/payroll/ve-parafiscal-breakdown-preview.ts';
+import { parafiscalRuleSelector, previewReviewedPayrollContributions, previewReviewedPayrollContributionsFromCatalog } from '../backend/src/modules/payroll/ve-parafiscal-breakdown-preview.ts';
 
 // Values are synthetic; these are NOT Venezuela FAOV/IVSS/INCES rates or bases.
 const event = Object.freeze({ tenantId: 't-A', employeeId: 'employee-1', payrollPeriod: '2026-09',
@@ -46,4 +46,24 @@ test('#781 invalid bases and deductions greater than salary fail closed', () => 
   denied(() => previewReviewedPayrollContributions(event, [{ ...c, baseMinor: 10002 }]));
   denied(() => previewReviewedPayrollContributions(event, [{ ...c, baseMinor: 1.5 }]));
   denied(() => previewReviewedPayrollContributions(event, [{ ...c, rule: rule('IVSS', 'WORKER', 100) }, component('FAOV', 'WORKER', 100)]));
+});
+test('#781 catalog rule selection must be unique for each side and family',()=>{
+  const specs=[{family:'IVSS',side:'WORKER',baseMinor:event.grossMinor},{family:'IVSS',side:'EMPLOYER',baseMinor:event.grossMinor}];
+  const worker=rule('IVSS','WORKER',5),employer=rule('IVSS','EMPLOYER',7);
+  const preview=previewReviewedPayrollContributionsFromCatalog(event,specs,[worker,employer]);
+  assert.equal(preview.workerDeductionsMinor,500);
+  assert.equal(preview.employerContributionsMinor,700);
+  denied(()=>previewReviewedPayrollContributionsFromCatalog(event,specs,[worker]));
+  denied(()=>previewReviewedPayrollContributionsFromCatalog(event,specs,[worker,employer,{...worker,id:'competing-rule'}]));
+  denied(()=>previewReviewedPayrollContributionsFromCatalog(event,specs,[worker,employer,{...worker,id:'draft-overlap',status:'DRAFT'}]));
+  denied(()=>previewReviewedPayrollContributionsFromCatalog(event,[{...specs[0],family:'IVA'}],[worker,employer]));
+});
+test('#781 catalog selects reviewed version by effective date without shifting historical payroll',()=>{
+  const old=rule('FAOV','WORKER',5);
+  const next={...old,id:'next-version',version:2,effectiveFrom:'2027-01-01',effectiveTo:'2028-01-01'};
+  const specs=[{family:'FAOV',side:'WORKER',baseMinor:10000}];
+  const past=previewReviewedPayrollContributionsFromCatalog(event,specs,[old,next]);
+  assert.equal(past.components[0].ruleSnapshot.ruleId,old.id);
+  const future=previewReviewedPayrollContributionsFromCatalog({...event,eventDate:'2027-01-01',payrollPeriod:'2027-01'},specs,[old,next]);
+  assert.equal(future.components[0].ruleSnapshot.ruleId,next.id);
 });
