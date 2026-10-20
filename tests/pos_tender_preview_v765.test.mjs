@@ -58,3 +58,24 @@ test('preview does not mutate frozen input', () => {
   const data = Object.freeze({ currency: 'VES', due: '4.00', tenders });
   assert.equal(previewPosTender(data).status, 'exact'); assert.equal(tenders[0].amount, '4.00');
 });
+
+test('preview result fields cannot be overwritten after exact tender calculation', () => {
+  const result = preview('10.00', [t('card', '4.00'), t('cash', '7.00')]);
+  assert.equal(result.change, '1.00');
+  assert.ok(Object.isFrozen(result));
+  for (const [field, forged] of [['paid', '0.00'], ['change', '1000.00'], ['status', 'exact']]) {
+    assert.throws(() => { result[field] = forged; }, TypeError);
+  }
+  assert.equal(result.paid, '11.00');
+  assert.equal(result.change, '1.00');
+  assert.equal(result.status, 'change');
+});
+test('all preview stages are immutable, with no payment authorization granted', () => {
+  for (const tenders of [[], [t('card', '3')], [t('cash', '10')], [t('cash', '12')]]) {
+    const result = preview('10.00', tenders);
+    assert.equal(Object.isFrozen(result), true);
+    assert.equal(Object.hasOwn(result, 'paymentCaptured'), false);
+    assert.equal(Object.hasOwn(result, 'checkoutAuthorized'), false);
+    assert.equal(Object.hasOwn(result, 'receiptId'), false);
+  }
+});
