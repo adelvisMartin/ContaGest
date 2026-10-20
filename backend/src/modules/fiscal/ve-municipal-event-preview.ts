@@ -1,6 +1,7 @@
 import {
   assertReviewedVeRule,
   calculateReviewedVeTaxPreview,
+  resolveReviewedVeRule,
   type VeReviewedRule,
 } from './ve-reviewed-rule-policy.js';
 
@@ -38,4 +39,19 @@ export function previewReviewedMunicipalEvent(event: MunicipalEvent, rule: VeRev
     baseMinor: event.taxableBaseMinor, taxMinor: snapshot.taxMinor,
     ruleSnapshot: snapshot, mode: 'NON_POSTING_PREVIEW' as const,
   });
+}
+
+/** #780: catalog-level preview. Never silently pick the first of overlapping rules.
+ * Caller must load the full reviewed tenant-scoped catalog from server authority. */
+export function previewReviewedMunicipalEventFromCatalog(
+  event: MunicipalEvent, reviewedCatalog: readonly VeReviewedRule[],
+) {
+  if (!event || typeof event.tenantId !== 'string' || !event.tenantId.trim() ||
+      !Number.isSafeInteger(event.taxableBaseMinor) || event.taxableBaseMinor < 0 ||
+      !Array.isArray(reviewedCatalog)) blocked();
+  const selector = municipalEventSelector(event);
+  const uniqueRule = resolveReviewedVeRule(reviewedCatalog, {
+    tenantId: event.tenantId, family: 'MUNICIPAL', selector, eventDate: event.eventDate,
+  });
+  return previewReviewedMunicipalEvent(event, uniqueRule);
 }

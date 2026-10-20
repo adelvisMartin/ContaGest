@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { municipalEventSelector, previewReviewedMunicipalEvent } from '../backend/src/modules/fiscal/ve-municipal-event-preview.ts';
+import { municipalEventSelector, previewReviewedMunicipalEvent, previewReviewedMunicipalEventFromCatalog } from '../backend/src/modules/fiscal/ve-municipal-event-preview.ts';
 
 // Synthetic geographic and rate identifiers: NO legal municipality determination.
 const event = Object.freeze({ tenantId: 'tenant-A', eventDate: '2026-08-01',
@@ -41,4 +41,17 @@ test('#780 rejects malformed scope and invalid/overflow amount', () => {
   denied(() => previewReviewedMunicipalEvent({ ...event, taxableBaseMinor: -1 }, rule));
   denied(() => previewReviewedMunicipalEvent({ ...event, taxableBaseMinor: 1.5 }, rule));
   denied(() => previewReviewedMunicipalEvent({ ...event, taxableBaseMinor: Number.MAX_SAFE_INTEGER + 1 }, rule));
+});
+test('#780 authoritative catalog selection rejects missing and overlapping municipal rules',()=>{
+  const matched=previewReviewedMunicipalEventFromCatalog(event,[rule]);
+  assert.equal(matched.taxMinor,52);
+  denied(()=>previewReviewedMunicipalEventFromCatalog(event,[]));
+  denied(()=>previewReviewedMunicipalEventFromCatalog(event,[rule,{...rule,id:'same-scope-review-2'}]));
+  denied(()=>previewReviewedMunicipalEventFromCatalog(event,[rule,{...rule,id:'unreviewed-overlap',status:'DRAFT'}]));
+  denied(()=>previewReviewedMunicipalEventFromCatalog({...event,municipalityCode:'MUN_BETA'},[rule]));
+});
+test('#780 catalog uses inclusive start and exclusive end without historical rule reinterpretation',()=>{
+  const next={...rule,id:'next-v2',version:2,effectiveFrom:'2027-01-01',effectiveTo:'2028-01-01'};
+  assert.equal(previewReviewedMunicipalEventFromCatalog({...event,eventDate:'2026-12-31'},[rule,next]).ruleSnapshot.ruleId,rule.id);
+  assert.equal(previewReviewedMunicipalEventFromCatalog({...event,eventDate:'2027-01-01'},[rule,next]).ruleSnapshot.ruleId,next.id);
 });
