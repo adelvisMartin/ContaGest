@@ -5,12 +5,13 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { assertBalanced, assertPeriodOpen, inverseLedgerLines, salesInvoiceLinesForLedger } from '../accounting/accounting.service.js';
+import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.repository.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { allocateDocumentNumber, SALES_INVOICE_SEQUENCE_KEY } from '../../shared/services/document-sequence.service.js';
 import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
-import { ONE, ZERO } from '../../shared/financial/decimal.js';
+import { ONE, ZERO, money } from '../../shared/financial/decimal.js';
 import { decidePosScanMatch, normalizePosScanCode } from '../pos/pos-scan-code.js';
 import { PosStockPreviewError, previewPosStock, validatePosStockLines } from '../pos/pos-stock-preview.js';
 import { convertToFunctional, functionalizeBalancedLedgerLines, resolveFxContext } from '../../shared/financial/fx.js';
@@ -248,7 +249,11 @@ router.post('/', requirePermission('sales.manage'), validateBody(saleSchema), as
     });
     let ledgerEntryId: string | null = null;
     if (sale.status !== 'draft') {
-      const originalLedgerLines = salesInvoiceLinesForLedger(sale);
+      const requiredRoles = !money(sale.igtf ?? ZERO).isZero()
+        ? ['ar', 'revenue', 'vat_output', 'tax_payable'] as const
+        : ['ar', 'revenue', 'vat_output'] as const;
+      const accounts = await resolveSemanticPostingAccounts(tx, ctx.tenantId, requiredRoles);
+      const originalLedgerLines = salesInvoiceLinesForLedger(sale, accounts);
       assertBalanced(originalLedgerLines);
       const functionalized = functionalizeBalancedLedgerLines(originalLedgerLines, fx.exchangeRate);
       const ledgerLines = functionalized.lines.map((line) => ({ accountCode: line.accountCode, accountName: line.accountName, debit: line.functionalDebit, credit: line.functionalCredit }));

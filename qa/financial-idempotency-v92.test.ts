@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
+import { prepareQaSemanticPosting } from './support/semantic-posting-fixture.ts';
 import { hashIdempotencyKey, runFinancialIdempotentMutation } from '../backend/src/shared/services/financial-idempotency.service.ts';
 
 const RUN=`QA92-${Date.now().toString(36).toUpperCase()}`;
@@ -41,6 +42,8 @@ test('issue #92 financial idempotency is transactional on real PostgreSQL',async
     await h.prisma.tenant.delete({where:{id:tenantB.id}}).catch(()=>undefined);
     await h.close();
   });
+
+  await prepareQaSemanticPosting(h);
 
   await t.test('20 concurrent sale retries create one invoice and one ledger effect',async()=>{
     const number=`${RUN}-SALE-20`;
