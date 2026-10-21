@@ -171,8 +171,8 @@ router.get('/studies', asyncHandler(async (req, res) => {
   const patientId = String(req.query.patientId || '');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT s.*, p."displayName" AS "patientName", pr."fullName" AS "professionalName"
-    FROM public."CareDiagnosticStudy" s JOIN public."CarePatient" p ON p."id"=s."patientId" AND p."kind"='animal'
-    LEFT JOIN public."CareProfessional" pr ON pr."id"=s."professionalId"
+    FROM public."CareDiagnosticStudy" s JOIN public."CarePatient" p ON p."id"=s."patientId" AND p."tenantId"=s."tenantId" AND p."kind"='animal'
+    LEFT JOIN public."CareProfessional" pr ON pr."id"=s."professionalId" AND pr."tenantId"=s."tenantId"
     WHERE s."tenantId"=$1 AND ($2='' OR s."patientId"=$2)
     ORDER BY COALESCE(s."performedAt",s."scheduledAt",s."createdAt") DESC LIMIT 1000
   `, ctx(req).tenantId, patientId);
@@ -184,9 +184,20 @@ router.post('/studies', asyncHandler(async (req, res) => {
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CareDiagnosticStudy" ("id","tenantId","patientId","encounterId","professionalId","kind","title","bodySite","status","scheduledAt","performedAt","findings","impression","attachmentPath","externalUrl","createdAt","updatedAt")
     SELECT gen_random_uuid()::text,$1,p."id",$3,$4,$5,$6,$7,$8,$9::timestamptz,$10::timestamptz,$11,$12,$13,$14,now(),now()
-    FROM public."CarePatient" p WHERE p."id"=$2 AND p."tenantId"=$1 AND p."kind"='animal' RETURNING *
+    FROM public."CarePatient" p
+    WHERE p."id"=$2 AND p."tenantId"=$1 AND p."kind"='animal'
+      AND ($3::text IS NULL OR EXISTS (
+        SELECT 1 FROM public."CareEncounter" e
+        WHERE e."tenantId"=$1 AND e."id"=$3 AND e."patientId"=p."id"
+      ))
+      AND ($4::text IS NULL OR EXISTS (
+        SELECT 1 FROM public."CareProfessional" pr
+        WHERE pr."tenantId"=$1 AND pr."id"=$4
+      ))
+    RETURNING *
   `, ctx(req).tenantId, b.patientId, b.encounterId || null, b.professionalId || null, b.kind, b.title, b.bodySite || null, b.status, b.scheduledAt || null, b.performedAt || null, b.findings || null, b.impression || null, b.attachmentPath || null, b.externalUrl || null);
-  ok(res, one(rows, 'Mascota no encontrada.'), 201);
+  if (!rows.length) throw new HttpError(422, 'Paciente, encuentro o profesional no válido para esta empresa.');
+  ok(res, one(rows), 201);
 }));
 
 export default router;

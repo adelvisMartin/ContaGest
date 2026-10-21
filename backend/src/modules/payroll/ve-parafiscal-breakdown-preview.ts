@@ -1,6 +1,7 @@
 import {
   assertReviewedVeRule,
   calculateReviewedVeTaxPreview,
+  resolveReviewedVeRule,
   type VeReviewedRule,
 } from '../fiscal/ve-reviewed-rule-policy.js';
 
@@ -9,6 +10,9 @@ import {
 export type ParafiscalSide = 'WORKER' | 'EMPLOYER';
 export type ParafiscalComponent = Readonly<{
   side: ParafiscalSide; rule: VeReviewedRule; baseMinor: number;
+}>;
+export type ParafiscalComponentRequest = Readonly<{
+  family: 'FAOV' | 'IVSS' | 'INCES'; side: ParafiscalSide; baseMinor: number;
 }>;
 export type ParafiscalPayrollEvent = Readonly<{
   tenantId: string; eventDate: string; payrollPeriod: string;
@@ -61,4 +65,26 @@ export function previewReviewedPayrollContributions(
     workerAfterContributionsMinor: event.grossMinor - Number(worker),
     components: Object.freeze(snapshots), mode: 'NON_POSTING_PREVIEW' as const,
   });
+}
+
+/** #781: select exactly one reviewed effective rule per employer/worker component.
+ * The catalog and component applicability must come from server payroll authority;
+ * this function does not determine legally mandatory contributions or post payroll. */
+export function previewReviewedPayrollContributionsFromCatalog(
+  event: ParafiscalPayrollEvent,
+  requests: readonly ParafiscalComponentRequest[],
+  reviewedCatalog: readonly VeReviewedRule[],
+) {
+  if (!event || typeof event.tenantId !== 'string' || !event.tenantId.trim() ||
+      !Array.isArray(requests) || requests.length < 1 || requests.length > 6 ||
+      !Array.isArray(reviewedCatalog)) failed();
+  const components = requests.map(request => {
+    if (!request || !FAMILIES.has(request.family) || !safe(request.baseMinor)) failed();
+    const selector = parafiscalRuleSelector(event, request.side);
+    const rule = resolveReviewedVeRule(reviewedCatalog, {
+      tenantId: event.tenantId, family: request.family, selector, eventDate: event.eventDate,
+    });
+    return { side: request.side, baseMinor: request.baseMinor, rule };
+  });
+  return previewReviewedPayrollContributions(event, components);
 }

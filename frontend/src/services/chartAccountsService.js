@@ -16,6 +16,9 @@ export const ChartAccountsService={
   list(){return BackendApi.get('/chart-accounts');},
   create(account){return BackendApi.post('/chart-accounts',normalizeAccount(account));},
   syncTemplate(){return BackendApi.post('/chart-accounts/sync-template',{});},
+  roleMappings(){return BackendApi.get('/chart-accounts/role-mappings');},
+  bindRole(data){return BackendApi.post('/chart-accounts/role-mappings',data);},
+  readiness(flow){return BackendApi.get(`/chart-accounts/role-mappings/readiness?flow=${encodeURIComponent(flow)}`);},
   validateEntry(lines){return BackendApi.post('/chart-accounts/validate-entry',{lines});},
   normalizeAccount
 };

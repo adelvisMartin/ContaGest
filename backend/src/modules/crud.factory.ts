@@ -11,8 +11,8 @@ import {
   CrudPolicyError,
   assertCrudMutationFields,
   assertCrudOperation,
-  parseCrudRouteId,
   parseCrudListWindow,
+  parseCrudRouteId,
   parseCrudSearchText
 } from './crud-policy.js';
 import type { CrudModel, CrudMutation } from './crud-policy.js';
@@ -47,11 +47,11 @@ type CrudRequest = Request & { context?: Partial<CrudContext> };
 // Only these five explicit tenant-owned models may use the generic adapter.
 // The cast bridges Prisma's differing delegate method overloads, not user input.
 const CRUD_DELEGATES = {
-  client: prisma.client,
-  supplier: prisma.supplier,
-  product: prisma.product,
-  bankAccount: prisma.bankAccount,
-  taxPeriod: prisma.taxPeriod
+  client: () => prisma.client,
+  supplier: () => prisma.supplier,
+  product: () => prisma.product,
+  bankAccount: () => prisma.bankAccount,
+  taxPeriod: () => prisma.taxPeriod
 } satisfies Record<CrudModel, unknown>;
 
 function readCrudContext(req: Request): CrudContext {
@@ -88,7 +88,8 @@ function auditContext(ctx: CrudContext) {
 
 export function createCrudRouter(options: CrudOptions) {
   const router = Router();
-  const delegate = CRUD_DELEGATES[options.model] as unknown as CrudDelegate;
+  const getDelegate = CRUD_DELEGATES[options.model];
+  if (typeof getDelegate !== 'function') throw new Error('CRUD model is not in the explicit tenant-owned allowlist');
   // Fail at registration, not after an attacker controls a query or payload.
   const searchFields = CRUD_SEARCH_FIELDS[options.model];
   for (const field of searchFields) {
@@ -101,6 +102,7 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.get('/', asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
+    const delegate = getDelegate() as unknown as CrudDelegate;
     let take: number;
     let skip: number;
     let q: string;
@@ -127,6 +129,7 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
+    const delegate = getDelegate() as unknown as CrudDelegate;
     const data = await delegate.findFirst({ where: { id: parseCrudRouteId(req.params.id), tenantId: ctx.tenantId } });
     if (!data) throw new HttpError(404, `${options.entity} no encontrado`);
     ok(res, data);
@@ -134,6 +137,7 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.post('/', mutationGate(options.model, 'create'), validateBody(options.schema.strict()), asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
+    const delegate = getDelegate() as unknown as CrudDelegate;
     const data = await delegate.create({ data: { ...req.body, tenantId: ctx.tenantId } });
     await writeAudit({ ...auditContext(ctx), action: 'create', entity: options.entity, entityId: data.id, after: data });
     ok(res, data);
@@ -141,6 +145,7 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.put('/:id', mutationGate(options.model, 'update'), validateBody(options.schema.partial().strict()), asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
+    const delegate = getDelegate() as unknown as CrudDelegate;
     const where = { id: parseCrudRouteId(req.params.id), tenantId: ctx.tenantId };
     const before = await delegate.findFirst({ where });
     if (!before) throw new HttpError(404, `${options.entity} no encontrado`);
@@ -152,6 +157,7 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.delete('/:id', mutationGate(options.model, 'delete'), asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
+    const delegate = getDelegate() as unknown as CrudDelegate;
     const where = { id: parseCrudRouteId(req.params.id), tenantId: ctx.tenantId };
     const before = await delegate.findFirst({ where });
     if (!before) throw new HttpError(404, `${options.entity} no encontrado`);

@@ -100,7 +100,9 @@
     "audit:erp-ui-purchases": "node scripts/erp-ui-purchases-audit-v651.mjs",
     "audit:erp-ui-banking": "node scripts/erp-ui-banking-audit-v751.mjs",
     "test:backend:persistence:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-backend-persistence-v17.test.ts ../qa/price-book-authority-v856.test.ts",
+    "test:backend:commercial:real": "npm --workspace backend exec -- tsx --test ../qa/commercial-backend-real-v23.test.ts",
     "test:backend:financial:real": "npm --workspace backend exec -- tsx --test ../qa/postmerge-financial-domain-v17.test.ts",
+    "test:backend:financial:decimal:real": "npm --workspace backend exec -- tsx --test ../qa/financial-decimal-real-v90.test.ts",
     "test:backend:financial:reconciliation:real": "npm --workspace backend exec -- tsx --test ../qa/financial-reconciliation-v559.test.ts",
     "test:backend:financial:fx:real": "npm --workspace backend exec -- tsx --test ../qa/financial-fx-v560.test.ts",
     "test:backend:fiscal:authority:real": "npm --workspace backend exec -- tsx --test ../qa/fiscal-authority-v561.test.ts",
@@ -134,7 +136,7 @@
     "test:hipico:ledger:reconcile": "node --test tests/hipico_money_ledger_orphan_reconciliation_v1018.test.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.64.0"
+    "@playwright/test": "1.64.1"
   },
   "overrides": {
     "deepmerge-ts": "8.0.1",

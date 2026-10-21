@@ -125,7 +125,11 @@ jobs:
           grep -n "authRateLimit, authRoutes" backend/src/app.ts
           grep -n "INVALID_LOGIN_MESSAGE" backend/src/modules/auth/auth.routes.ts
           grep -n "dummyPasswordHashPromise" backend/src/modules/auth/auth.routes.ts
-          grep -n "mode:'insensitive'" backend/src/modules/auth/auth.routes.ts
+          # #844 moved identity lookup behind a tenant-scoped PostgreSQL bootstrap
+          # function; the old Prisma `mode:'insensitive'` predicate no longer exists.
+          grep -n "resolveLoginBootstrapIdentity" backend/src/modules/auth/auth.routes.ts
+          grep -n "contagest_bootstrap_login_identity" backend/src/database/auth-bootstrap.ts
+          grep -n -F 'lower(btrim(u."email")) = lower(btrim(p_email))' backend/prisma/migrations/20260930010500_issue_844_auth_bootstrap_authority/migration.sql
           grep -n "maybePruneExpiredLoginAttempts" backend/src/modules/auth/auth.throttle.ts
 
       - name: Lint y contratos globales

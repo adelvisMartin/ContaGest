@@ -35,8 +35,17 @@ router.get('/health/summary', requirePermission('health.manage'), asyncHandler(a
 
 router.get('/health/patients', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const tenantId = ctx(req).tenantId;
-  const kind = ['human','animal'].includes(String(req.query.kind)) ? String(req.query.kind) : null;
-  const q = `%${String(req.query.q || '').trim()}%`;
+  // Do not silently broaden patient queries when an invalid kind is supplied.
+  const allowed=new Set(['kind','q']);
+  if(Object.keys(req.query||{}).some(key=>!allowed.has(key)))throw new HttpError(422,'Filtros de pacientes inválidos.');
+  const kindRaw=req.query.kind;
+  if(kindRaw!==undefined&&(typeof kindRaw!=='string'||!['human','animal'].includes(kindRaw)))
+    throw new HttpError(422,'Tipo de paciente inválido.');
+  const qRaw=req.query.q;
+  if(qRaw!==undefined&&(typeof qRaw!=='string'||qRaw.length>120||/[\u0000-\u001f\u007f]/.test(qRaw)))
+    throw new HttpError(422,'Búsqueda de pacientes inválida.');
+  const kind=kindRaw||null;
+  const q=`%${(qRaw||'').trim()}%`;
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT * FROM public."CarePatient"
     WHERE "tenantId"=$1 AND ($2::text IS NULL OR "kind"=$2)

@@ -6,7 +6,7 @@ import { commercialCsv, commercialPdfBytes, sanitizeSpreadsheetCell } from '../f
 const read=(path)=>fs.readFileSync(new URL(`../${path}`,import.meta.url),'utf8');
 const backend=read('backend/src/modules/commercial/commercial.routes.ts');
 const governance=read('backend/src/modules/commercial/service-restrictions.routes.ts');
-const moduleIndex=read('backend/src/modules/index.ts');
+const moduleIndex=read('backend/src/modules/route-manifest.ts');
 const page=read('frontend/src/pages/LicensesPage.js');
 const service=read('frontend/src/services/commercialService.js');
 const enhancer=read('frontend/src/services/commercialAccessEnhancer.js');
@@ -23,8 +23,8 @@ test('commercial routes stay platform-only and expose the complete governed life
   assert.match(backend,/router\.post\('\/commissions\/:id\/status'/);
   assert.match(backend,/router\.get\('\/activity'/);
   assert.match(backend,/tenantId:ctx\.tenantId,action:\{startsWith:'commercial\.'/);
-  const governed=moduleIndex.indexOf("router.use('/commercial', serviceRestrictionRoutes)");
-  const legacy=moduleIndex.indexOf("router.use('/commercial', commercialRoutes)");
+  const governed=moduleIndex.indexOf("id: 'service-restrictions', domain: 'commercial', path: '/commercial', router: serviceRestrictionRoutes");
+  const legacy=moduleIndex.indexOf("id: 'commercial', domain: 'commercial', path: '/commercial', router: commercialRoutes");
   assert.ok(governed>=0&&legacy>governed,'governance router must intercept commercial mutations before the historical router');
 });
 

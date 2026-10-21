@@ -1,0 +1,5 @@
+# #787 · Class seat race hardening
+
+Previously GET count + eligibility and booking UPSERT ran in separate statements; two simultaneous requests could both observe one free seat and both insert a booking. The new path locks the tenant-scoped GymClass row **within a transaction** before reading existing booking, membership and occupancy, and upserts before releasing that lock. Existing booked requests are read-idempotent. A terminal attended record cannot be overwritten, and direct attended/cancelled/no-show without prior booking are rejected. The unique (classId,memberId) owner remains the existing DB conflict authority.
+
+**Remaining:** PostgreSQL17 parallel last-seat race, cancellation/rebooking race, tenant B spoof/idempotent retry and actual browser tests; waitlist, no-show cutoff, trainer room conflicts and outbox are not implemented. Booking remains privileged `gym.manage`, not a public member reservation API. No migration/production DB used. SOURCE_REUSE=NONE. Rollback: revert booking route/test/docs.
