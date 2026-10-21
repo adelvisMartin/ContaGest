@@ -149,5 +149,6 @@ test('#646 never uses dangerous override flags, remote credential source or Híp
   assert.match(code,/pg_dump/);
   assert.match(code,/pg_restore/);
   assert.match(code,/FAULT_INJECTION_FAILED/);
+  assert.doesNotMatch(code,/setTimeout\(resolve,25\)/);
   assert.doesNotMatch(code,/ALLOW_UNSAFE_RESTORE|ALLOW_PRIMARY_HOST_RESTORE|--clean|--create|supabase\.co/);
 });
