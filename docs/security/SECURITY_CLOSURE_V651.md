@@ -62,3 +62,11 @@ Este ejemplo **debe fallar** porque contiene placeholders, comprobaciones ausent
 - Se agrega únicamente el script local `test:security:closure` y `audit:security:closure` a `package.json`; no se modifican dependencias, infraestructura, workflows, permisos ni secretos. No se cierran los findings de #651 por fusionar este incremento.
 
 Rollback: revertir los cuatro archivos nuevos y dos comandos npm, sin cambios a datos ni migraciones. `SOURCE_REUSE=NONE` (contrato específico sobre los runbooks existentes).
+
+## Guard exact-HEAD incorporado en el incremento #651 del 21-10-2026
+
+El CLI `npm run audit:security:closure -- --sha <candidate-sha>` contrasta ahora el SHA solicitado con `git rev-parse --verify HEAD` en el **checkout real de la raíz del repositorio** antes de evaluar evidencias. Si Git está ausente, el checkout no existe, el directorio no es la raíz, el SHA difiere o hay archivos **versionados** modificados/staged, falla cerrado (`SEC651_CHECKOUT_UNAVAILABLE`, `SEC651_CHECKOUT_ROOT_MISMATCH`, `SEC651_CANDIDATE_HEAD_MISMATCH` o `SEC651_TRACKED_CHECKOUT_DIRTY`). Se permiten evidencias *untracked* bajo `artifacts/` para su comprobación de hashes; esto no certifica la autenticidad de su procedencia.
+
+`npm run test:security:closure` agrega la regresión `tests/security_closure_checkout_v651.test.mjs`, que construye repositorios Git sintéticos efímeros y cubre HEAD correcto, SHA obsoleto, archivos modificados o staged, ejecución fuera de la raíz y Git no disponible. El nuevo guard afecta solo el CLI del auditor #651; las APIs de autenticación, BOLA, tenant/RLS, trabajos y webhooks no cambian.
+
+**Restricción:** un `HEAD` correcto y hashes válidos no prueban que los tests de seguridad se hayan ejecutado; la verificación de procedencia de cada evidencia y la aprobación independiente siguen siendo obligatorias. Los pendientes #772, #854 y #979 y los tests de PG17/HTTP/browser exact-SHA no se cierran con este incremento.
