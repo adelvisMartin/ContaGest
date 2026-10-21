@@ -17,13 +17,15 @@ test('#751 PostgreSQL17 review requires a second authorized actor and preserves 
   t.after(async () => { await h.prisma.userProfile.delete({ where: { id: reviewer.id } }); });
   const adminRoles = await h.prisma.userRole.findMany({ where: { userId: h.admin.id }, select: { roleId: true } });
   await h.prisma.userRole.createMany({ data: adminRoles.map(({ roleId }) => ({ userId: reviewer.id, roleId })) });
-  const reviewerToken = signAccessToken({ id: reviewer.id, email: reviewer.email }, h.tenant.id);
+  const reviewerToken = await h.issueQaToken(reviewer);
   const unprivileged = await h.prisma.userProfile.create({ data: {
     tenantId: h.tenant.id, email: `qa751-denied-${suffix}@example.invalid`, fullName: 'QA fiscal read-only denial'
   } });
   t.after(async () => { await h.prisma.userProfile.delete({ where: { id: unprivileged.id } }); });
-  const unprivilegedToken = signAccessToken({ id: unprivileged.id, email: unprivileged.email }, h.tenant.id);
+  const unprivilegedToken = await h.issueQaToken(unprivileged);
 
+  const unboundToken = signAccessToken({ id: h.admin.id, email: h.admin.email }, h.tenant.id);
+  await h.status('/fiscal/legal-sources', 401, {}, unboundToken);
   const contentSha256 = createHash('sha256').update(`synthetic legal source ${suffix}`).digest('hex');
   const created = await h.ok('/fiscal/legal-sources', { method: 'POST', body: JSON.stringify({
     sourceType: 'official_gazette', reference: `QA-GAZETA-${suffix}`, title: 'Documento sintético sin valor legal',
