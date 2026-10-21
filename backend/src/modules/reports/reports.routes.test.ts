@@ -22,6 +22,7 @@ test('reorder API supports an explicit actionable-only filter and bounded take',
   assert.match(source, /parseReorderScanQuery\(scanParams\)/);
   assert.match(source, /\.\.\.scanParams\s*\}\s*=\s*req\.query/);
   assert.match(reorderScan, /REORDER_SCAN_MAX_TAKE = 1000/);
-  assert.match(reorderScan, /numericField\(raw\.take/);
+  assert.match(reorderScan, /numericField\(descriptors\.take\?\.value,\s*'take'/);
+  assert.doesNotMatch(reorderScan, /numericField\(raw\.take/);
   assert.match(source, /rows\.filter\(row\s*=>\s*row\.needsReorder\)/);
 });
