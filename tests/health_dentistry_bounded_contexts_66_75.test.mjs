@@ -18,6 +18,9 @@ const expected=[
   'GET /health/patients','POST /health/patients',
   'GET /health/professionals','POST /health/professionals',
   'GET /health/appointments','POST /health/appointments','PATCH /health/appointments/:id',
+  'POST /health/appointments/:id/check-in',
+  'POST /health/appointments/:id/start-encounter',
+  'POST /health/appointments/:id/complete-encounter',
   'GET /health/encounters','POST /health/encounters',
   'POST /health/encounters/:id/amend',
   'POST /health/encounters/:id/workflow',
@@ -29,11 +32,11 @@ const expected=[
   'GET /health/immunizations','POST /health/immunizations'
 ];
 
-test('66/75 preserves all 20 Health/Dentistry HTTP contracts in registration order',()=>{
+test('66/75 preserves all 23 Health/Dentistry HTTP contracts in registration order',()=>{
   const actual=routeFiles.flatMap((path)=>routeSignatures(read(path)));
   assert.deepEqual(actual,expected);
-  assert.equal(actual.length,20);
-  assert.equal(new Set(actual).size,20,'health bounded contexts must not duplicate route ownership');
+  assert.equal(actual.length,23);
+  assert.equal(new Set(actual).size,23,'health bounded contexts must not duplicate route ownership');
 });
 
 test('66/75 preserves endpoint-level authorization and dental sales gates',()=>{
