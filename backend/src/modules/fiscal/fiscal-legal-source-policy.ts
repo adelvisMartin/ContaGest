@@ -77,3 +77,28 @@ export function prepareFiscalLegalSourceDraft(
     status: 'DRAFT' as const,
   });
 }
+
+export function prepareFiscalLegalSourceReview(
+  input: Readonly<{ approved: boolean; reason: string }>,
+  actor: FiscalLegalSourceActor,
+  source: Readonly<{ id: string; tenantId: string; createdBy: string; status: string }>,
+  clock: Date = new Date(),
+) {
+  const reject = (): never => { throw new Error('FISCAL_LEGAL_SOURCE_REVIEW_INVALID'); };
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+      Object.keys(input).some(key => !['approved', 'reason'].includes(key)) ||
+      typeof input.approved !== 'boolean' || !text(input.reason, 15, 500) ||
+      !actor || !text(actor.tenantId, 1, 128) || !text(actor.userId, 1, 128) ||
+      !source || !text(source.id, 1, 128) || !text(source.tenantId, 1, 128) ||
+      !text(source.createdBy, 1, 128) || source.status !== 'DRAFT' ||
+      source.tenantId !== actor.tenantId || source.createdBy === actor.userId ||
+      !(clock instanceof Date) || !Number.isFinite(clock.getTime())) reject();
+  return Object.freeze({
+    id: source.id,
+    tenantId: source.tenantId,
+    status: input.approved ? 'REVIEWED' as const : 'REJECTED' as const,
+    reviewedBy: actor.userId,
+    reviewedAt: clock.toISOString(),
+    reviewReason: input.reason,
+  });
+}
