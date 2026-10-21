@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -64,19 +64,19 @@ jobs:
       DIRECT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/contagest_lifecycle_v562_e2e?schema=public
       NODE_ENV: test
       JWT_SECRET: lifecycle-v562-ci-only-not-production
-      CANDIDATE_SHA: ${{ github.sha }}
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.CANDIDATE_SHA }}
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Apply canonical migrations
-        run: npm --workspace backend exec -- prisma migrate deploy
-      - run: npm --workspace backend exec -- prisma generate
+      - name: Apply canonical disposable PostgreSQL from-zero migration chain
+        run: npm run migration:test:from-zero
+      - run: npm --workspace backend run prisma:generate
       - run: npm run seed
       - name: PostgreSQL lifecycle + real filesystem storage sandbox
         run: npm --workspace backend exec -- tsx --test ../qa/data-lifecycle-v562.integration.test.ts
@@ -90,6 +90,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: data-lifecycle-v562-${{ github.sha }}
+          name: data-lifecycle-v562-${{ env.CANDIDATE_SHA }}
           path: artifacts/data-lifecycle-v562
           if-no-files-found: error
