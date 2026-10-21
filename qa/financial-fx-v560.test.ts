@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
+import { prepareQaSemanticPosting } from './support/semantic-posting-fixture.ts';
 import { getFxEvent } from '../backend/src/modules/currency/fx.repository.ts';
 
 const RUN = `QA560-${Date.now().toString(36).toUpperCase()}`;
@@ -35,6 +36,7 @@ function candidateSha() {
 test('issue #560 reconciles original and functional currency with audited FX lifecycle on isolated PostgreSQL', async (t) => {
   const h = await createRealBackendHarness();
   t.after(async () => h.close());
+  await prepareQaSemanticPosting(h);
 
   const sha = candidateSha();
   const dbRows = await h.prisma.$queryRaw<Array<{ name: string }>>`SELECT current_database() AS name`;

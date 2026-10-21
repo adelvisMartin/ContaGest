@@ -14,8 +14,11 @@ export function prepareQuoteOrderTransition(input:{kind:CommercialDocument; tena
   if(!Number.isSafeInteger(input.expectedRevision)||input.expectedRevision<1||input.expectedRevision>=Number.MAX_SAFE_INTEGER)
     throw new TypeError('SALES_TRANSITION_REVISION_INVALID');
   const domain=QUOTE_ORDER_TRANSITIONS[input.kind] as Record<string,Record<string,string>|undefined>;
-  const to=domain[input.from]?.[input.action];
-  if(!to)throw new TypeError('SALES_TRANSITION_NOT_ALLOWED');
+  // TypeScript unions do not protect JavaScript/API callers at runtime.
+  // An inherited Object.prototype method is never an authorized transition.
+  const state=Object.hasOwn(domain,input.from)?domain[input.from]:undefined;
+  const to=state&&Object.hasOwn(state,input.action)?state[input.action]:undefined;
+  if(typeof to!=='string')throw new TypeError('SALES_TRANSITION_NOT_ALLOWED');
   return Object.freeze({kind:input.kind,tenantId:input.tenantId,documentId:input.documentId,
     from:input.from,to,action:input.action,expectedRevision:input.expectedRevision,
     proposedRevision:input.expectedRevision+1,requiresTenantScopedCAS:true as const,

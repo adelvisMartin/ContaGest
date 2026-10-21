@@ -8,11 +8,13 @@ import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { allocateDocumentNumber, PURCHASE_INVOICE_SEQUENCE_KEY } from '../../shared/services/document-sequence.service.js';
 import { assertBalanced, assertPeriodOpen, inverseLedgerLines, purchaseInvoiceLinesForLedger } from '../accounting/accounting.service.js';
+import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.repository.js';
 import { calculateInvoiceTotals } from '../../shared/financial/invoice.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { ONE } from '../../shared/financial/decimal.js';
 import { convertToFunctional, functionalizeBalancedLedgerLines, resolveFxContext } from '../../shared/financial/fx.js';
 import { copyLedgerLineSnapshotsForReversal, getFxPolicy, recordDocumentSnapshot, recordLedgerLineSnapshots } from '../currency/fx.repository.js';
+import { parseCrudListWindow } from '../crud-policy.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('purchases.manage'));
@@ -56,7 +58,8 @@ const requireActor = (ctx: ReturnType<typeof context>) => {
 
 router.get('/', asyncHandler(async (req, res) => {
   const { tenantId } = context(req);
-  const rows = await prisma.purchaseInvoice.findMany({ where: { tenantId }, include: { supplier: true, lines: true }, orderBy: { issueDate: 'desc' }, take: Math.min(Number(req.query.take || 100), 500) });
+  const { take } = parseCrudListWindow({ take: req.query.take });
+  const rows = await prisma.purchaseInvoice.findMany({ where: { tenantId }, include: { supplier: true, lines: true }, orderBy: { issueDate: 'desc' }, take });
   ok(res, rows);
 }));
 
@@ -115,7 +118,8 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
 
     let ledgerEntryId: string | null = null;
     if (purchase.status !== 'draft') {
-      const originalLedgerLines = purchaseInvoiceLinesForLedger(purchase);
+      const accounts = await resolveSemanticPostingAccounts(tx, ctx.tenantId, ['cost_of_sales', 'vat_input', 'ap']);
+      const originalLedgerLines = purchaseInvoiceLinesForLedger(purchase, accounts);
       assertBalanced(originalLedgerLines);
       const functionalized = functionalizeBalancedLedgerLines(originalLedgerLines, fx.exchangeRate);
       const ledgerLines = functionalized.lines.map((line) => ({ accountCode: line.accountCode, accountName: line.accountName, debit: line.functionalDebit, credit: line.functionalCredit }));

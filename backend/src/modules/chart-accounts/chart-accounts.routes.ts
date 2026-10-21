@@ -7,7 +7,7 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { assertBalanced } from '../accounting/accounting.service.js';
 import { SEMANTIC_ACCOUNT_ROLES } from './account-role-policy.js';
-import { bindSemanticAccountRole, listSemanticAccountRoles } from './account-role.repository.js';
+import { bindSemanticAccountRole, listSemanticAccountRoles, resolveSemanticPostingAccounts } from './account-role.repository.js';
 
 const chartAccounts = chartAccountsData as Array<{
   code: string;
@@ -37,6 +37,12 @@ const roleMappingSchema = z.object({
   accountCode: z.string().trim().min(1).max(40),
   expectedNature: z.enum(['debit','credit']).optional()
 }).strict();
+const postingFlowSchema = z.enum(['sales', 'sales_with_tax_payable', 'purchases']);
+const postingRoles = {
+  sales: ['ar', 'revenue', 'vat_output'],
+  sales_with_tax_payable: ['ar', 'revenue', 'vat_output', 'tax_payable'],
+  purchases: ['cost_of_sales', 'vat_input', 'ap']
+} as const;
 const validateSchema = z.object({ lines: z.array(z.object({ accountCode:z.string(), accountName:z.string().optional(), debit:z.number().optional().default(0), credit:z.number().optional().default(0) })).min(2) });
 const getTenantId = (req: any) => req.context?.tenantId;
 
@@ -44,8 +50,7 @@ router.get('/template', requirePermission('accounting.view'), (_req, res) => res
 router.get('/', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   const tenantId = getTenantId(req);
   const accounts = await prisma.chartAccount.findMany({ where:{ tenantId }, orderBy:{ code:'asc' } });
-  // Opt-in authoritative read: role bindings must not treat the starter template as persisted tenant data.
-  res.json(req.query.persistedOnly==='true' ? accounts : (accounts.length ? accounts : chartAccounts));
+  res.json(req.query.persistedOnly === 'true' ? accounts : (accounts.length ? accounts : chartAccounts));
 }));
 router.post('/sync-template', requirePermission('accounting.post'), asyncHandler(async (req, res) => {
   const tenantId = getTenantId(req);
@@ -69,6 +74,17 @@ router.post('/', requirePermission('accounting.post'), validateBody(accountSchem
 }));
 router.get('/role-mappings', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
   res.json(await listSemanticAccountRoles(getTenantId(req)));
+}));
+router.get('/role-mappings/readiness', requirePermission('accounting.view'), asyncHandler(async (req, res) => {
+  const flow = postingFlowSchema.parse(String(req.query.flow || ''));
+  const roles = postingRoles[flow];
+  try {
+    const mapping = await resolveSemanticPostingAccounts(prisma, getTenantId(req), roles);
+    res.json({ ready: true, flow, roles: roles.map(role => ({ role, accountCode: mapping[role].accountCode, nature: mapping[role].nature })) });
+  } catch (error) {
+    if (!(error instanceof HttpError) || (error.details as { code?: string })?.code !== 'ACCOUNT_ROLE_POSTING_NOT_READY') throw error;
+    res.json({ ready: false, flow, requiredRoles: roles, diagnostics: error.details });
+  }
 }));
 router.post('/role-mappings', requirePermission('accounting.post'), validateBody(roleMappingSchema), asyncHandler(async (req, res) => {
   const ctx = (req as any).context;

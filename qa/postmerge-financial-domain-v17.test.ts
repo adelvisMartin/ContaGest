@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
+import { prepareQaSemanticPosting } from './support/semantic-posting-fixture.ts';
 
 const RUN=`QA58FIN-${Date.now().toString(36).toUpperCase()}`;
 const OPEN_PERIOD='2097-07';
@@ -25,6 +26,8 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
     await h.prisma.closingPeriod.deleteMany({where:{id:{in:ids.closing}}}).catch(()=>undefined);
     await h.close();
   });
+
+  await prepareQaSemanticPosting(h);
 
   await t.test('contabilidad: balanced draft persists, explicit post publishes it; unbalanced entry is rejected',async()=>{
     const entry=await h.ok('/accounting/entries',{method:'POST',body:JSON.stringify({fiscalPeriod:OPEN_PERIOD,description:`${RUN} asiento balanceado`,source:'manual',lines:[{accountCode:`${RUN}.D`,accountName:'QA Débito',debit:100,credit:0},{accountCode:`${RUN}.C`,accountName:'QA Crédito',debit:0,credit:100}]})});

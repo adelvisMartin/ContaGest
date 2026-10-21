@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "ownerIssue": 708,
+  "baselineSha": "fd1b8850fe6e6a59389a5a37f02d854268410452",
+  "assessment": "SOURCE_SNAPSHOT_NOT_E2E",
+  "sourceReuse": "NONE",
+  "releaseEvidence": "NOT_EXECUTED",
+  "benchmarkSource": "config/competitive-benchmark-v764.json",
+  "rows": [
+    {
+      "key": "quote_to_order",
+      "name": "Cotización→Pedido",
+      "issue": 753,
+      "classification": "PARTIAL",
+      "evidencePath": "backend/src/modules/sales/sales.routes.ts",
+      "gap": "No SalesQuote/SalesOrder persistentes ni conversión/idempotencia E2E"
+    },
+    {
+      "key": "procurement_receipt",
+      "name": "Compras→recepción",
+      "issue": 757,
+      "classification": "PARTIAL",
+      "evidencePath": "backend/src/modules/purchases/purchases.routes.ts",
+      "gap": "PurchaseOrder/recepción auditada y estado global aún no verificados"
+    },
+    {
+      "key": "warehouse_lots",
+      "name": "Inventario/lotes/FEFO",
+      "issue": 755,
+      "classification": "PARTIAL",
+      "evidencePath": "backend/src/modules/inventory/inventory.routes.ts",
+      "gap": "Location y FEFO transaccional por propietario sin PG17 E2E"
+    },
+    {
+      "key": "bank_reconciliation",
+      "name": "Conciliación bancaria",
+      "issue": 743,
+      "classification": "PARTIAL",
+      "evidencePath": "backend/src/modules/bank-reconciliation/bank-reconciliation.routes.ts",
+      "gap": "Matching con GL y estados cerrados no probados en PostgreSQL"
+    },
+    {
+      "key": "receivable_payable",
+      "name": "AR/AP y vencimientos",
+      "issue": 744,
+      "classification": "PARTIAL",
+      "evidencePath": "backend/src/modules/accounting/accounting.routes.ts",
+      "gap": "No existe PaymentAllocation canónico ni contrato de vencimiento"
+    },
+    {
+      "key": "asset_lifecycle",
+      "name": "Activos/depreciación",
+      "issue": 759,
+      "classification": "PARTIAL",
+      "evidencePath": "backend/src/modules/assets/straight-line-schedule.mjs",
+      "gap": "Sin modelo Asset, posting de depreciación ni política contable única"
+    },
+    {
+      "key": "import_export",
+      "name": "Portabilidad de maestros",
+      "issue": 770,
+      "classification": "PARTIAL",
+      "evidencePath": "backend/src/modules/imports/imports.routes.ts",
+      "gap": "XLSX/mapping/rollback+QA multiempresa no completados"
+    },
+    {
+      "key": "dashboards",
+      "name": "KPIs operativos",
+      "issue": 771,
+      "classification": "PARTIAL",
+      "evidencePath": "backend/src/modules/reports/reports.routes.ts",
+      "gap": "Sin dashboard UI y golden dataset GL/bancos"
+    },
+    {
+      "key": "pos",
+      "name": "Caja/POS",
+      "issue": 765,
+      "classification": "PARTIAL",
+      "evidencePath": "backend/src/modules/pos/pos-stock-preview.ts",
+      "gap": "Preview no es checkout ni posting fiscal"
+    },
+    {
+      "key": "collaboration",
+      "name": "Portal cliente-contador",
+      "issue": 745,
+      "classification": "NOT_VERIFIED",
+      "evidencePath": null,
+      "gap": "PR #1193 es política de transiciones, sin portal integrado autenticado probado"
+    }
+  ]
+}

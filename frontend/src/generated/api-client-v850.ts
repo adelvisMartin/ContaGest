@@ -10,6 +10,10 @@ export function createGeneratedApiClient(transport: GeneratedTransport) {
       const body = params.body;
       return transport.request<unknown>(path, { method:"POST", body });
     },
+    async createApiV1ClientsPreflight(params: Record<string, unknown> = {}) {
+      let path = "/api/v1/clients/preflight";
+      return transport.request<unknown>(path, { method:"POST" });
+    },
     async deleteApiV1ClientsById(params: Record<string, unknown> = {}) {
       let path = "/api/v1/clients/{id}";
       if (params["id"] == null) throw new Error("API_CLIENT_PATH_REQUIRED:deleteApiV1ClientsById:id");

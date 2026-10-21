@@ -107,7 +107,7 @@ jobs:
         run: |
           set -o pipefail
           npm run skills:check 2>&1 | tee skills-v560.log
-          npm run agent:gates -- --base "${{ github.base_ref || 'main' }}" 2>&1 | tee agent-gates-v560.log
+          npm run agent:gates -- --base "origin/${{ github.base_ref || 'main' }}" 2>&1 | tee agent-gates-v560.log
           npm run typecheck 2>&1 | tee typecheck-v560.log
           npm run lint 2>&1 | tee lint-v560.log
       - name: Real multi-currency regression

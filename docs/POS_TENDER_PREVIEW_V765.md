@@ -30,3 +30,9 @@ tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeN
 El total de venta debe venir del backend fiscal/contable canónico, no de cálculos confiados al cliente. La captura/confirmación de pagos, idempotencia, caja, banco, ledger, AR/AP, derechos del usuario, FX oficial y reconciliación se gestionan exclusivamente en sus servicios propietarios, con PostgreSQL17/HTTP/E2E. El endpoint de búsqueda por código del PR #1068 mantiene su propio trabajo y gates.
 
 Este incremento no toca API, UI, rutas ni SQL. El issue #765 permanece ABIERTO hasta los criterios E2E. Rollback: revertir los archivos nuevos sin migración.
+
+## Integridad del preview calculado (#765)
+
+El contrato `Readonly<PosTenderPreview>` de TypeScript no impide que código JavaScript modifique `paid`, `change` o `status` después del cálculo. El resultado se devuelve ahora mediante `Object.freeze` y conserva **exactamente los mismos campos** y operaciones BigInt en céntimos. Dos regresiones nuevas validan que no sea posible convertir en memoria un resultado parcial o con vuelto en una supuesta confirmación y que ninguna salida conceda `paymentCaptured`, `checkoutAuthorized` ni `receiptId`.
+
+Esto no inmoviliza los datos originales del cliente ni constituye captura de pago. La autoridad de caja, ventas, ledger y conciliación continúa siendo transaccional y server-side. Rollback puntual: revertir la congelación del objeto de salida y las dos regresiones, sin migraciones.

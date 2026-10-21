@@ -21,7 +21,7 @@ test('calculates advisory candidates from canonical deficit without stock effect
 test('never proposes healthy or disabled-minimum inventory', () => {
   assert.equal(deriveReorderCandidates([
     row({minStockExact:'1.000',status:'healthy',needsReorder:false,shortfallExact:'0.000'}),
-    row({stockExact:'0.000',reservedExact:'0.000',availableExact:'0.000',shortfallExact:'0.000',status:'out_of_stock',needsReorder:false,minStockExact:'0.000'})
+    row({productId:'p-2',sku:'SKU-2',stockExact:'0.000',reservedExact:'0.000',availableExact:'0.000',shortfallExact:'0.000',status:'out_of_stock',needsReorder:false,minStockExact:'0.000'})
   ]).length,0);
 });
 test('at-minimum with zero deficit requests review instead of automatic zero-unit order', () => {

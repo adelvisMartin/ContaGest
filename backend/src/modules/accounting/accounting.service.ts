@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
 import { assertManualPostingAccounts } from './manual-posting-policy.js';
+import type { SemanticPostingAccount } from '../chart-accounts/semantic-posting-policy.js';
 import {
   ONE,
   ZERO,
@@ -331,26 +332,28 @@ export async function reverseLedgerEntry(input: {
   }
 }
 
-export function salesInvoiceLinesForLedger(invoice: { subtotal: DecimalInput; iva: DecimalInput; igtf: DecimalInput; total: DecimalInput }) {
+type PostingAccounts = Readonly<Record<string, SemanticPostingAccount>>;
+
+export function salesInvoiceLinesForLedger(invoice: { subtotal: DecimalInput; iva: DecimalInput; igtf: DecimalInput; total: DecimalInput }, accounts: PostingAccounts) {
   const total = money(invoice.total ?? ZERO);
   const subtotal = money(invoice.subtotal ?? ZERO);
   const iva = money(invoice.iva ?? ZERO);
   const igtf = money(invoice.igtf ?? ZERO);
   return [
-    { accountCode: '1.1.03.001', accountName: 'Clientes nacionales', debit: total },
-    { accountCode: '4.1.01', accountName: 'Ventas nacionales gravadas', credit: subtotal },
-    { accountCode: '2.1.02.001', accountName: 'IVA débito fiscal', credit: iva },
-    ...(!igtf.isZero() ? [{ accountCode: '2.1.02.005', accountName: 'IGTF por pagar', credit: igtf }] : [])
+    { accountCode: accounts.ar.accountCode, accountName: accounts.ar.name, debit: total },
+    { accountCode: accounts.revenue.accountCode, accountName: accounts.revenue.name, credit: subtotal },
+    { accountCode: accounts.vat_output.accountCode, accountName: accounts.vat_output.name, credit: iva },
+    ...(!igtf.isZero() ? [{ accountCode: accounts.tax_payable.accountCode, accountName: accounts.tax_payable.name, credit: igtf }] : [])
   ];
 }
 
-export function purchaseInvoiceLinesForLedger(invoice: { subtotal: DecimalInput; iva: DecimalInput; total: DecimalInput }) {
+export function purchaseInvoiceLinesForLedger(invoice: { subtotal: DecimalInput; iva: DecimalInput; total: DecimalInput }, accounts: PostingAccounts) {
   const total = money(invoice.total ?? ZERO);
   const subtotal = money(invoice.subtotal ?? ZERO);
   const iva = money(invoice.iva ?? ZERO);
   return [
-    { accountCode: '5.1.01', accountName: 'Costo mercancía vendida', debit: subtotal },
-    { accountCode: '1.1.05.001', accountName: 'IVA crédito fiscal', debit: iva },
-    { accountCode: '2.1.01.001', accountName: 'Proveedores nacionales', credit: total }
+    { accountCode: accounts.cost_of_sales.accountCode, accountName: accounts.cost_of_sales.name, debit: subtotal },
+    { accountCode: accounts.vat_input.accountCode, accountName: accounts.vat_input.name, debit: iva },
+    { accountCode: accounts.ap.accountCode, accountName: accounts.ap.name, credit: total }
   ];
 }
