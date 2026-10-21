@@ -171,7 +171,6 @@ export async function runDrill(env=process.env){
       const lost=JSON.parse(sql(src,snapshotQuery(ids)));
       if(lost.tenantIds.length||lost.entries.length)throw new Error('DR646_FAULT_INJECTION_FAILED');
       pass('fault-injection');
-      await new Promise(resolve=>setTimeout(resolve,25));
       await withEphemeralDatabase({candidateSha:sha,cwd:ROOT,env},async(_unused,targetConfig)=>{
         if(targetConfig.databaseName===config.databaseName)throw new Error('DR646_DATABASE_NAME_COLLISION');
         const dest=childEnv(env,targetConfig.databaseUrl,sha);
