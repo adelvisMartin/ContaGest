@@ -174,6 +174,19 @@ test('#856 PostgreSQL authority serializes overlapping entry races and optimisti
       String((rejected as PromiseRejectedResult).reason?.message || (rejected as PromiseRejectedResult).reason),
       /PRICE_ENTRY_EFFECTIVE_OVERLAP|PriceEntry_no_active_overlap|conflicting key value violates exclusion constraint|PriceEntry_target_version_key/,
     );
+    // Both simultaneous writers use version 1, so its unique key may win the
+    // race before the exclusion constraint. Prove independently that version 2
+    // cannot bypass the interval-overlap authority on the same tenant/target.
+    const versionTwoSql = insertSql.replace(/,1\) RETURNING "id"$/, ',2) RETURNING "id"');
+    assert.notEqual(versionTwoSql, insertSql, 'the cross-version probe must use a distinct version');
+    await assert.rejects(
+      setup.query(versionTwoSql, [randomUUID(),tenantId,bookId,productId,'33.00']),
+      (error: any) => {
+        assert.match(String(error?.message || error), /PRICE_ENTRY_EFFECTIVE_OVERLAP|PriceEntry_no_active_overlap|conflicting key value violates exclusion constraint/);
+        return true;
+      },
+      'overlapping effective intervals must fail even with distinct versions',
+    );
     const entries = await setup.query(
       'SELECT count(*)::int AS count FROM "PriceEntry" WHERE "tenantId"=$1 AND "priceBookId"=$2 AND "targetId"=$3',
       [tenantId,bookId,productId],

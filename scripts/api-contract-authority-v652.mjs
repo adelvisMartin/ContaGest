@@ -123,9 +123,25 @@ function scanRouteCalls(source,file,basePath,schemaCorpusHash,routerNames='route
 function parseMounts(source,file,basePath,reader){const imports=importMap(source,file,reader);const mounts=[];for(const match of source.matchAll(/\b(?:app|router)\.use\s*\(\s*(['"])(\/[^'"]*)\1/g)){const args=balancedCall(source,source.indexOf('(',match.index));for(const[name,target]of imports)if(new RegExp(`\\b${name}\\b`).test(args))mounts.push({file:target,base:normalizeApiPath(basePath,match[2])});}return mounts;}
 function scanManifest(reader,schemaCorpusHash,basePath='/api/v1') {
   const file='backend/src/modules/route-manifest.ts';const source=reader.read(file);const imports=importMap(source,file,reader);const routes=[];const mounts=[];
+  // A named CRUD router can have additional middleware mounted on it, as with
+  // clientRouter + the canonical CRM preflight route. Follow its declaration
+  // instead of silently dropping all of its CRUD endpoints from the contract.
+  const localCrudRouters=new Map([...source.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*createCrudRouter\s*\(\s*\{([^}]+)\}\s*\)/g)]
+    .map((match)=>[match[1],match[2]]));
   for(const line of source.split(/\r?\n/)){if(!line.includes('{ id:')||!line.includes('path:')||!line.includes('router:'))continue;const pathMatch=line.match(/path:\s*['"]([^'"]+)['"]/);const routerMatch=line.match(/router:\s*(.+)\s*\}\s*,?\s*$/);if(!pathMatch||!routerMatch)continue;const mountPath=normalizeApiPath(basePath,pathMatch[1]);const expr=routerMatch[1].trim();const crud=expr.match(/createCrudRouter\(\s*\{([\s\S]*)\}\s*\)/);
-    if(crud){const permission=(crud[1].match(/permission:\s*['"]([^'"]+)['"]/)||[])[1]||'UNRESOLVED_PERMISSION';const schemaExpr=(crud[1].match(/schema:\s*([A-Za-z0-9_]+)/)||[])[1]||'UNRESOLVED_SCHEMA';const schema=`expr:${fingerprint(schemaExpr)}:corpus:${schemaCorpusHash}`;for(const[method,child,body]of[['GET','/',null],['GET','/:id',null],['POST','/',schema],['PUT','/:id',`partial:${schema}`],['DELETE','/:id',null]])routes.push({method,path:normalizeApiPath(mountPath,child),auth:{tenantRequired:true,permissions:[permission]},request:{bodySchema:body},responses:{success:[200],errors:body?[401,403,422]:[401,403]},envelope:'canonical',deprecated:false,source:file});}
-    else{const identifier=(expr.match(/^([A-Za-z_$][\w$]*)/)||[])[1];const target=identifier&&imports.get(identifier);if(target)mounts.push({file:target,base:mountPath});}
+    const identifier=(expr.match(/^([A-Za-z_$][\w$]*)/)||[])[1];
+    const crudBody=crud?.[1]??localCrudRouters.get(identifier);
+    if(crudBody){const permission=(crudBody.match(/permission:\s*['"]([^'"]+)['"]/)||[])[1]||'UNRESOLVED_PERMISSION';const schemaExpr=(crudBody.match(/schema:\s*([A-Za-z0-9_]+)/)||[])[1]||'UNRESOLVED_SCHEMA';const schema=`expr:${fingerprint(schemaExpr)}:corpus:${schemaCorpusHash}`;for(const[method,child,body]of[['GET','/',null],['GET','/:id',null],['POST','/',schema],['PUT','/:id',`partial:${schema}`],['DELETE','/:id',null]])routes.push({method,path:normalizeApiPath(mountPath,child),auth:{tenantRequired:true,permissions:[permission]},request:{bodySchema:body},responses:{success:[200],errors:body?[401,403,422]:[401,403]},envelope:'canonical',deprecated:false,source:file});
+      if(identifier&&localCrudRouters.has(identifier)){
+        const attaches=new RegExp(`\\b${identifier}\\.use\\s*\\(\\s*([A-Za-z_$][\\w$]*)\\s*\\)`,'g');
+        for(const attached of source.matchAll(attaches)){
+          const target=imports.get(attached[1]);
+          if(!target)throw new Error(`API_CONTRACT_UNRESOLVED_CHILD_ROUTER:${identifier}`);
+          mounts.push({file:target,base:mountPath});
+        }
+      }
+    }
+    else{const target=identifier&&imports.get(identifier);if(target)mounts.push({file:target,base:mountPath});}
   }return{routes,mounts};
 }
 function scanRouterTree(reader,startFile,basePath,schemaCorpusHash,seen,routes){const key=`${startFile}@${basePath}`;if(seen.has(key)||!reader.exists(startFile))return;seen.add(key);const source=reader.read(startFile);routes.push(...scanRouteCalls(source,startFile,basePath,schemaCorpusHash));if(startFile.endsWith('/modules/index.ts')){const manifest=scanManifest(reader,schemaCorpusHash,basePath);routes.push(...manifest.routes);for(const mount of manifest.mounts)scanRouterTree(reader,mount.file,mount.base,schemaCorpusHash,seen,routes);}for(const mount of parseMounts(source,startFile,basePath,reader))scanRouterTree(reader,mount.file,mount.base,schemaCorpusHash,seen,routes);}

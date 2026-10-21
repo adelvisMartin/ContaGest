@@ -3,7 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {auditWorkflowInventory} from '../scripts/workflow-inventory-v654.mjs';
+
+test('the live workflow catalog classifies every deployed CI and manual gate',()=>{
+ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+ const report=auditWorkflowInventory(root);
+ assert.equal(report.ok,true,report.errors.join('\n'));
+ assert.equal(report.classifiedCount,report.workflowCount);
+});
 
 function fixture(fn) {
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'cg654-'));

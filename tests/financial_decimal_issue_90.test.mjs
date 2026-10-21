@@ -12,46 +12,46 @@ const contracts = [
   },
   {
     path: 'backend/src/modules/accounting/accounting.routes.ts',
-    forbidden: [/row\.debit\s*\+=/, /row\.credit\s*\+=/, /Number\s*\(\s*line\.(?:debit|credit)/],
+    forbidden: [/row\.debit\s*\+=/, /row\.credit\s*\+=/, /\bNumber\s*\(\s*line\.(?:debit|credit)/],
     required: [/debitExact/, /creditExact/, /balanceExact/]
   },
   {
     path: 'backend/src/modules/sales/sales.routes.ts',
-    forbidden: [/quantity\s*\*\s*unitPrice/, /Number\s*\(/],
+    forbidden: [/quantity\s*\*\s*unitPrice/, /\bNumber\s*\(/],
     required: [/calculateInvoiceTotals/, /decimalSchema\('money'/]
   },
   {
     path: 'backend/src/modules/purchases/purchases.routes.ts',
-    forbidden: [/quantity\s*\*\s*unitCost/, /Number\s*\(/],
+    forbidden: [/quantity\s*\*\s*unitCost/, /\bNumber\s*\(/],
     required: [/calculateInvoiceTotals/, /decimalSchema\('money'/]
   },
   {
     path: 'backend/src/modules/banking/banking.routes.ts',
     forbidden: [
-      /Number\s*\(\s*input\.amount/,
-      /Number\s*\(\s*existing\.(?:credit|debit)/,
-      /Number\s*\(\s*(?:account|movement)\.(?:balance|credit|debit)/
+      /\bNumber\s*\(\s*input\.amount/,
+      /\bNumber\s*\(\s*existing\.(?:credit|debit)/,
+      /\bNumber\s*\(\s*(?:account|movement)\.(?:balance|credit|debit)/
     ],
-    required: [/amountExact/, /balanceExact/, /subtract\(existing\.credit, existing\.debit\)/]
+    required: [/amountExact/, /balanceExact/, /movementDelta\s*=\s*\(movement:\s*any\)\s*=>\s*subtract\(movement\.credit\s*\?\?\s*ZERO,\s*movement\.debit\s*\?\?\s*ZERO\)/]
   },
   {
     path: 'backend/src/modules/payroll/payroll.routes.ts',
-    forbidden: [/Number\s*\(\s*totals\._sum/, /z\.coerce\.number\s*\(/],
+    forbidden: [/\bNumber\s*\(\s*totals\._sum/, /z\.coerce\.number\s*\(/],
     required: [/totalGrossExact/, /decimalSchema\('money'/]
   },
   {
     path: 'backend/src/modules/employees/employees.routes.ts',
-    forbidden: [/Number\s*\(\s*req\.body\.salary/, /Number\s*\(\s*before\.salary/, /z\.coerce\.number\s*\(\)\.nonnegative\(\).*salary/],
+    forbidden: [/\bNumber\s*\(\s*req\.body\.salary/, /\bNumber\s*\(\s*before\.salary/, /z\.coerce\.number\s*\(\)\.nonnegative\(\).*salary/],
     required: [/salaryExact/, /decimalSchema\('money'/]
   },
   {
     path: 'backend/src/modules/hr/hr.routes.ts',
-    forbidden: [/Number\s*\(\s*period\.totalNet/, /Number\s*\(\s*employee\.salary/],
+    forbidden: [/\bNumber\s*\(\s*period\.totalNet/, /\bNumber\s*\(\s*employee\.salary/],
     required: [/averageSalaryExact/, /payrollLastPeriodsExact/]
   },
   {
     path: 'backend/src/modules/currency/currency.routes.ts',
-    forbidden: [/Number\s*\(\s*String\s*\(\s*value/],
+    forbidden: [/\bNumber\s*\(\s*String\s*\(\s*value/],
     required: [/exchangeRate\(/, /rateExact/]
   },
   {
@@ -60,6 +60,14 @@ const contracts = [
     required: [/decimalSchema\('money'/, /decimalSchema\('quantity'/, /decimalSchema\('percentage'/]
   }
 ];
+
+test('decimal conversion guard recognizes Number calls but not document sequence allocators', () => {
+  for (const path of ['backend/src/modules/sales/sales.routes.ts', 'backend/src/modules/purchases/purchases.routes.ts']) {
+    const rule = contracts.find((contract) => contract.path === path)?.forbidden.find((pattern) => pattern.test('allocateDocumentNumber()'));
+    assert.equal(rule, undefined, `${path}: allocateDocumentNumber must not be mistaken for financial Number()`);
+    assert.ok(contracts.find((contract) => contract.path === path)?.forbidden.some((pattern) => pattern.test('Number(total)')));
+  }
+});
 
 test('issue #90 critical financial paths keep Number out of domain arithmetic', () => {
   for (const contract of contracts) {

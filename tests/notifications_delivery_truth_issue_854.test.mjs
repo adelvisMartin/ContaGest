@@ -28,7 +28,9 @@ test('#854 no phantom-queue success when no durable worker exists', () => {
 test('#854 provider acceptance does not claim delivery', () => {
   const route = endpoint('/whatsapp/order');
   assert.match(route, /requirePermission\('sales\.manage'\)/);
-  assert.match(route, /status: result\.ok \? 'provider_accepted' : 'skipped'/);
+  // A 2xx provider response without a verified message receipt is neither
+  // delivered nor a skipped send. Preserve the explicit uncertain state.
+  assert.match(route, /status: result\.ok\s*\?\s*'provider_accepted'\s*:\s*result\.status===['"]provider_unverified['"]\s*\?\s*'provider_unverified'\s*:\s*'skipped'/);
   assert.match(route, /deliveryConfirmed: false/);
   assert.match(route, /delivered: false/);
   assert.doesNotMatch(route, /status:\s*result\.ok\s*\?\s*'sent'/);
