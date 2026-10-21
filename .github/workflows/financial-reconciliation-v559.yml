@@ -116,7 +116,7 @@ jobs:
         run: |
           set -o pipefail
           npm run skills:check 2>&1 | tee skills-v559.log
-          npm run agent:gates -- --base "${{ github.base_ref || 'main' }}" 2>&1 | tee agent-gates-v559.log
+          npm run agent:gates -- --base "origin/${{ github.base_ref || 'main' }}" 2>&1 | tee agent-gates-v559.log
           npm run typecheck 2>&1 | tee typecheck-v559.log
           npm run lint 2>&1 | tee lint-v559.log
       - name: Golden financial reconciliation

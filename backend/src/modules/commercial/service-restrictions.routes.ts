@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { Router } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -38,8 +39,22 @@ async function openCase(subscriptionId:string,client:RawQueryClient=prisma){cons
 async function audit(tx:any,req:any,action:string,caseId:string,before:unknown,after:unknown){await tx.auditLog.create({data:{tenantId:req.context.tenantId,userId:req.context.userId||null,action,entity:'ServiceRestrictionCase',entityId:caseId,before:before as any,after:after as any,ipAddress:req.ip,userAgent:req.headers['user-agent']||null}});}
 
 router.post('/subscriptions/:id/status',(_req,_res,next)=>next(new HttpError(410,'El endpoint genérico de estado fue retirado. Usa /suspend, /reactivate o /terminate con expediente.')));
-router.patch('/subscriptions/:id',(req,_res,next)=>Object.prototype.hasOwnProperty.call(req.body||{},'status')?next(new HttpError(422,'Subscription.status no puede modificarse por PATCH. Usa una operación gobernada.')):next());
-router.post('/subscriptions',(req,_res,next)=>RESTRICTED_STATUSES.has(String(req.body?.status||''))?next(new HttpError(422,'Una suscripción nueva no puede nacer suspendida, cancelada ni expirada. Abre el expediente correspondiente después de crearla.')):next());
+// This is a precondition for the single canonical PATCH route in commercial.routes,
+// not a competing endpoint with a second OpenAPI operation ID.
+export function rejectLegacySubscriptionStatusPatch(req: Request, _res: Response, next: NextFunction): void {
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'status')) {
+    next(new HttpError(422, 'Subscription.status no puede modificarse por PATCH. Usa una operación gobernada.'));
+    return;
+  }
+  next();
+}
+export function rejectRestrictedSubscriptionCreation(req: Request, _res: Response, next: NextFunction): void {
+  if (RESTRICTED_STATUSES.has(String(req.body?.status || ''))) {
+    next(new HttpError(422, 'Una suscripción nueva no puede nacer suspendida, cancelada ni expirada. Abre el expediente correspondiente después de crearla.'));
+    return;
+  }
+  next();
+}
 
 router.get('/subscriptions/:id/restriction-cases',asyncHandler(async(req,res)=>{if(!await subscription(req.params.id))throw new HttpError(404,'Suscripción no encontrada.');const rows=await prisma.$queryRaw<any[]>(Prisma.sql`SELECT ${CASE_FIELDS} FROM public."ServiceRestrictionCase" WHERE "subscriptionId"=${req.params.id} ORDER BY "openedAt" DESC LIMIT 100`);ok(res,rows);}));
 
@@ -60,9 +75,11 @@ router.post('/subscriptions/:id/terminate',asyncHandler(async(req,res)=>{
   if(b.confirm!==true)throw new HttpError(422,'La segunda revisión requiere confirm=true.');const c=await restrictionCase(b.caseId);if(!c||c.subscriptionId!==req.params.id||c.action!=='terminate')throw new HttpError(404,'Expediente de terminación no encontrado para esta suscripción.');if(c.status!=='pending_review')throw new HttpError(409,'El expediente no está pendiente de segunda revisión.');if(c.actorId===userId)throw new HttpError(403,'Segregación de funciones: el actor que abrió la terminación no puede aprobarla.');if(c.effectiveAt&&new Date(c.effectiveAt).getTime()>Date.now())throw new HttpError(409,'La fecha efectiva aún no llegó; vuelve a ejecutar la segunda revisión en la fecha aprobada.');const resolvedAt=new Date();const updated=await prisma.$transaction(async tx=>{await tx.$executeRawUnsafe(`UPDATE public."Subscription" SET "status"=$2,"updatedAt"=now() WHERE "id"=$1`,req.params.id,c.targetStatus);await tx.$executeRawUnsafe(`UPDATE public."CustomerAccount" SET "status"='cancelled',"updatedAt"=now() WHERE "id"=$1`,current.customerAccountId);const rows=await tx.$queryRaw<RestrictionCase[]>(Prisma.sql`UPDATE public."ServiceRestrictionCase" SET "status"='resolved',"reviewedById"=${userId},"reviewedAt"=${resolvedAt},"resolvedAt"=${resolvedAt} WHERE "id"=${c.id} RETURNING ${CASE_FIELDS}`);await audit(tx,req,'commercial.subscription.terminate',c.id,{subscriptionStatus:current.status,caseStatus:c.status},{caseId:c.id,subscriptionId:req.params.id,status:c.targetStatus,reasonCode:c.reasonCode,reviewedById:userId,resolvedAt});return rows[0];});ok(res,{subscription:await subscription(req.params.id),case:updated});
 }));
 
-router.post('/payments',asyncHandler(async(req,res,next)=>{
+// The commercial payments route owns the public endpoint. This middleware
+// handles governed paid-suspension recovery and otherwise passes to its owner.
+export const governedPaymentInterceptor=asyncHandler(async(req,res,next)=>{
   const b=paymentSchema.parse(req.body||{});if(b.status!=='paid')return next();const current=await subscription(b.subscriptionId);if(!current||String(current.status)!=='suspended')return next();const c=await openCase(b.subscriptionId);if(!c||c.action!=='suspend')throw new HttpError(409,'La suscripción suspendida no tiene un expediente abierto; el pago no puede saltarse la gobernanza.');if(c.reasonCode!=='BILLING_PAST_DUE')throw new HttpError(409,'Un pago no puede reactivar una suspensión de seguridad, fraude, contrato u orden legal. Usa /reactivate con el expediente original.');if(!b.reference||b.reference.trim().length<3)throw new HttpError(422,'La reactivación automática por mora requiere referencia de conciliación como evidencia.');if(b.amount<=0)throw new HttpError(422,'Un pago conciliado debe tener monto mayor que cero.');const paidAt=b.paidAt||new Date(),periodStart=b.periodStart||paidAt,periodEnd=b.periodEnd||(current.billingCycle!=='manual'?addCycle(new Date(periodStart),current.billingCycle):null),nextRenewal=periodEnd||(current.billingCycle!=='manual'?addCycle(new Date(paidAt),current.billingCycle):null);
   const payment=await prisma.$transaction(async tx=>{const rows=await tx.$queryRaw<any[]>(Prisma.sql`INSERT INTO public."SubscriptionPayment" ("id","subscriptionId","amount","currency","method","reference","status","periodStart","periodEnd","paidAt","metadata","createdAt","updatedAt") VALUES (gen_random_uuid()::text,${b.subscriptionId},${b.amount},${b.currency.toUpperCase()},${b.method||null},${b.reference},'paid',${periodStart},${periodEnd},${paidAt},'{}'::jsonb,now(),now()) RETURNING *`);const p=rows[0];await tx.$executeRawUnsafe(`UPDATE public."Subscription" SET "status"='active',"currentPeriodStart"=$2,"currentPeriodEnd"=$3,"nextRenewalAt"=$4,"updatedAt"=now() WHERE "id"=$1`,b.subscriptionId,periodStart,periodEnd,nextRenewal);await tx.$executeRawUnsafe(`UPDATE public."CustomerAccount" SET "status"='active',"updatedAt"=now() WHERE "id"=$1`,current.customerAccountId);if(current.salesAgentId){const existing=await tx.$queryRaw<any[]>(Prisma.sql`SELECT "id" FROM public."Commission" WHERE "paymentId"=${p.id} LIMIT 1`);if(!existing[0]){const rate=Number(current.commissionRate||0),amount=Math.round((b.amount*rate/100)*100)/100;await tx.$executeRawUnsafe(`INSERT INTO public."Commission" ("id","salesAgentId","subscriptionId","paymentId","rate","baseAmount","amount","currency","status","earnedAt","createdAt","updatedAt") VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,'earned',now(),now(),now())`,current.salesAgentId,b.subscriptionId,p.id,rate,b.amount,amount,b.currency.toUpperCase());}}await tx.$executeRawUnsafe(`UPDATE public."ServiceRestrictionCase" SET "status"='resolved',"resolvedAt"=$2,"metadata"=COALESCE("metadata",'{}'::jsonb)||jsonb_build_object('reactivationEvidenceRef',$3,'paymentId',$4) WHERE "id"=$1`,c.id,paidAt,`payment:${b.reference}`,p.id);await tx.auditLog.create({data:{tenantId:req.context.tenantId,userId:req.context.userId||null,action:'commercial.payment.create',entity:'SubscriptionPayment',entityId:p.id,after:p as any,ipAddress:req.ip,userAgent:req.headers['user-agent']||null}});await audit(tx,req,'commercial.subscription.reactivate',c.id,{subscriptionStatus:'suspended',caseStatus:c.status},{caseId:c.id,subscriptionId:b.subscriptionId,status:'active',reasonCode:c.reasonCode,paymentId:p.id,evidenceRef:`payment:${b.reference}`});return p;});ok(res,{payment,subscription:await subscription(b.subscriptionId),restrictionCaseId:c.id},201);
-}));
+});
 
 export default router;

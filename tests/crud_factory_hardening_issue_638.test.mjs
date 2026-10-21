@@ -97,18 +97,20 @@ test('#638: list pagination remains bounded and unknown sort/filter is refused',
   results.slice(8).forEach((value) => assert.equal(value.status, 422));
 });
 
-test('#638: route identifiers are scalar and fail closed on Express array params', () => {
-  const results = executePolicy([
-    { fn: 'parseCrudRouteId', args: ['tenant-owned-id'] },
-    { fn: 'parseCrudRouteId', args: [['tenant-owned-id', 'other-id']] },
-    { fn: 'parseCrudRouteId', args: [''] },
-    { fn: 'parseCrudRouteId', args: [null] }
-  ]);
-  assert.deepEqual(results[0], { ok: true, value: 'tenant-owned-id' });
-  results.slice(1).forEach(({ ok, status }) => {
-    assert.equal(ok, false);
-    assert.equal(status, 422);
-  });
+test('#638: CRUD route ids reject array and non-string route parameters', () => {
+  const cases = [
+    { fn: 'parseCrudRouteId', args: ['client-1'] },
+    { fn: 'parseCrudRouteId', args: [['client-1']] },
+    { fn: 'parseCrudRouteId', args: [null] },
+    { fn: 'parseCrudRouteId', args: [123] },
+    { fn: 'parseCrudRouteId', args: [''] }
+  ];
+  const results = executePolicy(cases);
+  assert.deepEqual(results[0], { ok: true, value: 'client-1' });
+  for (const row of results.slice(1)) {
+    assert.equal(row.ok, false);
+    assert.equal(row.status, 422);
+  }
 });
 
 test('#638: router has one bounded delegate authority, strict Zod and tenant scoped writes', () => {
@@ -117,9 +119,11 @@ test('#638: router has one bounded delegate authority, strict Zod and tenant sco
   const policy = read('backend/src/modules/crud-policy.ts');
   assert.doesNotMatch(factory, /as any|tenantScoped\s*\?/);
   assert.doesNotMatch(manifest, /model:'(?:client|supplier|product|bankAccount|taxPeriod)' as any/);
-  const crudModels=[...manifest.matchAll(/createCrudRouter\(\{\s*model:'(client|supplier|product|bankAccount|taxPeriod)'/g)].map(match=>match[1]);
-  assert.deepEqual([...new Set(crudModels)].sort(), ['bankAccount','client','product','supplier','taxPeriod']);
+  // One client router is now registered through a named constant while the
+  // other four remain inline. Count model delegates, not incidental layout.
+  const crudModels=[...manifest.matchAll(/createCrudRouter\(\{\s*model:'(client|supplier|product|bankAccount|taxPeriod)'/g)].map((match)=>match[1]);
   assert.equal(crudModels.length, 5);
+  assert.deepEqual([...new Set(crudModels)].sort(), ['bankAccount','client','product','supplier','taxPeriod']);
   assert.match(factory, /schema\.strict\(\)/);
   assert.match(factory, /schema\.partial\(\)\.strict\(\)/);
   assert.match(factory, /data: \{ \.\.\.req\.body, tenantId: ctx\.tenantId \}/);
@@ -130,6 +134,7 @@ test('#638: router has one bounded delegate authority, strict Zod and tenant sco
   assert.match(policy, /NON_DELETABLE_MODELS/);
   assert.match(policy, /CRUD_SEARCH_FIELDS/);
 });
+
 
 test('#638: runtime caller cannot bypass typed model or operation allowlists', () => {
   const cases = [

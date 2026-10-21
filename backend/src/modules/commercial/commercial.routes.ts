@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
+import { governedPaymentInterceptor, rejectLegacySubscriptionStatusPatch, rejectRestrictedSubscriptionCreation } from './service-restrictions.routes.js';
 
 const router=Router();
 router.use(requireTenant,requirePermission('platform.manage'));
@@ -42,16 +43,6 @@ const OPTIONAL_PACKAGES={
 } as const;
 
 const SUBSCRIPTION_STATUSES=['trial','active','past_due','suspended','cancelled','expired'] as const;
-type SubscriptionStatus=(typeof SUBSCRIPTION_STATUSES)[number];
-const ALLOWED_SUBSCRIPTION_TRANSITIONS:Record<SubscriptionStatus,SubscriptionStatus[]>={
-  trial:['active','cancelled','expired'],
-  active:['past_due','suspended','cancelled','expired'],
-  past_due:['active','suspended','cancelled','expired'],
-  suspended:['active','cancelled','expired'],
-  cancelled:[],
-  expired:[]
-};
-
 const customerSchema=z.object({
   legalName:z.string().trim().min(2).max(180),rif:z.string().trim().max(40).optional(),contactName:z.string().trim().max(120).optional(),
   email:z.string().email().optional(),phone:z.string().trim().max(60).optional(),segment:z.string().trim().max(50).default('smb'),
@@ -70,7 +61,6 @@ const patchSubscriptionSchema=z.object({
   billingCycle:z.enum(['monthly','quarterly','semiannual','annual','manual']).optional(),currency:z.string().trim().min(3).max(8).optional(),amount:z.coerce.number().min(0).optional(),
   nextRenewalAt:z.coerce.date().nullable().optional(),graceUntil:z.coerce.date().nullable().optional(),maxTenants:z.coerce.number().int().min(1).max(1000).optional(),maxUsers:z.coerce.number().int().min(1).max(100000).optional(),supportLevel:z.string().trim().max(50).optional()
 }).strict();
-const subscriptionStatusSchema=z.object({status:z.enum(SUBSCRIPTION_STATUSES),reason:z.string().trim().min(3).max(500)}).strict();
 const subscriptionFilterSchema=z.object({
   q:z.string().trim().max(160).optional(),planCode:z.string().trim().max(80).optional(),salesAgentId:z.string().trim().max(120).optional(),status:z.enum(SUBSCRIPTION_STATUSES).optional(),vertical:z.string().trim().max(100).optional(),limit:z.coerce.number().int().min(1).max(1000).default(1000)
 });
@@ -140,7 +130,7 @@ router.get('/subscriptions',asyncHandler(async(req,res)=>{
   if(filters.vertical)rows=rows.filter((s:any)=>Array.isArray(s.modules)&&s.modules.some((m:any)=>m.status==='active'&&(m.moduleCode===filters.vertical||m.kind==='vertical'&&m.moduleCode.includes(filters.vertical!))));
   ok(res,rows.slice(0,filters.limit));
 }));
-router.post('/subscriptions',asyncHandler(async(req,res)=>{
+router.post('/subscriptions',rejectRestrictedSubscriptionCreation,asyncHandler(async(req,res)=>{
   const b=subscriptionSchema.parse(req.body||{});const customer=await prisma.$queryRaw<any[]>`SELECT "id" FROM public."CustomerAccount" WHERE "id"=${b.customerAccountId} LIMIT 1`;if(!customer[0])throw new HttpError(404,'Cliente comercial no encontrado.');
   if(b.salesAgentId){const agent=await prisma.$queryRaw<any[]>`SELECT "id" FROM public."SalesAgent" WHERE "id"=${b.salesAgentId} AND "status"='active' LIMIT 1`;if(!agent[0])throw new HttpError(404,'Vendedor activo no encontrado.');}
   const template=(PLAN_TEMPLATES as any)[b.planCode];
@@ -157,7 +147,7 @@ router.post('/subscriptions',asyncHandler(async(req,res)=>{
   const result=await subscriptionRow(sub.id);await audit(req,'commercial.subscription.create','Subscription',sub.id,result);ok(res,result,201);
 }));
 
-router.patch('/subscriptions/:id',asyncHandler(async(req,res)=>{
+router.patch('/subscriptions/:id',rejectLegacySubscriptionStatusPatch,asyncHandler(async(req,res)=>{
   const b=patchSubscriptionSchema.parse(req.body||{});
   const current=await subscriptionRow(req.params.id);
   if(!current)throw new HttpError(404,'Suscripción no encontrada.');
@@ -176,22 +166,6 @@ router.patch('/subscriptions/:id',asyncHandler(async(req,res)=>{
   ok(res,result);
 }));
 
-router.post('/subscriptions/:id/status',asyncHandler(async(req,res)=>{
-  const b=subscriptionStatusSchema.parse(req.body||{});
-  const current=await subscriptionRow(req.params.id);
-  if(!current)throw new HttpError(404,'Suscripción no encontrada.');
-  const currentStatus=String(current.status) as SubscriptionStatus;
-  const nextStatus=b.status as SubscriptionStatus;
-  if(currentStatus===nextStatus)throw new HttpError(409,`La suscripción ya está en estado ${nextStatus}.`);
-  if(!ALLOWED_SUBSCRIPTION_TRANSITIONS[currentStatus]?.includes(nextStatus))throw new HttpError(409,`Transición de suscripción no permitida: ${currentStatus} → ${nextStatus}. Cancelled/expired son terminales; para reactivar crea una nueva suscripción.`);
-  await prisma.$executeRaw`UPDATE public."Subscription" SET "status"=${nextStatus},"updatedAt"=now() WHERE "id"=${req.params.id}`;
-  if(nextStatus==='active'||nextStatus==='trial')await prisma.$executeRaw`UPDATE public."CustomerAccount" SET "status"=${nextStatus},"updatedAt"=now() WHERE "id"=${current.customerAccountId}`;
-  if(nextStatus==='past_due'||nextStatus==='suspended')await prisma.$executeRaw`UPDATE public."CustomerAccount" SET "status"=${nextStatus},"updatedAt"=now() WHERE "id"=${current.customerAccountId}`;
-  const result=await subscriptionRow(req.params.id);
-  await audit(req,'commercial.subscription.status','Subscription',req.params.id,{...result,statusReason:b.reason},current);
-  ok(res,result);
-}));
-
 router.post('/subscriptions/:id/tenants',asyncHandler(async(req,res)=>{const b=attachTenantSchema.parse(req.body||{});const subscription=await subscriptionRow(req.params.id);if(!subscription)throw new HttpError(404,'Suscripción no encontrada.');let tenant:any=null;if(b.tenantId)tenant=await prisma.tenant.findUnique({where:{id:b.tenantId}});if(!tenant&&b.tenantRif)tenant=await prisma.tenant.findUnique({where:{rif:b.tenantRif}});if(!tenant&&b.createIfMissing&&b.tenantRif&&b.tenantName)tenant=await prisma.tenant.create({data:{rif:b.tenantRif,name:b.tenantName,legalName:b.legalName||b.tenantName,plan:'commercial',status:'active',settings:{}}});if(!tenant)throw new HttpError(404,'Empresa/RIF no encontrado. Activa createIfMissing e indica nombre para crearla.');try{await prisma.$executeRaw`INSERT INTO public."SubscriptionTenant" ("id","subscriptionId","tenantId","status","priceOverride","createdAt","updatedAt") VALUES (gen_random_uuid()::text,${req.params.id},${tenant.id},'active',${b.priceOverride??null},now(),now()) ON CONFLICT ("subscriptionId","tenantId") DO UPDATE SET "status"='active',"priceOverride"=EXCLUDED."priceOverride","updatedAt"=now()`;}catch(error:any){if(String(error?.message||'').includes('subscription_tenant_limit_reached'))throw new HttpError(409,'La suscripción alcanzó su máximo de empresas. Amplía el plan antes de añadir otro RIF.');throw error;}const result=await subscriptionRow(req.params.id);await audit(req,'commercial.subscription.tenant.add','Subscription',req.params.id,{tenantId:tenant.id,rif:tenant.rif});ok(res,result);}));
 router.patch('/subscriptions/:id/tenants/:tenantId/remove',asyncHandler(async(req,res)=>{const before=await subscriptionRow(req.params.id);if(!before)throw new HttpError(404,'Suscripción no encontrada.');await prisma.$executeRaw`UPDATE public."SubscriptionTenant" SET "status"='removed',"updatedAt"=now() WHERE "subscriptionId"=${req.params.id} AND "tenantId"=${req.params.tenantId}`;const result=await subscriptionRow(req.params.id);await audit(req,'commercial.subscription.tenant.remove','Subscription',req.params.id,{tenantId:req.params.tenantId,result},before);ok(res,result);}));
 
@@ -200,7 +174,7 @@ router.put('/subscriptions/:id/modules',asyncHandler(async(req,res)=>{const b=en
 router.get('/renewals',asyncHandler(async(req,res)=>{const days=Math.min(90,Math.max(1,Number(req.query.days||30)));const rows=await prisma.$queryRaw<any[]>`SELECT s."id",s."planCode",s."amount",s."currency",s."billingCycle",s."status",s."nextRenewalAt",s."graceUntil",ca."legalName" AS "customerName",ca."rif" AS "customerRif",sa."name" AS "salesAgentName" FROM public."Subscription" s JOIN public."CustomerAccount" ca ON ca."id"=s."customerAccountId" LEFT JOIN public."SalesAgent" sa ON sa."id"=s."salesAgentId" WHERE s."status" IN ('trial','active','past_due') AND s."nextRenewalAt" IS NOT NULL AND s."nextRenewalAt" >= now() AND s."nextRenewalAt" < now()+(${days}::text||' days')::interval ORDER BY s."nextRenewalAt" ASC`;ok(res,rows);}));
 
 router.get('/payments',asyncHandler(async(req,res)=>{const limit=Math.min(1000,Math.max(1,Number(req.query.limit||250)));ok(res,await prisma.$queryRaw<any[]>`SELECT p.*,s."planCode",ca."legalName" AS "customerName",ca."rif" AS "customerRif" FROM public."SubscriptionPayment" p JOIN public."Subscription" s ON s."id"=p."subscriptionId" JOIN public."CustomerAccount" ca ON ca."id"=s."customerAccountId" ORDER BY p."createdAt" DESC LIMIT ${limit}`);}));
-router.post('/payments',asyncHandler(async(req,res)=>{
+router.post('/payments',governedPaymentInterceptor,asyncHandler(async(req,res)=>{
   const b=paymentSchema.parse(req.body||{});
   const subscription=await subscriptionRow(b.subscriptionId);
   if(!subscription)throw new HttpError(404,'Suscripción no encontrada.');

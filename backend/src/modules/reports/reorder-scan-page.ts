@@ -31,9 +31,18 @@ export function parseReorderScanQuery(raw: Record<string, unknown>): ReorderScan
       Object.keys(raw).some(key => !['take', 'skip', 'onlyNeedsReorder'].includes(key))) {
     throw new TypeError('REORDER_SCAN_QUERY_INVALID');
   }
-  const take = numericField(raw.take, 'take', REORDER_SCAN_DEFAULT_TAKE, 1, REORDER_SCAN_MAX_TAKE);
-  const skip = numericField(raw.skip, 'skip', 0, 0, REORDER_SCAN_MAX_SKIP);
-  const flag = raw.onlyNeedsReorder;
+  // Read ONLY own data properties. Inherited query keys or accessors are not
+  // trusted request parameters (e.g. prototype pollution from nested parsers).
+  const descriptors = Object.getOwnPropertyDescriptors(raw);
+  for (const name of ['take', 'skip', 'onlyNeedsReorder'] as const) {
+    if ((name in raw && !Object.hasOwn(raw, name)) ||
+        (Object.hasOwn(descriptors, name) && !Object.hasOwn(descriptors[name], 'value'))) {
+      throw new TypeError('REORDER_SCAN_QUERY_INVALID');
+    }
+  }
+  const take = numericField(descriptors.take?.value, 'take', REORDER_SCAN_DEFAULT_TAKE, 1, REORDER_SCAN_MAX_TAKE);
+  const skip = numericField(descriptors.skip?.value, 'skip', 0, 0, REORDER_SCAN_MAX_SKIP);
+  const flag = descriptors.onlyNeedsReorder?.value;
   if (flag !== undefined && (typeof flag !== 'string' || !/^(true|false)$/i.test(flag))) {
     throw new TypeError('REORDER_SCAN_FILTER_INVALID');
   }

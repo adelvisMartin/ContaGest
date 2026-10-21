@@ -10,6 +10,8 @@ import { decimalSchema } from '../../shared/financial/zod.js';
 import { serializeDecimal, ZERO } from '../../shared/financial/decimal.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
+import { previewProductCsvImport } from '../portability/product-csv-import-preview.mjs';
+import { encodeImportReportCsvCell } from './import-report-csv-cell.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('admin.manage'));
@@ -162,6 +164,27 @@ router.get('/', asyncHandler(async(req,res)=>{
   const ctx=context(req);const rows=await prisma.importBatch.findMany({where:{tenantId:ctx.tenantId},orderBy:{createdAt:'desc'},take:50});ok(res,rows.map(publicBatch));
 }));
 
+const productCsvPreviewSchema=z.object({csv:z.string().min(1).max(262144)}).strict();
+// CSV parsing is a separate INPUT ADAPTER, never a commit request. The existing
+// /imports/preview + /imports/:id/commit remain the only batch authority.
+router.post('/products/csv/preview', validateBody(productCsvPreviewSchema), asyncHandler(async(req,res)=>{
+  const ctx=context(req);
+  let preview;
+  try {
+    preview=previewProductCsvImport({
+      tenantId:ctx.tenantId,actorTenantId:ctx.tenantId,
+      entity:'products',csv:req.body.csv
+    });
+  } catch (error) {
+    if(error instanceof TypeError && /^PORTABILITY_CSV_/.test(error.message))
+      throw new HttpError(422,'El archivo CSV de productos no es válido.',{code:error.message});
+    throw error;
+  }
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,{...preview,catalogDuplicatesVerified:false,readyForCommit:false,
+    nextStep:'Use authenticated /imports/preview with deliberate mapping and DB checks; no direct CSV commit.'});
+}));
+
 router.post('/preview', validateBody(previewSchema), asyncHandler(async(req,res)=>{
   const ctx=context(req);const input=req.body as z.infer<typeof previewSchema>;
   const serializedSize=Buffer.byteLength(JSON.stringify(input.rows),'utf8');
@@ -199,7 +222,7 @@ router.post('/:id/commit', validateBody(commitSchema), asyncHandler(async(req,re
   ok(res,execution.data,execution.responseCode);
 }));
 
-const csvCell=(value:unknown)=>{let text=String(value??'');if(/^[=+\-@]/.test(text))text=`'${text}`;return `"${text.replace(/"/g,'""')}"`;};
+const csvCell=encodeImportReportCsvCell;
 router.get('/:id/report', asyncHandler(async(req,res)=>{
   const ctx=context(req);const batch=await prisma.importBatch.findFirst({where:{id:req.params.id,tenantId:ctx.tenantId}});if(!batch)throw new HttpError(404,'Batch de importación no encontrado.',{code:'IMPORT_BATCH_NOT_FOUND'});const payload=payloadOf(batch);const report=payload.report||(payload.rows||[]).map((row)=>({index:row.index,key:row.key,action:row.action,status:row.action==='error'?'invalid':'validated',errors:row.errors.map((e)=>`${e.code}: ${e.message}`)}));
   const csv=['row,key,action,status,errors',...report.map((row)=>[row.index,row.key,row.action,row.status,(row.errors||[]).join(' | ')].map(csvCell).join(','))].join('\n');ok(res,{filename:`import-${batch.type}-${batch.id}.csv`,csv,status:batch.status,checksum:payload.checksum});

@@ -15,7 +15,7 @@ export type PosStockPreviewLine = Readonly<{
   available:string; shortfall:string; status:'available'|'shortage';
 }>;
 export type PosStockPreview = Readonly<{
-  ready:boolean; readOnly:true; lines:readonly PosStockPreviewLine[];
+  ready:boolean; readOnly:true; authoritativeForCheckout:false; stockReserved:false; lines:readonly PosStockPreviewLine[];
 }>;
 export type PosStockPreviewErrorCode =
   | 'INVALID_LINES' | 'INVALID_PRODUCT' | 'DUPLICATE_PRODUCT'
@@ -92,5 +92,6 @@ export function previewPosStock(linesInput:unknown, rowsInput:unknown):PosStockP
       status:shortfall>0n?'shortage':'available'
     });
   }));
-  return Object.freeze({ready:result.every(line=>line.status==='available'),readOnly:true as const,lines:result});
+  return Object.freeze({ready:result.every(line=>line.status==='available'),readOnly:true as const,
+    authoritativeForCheckout:false as const,stockReserved:false as const,lines:result});
 }
