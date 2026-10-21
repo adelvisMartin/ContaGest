@@ -39,3 +39,7 @@ node --check scripts/hipico-soak-samples-proof-v120.mjs
 Los resultados históricos sin `samples.jsonl` verificable deberán seguir como `FAIL/NOT_EXECUTED`, incluso si antes decían `PASS`. El runner actual crea `samples.jsonl` en el **mismo directorio** que `soak-evidence.json`, lo que permite una transición sin nueva migración. No hay cambios en DB, WhatsApp, dinero, políticas SOURCE o workflows.
 
 **#120 permanece ABIERTO**, **#839 NO_GO** hasta campaña real y evidencia exact-SHA. No deshabilitar checks obligatorios ni convertir workflows en cola en PASS. Rollback del cambio: revertir helper/tests/docs y la importación/comprobación en verificador, sujeto a revisión de seguridad (no volver a aceptar hash autodeclarado).
+
+## Conciliación de telemetría #120
+
+El verificador de release coteja además cada fila de `samples.jsonl` con los acumulados del resumen. Los contadores de decisiones, pérdidas, duplicados y context leaks deben ser enteros monotónicos; las comprobaciones de health y disponibilidad de spool, el máximo tamaño y la mayor antigüedad observada deben coincidir con las muestras. Un hash SHA-256 actualizado junto con un resumen falsamente favorable ya no produce `PASS`. Esto es integridad interna de telemetría; no demuestra que una jornada física de 24 horas se haya ejecutado. #120 sigue pendiente de esas observaciones exact-SHA, reinicios y validación del operador.

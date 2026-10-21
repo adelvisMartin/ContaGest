@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { validSoakSampleSummary } from './hipico-soak-sample-summary-v120.mjs';
 
 const HASH = /^[a-f0-9]{64}$/i;
 const UTC = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
@@ -43,6 +44,7 @@ export function validSoakSamplesProof(manifestPath, report, sampleSeconds = 30) 
     const maxGap = Math.max(60_000, sampleSeconds * 2500);
     let priorAt = -1;
     let priorElapsed = -1;
+    const observed = [];
     for (const line of lines) {
       if (!line || line.length > 16_384) return false;
       const sample = JSON.parse(line);
@@ -58,8 +60,9 @@ export function validSoakSamplesProof(manifestPath, report, sampleSeconds = 30) 
       if (priorAt >= 0 && at - priorAt > maxGap) return false;
       priorAt = at;
       priorElapsed = elapsed;
+      observed.push(sample);
     }
-    return end - priorAt <= maxGap;
+    return end - priorAt <= maxGap && validSoakSampleSummary(observed, report.summaryInput);
   } catch {
     // Malformed, missing, symlink or inaccessible evidence is not a release PASS.
     return false;

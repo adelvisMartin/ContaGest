@@ -13,7 +13,11 @@ function setup(change = () => {}) {
   const manifestPath = path.join(root, 'soak-evidence.json');
   const rows = Array.from({length: COUNT}, (_, i) => ({
     at: new Date(START + i * 30_000).toISOString(), elapsedMs: i * 30_000,
-    rssMb: 128, heapUsedMb: 64, health: {ok: true}, spool: {available: true}
+    rssMb: 128, heapUsedMb: 64,
+    health: {ok: true, status: 200, latencyMs: 5},
+    spool: {available: true, files: 2, bytes: 1024, activeFiles: 1,
+      queuedFiles: 1, failedFiles: 0, oldestAgeSeconds: 2},
+    decisions: i + 1, duplicateResponses: 0, lostDecisions: 0, contextLeaks: 0
   }));
   change(rows);
   const bytes = Buffer.from(rows.map(row => JSON.stringify(row)).join('\n') + '\n');
@@ -21,7 +25,10 @@ function setup(change = () => {}) {
   const report = {
     startedAt: new Date(START).toISOString(),
     completedAt: new Date(START + 24 * 3600_000).toISOString(),
-    summaryInput: {samples: COUNT},
+    summaryInput: {samples: COUNT, healthChecks: COUNT, healthFailures: 0,
+      spoolChecks: COUNT, spoolAvailableChecks: COUNT,
+      maxSpoolBytes: 1024, maxBacklogAgeSeconds: 2,
+      unexpectedDuplicateResponses: 0, lostDecisions: 0, contextLeaks: 0},
     evidenceIntegrity: {samplesSha256: crypto.createHash('sha256').update(bytes).digest('hex')}
   };
   return {root, manifestPath, report, cleanup: () => fs.rmSync(root, {recursive: true, force: true})};
@@ -70,3 +77,18 @@ test('#120 absent final newline is rejected with even a matching digest', () => 
   fs.writeFileSync(file,cut); f.report.evidenceIntegrity.samplesSha256=crypto.createHash('sha256').update(cut).digest('hex');
 }));
 test('#120 rejection for absent declared sample time/elapsed field', () => check(f => mutateRows(f, rows => {delete rows[1].elapsedMs;})));
+
+test('#120 health failure cannot hide behind recomputed samples checksum', () => check(f => mutateRows(f, rows => {
+  rows[100].health = {ok: false, status: 503, latencyMs: 5};
+})));
+test('#120 spool size and age spikes cannot hide behind recomputed samples checksum', () => {
+  check(f => mutateRows(f, rows => {rows[100].spool.bytes = 900_000;}));
+  check(f => mutateRows(f, rows => {rows[100].spool.oldestAgeSeconds = 9_000;}));
+});
+test('#120 historical lost/duplicate counters cannot be cleared before release summary', () => {
+  check(f => mutateRows(f, rows => {
+    rows[100].lostDecisions = 1;
+    for(let i=101;i<rows.length;i++)rows[i].lostDecisions=1;
+  }));
+  check(f => mutateRows(f, rows => {rows[100].duplicateResponses = 1;}));
+});
