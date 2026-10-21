@@ -40,6 +40,7 @@ test('computed dynamic imports require review, no fabricated runtime PASS',()=>f
   put('frontend/src/pages/SalesPage.jsx',"const p=import('./'+name);");
   const r=auditRetiredAdapter(root,policy());
   assert.ok(r.computedImportsToReview.includes('frontend/src/pages/SalesPage.jsx'));
+  assert.equal(r.sourceStatus,'REVIEW_REQUIRED');
   assert.equal(r.releaseVerified,false);
 }));
 test('missing owners and regression evidence fail closed',()=>fixture(({root})=>{
@@ -63,4 +64,29 @@ test('an active candidate with zero imports still needs manual review',()=>fixtu
   const r=auditRetiredAdapter(root,p);
   assert.equal(r.sourceStatus,'REVIEW_REQUIRED');
   assert.equal(r.automaticallyDeletable,false);
+}));
+
+test('#657 scans public HTML/CSS before declaring zero consumers',()=>fixture(({root,put})=>{
+  put('frontend/public/entry.html','<script src="/src/components/enterprise.js"></script>');
+  put('frontend/public/site.css','@import url("/src/components/enterprise.js");');
+  const r=auditRetiredAdapter(root,policy());
+  assert.deepEqual(r.references,['frontend/public/entry.html','frontend/public/site.css']);
+  assert.ok(r.errors.includes('RETIRED_ADAPTER_HAS_CONSUMERS'));
+}));
+test('#657 recognizes extensionless import and require.resolve consumers',()=>fixture(({root,put})=>{
+  put('frontend/src/pages/HelpPage.jsx',"import deprecated from '../components/enterprise';");
+  put('frontend/src/components/caller.js',"require.resolve('./enterprise')");
+  const r=auditRetiredAdapter(root,policy());
+  assert.deepEqual(r.references,['frontend/src/components/caller.js','frontend/src/pages/HelpPage.jsx']);
+}));
+test('#657 computed template import is unresolved, not zero-consumer proof',()=>fixture(({root,put})=>{
+  const tick=String.fromCharCode(96);
+  put('frontend/src/data/pageRegistry.js','const loader = import('+tick+'../components/'+ '$' + '{name}.js'+tick+');');
+  const r=auditRetiredAdapter(root,policy());
+  assert.deepEqual(r.computedImportsToReview,['frontend/src/data/pageRegistry.js']);
+  assert.equal(r.sourceStatus,'REVIEW_REQUIRED');
+}));
+test('#657 reference-only test fixture is not a shipped runtime consumer',()=>fixture(({root,put})=>{
+  put('tests/reference-only.test.mjs','const removed = "/enterprise.js";');
+  assert.equal(auditRetiredAdapter(root,policy()).sourceStatus,'PASS');
 }));
