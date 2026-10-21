@@ -78,7 +78,7 @@ function snapshotQuery(ids){
    "'clients',(SELECT COALESCE(json_agg(json_build_object('id',id,'owner',\"tenantId\") ORDER BY id),'[]'::json) FROM public.\"Client\" WHERE \"tenantId\" IN ("+scope+")),"+
    "'entries',(SELECT COALESCE(json_agg(json_build_object('id',id,'owner',\"tenantId\",'posted',posted) ORDER BY id),'[]'::json) FROM public.\"LedgerEntry\" WHERE \"tenantId\" IN ("+scope+")),"+
    "'lines',(SELECT COALESCE(json_agg(json_build_object('id',l.id,'entry',l.\"entryId\",'debit',l.debit::text,'credit',l.credit::text) ORDER BY l.id),'[]'::json) FROM public.\"LedgerLine\" l JOIN public.\"LedgerEntry\" e ON e.id=l.\"entryId\" WHERE e.\"tenantId\" IN ("+scope+")),"+
-   "'taxes',(SELECT COALESCE(json_agg(json_build_object('id',id,'owner',\"tenantId\") ORDER BY id),'[]'::json) FROM public.\"TaxPeriod\" WHERE \"tenantId\" IN ("+scope+")),"+
+   "'taxes',(SELECT COALESCE(json_agg(json_build_object('id',id,'owner',\"tenantId\",'period',period,'status',status,'ivaDebit',\"ivaDebit\"::text,'ivaCredit',\"ivaCredit\"::text,'igtfPaid',\"igtfPaid\"::text) ORDER BY id),'[]'::json) FROM public.\"TaxPeriod\" WHERE \"tenantId\" IN ("+scope+")),"+
    "'audit',(SELECT COALESCE(json_agg(json_build_object('id',id,'owner',\"tenantId\") ORDER BY id),'[]'::json) FROM public.\"AuditLog\" WHERE \"tenantId\" IN ("+scope+")),"+
    "'unbalanced',(SELECT count(*) FROM (SELECT e.id FROM public.\"LedgerEntry\" e JOIN public.\"LedgerLine\" l ON l.\"entryId\"=e.id WHERE e.\"tenantId\" IN ("+scope+") AND e.posted=true GROUP BY e.id HAVING sum(l.debit)<>sum(l.credit)) q))::text";
 }
@@ -105,6 +105,13 @@ export function verifySnapshots(before,after){
       for(const row of group)counts.set(row.owner,counts.get(row.owner)+1);
       if([...counts.values()].some(count=>count!==1))
         throw new Error('DR646_TENANT_DISTRIBUTION_FAILED');
+    }
+    for(const period of snapshot.taxes){
+      if(period.period!=='2097-10'||period.status!=='open'||
+        minorUnits(period.ivaDebit)!==0n||
+        minorUnits(period.ivaCredit)!==0n||
+        minorUnits(period.igtfPaid)!==0n)
+        throw new Error('DR646_FISCAL_FIXTURE_INVALID');
     }
     const totals=new Map(snapshot.entries.map(entry=>{
       if(entry.posted!==true)throw new Error('DR646_POSTED_LEDGER_REQUIRED');
