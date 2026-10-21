@@ -7,10 +7,11 @@ export type IslrConceptPreviewInput=Readonly<{
   residenceClass:string; incomeBaseMinor:number; rule:VeReviewedRule;
 }>;
 const token=/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
+const isToken=(value:unknown):value is string=>typeof value==='string'&&token.test(value);
 const fail=():never=>{throw new Error('ISLR_CONCEPT_PREVIEW_NOT_AUTHORIZED');};
 export function previewReviewedIslrConcept(input:IslrConceptPreviewInput){
-  if(!input||typeof input!=='object'||!token.test(input.conceptCode||'')||
-    !token.test(input.beneficiaryClass||'')||!token.test(input.residenceClass||'')||
+  if(!input||typeof input!=='object'||!isToken(input.conceptCode)||
+    !isToken(input.beneficiaryClass)||!isToken(input.residenceClass)||
     typeof input.tenantId!=='string'||!input.tenantId||
     !Number.isSafeInteger(input.incomeBaseMinor)||input.incomeBaseMinor<0)fail();
   const rule=assertReviewedVeRule(input.rule);
