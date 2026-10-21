@@ -7,6 +7,7 @@ import path from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import {
   createLegalHold,
+  assertStorageDeletionAllowed,
   createRetentionPolicyVersion,
   detectStorageOrphans,
   executePurgeBatch,
@@ -380,4 +381,95 @@ test('invalid purge batch sizes fail closed before job claim or mutation', async
   );
   assert.equal(unchanged[0].status, 'pending');
   assert.equal(unchanged[0].attempts, 0);
+});
+
+
+test('#658 archive-only notification history cannot be hard-purged without verified export', async () => {
+  await createRetentionPolicyVersion({
+    tenantId: tenantA, entityType: 'NotificationLog',
+    effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+    retentionDays: 0, deleteSemantics: 'archive', purgeable: true,
+    source: 'qa-v658-archive', documentation: 'Synthetic archive-first policy, no export adapter.'
+  });
+  await assert.rejects(
+    () => requestPurgeJob({
+      tenantId: tenantA, entityType: 'NotificationLog',
+      idempotencyKey: `archive-block-${randomUUID()}`,
+      authorizationRef: 'qa-archive-block-658', batchSize: 1
+    }),
+    (error: any) => error?.details?.code === 'ARCHIVE_EXPORT_REQUIRED'
+  );
+  await assert.rejects(
+    () => createRetentionPolicyVersion({
+      tenantId: tenantA, entityType: 'NotificationLog',
+      effectiveFrom: new Date('2027-01-01T00:00:00Z'),
+      retentionDays: 0, deleteSemantics: 'purge', purgeable: true,
+      source: 'qa-downgrade', documentation: 'Attempt to downgrade archival obligation.'
+    }),
+    (error: any) => error?.details?.code === 'ARCHIVE_EXPORT_REQUIRED'
+  );
+});
+
+test('#658 clinical media classification is immutable across retries, tenants and delete checks', async () => {
+  const objectKey = `${tenantA}/media/clinical-${randomUUID()}.txt`;
+  const payload = {
+    tenantId: tenantA, bucket: 'sandbox', objectKey,
+    lifecycleEntityType: 'ClinicalMediaObject' as const,
+    subjectType: 'care-patient', subjectId: 'synthetic-658',
+    checksum: 'a'.repeat(64)
+  };
+  const first = await registerStorageObject(payload);
+  const retry = await registerStorageObject(payload);
+  assert.equal(retry.id, first.id, 'identical clinical registration must be idempotent');
+  await assert.rejects(
+    () => registerStorageObject({ ...payload, lifecycleEntityType: 'MediaObject' }),
+    (error: any) => error?.details?.code === 'PROTECTED_STORAGE_RECLASSIFICATION_FORBIDDEN'
+  );
+  await assert.rejects(
+    () => registerStorageObject({ ...payload, subjectId: 'different-patient' }),
+    (error: any) => error?.details?.code === 'PROTECTED_STORAGE_RECLASSIFICATION_FORBIDDEN'
+  );
+  const registered = await listStorageObjects(tenantA, 'sandbox');
+  const stored = registered.find((row) => row.objectKey === objectKey);
+  assert.equal(stored?.lifecycleEntityType, 'ClinicalMediaObject');
+  assert.equal(stored?.subjectId, 'synthetic-658');
+  await assert.rejects(
+    () => assertStorageDeletionAllowed({ tenantId: tenantA, bucket: 'sandbox', objectKey }),
+    (error: any) => error?.details?.code === 'PROTECTED_STORAGE_DELETE_FORBIDDEN'
+  );
+  await assert.rejects(
+    () => assertStorageDeletionAllowed({ tenantId: tenantB, bucket: 'sandbox', objectKey }),
+    (error: any) => error?.details?.code === 'STORAGE_TENANT_SCOPE_INVALID'
+  );
+  await assert.rejects(
+    () => assertStorageDeletionAllowed({
+      tenantId: tenantA, bucket: 'contagest-clinical-media',
+      objectKey: `${tenantA}/dental-attachments/unregistered-legacy`
+    }),
+    (error: any) => error?.details?.code === 'PROTECTED_STORAGE_DELETE_FORBIDDEN'
+  );
+});
+
+test('#658 normal media keeps tenant retention boundary and unknown-age delete blocked', async () => {
+  await createRetentionPolicyVersion({
+    tenantId: tenantA, entityType: 'MediaObject',
+    effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+    retentionDays: 365, deleteSemantics: 'purge', purgeable: true,
+    source: 'qa-v658-media', documentation: 'Synthetic 365-day media retention policy.'
+  });
+  const objectKey = `${tenantA}/media/recent-${randomUUID()}.txt`;
+  await registerStorageObject({
+    tenantId: tenantA, bucket: 'sandbox', objectKey,
+    lifecycleEntityType: 'MediaObject', subjectType: 'fixture', subjectId: 'recent'
+  });
+  await assert.rejects(
+    () => assertStorageDeletionAllowed({ tenantId: tenantA, bucket: 'sandbox', objectKey }),
+    (error: any) => error?.details?.code === 'RETENTION_WINDOW_ACTIVE'
+  );
+  await assert.rejects(
+    () => assertStorageDeletionAllowed({
+      tenantId: tenantA, bucket: 'sandbox', objectKey: `${tenantA}/media/missing-${randomUUID()}`
+    }),
+    (error: any) => error?.details?.code === 'STORAGE_RETENTION_AGE_UNKNOWN'
+  );
 });
