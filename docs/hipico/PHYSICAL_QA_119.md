@@ -1,5 +1,7 @@
 # Control Hípico — Physical QA #119
 
+> **Campaña final en dispositivos:** [procedimiento operativo, matriz y decisiones NO_GO](PHYSICAL_QA_119_FINAL_CAMPAIGN.md). Este enlace organiza la ejecución diferida, no acredita pruebas físicas ni habilita SOURCE.
+
 ## Propósito
 
 La revisión de source, Playwright o unit tests no demuestra Android/WebView, PWA instalada ni dos sesiones reales de WhatsApp. #119 exige evidencia manual/física ligada al candidate SHA.
