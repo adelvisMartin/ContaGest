@@ -53,3 +53,14 @@ test('rejects invalid SHAs and missing checkouts fail closed', () => withReposit
   const absent = join(root, 'absent');
   assert.throws(() => assertSecurityClosureCheckout('a'.repeat(40), absent), /SEC651_CHECKOUT_UNAVAILABLE/);
 }));
+
+test('rejects an unavailable Git executable', () => withRepository((root, sha) => {
+  const originalPath = process.env.PATH;
+  try {
+    process.env.PATH = '';
+    assert.throws(() => assertSecurityClosureCheckout(sha, root), /SEC651_CHECKOUT_UNAVAILABLE/);
+  } finally {
+    if (originalPath === undefined) delete process.env.PATH;
+    else process.env.PATH = originalPath;
+  }
+}));
