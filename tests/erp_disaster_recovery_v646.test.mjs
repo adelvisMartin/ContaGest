@@ -73,7 +73,7 @@ function control(){
       {id:randomUUID(),entry:x.id,debit:'100.00',credit:'0.00'},
       {id:randomUUID(),entry:x.id,debit:'0.00',credit:'100.00'}
     ]),
-    taxes:owners.map(owner=>({id:randomUUID(),owner})),
+    taxes:owners.map(owner=>({id:randomUUID(),owner,period:'2097-10',status:'open',ivaDebit:'0.00',ivaCredit:'0.00',igtfPaid:'0.00'})),
     audit:owners.map(owner=>({id:randomUUID(),owner})),
     unbalanced:0
   };
@@ -93,6 +93,46 @@ test('#646 rejects tenant leakage, ledger orphans, unbalanced journals and misma
   assert.throws(()=>verifySnapshots(before,missing),/INVARIANTS/);
 });
 
+test('#646 independently invalid synthetic fixtures never certify their own restore',()=>{
+  const original=control();
+  const ownedByWrongTenant=structuredClone(original);
+  ownedByWrongTenant.clients[1].owner=original.tenantIds[0];
+  assert.throws(()=>verifySnapshots(ownedByWrongTenant,structuredClone(ownedByWrongTenant)),/TENANT_DISTRIBUTION/);
+
+  const unposted=structuredClone(original);
+  unposted.entries[0].posted=false;
+  assert.throws(()=>verifySnapshots(unposted,structuredClone(unposted)),/POSTED_LEDGER_REQUIRED/);
+
+  const movedLine=structuredClone(original);
+  movedLine.lines[2].entry=movedLine.entries[0].id;
+  assert.throws(()=>verifySnapshots(movedLine,structuredClone(movedLine)),/LEDGER_LINE_DISTRIBUTION/);
+
+  const imbalanced=structuredClone(original);
+  imbalanced.lines[0].debit='99.00';
+  assert.throws(()=>verifySnapshots(imbalanced,structuredClone(imbalanced)),/LEDGER_IMBALANCE/);
+
+  const wrongPeriod=structuredClone(original);
+  wrongPeriod.taxes[0].period='2098-01';
+  assert.throws(()=>verifySnapshots(wrongPeriod,structuredClone(wrongPeriod)),/FISCAL_FIXTURE_INVALID/);
+
+  const badFiscalAmount=structuredClone(original);
+  badFiscalAmount.taxes[0].ivaDebit='250.00';
+  assert.throws(()=>verifySnapshots(badFiscalAmount,structuredClone(badFiscalAmount)),/FISCAL_FIXTURE_INVALID/);
+
+  const invalidMoney=structuredClone(original);
+  invalidMoney.lines[0].debit='NaN';
+  assert.throws(()=>verifySnapshots(invalidMoney,structuredClone(invalidMoney)),/DECIMAL_INVALID/);
+
+  const zeroLine=structuredClone(original);
+  zeroLine.lines[0].debit='0.00';
+  assert.throws(()=>verifySnapshots(zeroLine,structuredClone(zeroLine)),/LEDGER_LINE_INVALID/);
+
+  const valid=structuredClone(original);
+  valid.lines[0].debit='100';
+  valid.lines[1].credit='100.00';
+  assert.match(verifySnapshots(valid,structuredClone(valid)),/^[a-f0-9]{64}$/);
+});
+
 test('#646 missing admin URL is a BLOCKED report, never synthetic success',async()=>{
   const report=await runDrill({});
   assert.equal(report.status,'BLOCKED');
@@ -109,5 +149,6 @@ test('#646 never uses dangerous override flags, remote credential source or Híp
   assert.match(code,/pg_dump/);
   assert.match(code,/pg_restore/);
   assert.match(code,/FAULT_INJECTION_FAILED/);
+  assert.doesNotMatch(code,/setTimeout\(resolve,25\)/);
   assert.doesNotMatch(code,/ALLOW_UNSAFE_RESTORE|ALLOW_PRIMARY_HOST_RESTORE|--clean|--create|supabase\.co/);
 });
