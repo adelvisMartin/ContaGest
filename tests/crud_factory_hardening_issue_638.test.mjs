@@ -158,3 +158,39 @@ test('#638: runtime caller cannot bypass typed model or operation allowlists', (
   }
   assert.equal(results[9].ok,true);
 });
+
+
+test('#638: runtime registration must bind each model to its canonical permission and audit entity', () => {
+  const cases = [
+    { fn:'assertCrudRouterAuthority', args:['client','client','clients.manage'] },
+    { fn:'assertCrudRouterAuthority', args:['supplier','supplier','purchases.manage'] },
+    { fn:'assertCrudRouterAuthority', args:['product','product','inventory.manage'] },
+    { fn:'assertCrudRouterAuthority', args:['bankAccount','bankAccount','banking.manage'] },
+    { fn:'assertCrudRouterAuthority', args:['taxPeriod','taxPeriod','taxes.export'] },
+    { fn:'assertCrudRouterAuthority', args:['bankAccount','bankAccount','clients.manage'] },
+    { fn:'assertCrudRouterAuthority', args:['client','supplier','clients.manage'] },
+    { fn:'assertCrudRouterAuthority', args:['taxPeriod','taxPeriod','banking.manage'] },
+    { fn:'assertCrudRouterAuthority', args:['constructor','client','clients.manage'] },
+    { fn:'assertCrudRouterAuthority', args:['__proto__','client','clients.manage'] }
+  ];
+  const results=executePolicy(cases);
+  results.slice(0,5).forEach(row=>assert.equal(row.ok,true,JSON.stringify(row)));
+  results.slice(5).forEach(row=>{
+    assert.equal(row.ok,false,JSON.stringify(row));
+    assert.equal(row.status,422);
+    assert.doesNotMatch(row.message,/banking.manage|clients.manage|supplier/);
+  });
+});
+
+test('#638: registration type safety and runtime authority gate cannot be bypassed by an alternate route manifest',()=>{
+  const factory=read('backend/src/modules/crud.factory.ts');
+  const policy=read('backend/src/modules/crud-policy.ts');
+  const manifest=read('backend/src/modules/route-manifest.ts');
+  assert.match(factory,/type CrudSchemaByModel =/);
+  assert.match(factory,/schema: CrudSchemaByModel\[M\]/);
+  assert.match(factory,/assertCrudRouterAuthority\(options.model, options.entity, options.permission\)/);
+  assert.match(policy,/CRUD_ROUTER_AUTHORITY/);
+  for(const model of ['client','supplier','product','bankAccount','taxPeriod']){
+    assert.match(manifest,new RegExp("model:'"+model+"'"));
+  }
+});

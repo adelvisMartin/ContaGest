@@ -51,3 +51,9 @@ El pre-read de PUT/DELETE más la escritura tenant-scoped protege el alcance ant
 ## Rollback
 
 Revertir en conjunto factory+policy+manifest+contract test+runner en un PR dedicado sólo si se demuestra regresión, conservando los permisos/aislamiento. **No restaurar writes vulnerables de mass-assignment** como solución rápida; preferir compatibilidad mediante servicio especializado. Este cambio no aplica DDL ni require seeding/migración.
+
+## Autoridad cerrada de registro (2026-10-21)
+
+La frontera genérica valida el permiso y entidad de auditoría **por modelo** antes de crear cualquier router. `CRUD_ROUTER_AUTHORITY` hace de contrato runtime para llamadores JavaScript/no tipados; `CrudOptions` usa una unión discriminada ligada a los cinco esquemas Zod y los permisos literales, de modo que asociar `bankAccount` con `clients.manage`, un esquema de otro modelo o una entidad diferente no compile. Se mantiene `requireTenant` / `requirePermission` server-side y el allowlist de payload independiente: no se confía en opciones de registro arbitrarias.
+
+El cambio no modifica ninguna ruta ni nivel de permiso existente ni concede escritura fiscal nueva. Requiere ejecutar el test de contrato #638 y `npm run typecheck` sobre el SHA exacto; los flujos HTTP PostgreSQL17 multi-tenant conservan su condición de validación pendiente hasta una ejecución real. Un merge de código sin esos gates no acredita el DoD operativo.
