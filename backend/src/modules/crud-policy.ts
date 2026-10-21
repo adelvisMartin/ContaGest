@@ -33,6 +33,17 @@ const MUTABLE_FIELDS = {
 export type CrudModel = keyof typeof MUTABLE_FIELDS;
 export type CrudMutation = 'create' | 'update' | 'delete';
 
+// Bind each generic Prisma model to exactly one business permission and audit
+// entity. A future route must not expose a financial model under a weaker role.
+export const CRUD_ROUTER_AUTHORITY = Object.freeze({
+  client: { entity: 'client', permission: 'clients.manage' },
+  supplier: { entity: 'supplier', permission: 'purchases.manage' },
+  product: { entity: 'product', permission: 'inventory.manage' },
+  bankAccount: { entity: 'bankAccount', permission: 'banking.manage' },
+  taxPeriod: { entity: 'taxPeriod', permission: 'taxes.export' }
+} as const satisfies Record<CrudModel, Readonly<{ entity: string; permission: string }>>);
+
+
 export const CRUD_SEARCH_FIELDS: Readonly<Record<CrudModel, readonly string[]>> = Object.freeze({
   client: ['name', 'rif'],
   supplier: ['name', 'rif'],
@@ -50,6 +61,19 @@ export class CrudPolicyError extends Error {
     super(message);
     this.name = 'CrudPolicyError';
     this.status = status;
+  }
+}
+
+export function assertCrudRouterAuthority(model: CrudModel, entity: string, permission: string): void {
+  // This check applies even to untyped JavaScript callers and stale manifests.
+  // Own-property lookup prevents inherited Object keys from being treated as
+  // allowed models. Never echo the rejected permission/entity to an API user.
+  if (!Object.prototype.hasOwnProperty.call(CRUD_ROUTER_AUTHORITY, model)) {
+    throw new CrudPolicyError('Modelo CRUD no autorizado.');
+  }
+  const expected = CRUD_ROUTER_AUTHORITY[model];
+  if (entity !== expected.entity || permission !== expected.permission) {
+    throw new CrudPolicyError('Autoridad de ruta CRUD no permitida.');
   }
 }
 

@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import type { NextFunction, Request, Response } from 'express';
-import { z } from 'zod';
 import { prisma } from '../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../shared/http.js';
 import { requirePermission, requireTenant } from '../shared/middleware/context.js';
@@ -8,7 +7,9 @@ import { validateBody } from '../shared/middleware/validate.js';
 import { writeAudit } from '../shared/services/audit.service.js';
 import {
   CRUD_SEARCH_FIELDS,
+  CRUD_ROUTER_AUTHORITY,
   CrudPolicyError,
+  assertCrudRouterAuthority,
   assertCrudMutationFields,
   assertCrudOperation,
   parseCrudListWindow,
@@ -16,15 +17,28 @@ import {
   parseCrudSearchText
 } from './crud-policy.js';
 import type { CrudModel, CrudMutation } from './crud-policy.js';
+import type { clientSchema, supplierSchema, productSchema, bankAccountSchema, taxPeriodSchema } from './schemas.js';
 
 export { parseCrudListWindow } from './crud-policy.js';
 
-type CrudOptions = {
-  model: CrudModel;
-  entity: string;
-  permission: string;
-  schema: z.ZodObject;
+type CrudSchemaByModel = {
+  client: typeof clientSchema;
+  supplier: typeof supplierSchema;
+  product: typeof productSchema;
+  bankAccount: typeof bankAccountSchema;
+  taxPeriod: typeof taxPeriodSchema;
 };
+
+// A model cannot be registered with a different schema, permission or audit
+// entity without a compile-time error. Runtime check below protects JS calls.
+type CrudOptions = {
+  [M in CrudModel]: {
+    model: M;
+    entity: (typeof CRUD_ROUTER_AUTHORITY)[M]['entity'];
+    permission: (typeof CRUD_ROUTER_AUTHORITY)[M]['permission'];
+    schema: CrudSchemaByModel[M];
+  }
+}[CrudModel];
 
 type CrudRecord = { id: string; [field: string]: unknown };
 type CrudDelegate = {
@@ -87,6 +101,7 @@ function auditContext(ctx: CrudContext) {
 }
 
 export function createCrudRouter(options: CrudOptions) {
+  assertCrudRouterAuthority(options.model, options.entity, options.permission);
   const router = Router();
   const getDelegate = CRUD_DELEGATES[options.model];
   if (typeof getDelegate !== 'function') throw new Error('CRUD model is not in the explicit tenant-owned allowlist');
