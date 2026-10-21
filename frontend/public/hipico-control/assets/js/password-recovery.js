@@ -7,6 +7,8 @@ let recoveryError = '';
 let recoveryNoticeShown = false;
 // A disabled submit button alone does not prevent scripted/queued double submissions.
 let recoveryUpdateInFlight = false;
+// A request can outlive a click or lose network connectivity. Prevent duplicate emails.
+let recoveryRequestInFlight = false;
 
 // Query parameters can be logged by hosting intermediaries. Strip any
 // recovery/session material from the visible URL on the first app render,
@@ -71,15 +73,30 @@ export async function requestPasswordRecovery(email) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) throw new Error('Escribe un correo válido.');
   if (!CLOUD_CONFIG?.supabaseUrl || !CLOUD_CONFIG?.publishableKey) throw new Error('La recuperación no está configurada en este despliegue.');
-  const response = await fetch(`${CLOUD_CONFIG.supabaseUrl}/auth/v1/recover?redirect_to=${encodeURIComponent(recoveryRedirectUrl())}`, {
-    method: 'POST', headers: authHeaders(), cache: 'no-store', body: JSON.stringify({ email: normalizedEmail })
-  });
-  if (!response.ok) {
-    const error = new Error(await parseError(response));
-    error.status = response.status;
-    throw error;
+  if (recoveryRequestInFlight) throw new Error('RECOVERY_ALREADY_IN_PROGRESS');
+  recoveryRequestInFlight = true;
+  const controller = new AbortController();
+  const timeoutMs = Math.min(30000, Math.max(1000, Number(CLOUD_CONFIG.requestTimeoutMs) || 15000));
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${CLOUD_CONFIG.supabaseUrl}/auth/v1/recover?redirect_to=${encodeURIComponent(recoveryRedirectUrl())}`, {
+      method: 'POST', headers: authHeaders(), cache: 'no-store', signal: controller.signal,
+      body: JSON.stringify({ email: normalizedEmail })
+    });
+    if (!response.ok) {
+      const error = new Error(await parseError(response));
+      error.status = response.status;
+      throw error;
+    }
+    return true;
+  } catch (error) {
+    // Do not retain or reflect network/provider descriptions that may contain PII.
+    if (error?.status) throw error;
+    throw new Error('RECOVERY_PROVIDER_UNAVAILABLE');
+  } finally {
+    clearTimeout(timeout);
+    recoveryRequestInFlight = false;
   }
-  return true;
 }
 async function markCredentialChanged(token) {
   const response = await fetch(`${CLOUD_CONFIG.supabaseUrl}/rest/v1/rpc/hipico_mark_password_changed`, {
@@ -168,6 +185,7 @@ function updateStrength(input) {
   if (copy) copy.textContent = score >= 4 ? 'Buena longitud y variedad. Evita reutilizar esta contraseña en otros servicios.' : 'Usa al menos 10 caracteres; una frase larga con números o símbolos mejora la resistencia.';
 }
 async function handleRecoveryRequest(button) {
+  if (recoveryRequestInFlight) return;
   const form = button.closest('#auth-form');
   const emailInput = form?.querySelector('input[name="email"]');
   const email = String(emailInput?.value || '').trim();
