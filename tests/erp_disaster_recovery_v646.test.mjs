@@ -73,7 +73,7 @@ function control(){
       {id:randomUUID(),entry:x.id,debit:'100.00',credit:'0.00'},
       {id:randomUUID(),entry:x.id,debit:'0.00',credit:'100.00'}
     ]),
-    taxes:owners.map(owner=>({id:randomUUID(),owner})),
+    taxes:owners.map(owner=>({id:randomUUID(),owner,period:'2097-10',status:'open',ivaDebit:'0.00',ivaCredit:'0.00',igtfPaid:'0.00'})),
     audit:owners.map(owner=>({id:randomUUID(),owner})),
     unbalanced:0
   };
@@ -110,6 +110,14 @@ test('#646 independently invalid synthetic fixtures never certify their own rest
   const imbalanced=structuredClone(original);
   imbalanced.lines[0].debit='99.00';
   assert.throws(()=>verifySnapshots(imbalanced,structuredClone(imbalanced)),/LEDGER_IMBALANCE/);
+
+  const wrongPeriod=structuredClone(original);
+  wrongPeriod.taxes[0].period='2098-01';
+  assert.throws(()=>verifySnapshots(wrongPeriod,structuredClone(wrongPeriod)),/FISCAL_FIXTURE_INVALID/);
+
+  const badFiscalAmount=structuredClone(original);
+  badFiscalAmount.taxes[0].ivaDebit='250.00';
+  assert.throws(()=>verifySnapshots(badFiscalAmount,structuredClone(badFiscalAmount)),/FISCAL_FIXTURE_INVALID/);
 
   const invalidMoney=structuredClone(original);
   invalidMoney.lines[0].debit='NaN';
