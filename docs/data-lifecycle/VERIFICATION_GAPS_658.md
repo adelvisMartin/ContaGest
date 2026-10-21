@@ -88,8 +88,8 @@ de la gate existente `.github/workflows/data-lifecycle-v562.yml`.
    almacenamiento compartido ni datos privados.
 5. Exportar `NODE_ENV=test`, `DATABASE_URL` y `DIRECT_DATABASE_URL`
    apuntando **exclusivamente** a la DB efímera y `JWT_SECRET` sintético.
-6. `npm --workspace backend exec -- prisma migrate deploy`
-7. `npm --workspace backend exec -- prisma generate`
+6. `npm run migration:test:from-zero` (procedimiento canónico: bootstrap SQL-first + compatibilidad + cadena de migraciones sobre DB `_e2e`).
+7. `npm --workspace backend run prisma:generate`
 8. `npm run seed`
 9. `npm --workspace backend exec -- tsx --test ../qa/data-lifecycle-v562.integration.test.ts`
 10. `npm run typecheck` y `npm run build:backend`
