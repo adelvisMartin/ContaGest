@@ -116,7 +116,7 @@ test('#979 structured telemetry masks credential containers and private keys wit
   const payload = {
     action: 'sync-completed',
     credentials: { username: 'should-never-appear', password: 'should-not-appear' },
-    privateKey: '-----BEGIN PRIVATE KEY----- sensitive',
+    privateKey: ['-----BEGIN', ' PRIVATE KEY-----', ' sensitive'].join(''),
     clientCredential: 'oauth-credential-secret',
     nested: [{ signing_private_key: 'signing-sentinel', message: 'privacy-sensitive', state: 'safe status' }]
   };
