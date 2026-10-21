@@ -75,6 +75,8 @@ test('#562 exposes server-side admin workflows and is mounted in the canonical r
 
 test('#562 CI proves PostgreSQL isolation and a real filesystem storage sandbox', () => {
   assert.match(workflow, /postgres:17/);
+  assert.match(workflow, /migration:test:from-zero/, 'use canonical disposable historical bootstrap before PG tests');
+  assert.match(workflow, /github\.event\.pull_request\.head\.sha/, 'pin PG17 evidence to PR head SHA');
   assert.match(workflow, /data-lifecycle-v562.integration.test.ts/);
   assert.match(workflow, /storage sandbox/i);
   assert.match(workflow, /npm run typecheck/);
