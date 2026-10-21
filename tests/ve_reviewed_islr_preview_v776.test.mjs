@@ -29,3 +29,10 @@ test('#776 without approved effective ISLR source cannot calculate',()=>{
 test('#776 invalid untrusted concept identifiers or bases fail closed',()=>{
   for(const patch of [{conceptCode:'A|B'},{beneficiaryClass:''},{residenceClass:'../'},{incomeBaseMinor:-1},{incomeBaseMinor:0.2},{incomeBaseMinor:Number.MAX_SAFE_INTEGER+1}])denied(()=>previewReviewedIslrConcept({...input,...patch}));
 });
+test('#776 numeric classifications must never be coerced into valid selectors',()=>{
+  for(const field of ['conceptCode','beneficiaryClass','residenceClass']){
+    const candidate={...input,[field]:123};
+    const selector=[candidate.conceptCode,candidate.beneficiaryClass,candidate.residenceClass].join('|');
+    denied(()=>previewReviewedIslrConcept({...candidate,rule:{...rule,selector}}));
+  }
+});
