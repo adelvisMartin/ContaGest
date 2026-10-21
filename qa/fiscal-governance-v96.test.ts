@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
-import { signAccessToken } from '../backend/src/shared/auth/jwt.ts';
 
 const RUN=`QA96-${Date.now().toString(36).toUpperCase()}`;
 const PERIOD_A='2095-01';const PERIOD_DOC='2095-02';const PERIOD_CROSS='2095-03';const PERIOD_LINK='2095-04';
@@ -14,7 +13,7 @@ async function userWithPermissions(h:any,name:string,permissions:string[]){
   for(const key of permissions){const perm=await h.prisma.permission.findUniqueOrThrow({where:{key}});await h.prisma.rolePermission.create({data:{roleId:role.id,permissionId:perm.id}});}
   await h.prisma.userRole.create({data:{userId:user.id,roleId:role.id}});
   await h.prisma.licenseKey.create({data:{tenantId:h.tenant.id,userId:user.id,userEmail:email,plan:'enterprise',keyHash:createHash('sha256').update(`${RUN}-${name}`).digest('hex'),keyPreview:`${RUN}-${name}`.slice(0,32),modules:['tributos'],expiresAt:new Date(Date.now()+86400000),status:'active'}});
-  return {user,role,token:signAccessToken({id:user.id,email:user.email},h.tenant.id)};
+  return {user,role,token:await h.issueSessionTokenFor({id:user.id,email:user.email})};
 }
 
 test('issue #96 fiscal RBAC and audited state machine on real PostgreSQL',async(t)=>{
@@ -24,12 +23,13 @@ test('issue #96 fiscal RBAC and audited state machine on real PostgreSQL',async(
   const tenantB=await h.prisma.tenant.create({data:{rif:`${RUN}-B`,name:`${RUN} Tenant B`,legalName:`${RUN} Tenant B`}});
 
   t.after(async()=>{
+    // Remove signed test sessions before deleting their user profiles.
+    await h.close();
     await h.prisma.fiscalDocument.deleteMany({where:{tenantId:{in:[h.tenant.id,tenantB.id]},period:{in:[PERIOD_A,PERIOD_DOC,PERIOD_CROSS,PERIOD_LINK]}}}).catch(()=>undefined);
     await h.prisma.closingPeriod.deleteMany({where:{tenantId:{in:[h.tenant.id,tenantB.id]},period:{in:[PERIOD_A,PERIOD_DOC,PERIOD_CROSS,PERIOD_LINK]}}}).catch(()=>undefined);
     await h.prisma.auditLog.deleteMany({where:{tenantId:h.tenant.id,action:{startsWith:'fiscal.'}}}).catch(()=>undefined);
     for(const actor of [readOnly,closer]){await h.prisma.licenseKey.deleteMany({where:{userId:actor.user.id}}).catch(()=>undefined);await h.prisma.userRole.deleteMany({where:{userId:actor.user.id}}).catch(()=>undefined);await h.prisma.rolePermission.deleteMany({where:{roleId:actor.role.id}}).catch(()=>undefined);await h.prisma.role.delete({where:{id:actor.role.id}}).catch(()=>undefined);await h.prisma.userProfile.delete({where:{id:actor.user.id}}).catch(()=>undefined);}
     await h.prisma.tenant.delete({where:{id:tenantB.id}}).catch(()=>undefined);
-    await h.close();
   });
 
   await t.test('read-only user sees periods/capabilities but cannot mutate',async()=>{
