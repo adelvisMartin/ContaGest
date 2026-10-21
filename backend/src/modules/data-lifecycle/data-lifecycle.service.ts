@@ -62,6 +62,9 @@ export type StorageObjectRow = {
 
 const PROTECTED_ENTITIES = new Set(['AuditLog', 'LedgerEntry', 'FiscalDocument', 'FiscalCloseEvidence', 'ClinicalMediaObject', 'CarePatient']);
 const PURGE_ADAPTER_ENTITIES = new Set(['AnalyticsEvent', 'ImportBatch', 'NotificationLog', 'AddressGeocode']);
+// #658: an archive-only classification cannot be downgraded into a bare SQL DELETE.
+// No payload export/archival adapter has been verified for notification history.
+const ARCHIVE_FIRST_ENTITIES = new Set(['NotificationLog']);
 // Fail closed before a destructive SQL statement. PostgreSQL LIMIT must never
 // receive NaN/fractions/unsafe numbers, even if a caller bypasses HTTP validation.
 function normalizePurgeBatchSize(value: number | undefined): number {
@@ -103,6 +106,9 @@ export async function createRetentionPolicyVersion(input: {
 }) {
   if (PROTECTED_ENTITIES.has(input.entityType) && (input.purgeable || input.deleteSemantics === 'purge')) {
     throw new HttpError(409, 'La clasificación protegida no puede convertirse en purgeable mediante una política tenant.', { code: 'PROTECTED_ENTITY_PURGE_FORBIDDEN', entityType: input.entityType });
+  }
+  if (ARCHIVE_FIRST_ENTITIES.has(input.entityType) && input.deleteSemantics === 'purge') {
+    throw new HttpError(409, 'La retención requiere archivado verificable antes de permitir borrado.', { code: 'ARCHIVE_EXPORT_REQUIRED', entityType: input.entityType });
   }
   if (input.purgeable && input.retentionDays == null && input.entityType !== 'MediaObject') {
     throw new HttpError(422, 'Una política purgeable requiere retentionDays explícito.', { code: 'RETENTION_NOT_CONFIGURED', entityType: input.entityType });
@@ -337,6 +343,9 @@ export async function requestPurgeJob(input: {
     throw new HttpError(422, 'La entidad no tiene un adapter de purge explícito.', { code: 'PURGE_ADAPTER_MISSING', entityType: input.entityType });
   }
   const policy = await resolveRetentionPolicy(input.tenantId, input.entityType);
+  if (policy.deleteSemantics !== 'purge') {
+    throw new HttpError(422, 'La entidad no tiene una exportación o política de borrado autorizada.', { code: policy.deleteSemantics === 'archive' ? 'ARCHIVE_EXPORT_REQUIRED' : 'PURGE_SEMANTICS_FORBIDDEN', entityType: input.entityType });
+  }
   if (!policy.purgeable || policy.retentionDays == null) {
     throw new HttpError(422, 'La política vigente no autoriza purge o no define retentionDays.', { code: 'RETENTION_NOT_CONFIGURED', entityType: input.entityType });
   }
@@ -472,6 +481,9 @@ export async function executePurgeBatch(input: { tenantId: string; jobId: string
       observedAttempts = job.attempts;
       const entityType = job.entityType;
       const policy = await resolveRetentionPolicy(input.tenantId, entityType, new Date(), tx);
+      if (policy.deleteSemantics !== 'purge') {
+        throw new HttpError(422, 'Una política sin purge explícito no autoriza borrar filas.', { code: policy.deleteSemantics === 'archive' ? 'ARCHIVE_EXPORT_REQUIRED' : 'PURGE_SEMANTICS_FORBIDDEN', entityType });
+      }
       if (!policy.purgeable || policy.retentionDays == null) {
         throw new HttpError(422, 'La política vigente ya no autoriza purge.', { code: 'RETENTION_NOT_CONFIGURED', entityType });
       }
@@ -545,8 +557,19 @@ export async function registerStorageObject(input: {
       "subjectId" = EXCLUDED."subjectId",
       "checksum" = COALESCE(EXCLUDED."checksum", public."DataStorageObject"."checksum"),
       "status" = 'active', "deletedAt" = NULL, "lastVerifiedAt" = CURRENT_TIMESTAMP
+    WHERE public."DataStorageObject"."lifecycleEntityType" <> 'ClinicalMediaObject'
+      OR (
+        EXCLUDED."lifecycleEntityType" = 'ClinicalMediaObject'
+        AND public."DataStorageObject"."status" = 'active'
+        AND public."DataStorageObject"."subjectType" IS NOT DISTINCT FROM EXCLUDED."subjectType"
+        AND public."DataStorageObject"."subjectId" IS NOT DISTINCT FROM EXCLUDED."subjectId"
+        AND (EXCLUDED."checksum" IS NULL OR public."DataStorageObject"."checksum" = EXCLUDED."checksum")
+      )
     RETURNING *
   `);
+  if (!rows[0]) {
+    throw new HttpError(409, 'Un medio clínico registrado no puede reclasificarse, sobrescribirse o reactivarse.', { code: 'PROTECTED_STORAGE_RECLASSIFICATION_FORBIDDEN' });
+  }
   return rows[0];
 }
 
@@ -587,6 +610,22 @@ export function detectStorageOrphans(registered: Array<Pick<StorageObjectRow, 'o
 }
 
 export async function assertStorageDeletionAllowed(input: { tenantId: string; bucket: string; objectKey: string }) {
+  if (!input.objectKey.startsWith(`${input.tenantId}/`)) {
+    throw new HttpError(403, 'El objeto no pertenece al tenant autenticado.', { code: 'STORAGE_TENANT_SCOPE_INVALID' });
+  }
+  // The dedicated clinical bucket is immutable even for legacy/unregistered media.
+  if (input.bucket === 'contagest-clinical-media') {
+    throw new HttpError(403, 'La media clínica no tiene borrado genérico autorizado.', { code: 'PROTECTED_STORAGE_DELETE_FORBIDDEN' });
+  }
+  const registered = await prisma.$queryRaw<Array<{ lifecycleEntityType: string }>>(Prisma.sql`
+    SELECT "lifecycleEntityType" FROM public."DataStorageObject"
+    WHERE "tenantId" = ${input.tenantId}::uuid AND "bucket" = ${input.bucket}
+      AND "objectKey" = ${input.objectKey}
+    LIMIT 1
+  `);
+  if (registered[0]?.lifecycleEntityType === 'ClinicalMediaObject') {
+    throw new HttpError(403, 'Un medio clínico protegido no puede eliminarse mediante el flujo genérico.', { code: 'PROTECTED_STORAGE_DELETE_FORBIDDEN' });
+  }
   await assertNoLegalHold(input.tenantId, 'MediaObject', input.objectKey);
   const policy = await resolveRetentionPolicy(input.tenantId, 'MediaObject');
   if (!policy.purgeable || policy.retentionDays == null) {
