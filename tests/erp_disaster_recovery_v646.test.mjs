@@ -93,6 +93,38 @@ test('#646 rejects tenant leakage, ledger orphans, unbalanced journals and misma
   assert.throws(()=>verifySnapshots(before,missing),/INVARIANTS/);
 });
 
+test('#646 independently invalid synthetic fixtures never certify their own restore',()=>{
+  const original=control();
+  const ownedByWrongTenant=structuredClone(original);
+  ownedByWrongTenant.clients[1].owner=original.tenantIds[0];
+  assert.throws(()=>verifySnapshots(ownedByWrongTenant,structuredClone(ownedByWrongTenant)),/TENANT_DISTRIBUTION/);
+
+  const unposted=structuredClone(original);
+  unposted.entries[0].posted=false;
+  assert.throws(()=>verifySnapshots(unposted,structuredClone(unposted)),/POSTED_LEDGER_REQUIRED/);
+
+  const movedLine=structuredClone(original);
+  movedLine.lines[2].entry=movedLine.entries[0].id;
+  assert.throws(()=>verifySnapshots(movedLine,structuredClone(movedLine)),/LEDGER_LINE_DISTRIBUTION/);
+
+  const imbalanced=structuredClone(original);
+  imbalanced.lines[0].debit='99.00';
+  assert.throws(()=>verifySnapshots(imbalanced,structuredClone(imbalanced)),/LEDGER_IMBALANCE/);
+
+  const invalidMoney=structuredClone(original);
+  invalidMoney.lines[0].debit='NaN';
+  assert.throws(()=>verifySnapshots(invalidMoney,structuredClone(invalidMoney)),/DECIMAL_INVALID/);
+
+  const zeroLine=structuredClone(original);
+  zeroLine.lines[0].debit='0.00';
+  assert.throws(()=>verifySnapshots(zeroLine,structuredClone(zeroLine)),/LEDGER_LINE_INVALID/);
+
+  const valid=structuredClone(original);
+  valid.lines[0].debit='100';
+  valid.lines[1].credit='100.00';
+  assert.match(verifySnapshots(valid,structuredClone(valid)),/^[a-f0-9]{64}$/);
+});
+
 test('#646 missing admin URL is a BLOCKED report, never synthetic success',async()=>{
   const report=await runDrill({});
   assert.equal(report.status,'BLOCKED');
