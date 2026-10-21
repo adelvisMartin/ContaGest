@@ -59,6 +59,9 @@ test('#646 fixtures never contain real customer identifiers and are tenant-separ
   assert.equal((sql.match(/INSERT INTO public\."Tenant"/g)||[]).length,2);
   assert.equal((sql.match(/INSERT INTO public\."LedgerLine"/g)||[]).length,2);
   assert.match(sql,/100\.00/);assert.match(sql,/25\.50/);
+  assert.match(sql,/"ivaDebit","ivaCredit","igtfPaid"/);
+  for(const tax of ['16.00,3.20,2.10','4.08,0.50,0.30'])
+    assert.ok(sql.includes(tax),'synthetic tax amount '+tax+' must be present');
   assert.match(sql,/dr\.synthetic/);
   assert.doesNotMatch(sql,/SELECT .*FROM auth\.users|DELETE FROM public\."Tenant" WHERE true/i);
 });
@@ -69,11 +72,19 @@ function control(){
   return {
     tenantIds:owners,
     clients:owners.map(owner=>({id:randomUUID(),owner})),
-    entries,lines:entries.flatMap(x=>[
-      {id:randomUUID(),entry:x.id,debit:'100.00',credit:'0.00'},
-      {id:randomUUID(),entry:x.id,debit:'0.00',credit:'100.00'}
-    ]),
-    taxes:owners.map(owner=>({id:randomUUID(),owner,period:'2097-10',status:'open',ivaDebit:'0.00',ivaCredit:'0.00',igtfPaid:'0.00'})),
+    entries,lines:entries.flatMap((x,index)=>{
+      const amount=index===0?'100.00':'25.50';
+      return [
+        {id:randomUUID(),entry:x.id,debit:amount,credit:'0.00'},
+        {id:randomUUID(),entry:x.id,debit:'0.00',credit:amount}
+      ];
+    }),
+    taxes:owners.map((owner,index)=>({
+      id:randomUUID(),owner,period:'2097-10',status:'open',
+      ivaDebit:index===0?'16.00':'4.08',
+      ivaCredit:index===0?'3.20':'0.50',
+      igtfPaid:index===0?'2.10':'0.30'
+    })),
     audit:owners.map(owner=>({id:randomUUID(),owner})),
     unbalanced:0
   };
@@ -118,6 +129,21 @@ test('#646 independently invalid synthetic fixtures never certify their own rest
   const badFiscalAmount=structuredClone(original);
   badFiscalAmount.taxes[0].ivaDebit='250.00';
   assert.throws(()=>verifySnapshots(badFiscalAmount,structuredClone(badFiscalAmount)),/FISCAL_FIXTURE_INVALID/);
+
+  // Equal source+target snapshots must never hide corrupt or swapped tax values.
+  const zeroed=structuredClone(original);
+  zeroed.taxes[0].ivaDebit='0.00';
+  assert.throws(()=>verifySnapshots(zeroed,structuredClone(zeroed)),/FISCAL_FIXTURE_INVALID/);
+
+  const swappedTaxes=structuredClone(original);
+  for(const field of ['ivaDebit','ivaCredit','igtfPaid'])
+    [swappedTaxes.taxes[0][field],swappedTaxes.taxes[1][field]]
+      =[swappedTaxes.taxes[1][field],swappedTaxes.taxes[0][field]];
+  assert.throws(()=>verifySnapshots(swappedTaxes,structuredClone(swappedTaxes)),/FISCAL_FIXTURE_INVALID/);
+
+  const changedCredit=structuredClone(original);
+  changedCredit.taxes[1].ivaCredit='0.51';
+  assert.throws(()=>verifySnapshots(original,changedCredit),/FISCAL_FIXTURE_INVALID/);
 
   const invalidMoney=structuredClone(original);
   invalidMoney.lines[0].debit='NaN';

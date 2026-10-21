@@ -61,12 +61,16 @@ export function fixtureSql(ids){
   return ids.map((tenant,i)=>{
     const client=randomUUID(),entry=randomUUID(),audit=randomUUID(),tax=randomUUID();
     const amount=i?'25.50':'100.00';
+    // Arbitrary nonzero synthetic tax amounts, NOT rates or fiscal advice.
+    // Distinct per-tenant triplets let the restore sentinel detect swapped
+    // tax records even when counts and the global fiscal totals are unchanged.
+    const fiscal=i?['4.08','0.50','0.30']:['16.00','3.20','2.10'];
     return [
       'INSERT INTO public."Tenant" ("id","rif","name","status") VALUES (\''+tenant+'\',\'DR646_'+tenant.replaceAll('-','')+'\',\'Synthetic DR tenant\',\'active\');',
       'INSERT INTO public."Client" ("id","tenantId","rif","name") VALUES (\''+client+'\',\''+tenant+'\',\'DR646_'+i+'\',\'Synthetic DR client\');',
       'INSERT INTO public."LedgerEntry" ("id","tenantId","fiscalPeriod","description","posted","postedAt") VALUES (\''+entry+'\',\''+tenant+'\',\'2097-10\',\'Synthetic balanced entry\',true,now());',
       'INSERT INTO public."LedgerLine" ("id","entryId","accountCode","accountName","debit","credit") VALUES (\''+randomUUID()+'\',\''+entry+'\',\'DR646.D\',\'Synthetic Debit\','+amount+',0),(\''+randomUUID()+'\',\''+entry+'\',\'DR646.C\',\'Synthetic Credit\',0,'+amount+');',
-      'INSERT INTO public."TaxPeriod" ("id","tenantId","period","status") VALUES (\''+tax+'\',\''+tenant+'\',\'2097-10\',\'open\');',
+      'INSERT INTO public."TaxPeriod" ("id","tenantId","period","status","ivaDebit","ivaCredit","igtfPaid") VALUES (\''+tax+'\',\''+tenant+'\',\'2097-10\',\'open\','+fiscal.join(',')+');',
       'INSERT INTO public."AuditLog" ("id","tenantId","action","entity","entityId") VALUES (\''+audit+'\',\''+tenant+'\',\'dr.synthetic\',\'LedgerEntry\',\''+entry+'\');'
     ].join('\n');
   }).join('\n');
@@ -106,13 +110,22 @@ export function verifySnapshots(before,after){
       if([...counts.values()].some(count=>count!==1))
         throw new Error('DR646_TENANT_DISTRIBUTION_FAILED');
     }
+    const fiscalByTenant=new Map();
     for(const period of snapshot.taxes){
-      if(period.period!=='2097-10'||period.status!=='open'||
-        minorUnits(period.ivaDebit)!==0n||
-        minorUnits(period.ivaCredit)!==0n||
-        minorUnits(period.igtfPaid)!==0n)
+      if(period.period!=='2097-10'||period.status!=='open')
         throw new Error('DR646_FISCAL_FIXTURE_INVALID');
+      fiscalByTenant.set(period.owner,{
+        ivaDebit:minorUnits(period.ivaDebit),
+        ivaCredit:minorUnits(period.ivaCredit),
+        igtfPaid:minorUnits(period.igtfPaid)
+      });
     }
+    // Expected tax control totals derive from the synthetic per-tenant
+    // journal signature, not from UUID ordering or aggregate tax sums.
+    const expectedTaxByJournalDebit=new Map([
+      [10000n,{ivaDebit:1600n,ivaCredit:320n,igtfPaid:210n}],
+      [2550n,{ivaDebit:408n,ivaCredit:50n,igtfPaid:30n}]
+    ]);
     const totals=new Map(snapshot.entries.map(entry=>{
       if(entry.posted!==true)throw new Error('DR646_POSTED_LEDGER_REQUIRED');
       return [entry.id,{lines:0,debit:0n,credit:0n}];
@@ -128,6 +141,16 @@ export function verifySnapshots(before,after){
     for(const {lines,debit,credit} of totals.values()){
       if(lines!==2)throw new Error('DR646_LEDGER_LINE_DISTRIBUTION_FAILED');
       if(debit===0n||debit!==credit)throw new Error('DR646_LEDGER_IMBALANCE');
+    }
+    for(const journal of snapshot.entries){
+      const sums=totals.get(journal.id);
+      const expected=expectedTaxByJournalDebit.get(sums.debit);
+      const actual=fiscalByTenant.get(journal.owner);
+      if(!expected||!actual||
+        actual.ivaDebit!==expected.ivaDebit||
+        actual.ivaCredit!==expected.ivaCredit||
+        actual.igtfPaid!==expected.igtfPaid)
+        throw new Error('DR646_FISCAL_FIXTURE_INVALID');
     }
   }
   assert.deepEqual(after,before,'DR646_RESTORED_SNAPSHOT_DIVERGED');
