@@ -83,15 +83,45 @@ function snapshotQuery(ids){
    "'unbalanced',(SELECT count(*) FROM (SELECT e.id FROM public.\"LedgerEntry\" e JOIN public.\"LedgerLine\" l ON l.\"entryId\"=e.id WHERE e.\"tenantId\" IN ("+scope+") AND e.posted=true GROUP BY e.id HAVING sum(l.debit)<>sum(l.credit)) q))::text";
 }
 export function verifySnapshots(before,after){
+  // Check both sides independently. Equal snapshots are not proof if the
+  // fixture was already cross-tenant, unposted or financially invalid.
+  const minorUnits=(value)=>{
+    if(typeof value!=='string'||!/^(0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/.test(value))
+      throw new Error('DR646_DECIMAL_INVALID');
+    const [whole,fraction='']=value.split('.');
+    return BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0'));
+  };
   for(const snapshot of [before,after]){
     if(snapshot.tenantIds?.length!==2 || snapshot.clients?.length!==2
       || snapshot.entries?.length!==2 || snapshot.lines?.length!==4
       || snapshot.taxes?.length!==2 || snapshot.audit?.length!==2
       || Number(snapshot.unbalanced)!==0)throw new Error('DR646_INVARIANTS_FAILED');
     const tenants=new Set(snapshot.tenantIds),entries=new Set(snapshot.entries.map(x=>x.id));
+    if(tenants.size!==2||entries.size!==2)throw new Error('DR646_INVARIANTS_FAILED');
     for(const row of [...snapshot.clients,...snapshot.entries,...snapshot.taxes,...snapshot.audit])
       if(!tenants.has(row.owner))throw new Error('DR646_TENANT_BOUNDARY_FAILED');
-    for(const row of snapshot.lines)if(!entries.has(row.entry))throw new Error('DR646_LEDGER_ORPHAN');
+    for(const group of [snapshot.clients,snapshot.entries,snapshot.taxes,snapshot.audit]){
+      const counts=new Map([...tenants].map(tenant=>[tenant,0]));
+      for(const row of group)counts.set(row.owner,counts.get(row.owner)+1);
+      if([...counts.values()].some(count=>count!==1))
+        throw new Error('DR646_TENANT_DISTRIBUTION_FAILED');
+    }
+    const totals=new Map(snapshot.entries.map(entry=>{
+      if(entry.posted!==true)throw new Error('DR646_POSTED_LEDGER_REQUIRED');
+      return [entry.id,{lines:0,debit:0n,credit:0n}];
+    }));
+    for(const row of snapshot.lines){
+      const entry=totals.get(row.entry);
+      if(!entry)throw new Error('DR646_LEDGER_ORPHAN');
+      const debit=minorUnits(row.debit),credit=minorUnits(row.credit);
+      if((debit===0n)===(credit===0n))
+        throw new Error('DR646_LEDGER_LINE_INVALID');
+      entry.lines+=1;entry.debit+=debit;entry.credit+=credit;
+    }
+    for(const {lines,debit,credit} of totals.values()){
+      if(lines!==2)throw new Error('DR646_LEDGER_LINE_DISTRIBUTION_FAILED');
+      if(debit===0n||debit!==credit)throw new Error('DR646_LEDGER_IMBALANCE');
+    }
   }
   assert.deepEqual(after,before,'DR646_RESTORED_SNAPSHOT_DIVERGED');
   return createHash('sha256').update(JSON.stringify(before)).digest('hex');
