@@ -46,6 +46,13 @@
       "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
     },
     {
+      "file": ".github/workflows/backlog-reconciliation-v661.yml",
+      "classification": "ADAPTER",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Backlog proof adapter validates issue snapshots; retain its scoped pull-request and manual triggers"
+    },
+    {
       "file": ".github/workflows/bank-reconciliation-v237.yml",
       "classification": "ADAPTER",
       "owner": "backend-domain",
@@ -65,6 +72,13 @@
       "owner": "qa",
       "status": "ACTIVE",
       "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/benchmark-provenance-v764.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Benchmark source provenance validator has independent scoped contracts and no live-data access"
     },
     {
       "file": ".github/workflows/benchmark-runtime-v588.yml",
@@ -114,6 +128,20 @@
       "owner": "backend-domain",
       "status": "ACTIVE",
       "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/dependency-governance-v656.yml",
+      "classification": "ADAPTER",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Dependency manifest and license guard remains a scoped supply-chain policy adapter"
+    },
+    {
+      "file": ".github/workflows/deprecation-consumer-proof-v657.yml",
+      "classification": "ADAPTER",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Deprecated consumer proof protects live imports before any removal or consolidation"
     },
     {
       "file": ".github/workflows/db-security-operations.yml",
@@ -375,6 +403,20 @@
       "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
     },
     {
+      "file": ".github/workflows/hipico-reference-reports.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Synthetic read-only Hípico report contracts are independent of financial release gates"
+    },
+    {
+      "file": ".github/workflows/hipico-report-share-links.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Manual opt-in PostgreSQL share-link audit; preserve explicit workflow_dispatch and production default-off"
+    },
+    {
       "file": ".github/workflows/hipico-risk-policy-v6.yml",
       "classification": "ADAPTER",
       "owner": "hipico",
@@ -466,6 +508,13 @@
       "reason": "Canonical policy/gate owner whose check name must remain stable"
     },
     {
+      "file": ".github/workflows/operational-smoke-v664.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Operational read-only smoke validates PostgreSQL 17 and Chromium on its own path-scoped trigger"
+    },
+    {
       "file": ".github/workflows/payables-v235.yml",
       "classification": "ADAPTER",
       "owner": "backend-domain",
@@ -492,6 +541,13 @@
       "owner": "release-ops",
       "status": "ACTIVE",
       "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/provider-integration-catalog-v772.yml",
+      "classification": "ADAPTER",
+      "owner": "platform",
+      "status": "ACTIVE",
+      "reason": "Provider integration catalog has independent provider authority and source-contract checks"
     },
     {
       "file": ".github/workflows/pwa-offline-v563.yml",
@@ -576,6 +632,13 @@
       "owner": "release-ops",
       "status": "ACTIVE",
       "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
+    },
+    {
+      "file": ".github/workflows/ux-touch-focus-v773.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Touch-target and forced-colors accessibility contracts include dedicated Chromium verification"
     }
   ]
 }

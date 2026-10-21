@@ -10,7 +10,9 @@ const router = Router();
 router.get('/gym/classes', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT c.*, t."fullName" AS "trainerName", count(b."id") FILTER (WHERE b."status"='booked')::int AS bookings
-    FROM public."GymClass" c LEFT JOIN public."GymTrainer" t ON t."id"=c."trainerId" LEFT JOIN public."GymClassBooking" b ON b."classId"=c."id"
+    FROM public."GymClass" c
+    LEFT JOIN public."GymTrainer" t ON t."tenantId"=c."tenantId" AND t."id"=c."trainerId"
+    LEFT JOIN public."GymClassBooking" b ON b."tenantId"=c."tenantId" AND b."classId"=c."id"
     WHERE c."tenantId"=$1 AND c."startsAt">=now()-interval '1 day' GROUP BY c."id",t."fullName" ORDER BY c."startsAt" LIMIT 500
   `, ctx(req).tenantId);
   ok(res, rows);

@@ -44,7 +44,9 @@ export function proposeStraightLineDepreciation(input){
  const monthly=basis/BigInt(life);
  let carrying=cost;
  const periods=[];
- if(basis>0n)for(let i=0;i<life;i++){
+ // Even when cost equals residual, retain the reviewed useful-life periods.
+ // A zero-expense asset must not disappear from the depreciation calendar.
+ for(let i=0;i<life;i++){
   const monthIndex=year*12+(month-1)+(i+1);
   const y=Math.floor(monthIndex/12),m=monthIndex%12+1;
   if(y>9999)throw new TypeError('ASSET_SCHEDULE_DATE_OVERFLOW');

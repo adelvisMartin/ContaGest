@@ -1,0 +1,7 @@
+# #804 · Dental prosthetic lab fulfillment intent (pre-integration)
+
+`Dental Lab Order` is owned by **#805**, and `Supplier`/`Procurement` and inventory/accounting are owned by their existing authorities. This increment defines only a **pure**, version-checked proposal to advance an already verified #805 lab order, with explicit sent→production→receive→fit check→accept→deliver and append-only rework loops.
+
+The caller must verify the *actual* order/tenant/patient/Supplier ownership on the backend (the `sourceVerified` flag is never a browser permission). It must also bind the original immutable snapshot SHA, actor, revision/CAS and unique effect key within the eventual DB transaction. Rework and cancellation require reasons. This helper cannot create lab orders, send provider messages, post payments, debit stock or modify signed clinical evidence.
+
+**Not Done:** #805 real lab-order persistence/provenance still pending; #804 needs tracking endpoints, supplier shipment, acceptance/rework evidence, overdue/outbox, finance bridge, PG17 A/B, browser/clinical review. Pure tests: `node --test tests/dental_lab_fulfillment_v804.test.mjs`. SOURCE_REUSE=NONE; rollback = revert three new files.

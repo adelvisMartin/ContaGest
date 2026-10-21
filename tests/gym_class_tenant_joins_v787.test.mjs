@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const src=readFileSync(new URL('../backend/src/modules/verticals/gym-classes.routes.ts',import.meta.url),'utf8');
+const list=src.slice(src.indexOf("router.get('/gym/classes'"),src.indexOf("router.post('/gym/classes'"));
+test('class list is server scoped to authenticated tenant',()=>assert.match(list,/WHERE c\."tenantId"=\$1/));
+test('trainer name cannot join by ID alone across tenants',()=>assert.match(list,/JOIN public\."GymTrainer" t ON t\."tenantId"=c\."tenantId" AND t\."id"=c\."trainerId"/));
+test('booking count cannot join by class ID alone across tenants',()=>assert.match(list,/JOIN public\."GymClassBooking" b ON b\."tenantId"=c\."tenantId" AND b\."classId"=c\."id"/));
+test('only booked status contributes to aggregate',()=>assert.match(list,/FILTER \(WHERE b\."status"='booked'\)/));
+test('read route still requires gym.manage authorization',()=>assert.match(list,/requirePermission\('gym\.manage'\)/));

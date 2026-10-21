@@ -268,7 +268,16 @@ router.post('/clinical-inventory/consume', requirePermission('inventory.manage')
     const existing=await tx.inventoryMovement.findFirst({
       where:{tenantId,source:'veterinary-prescription',sourceId}
     });
-    if(existing)return {movement:existing,replayed:true};
+    if(existing){
+      // The source effect key is bound to its original lot and amount. A
+      // retry that changes either must be rejected, not acknowledged as success.
+      if(existing.lotId!==body.lotId || compare(existing.quantity,body.quantity)!==0){
+        throw new HttpError(409,'La clave de consumo ya fue usada con otro lote o cantidad.',{
+          code:'VETERINARY_DISPENSE_IDEMPOTENCY_CONFLICT'
+        });
+      }
+      return {movement:existing,replayed:true};
+    }
 
     const prescriptionRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT cp."id",cp."patientId",cp."productId",cp."medication",cp."status"

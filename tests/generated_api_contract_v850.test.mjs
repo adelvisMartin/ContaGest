@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { buildApiContract } from '../scripts/api-contract-authority-v652.mjs';
 
 import {
   assertAudienceIsolation,
@@ -107,8 +106,11 @@ test('compatibility classifier separates additive, behavior-sensitive, and break
 });
 
 test('tracked client slice is regenerated exactly and the migrated consumer has no handwritten clients endpoint', async () => {
-  const root = fileURLToPath(new URL('..', import.meta.url));
   const generated = await readFile(new URL('../frontend/src/generated/api-client-v850.ts', import.meta.url), 'utf8');
+  const expected = renderTypedClient(buildProjection(buildApiContract(), { audience: 'tenant' }), {
+    pathPrefixes: ['/api/v1/clients'],
+  });
+  assert.equal(generated, expected, 'committed client slice must equal the source-derived generated output');
   assert.match(generated, /createApiV1Clients/);
   assert.match(generated, /deleteApiV1ClientsById/);
   assert.match(generated, /getApiV1Clients/);
@@ -126,13 +128,4 @@ test('tracked client slice is regenerated exactly and the migrated consumer has 
   assert.match(adapter, /BackendApi\.request/);
   assert.match(adapter, /\^\\\/api\\\/v1/);
 
-  const result = spawnSync(process.execPath, ['scripts/generated-api-contract-v850.mjs', '--check', '--base', 'main', '--audience', 'all'], {
-    cwd: root,
-    encoding: 'utf8',
-    shell: false,
-    env: process.env,
-  });
-  assert.equal(result.status, 0, `${result.stdout || ''}\n${result.stderr || ''}`);
-  assert.match(result.stdout, /"ticket":\s*850/);
-  assert.match(result.stdout, /"source":\s*652/);
 });

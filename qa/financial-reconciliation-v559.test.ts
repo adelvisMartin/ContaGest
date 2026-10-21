@@ -114,6 +114,27 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
 
   let fatal: unknown = null;
   try {
+    // #785: the disposable QA tenant opts into explicit role mappings; production
+    // accounts are never assigned arbitrary template codes by a migration.
+    await h.ok('/chart-accounts/sync-template', { method: 'POST', body: '{}' });
+    const fixtureRoleCodes = {
+      ar: '1.1.03.001', revenue: '4.1.01', vat_output: '2.1.02.001',
+      tax_payable: '2.1.02.005', ap: '2.1.01.001',
+      cost_of_sales: '5.1.01', vat_input: '1.1.05.001'
+    };
+    const previousMappings = await h.ok('/chart-accounts/role-mappings');
+    for (const [role, accountCode] of Object.entries(fixtureRoleCodes)) {
+      if (!previousMappings.some((mapping: any) => mapping.role === role)) {
+        await h.ok('/chart-accounts/role-mappings', { method: 'POST', body: JSON.stringify({ role, accountCode }) });
+      }
+    }
+    const mapped = new Map<string, string>((await h.ok('/chart-accounts/role-mappings')).map((entry: any) => [entry.role, entry.accountCode]));
+    const code = (role: string) => {
+      const account = mapped.get(role);
+      assert.ok(account, `Missing QA account role ${role}`);
+      return account;
+    };
+
     const product = await h.prisma.product.create({
       data: {
         tenantId: h.tenant.id,
@@ -201,11 +222,11 @@ test('issue #559 reconciles the golden financial dataset end-to-end on isolated 
     add('purchase-ledger-balanced', purchaseBalance.debitExact, purchaseBalance.creditExact, { sourceId: purchase.id, ledgerEntryId: purchaseLedger.id });
     add('sale-ledger-source', sale.id, saleLedger.sourceId, { ledgerEntryId: saleLedger.id });
     add('purchase-ledger-source', purchase.id, purchaseLedger.sourceId, { ledgerEntryId: purchaseLedger.id });
-    add('accounts-receivable', fixture.sale.total, lineAmount(saleLedger, '1.1.03.001', 'debit'), { sourceId: sale.id, ledgerEntryId: saleLedger.id });
-    add('sales-tax-payable', fixture.sale.tax, lineAmount(saleLedger, '2.1.02.001', 'credit'), { sourceId: sale.id, ledgerEntryId: saleLedger.id });
-    add('accounts-payable', fixture.purchase.total, lineAmount(purchaseLedger, '2.1.01.001', 'credit'), { sourceId: purchase.id, ledgerEntryId: purchaseLedger.id });
-    add('purchase-cogs-contract', fixture.purchase.subtotal, lineAmount(purchaseLedger, '5.1.01', 'debit'), { sourceId: purchase.id, ledgerEntryId: purchaseLedger.id });
-    add('purchase-vat-credit', fixture.purchase.tax, lineAmount(purchaseLedger, '1.1.05.001', 'debit'), { sourceId: purchase.id, ledgerEntryId: purchaseLedger.id });
+    add('accounts-receivable', fixture.sale.total, lineAmount(saleLedger, code('ar'), 'debit'), { sourceId: sale.id, ledgerEntryId: saleLedger.id });
+    add('sales-tax-payable', fixture.sale.tax, lineAmount(saleLedger, code('vat_output'), 'credit'), { sourceId: sale.id, ledgerEntryId: saleLedger.id });
+    add('accounts-payable', fixture.purchase.total, lineAmount(purchaseLedger, code('ap'), 'credit'), { sourceId: purchase.id, ledgerEntryId: purchaseLedger.id });
+    add('purchase-cogs-contract', fixture.purchase.subtotal, lineAmount(purchaseLedger, code('cost_of_sales'), 'debit'), { sourceId: purchase.id, ledgerEntryId: purchaseLedger.id });
+    add('purchase-vat-credit', fixture.purchase.tax, lineAmount(purchaseLedger, code('vat_input'), 'debit'), { sourceId: purchase.id, ledgerEntryId: purchaseLedger.id });
 
     const accountKey = `${RUN}-bank-account`;
     const accountBody = { bankName: fixture.bank.bankName, accountNo: `${fixture.bank.accountNo}-${RUN}`, currency: fixture.currency, openingBalance: fixture.bank.openingBalance };

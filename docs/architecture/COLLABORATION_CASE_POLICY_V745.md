@@ -1,0 +1,7 @@
+# #745 · Collaboration case transition guard
+
+Pure tenant-bound state policy for an assigned client and accountant. States: open → waiting_client → in_review → resolved; allowed cancellations preserve a reason. Actor role is derived from the **trusted** tenant/assignment snapshot; unassigned users and cross-tenant input fail closed. Client evidence submission requires a previously server-validated document count; no upload, chat or email is performed here. Immutable result proposes expected revision + append-only event with idempotency requirements, never writes.
+
+**Do not take `sourceVerified` or `actorTenantId` from the request body:** they must come from authenticated session, membership and existing storage ownership. Never grant a client blanket access to other tenant cases or expose PII in notification payloads. This policy is not a portal, invitation system, media link, consent store, payment connector or message sender.
+
+**Still missing:** persistence for request/thread/evidence, RBAC/IDOR, upload validation, tenant A/B, document exchange, task/outbox/delivery and Cg* portal browser E2E. `SOURCE_REUSE=NONE`. Test: `node --test tests/collaboration_case_policy_v745.test.mjs`. Rollback by reverting new files; no DB change.

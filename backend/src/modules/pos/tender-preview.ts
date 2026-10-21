@@ -101,7 +101,9 @@ export function previewPosTender(input: PosTenderPreviewInput): PosTenderPreview
   const paid = cash + nonCash;
   const remaining = paid < due ? due - paid : 0n;
   const change = paid > due ? paid - due : 0n;
-  return {
+  // TS Readonly is compile-time only. Prevent downstream UI code from
+  // mutating a computed payment/change preview into a misleading receipt.
+  return Object.freeze({
     currency,
     due: formatMinor(due),
     paid: formatMinor(paid),
@@ -110,5 +112,5 @@ export function previewPosTender(input: PosTenderPreviewInput): PosTenderPreview
     status: remaining > 0n ? 'pending' : change > 0n ? 'change' : 'exact',
     cashTendered: formatMinor(cash),
     nonCashTendered: formatMinor(nonCash)
-  };
+  });
 }

@@ -144,7 +144,7 @@ function transactionPromise(transaction) {
 }
 
 export async function enqueueOfflineOperation({ session, operation, payload, idempotencyKey }) {
-  const authority = OUTBOX_ALLOWLIST[operation];
+  const authority = Object.hasOwn(OUTBOX_ALLOWLIST, operation) ? OUTBOX_ALLOWLIST[operation] : null;
   if (!authority) {
     const error = new Error(`Operación offline no autorizada: ${operation}`);
     error.code = 'OFFLINE_OPERATION_NOT_ALLOWED';
@@ -224,12 +224,15 @@ export async function flushOfflineOutbox(session, sender) {
   const records = await readOutbox(session);
   const results = [];
   for (const record of records.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))) {
-    if (!OUTBOX_ALLOWLIST[record.operation]) continue;
+    // Resolve offline transport from this source-controlled allowlist, never mutable IndexedDB metadata.
+    const authority = Object.hasOwn(OUTBOX_ALLOWLIST, record.operation)
+      ? OUTBOX_ALLOWLIST[record.operation] : null;
+    if (!authority) continue;
     try {
       const response = await sender({
         operation: record.operation,
-        method: record.authority.method,
-        path: record.authority.path,
+        method: authority.method,
+        path: authority.path,
         payload: record.payload,
         idempotencyKey: record.idempotencyKey
       });

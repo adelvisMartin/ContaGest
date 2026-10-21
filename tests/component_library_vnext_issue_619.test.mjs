@@ -7,8 +7,14 @@ const read=(file)=>fs.readFileSync(file,'utf8');
 
 test('#619 canonical component library exports the required foundation API',()=>{
   const source=read('frontend/src/components/vnext/index.js');
+  const states=read('frontend/src/components/vnext/states.js');
+  const exportsFromStates=source.match(/export\s*\{([^}]+)\}\s*from\s*['"]\.\/states\.js['"]/m)?.[1]||'';
+  const aliases=new Set(exportsFromStates.split(',').map((name)=>name.trim()));
   for(const name of ['CgButton','CgIconButton','CgTextField','CgTextarea','CgPageHeader','CgSection','CgStatusChip','CgBadge','CgMoney','CgLoadingState','CgEmptyState','CgErrorState','CgPermissionState']){
-    assert.match(source,new RegExp(`export (?:function|const) ${name}\\b`),name);
+    const direct=new RegExp('export (?:function|const) '+name+'\\b').test(source);
+    const reexported=aliases.has(name) &&
+      new RegExp('export (?:function|const) '+name+'\\b').test(states);
+    assert.ok(direct||reexported,name);
   }
   assert.match(source,/aria-busy/);
   assert.match(source,/accessible label/);
@@ -17,8 +23,9 @@ test('#619 canonical component library exports the required foundation API',()=>
 
 test('#619 existing MUI islands consume canonical Cg primitives as pilots',()=>{
   const runtime=read('frontend/src/components/muiRuntime.js');
-  assert.match(runtime,/import \{ CgButton, CgTextField \} from '\.\/vnext\/index\.js'/);
-  assert.match(runtime,/React\.createElement\(CgTextField/);
+  assert.match(runtime,/import \{ CgButton, CgTextField, CgSelect, CgDatePicker, CgTimeField \} from '\.\/vnext\/index\.js'/);
+  assert.match(runtime,/FieldComponent=sourceType==='date'\?CgDatePicker:sourceType==='time'\?CgTimeField:CgTextField/);
+  assert.match(runtime,/React\.createElement\(CgSelect/);
   assert.match(runtime,/React\.createElement\(CgButton/);
   assert.doesNotMatch(runtime,/function ButtonIsland[^\n]*React\.createElement\(Mui\.Button/);
 });

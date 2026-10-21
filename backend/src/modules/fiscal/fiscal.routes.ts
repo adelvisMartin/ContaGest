@@ -7,7 +7,11 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
+import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
+import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts } from './taxpayer-profile.repository.js';
+import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
+import { createFiscalLegalSourceDraft, listFiscalLegalSources } from './fiscal-legal-source.repository.js';
 import {
   allocateFiscalNumber,
   assertFiscalClosePreconditions,
@@ -24,6 +28,8 @@ import {
 
 const router = Router();
 router.use(requireTenant);
+router.use('/books', fiscalBookReadinessRoutes);
+router.use('/compliance', fiscalComplianceReadinessRoutes);
 
 const periodSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Usa formato AAAA-MM.');
 const moduleSchema = z.enum(['fiscal', 'iva', 'islr', 'igtf', 'retiva', 'municipal']);
@@ -58,6 +64,18 @@ const taxpayerProfileDraftSchema = z.object({
   activityCodes:z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/)).min(1).max(20),
   sourceReference:z.string().trim().min(3).max(240),
   sourceContentSha256:z.string().regex(/^[a-f0-9]{64}$/i)
+}).strict();
+const fiscalLegalSourceSchema = z.object({
+  sourceType: z.enum(['official_gazette', 'statute', 'regulation', 'administrative_ruling', 'other']),
+  reference: z.string().trim().min(3).max(160),
+  title: z.string().trim().min(3).max(240),
+  sourceUrl: z.string().max(2048).nullable().optional(),
+  publishedAt: z.string().nullable().optional(),
+  contentSha256: z.string().regex(/^[0-9a-f]{64}$/i),
+  snapshotMetadata: z.object({
+    captureMethod: z.enum(['manual', 'archive']),
+    contentBytes: z.number().int().min(0).max(50_000_000).optional()
+  }).strict().optional()
 }).strict();
 const issueDocumentSchema = z.object({
   kind: documentKindSchema,
