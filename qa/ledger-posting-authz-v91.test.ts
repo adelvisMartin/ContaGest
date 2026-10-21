@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
-import { signAccessToken } from '../backend/src/shared/auth/jwt.ts';
 
 const RUN = `QA91-AUTHZ-${Date.now().toString(36).toUpperCase()}`;
 const CUSTOMER_ID = `${RUN}-customer`;
@@ -54,7 +53,7 @@ test('issue #91 authenticated licensed user without accounting permissions canno
       (${LICENSE_ID},${h.tenant.id},${user.id},${user.email},'qa91',${keyHash},${`${RUN.slice(0, 12)}…`},'[]'::jsonb,'2099-12-31T23:59:59.000Z'::timestamptz,'active',${SUBSCRIPTION_ID},now(),now())
   `;
 
-  const token = signAccessToken({ id: user.id, email: user.email }, h.tenant.id);
+  const token = await h.issueSessionTokenFor({ id: user.id, email: user.email });
 
   const viewDenied = await h.status('/accounting/entries', 403, { method: 'GET' }, token);
   assert.match(JSON.stringify(viewDenied.payload), /Permiso requerido: accounting\.view/i);

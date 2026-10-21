@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../../backend/src/app.ts';
 import { prisma } from '../../backend/src/database/prisma.ts';
@@ -16,10 +17,44 @@ export async function createRealBackendHarness(){
   assert.ok(admin,`QA admin ${QA_ADMIN_EMAIL} not found`);
   const platformPermission=await prisma.userRole.count({where:{userId:admin.id,role:{tenantId:tenant.id,permissions:{some:{permission:{key:'platform.manage'}}}}}});
   assert.ok(platformPermission>0,'QA admin lacks platform.manage');
-  const token=signAccessToken({id:admin.id,email:admin.email},tenant.id);
+  // QA uses real server-bound sessions, exactly as production bearer tokens do.
+  // Never bypass the sid/UserSession check in requestContext just for tests.
+  const fixtureSessionIds=new Set<string>();
+  async function issueSessionTokenFor(user:{id:string;email:string}){
+    const active=await prisma.userProfile.findFirst({
+      where:{id:user.id,tenantId:tenant.id,status:'active'},
+      select:{email:true}
+    });
+    assert.equal(active?.email,user.email,'QA session requires an active user of the fixture tenant');
+    const id=randomUUID();
+    const refreshHash=randomBytes(32).toString('hex');
+    const csrfHash=randomBytes(32).toString('hex');
+    const expiresAt=new Date(Date.now()+30*60*1000);
+    await prisma.$executeRaw`
+      INSERT INTO public."UserSession"
+        ("id","userId","tenantId","refreshHash","csrfHash","status","rotationCounter","expiresAt","metadata","createdAt","updatedAt")
+      VALUES
+        (${id},${user.id},${tenant.id},${refreshHash},${csrfHash},'active',0,${expiresAt},'{"qaFixture":true}'::jsonb,now(),now())
+    `;
+    fixtureSessionIds.add(id);
+    return signAccessToken({id:user.id,email:user.email},tenant.id,id);
+  }
+  async function cleanupFixtureSessions(){
+    for(const id of fixtureSessionIds){
+      await prisma.$executeRaw`DELETE FROM public."UserSession" WHERE "id"=${id} AND "tenantId"=${tenant.id}`;
+      fixtureSessionIds.delete(id);
+    }
+  }
+  const token=await issueSessionTokenFor(admin);
 
-  const server=createApp().listen(0,'127.0.0.1');
-  await new Promise<void>((resolve,reject)=>{server.once('listening',()=>resolve());server.once('error',reject);});
+  let server:ReturnType<ReturnType<typeof createApp>['listen']>;
+  try{
+    server=createApp().listen(0,'127.0.0.1');
+    await new Promise<void>((resolve,reject)=>{server.once('listening',()=>resolve());server.once('error',reject);});
+  }catch(error){
+    await cleanupFixtureSessions();
+    throw error;
+  }
   const address=server.address() as AddressInfo;
   const base=`http://127.0.0.1:${address.port}`;
   let ipCounter=1;
@@ -49,6 +84,12 @@ export async function createRealBackendHarness(){
     return result;
   }
 
-  async function close(){await new Promise<void>((resolve)=>server.close(()=>resolve()));}
-  return{tenant,admin,token,base,request,ok,status,close,prisma};
+  let closed=false;
+  async function close(){
+    if(closed)return;
+    closed=true;
+    try{await new Promise<void>((resolve)=>server.close(()=>resolve()));}
+    finally{await cleanupFixtureSessions();}
+  }
+  return{tenant,admin,token,base,request,ok,status,close,prisma,issueSessionTokenFor};
 }
