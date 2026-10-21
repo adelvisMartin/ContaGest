@@ -13,7 +13,7 @@ const normalizeAccount=(account={})=>({
 });
 
 export const ChartAccountsService={
-  list(){return BackendApi.get('/chart-accounts');},
+  list(){return BackendApi.get('/chart-accounts?persistedOnly=true');},
   create(account){return BackendApi.post('/chart-accounts',normalizeAccount(account));},
   syncTemplate(){return BackendApi.post('/chart-accounts/sync-template',{});},
   roleMappings(){return BackendApi.get('/chart-accounts/role-mappings');},

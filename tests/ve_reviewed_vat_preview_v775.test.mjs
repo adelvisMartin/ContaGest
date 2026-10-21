@@ -8,7 +8,7 @@ const active=(family,numerator,selector=family)=>({
   reviewedBy:'synthetic-actor',reviewedAt:'2026-01-01T00:00:00Z',
   numerator,denominator:100
 });
-const input={tenantId:'A',eventDate:'2026-06-01',taxableMinor:10000,exemptMinor:250,notSubjectMinor:50,vatRule:active('IVA',10),retentionRule:active('RET_IVA',50)};
+const input={tenantId:'A',eventDate:'2026-06-01',taxableMinor:10000,exemptMinor:250,notSubjectMinor:50,vatSelector:'IVA',retentionSelector:'RET_IVA',vatRule:active('IVA',10),retentionRule:active('RET_IVA',50)};
 const denied=fn=>assert.throws(fn);
 test('#775 VAT/retention recomposes exact monetary bases without altering ledger',()=>{
   const p=previewReviewedVatBreakdown(input);
@@ -19,8 +19,16 @@ test('#775 VAT/retention recomposes exact monetary bases without altering ledger
   assert.ok(Object.isFrozen(p));
 });
 test('#775 no optional retention returns tax without fabricated withheld amount',()=>{
-  const p=previewReviewedVatBreakdown({...input,retentionRule:null});
+  const p=previewReviewedVatBreakdown({...input,retentionSelector:null,retentionRule:null});
   assert.equal(p.withheldVatMinor,0);assert.equal(p.netAfterWithholdingMinor,p.grossMinor);
+});
+test('#775 rejects classification selectors that do not match reviewed IVA/retention rules',()=>{
+  denied(()=>previewReviewedVatBreakdown({...input,vatSelector:'WRONG_CLASS'}));
+  denied(()=>previewReviewedVatBreakdown({...input,retentionSelector:'WRONG_AGENT_CLASS'}));
+  denied(()=>previewReviewedVatBreakdown({...input,vatSelector:''}));
+  denied(()=>previewReviewedVatBreakdown({...input,retentionSelector:null}));
+  denied(()=>previewReviewedVatBreakdown({...input,retentionRule:null}));
+  denied(()=>previewReviewedVatBreakdown({...input,vatRule:active('IVA',10,'OTHER_CONTEXT')}));
 });
 test('#775 rejects wrong family, cross-tenant, draft and outside effectivity',()=>{
   denied(()=>previewReviewedVatBreakdown({...input,vatRule:active('ISLR',10)}));

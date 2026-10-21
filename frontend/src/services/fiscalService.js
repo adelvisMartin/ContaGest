@@ -20,6 +20,8 @@ export const FISCAL_DOCUMENT_KINDS=[
 ];
 
 export const FiscalService={
+  taxpayerProfiles(){return BackendApi.get('/fiscal/taxpayer-profiles');},
+  captureTaxpayerProfileDraft(data){return BackendApi.post('/fiscal/taxpayer-profiles',data);},
   periods(){return BackendApi.get('/fiscal/periods');},
   createPeriod(data){return BackendApi.post('/fiscal/periods',data);},
   closePeriod(data){return BackendApi.post('/fiscal/close-period',data);},

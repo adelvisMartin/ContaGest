@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { prepareFiscalLegalSourceDraft } from '../backend/src/modules/fiscal/fiscal-legal-source-policy.ts';
+import { readFileSync } from 'node:fs';
+import { prepareFiscalLegalSourceDraft, prepareFiscalLegalSourceReview } from '../backend/src/modules/fiscal/fiscal-legal-source-policy.ts';
 
 const actor = Object.freeze({ tenantId: 'tenant-A', userId: 'reviewer-A' });
 const input = Object.freeze({ sourceType: 'official_gazette', reference: 'Gaceta de prueba 123', title: 'Fuente de ejemplo', sourceUrl: 'https://example.org/gazeta', publishedAt: '2026-01-02T13:00:00Z', contentSha256: 'ABCDEF00'.repeat(8) });
@@ -37,4 +38,46 @@ test('#751 source timestamps are strict UTC and cannot be silently normalized or
 
 test('#751 bad hash, unbounded metadata, unrecognized type and missing references fail closed', () => {
   for (const patch of [{ contentSha256: 'abcdef' }, { contentSha256: 'g'.repeat(64) }, { sourceType: 'approved' }, { reference: 'x' }, { title: '' }, { snapshotMetadata: { captureMethod: 'manual', secret: 'oops' } }, { snapshotMetadata: { captureMethod: 'archive', contentBytes: -1 } }, { snapshotMetadata: { captureMethod: 'archive', contentBytes: 50_000_001 } }]) denied(() => draft(patch));
+});
+
+test('#751 independent reviewer can approve a tenant-owned draft with a server timestamp', () => {
+  const result = prepareFiscalLegalSourceReview({ approved: true, reason: 'Verifiqué la captura contra el documento fuente.' },
+    { tenantId: 'tenant-A', userId: 'reviewer-B' },
+    { id: 'source-A', tenantId: 'tenant-A', createdBy: 'reviewer-A', status: 'DRAFT' }, clock);
+  assert.deepEqual(result, {
+    id: 'source-A', tenantId: 'tenant-A', status: 'REVIEWED',
+    reviewedBy: 'reviewer-B', reviewedAt: clock.toISOString(),
+    reviewReason: 'Verifiqué la captura contra el documento fuente.'
+  });
+  assert.ok(Object.isFrozen(result));
+});
+
+test('#751 review fails closed for cross-tenant, self-approval, non-draft and injected authority', () => {
+  const source = { id: 'source-A', tenantId: 'tenant-A', createdBy: 'reviewer-A', status: 'DRAFT' };
+  const input = { approved: true, reason: 'Captura verificada contra la fuente original.' };
+  for (const [proposal, reviewer, existing] of [
+    [input, { tenantId: 'tenant-B', userId: 'reviewer-B' }, source],
+    [input, { tenantId: 'tenant-A', userId: 'reviewer-A' }, source],
+    [input, { tenantId: 'tenant-A', userId: 'reviewer-B' }, { ...source, status: 'REVIEWED' }],
+    [{ ...input, reviewedAt: clock.toISOString() }, { tenantId: 'tenant-A', userId: 'reviewer-B' }, source],
+    [{ approved: true, reason: 'short' }, { tenantId: 'tenant-A', userId: 'reviewer-B' }, source]
+  ]) assert.throws(() => prepareFiscalLegalSourceReview(proposal, reviewer, existing, clock), { message: 'FISCAL_LEGAL_SOURCE_REVIEW_INVALID' });
+});
+
+test('#751 SQL and API keep review tenant-scoped, append an atomic audit and never activate a rule', () => {
+  const migration = readFileSync(new URL('../backend/prisma/migrations/20261019100000_issue_751_fiscal_legal_source_review/migration.sql', import.meta.url), 'utf8');
+  const repository = readFileSync(new URL('../backend/src/modules/fiscal/fiscal-legal-source.repository.ts', import.meta.url), 'utf8');
+  const routes = readFileSync(new URL('../backend/src/modules/fiscal/fiscal.routes.ts', import.meta.url), 'utf8');
+  assert.match(migration, /independent_reviewer_check/);
+  assert.match(migration, /"reviewedBy"\s*<>\s*"createdBy"/);
+  assert.match(migration, /GRANT UPDATE \("status", "reviewedBy", "reviewedAt", "reviewReason"\)/);
+  assert.doesNotMatch(migration, /DROP TABLE|TRUNCATE|UPDATE\s+public\."FiscalRuleVersion"/i);
+  assert.match(repository, /FOR UPDATE/);
+  assert.match(repository, /"tenantId" = \$\{input\.tenantId\}/);
+  assert.match(repository, /tx\.auditLog\.create/);
+  assert.match(repository, /"status" = 'DRAFT'/);
+  assert.match(routes, /\/legal-sources\/:id\/review/);
+  assert.match(routes, /requirePermission\('fiscal\.close'\)/);
+  assert.match(routes, /const fiscalLegalSourceSchema = z\.object\(/,
+    'the legal-source create route must retain its strict Zod schema after taxpayer-profile merges');
 });
