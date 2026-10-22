@@ -119,14 +119,25 @@ test('Bridge package version follows release policy and keeps a fail-closed LAB-
   assert.match(runtime,/Destino lab no autorizado/);
   assert.match(runtime,/async function sendMirrorToLab\(mirror\)[\s\S]*openGroup\(LAB_GROUP_NAME, true\)[\s\S]*assertCurrentLabIdentity\(\)[\s\S]*sendTextInCurrentLab/s);
   assert.match(runtime,/async function sendTextInCurrentLab\(textValue, tag\)[\s\S]*assertCurrentLabIdentity\(\)[\s\S]*keyboard\.insertText[\s\S]*assertCurrentLabIdentity\(\)[\s\S]*keyboard\.press\('Enter'\)[\s\S]*assertCurrentLabIdentity\(\)/s);
-  assert.match(runtime,/Envío al grupo fuente: IMPOSIBLE POR DISEÑO/);
+  // Dormant transport helpers do not grant SOURCE write authority: the
+  // Messenger legal policy and server-side send gate are both NO_GO.
+  const sourceGate=read('tools/hipico-whatsapp-web-bridge/src/source-policy-gate.mjs');
+  const backendPolicy=read('backend/src/modules/hipico/autonomous-reply.policy.ts');
+  const backendRoute=read('backend/src/modules/hipico-bot/hipico-bridge.routes.ts');
+  assert.match(sourceGate,/status:\s*'NO_GO'/);
+  assert.match(sourceGate,/eligible:\s*false/);
+  assert.match(backendPolicy,/SOURCE_REPLY_SEND_POLICY/);
+  assert.match(backendPolicy,/status:\s*'NO_GO'/);
+  assert.match(backendRoute,/const autoReplyConfigured=sourceAutoReplySendAuthorized\(\);/);
   assert.match(runtime,/seen-source-message-ids\.json/);
   assert.match(runtime,/spool-events/);
   assert.match(runtime,/spool-lab-mirror/);
   assert.match(runtime,/openViaSearch/);
   assert.match(runtime,/mediaKind/);
   assert.doesNotMatch(runtime,/HIPICO_ALLOW_SEND/);
-  assert.doesNotMatch(runtime,/sendTextInCurrentSource|sendMirrorToSource/);
+  assert.match(runtime,/const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH\.active/);
+  assert.match(runtime,/if \(!SOURCE_AUTO_REPLY_ACTIVE\) \{\s*const error = new Error\('SOURCE_AUTO_REPLY_DISABLED'\)/);
+  assert.match(backendRoute,/if\(!sourceAutoReplySendAuthorized\(\)\)return res\.status\(403\)/);
   const old=read('tools/hipico-whatsapp-bridge/README.md');
   assert.match(old,/DEPRECADO/);
 });
@@ -156,7 +167,9 @@ test('Bridge production readiness is authenticated, persistent and source-send c
   assert.match(secretSecurity,/MIN_HIPICO_RUNTIME_SECRET_BYTES=32/);
   assert.match(canonical,/LAB_CHANNEL_NOT_UNIQUE|labChannelCount/);
   assert.match(preflight,/body\?\.ready !== true/);
-  assert.match(preflight,/body\?\.sourceSendPossible !== false/);
+  assert.match(preflight,/!diagnostic\.sourcePolicy\.eligible && body\?\.sourceSendPossible !== false/);
+  assert.match(route,/sourceAutoReplySendAuthorized\(\)/);
+  assert.match(route,/error:'SOURCE_AUTO_REPLY_POLICY_NO_GO'/);
 });
 
 test('backend exposes a dedicated executable Hipico test gate and the general suite includes Hipico tests',()=>{
