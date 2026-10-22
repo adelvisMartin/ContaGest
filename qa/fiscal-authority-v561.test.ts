@@ -102,6 +102,48 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   });
   assert.equal(ruleV1.version, 1);
 
+  // #774: only a profile with a matching independently reviewed source/RIF,
+  // reviewed by a second actor and activated by a third, may support IVA issue.
+  const profile = await h.ok('/fiscal/taxpayer-profiles', {
+    method:'POST', body:JSON.stringify({
+      effectiveFrom:'2099-01-01T00:00:00Z',effectiveTo:'2099-07-01T00:00:00Z',
+      jurisdiction:'Synthetic QA district',taxpayerCategory:'ordinary_test_only',
+      activityCodes:['ACT-QA'],sourceReference:ruleV1.source,
+      sourceContentSha256:ruleV1.legalSourceSha256
+    })
+  });
+  assert.equal(profile.status,'DRAFT');
+  await h.status(`/fiscal/taxpayer-profiles/${profile.id}/review`,409,{
+    method:'POST',body:JSON.stringify({reason:'Creator may not review own profile.'})
+  });
+  await h.ok(`/fiscal/taxpayer-profiles/${profile.id}/review`,{
+    method:'POST',body:JSON.stringify({reason:'Second actor reviews profile against legal evidence.'})
+  },reviewerToken);
+  await h.status(`/fiscal/taxpayer-profiles/${profile.id}/activate`,409,{
+    method:'POST',body:JSON.stringify({reason:'Reviewer may not activate own review.'})
+  },reviewerToken);
+  const approvedProfile=await h.ok(`/fiscal/taxpayer-profiles/${profile.id}/activate`,{
+    method:'POST',body:JSON.stringify({reason:'Third actor activates reviewed profile for QA.'})
+  },activatorToken);
+  assert.equal(approvedProfile.status,'ACTIVE');
+  const taxDocument=await h.ok('/fiscal/documents/issue',{
+    method:'POST',headers:{'Idempotency-Key':`${RUN}-profile-issue`},
+    body:JSON.stringify({kind:'invoice',period:PERIOD,module:'iva',
+      payload:{qa:'profile snapshot'},ruleKeys:[ruleV1.ruleKey],
+      effectiveAt:'2099-06-15T12:00:00.000Z',prefix:`${RUN}-`,width:4})
+  });
+  assert.match(taxDocument.taxpayerProfileHash,/^[a-f0-9]{64}$/);
+  const taxpayerEvidence=await h.ok(`/fiscal/documents/${taxDocument.id}/taxpayer-profile`);
+  assert.equal(taxpayerEvidence.taxpayerProfileSnapshot.id,profile.id);
+  assert.equal(taxpayerEvidence.taxpayerProfileHash,taxDocument.taxpayerProfileHash);
+  await assert.rejects(
+    h.prisma.$executeRaw`UPDATE public."FiscalDocument"
+      SET "taxpayerProfileHash"=${'f'.repeat(64)}
+      WHERE "tenantId"=${h.tenant.id} AND "id"=${taxDocument.id}`,
+    /TAXPAYER_DOCUMENT_PROFILE_IMMUTABLE/i
+  );
+
+
   const concurrent = 12;
   const issued = await Promise.all(Array.from({ length: concurrent }, (_, index) => h.ok('/fiscal/documents/issue', {
     method: 'POST',
