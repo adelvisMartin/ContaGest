@@ -91,16 +91,30 @@ test('client route composition preserves existing CRUD without extending archite
  assert.doesNotMatch(manifest,/id: 'crm',/);
 });
 
-test('compiled-backend asset copy includes CRM ESM imports and preserves bytes',()=>{
+test('compiled-backend asset copy includes every declared CRM ESM dependency and preserves bytes',()=>{
  const work=fs.mkdtempSync(path.join(os.tmpdir(),'cg-crm-asset-'));
  try {
-  const assets=['src/shared/contracts/accessManifestRuntime.js','src/modules/crm/crm-domain.mjs','src/modules/crm/client-match-preflight.mjs'];
   const copySource=fs.readFileSync(new URL('../backend/scripts/copy-runtime-assets.mjs',import.meta.url),'utf8');
+  // Keep the executable copy contract aligned with the real source-of-truth list.
+  // This explicit allowlist catches missing runtime modules or unexpected asset additions.
+  const assets=[
+   'src/shared/contracts/accessManifestRuntime.js',
+   'src/modules/crm/crm-domain.mjs',
+   'src/modules/crm/client-match-preflight.mjs',
+   'src/modules/crm/crm-lead-store.mjs',
+   'src/modules/crm/crm-lead-stage.mjs',
+   'src/modules/crm/crm-opportunity-store.mjs',
+   'src/modules/crm/crm-opportunity-stage.mjs',
+   'src/modules/crm/crm-forecast.mjs'
+  ];
+  const declared=[...copySource.matchAll(/source:\s*'([^']+)'/g)].map(([,value])=>value);
+  assert.deepEqual(declared,assets,'every shipped runtime asset must be covered by the fixture');
   for(const asset of assets){
-   assert.ok(copySource.includes(asset), asset);
+   const sourceFile=new URL('../backend/'+asset,import.meta.url);
+   const sourceBytes=fs.readFileSync(sourceFile);
    const location=path.join(work,asset);
    fs.mkdirSync(path.dirname(location),{recursive:true});
-   fs.writeFileSync(location,asset.endsWith('accessManifestRuntime.js')?'export const test=true;':fs.readFileSync(new URL('../backend/'+asset,import.meta.url)));
+   fs.writeFileSync(location,sourceBytes);
   }
   fs.mkdirSync(path.join(work,'scripts'),{recursive:true});
   const script=path.join(work,'scripts','copy-runtime-assets.mjs');
@@ -108,11 +122,10 @@ test('compiled-backend asset copy includes CRM ESM imports and preserves bytes',
   const result=spawnSync(process.execPath,[script],{encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
   for(const asset of assets){
-   assert.deepEqual(fs.readFileSync(path.join(work,'dist',asset)),fs.readFileSync(path.join(work,asset)));
+   assert.deepEqual(fs.readFileSync(path.join(work,'dist',asset)),fs.readFileSync(path.join(work,asset)),asset);
   }
  } finally { fs.rmSync(work,{recursive:true,force:true}); }
 });
-
 
 test('exact dotted RIF matches canonical taxpayer, no fuzzy inference or auto-conversion', async()=>{
  let variants=[];
