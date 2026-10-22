@@ -7,6 +7,9 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
+import { assertBalanced } from '../accounting/accounting.service.js';
+import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.repository.js';
+import { planReviewedTaxEvent, type AppliedRatio } from './ve-tax-posting-plan.js';
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts, transitionTaxpayerProfile, getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
@@ -69,6 +72,17 @@ const fiscalRuleSchema = z.object({
 });
 const fiscalRuleDecisionSchema = z.object({
   reason: z.string().trim().min(15).max(500)
+}).strict();
+
+const verifiedTaxPreviewSchema = z.object({
+  kind:z.enum(['sale','purchase']),
+  effectiveAt:utcInstantSchema,
+  taxableMinor:z.number().int().nonnegative().safe(),
+  exemptMinor:z.number().int().nonnegative().safe(),
+  notSubjectMinor:z.number().int().nonnegative().safe(),
+  vatRuleKey:z.string().regex(/^iva[.:][a-z0-9._:-]{1,60}$/i),
+  retainedVatRuleKey:z.string().regex(/^ret_iva[.:][a-z0-9._:-]{1,60}$/i).optional(),
+  retainedIslrRuleKey:z.string().regex(/^islr[.:][a-z0-9._:-]{1,60}$/i).optional()
 }).strict();
 
 const taxpayerProfileDraftSchema = z.object({
@@ -316,6 +330,55 @@ router.post('/reopen-period', requirePermission('fiscal.reopen'), validateBody(r
   const updated = await prisma.closingPeriod.update({ where: { id: existing.id }, data: { status: 'open', closedAt: null, closedBy: null, note: req.body.reason } });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.period.reopened', entity: 'ClosingPeriod', entityId: updated.id, before: existing, after: { ...updated, reopenReason: req.body.reason, workflowCapability: 'fiscal.reopen' }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, { ...updated, reopenReason: req.body.reason, workflowCapability: 'fiscal.reopen' });
+}));
+
+// NON-POSTING tax estimate. Values supplied by the caller never create a ledger,
+// a certificate or a statutory claim. Effective rules, profile and accounts are
+// resolved from the same authenticated, read-only transaction.
+router.post('/tax-events/preview', requirePermission('fiscal.read'),
+  validateBody(verifiedTaxPreviewSchema), asyncHandler(async (req,res) => {
+  const ctx=context(req);
+  const body=verifiedTaxPreviewSchema.parse(req.body);
+  const output=await prisma.$transaction(async tx=>{
+    const profile=await getEffectiveTaxpayerProfile(tx,ctx.tenantId,body.effectiveAt);
+    const keys=[body.vatRuleKey,body.retainedVatRuleKey,body.retainedIslrRuleKey].filter((x):x is string=>!!x);
+    const found=await resolveFiscalRules(tx,{tenantId:ctx.tenantId,ruleKeys:keys,effectiveAt:body.effectiveAt});
+    const map=new Map(found.map(rule=>[rule.ruleKey,rule]));
+    const applied=(key:string):AppliedRatio=>{
+      const row=map.get(key);
+      if(!row||!row.legalSourceId||!row.legalSourceSha256)
+        throw new HttpError(409,'Falta evidencia normativa efectiva.',{code:'FISCAL_TAX_RULE_UNVERIFIED'});
+      return {ruleId:row.id,ruleKey:row.ruleKey,ruleHash:row.hash,
+        legalSourceId:row.legalSourceId,legalSourceSha256:row.legalSourceSha256,
+        definition:row.definition as AppliedRatio['definition']};
+    };
+    let plan:ReturnType<typeof planReviewedTaxEvent>;
+    try{plan=planReviewedTaxEvent({
+      kind:body.kind,taxableMinor:body.taxableMinor,
+      exemptMinor:body.exemptMinor,notSubjectMinor:body.notSubjectMinor,
+      vat:applied(body.vatRuleKey),
+      retainedVat:body.retainedVatRuleKey?applied(body.retainedVatRuleKey):null,
+      retainedIslr:body.retainedIslrRuleKey?applied(body.retainedIslrRuleKey):null
+    });}catch{throw new HttpError(422,'La fórmula fiscal revisada no admite este evento.',{code:'VE_TAX_PREVIEW_REJECTED'});}
+    const roles=[...new Set(plan.lines.map(line=>line.accountRole))];
+    const accounts=await resolveSemanticPostingAccounts(tx,ctx.tenantId,roles);
+    const moneyFromMinor=(value:number)=>{
+      const n=BigInt(value);return (n/100n).toString()+'.'+(n%100n).toString().padStart(2,'0');
+    };
+    const lines=plan.lines.map(line=>({
+      accountCode:accounts[line.accountRole].accountCode,
+      accountName:accounts[line.accountRole].name,
+      role:line.accountRole,
+      debit:moneyFromMinor(line.debitMinor),
+      credit:moneyFromMinor(line.creditMinor)
+    }));
+    assertBalanced(lines);
+    return { ...plan, profileEvidence: {
+      profileId:profile.id,profileVersion:profile.version,
+      rifSnapshot:profile.rifSnapshot,sourceContentSha256:profile.sourceContentSha256
+    }, accountLines:lines, mode:'NON_POSTING_PREVIEW' };
+  });
+  ok(res,output);
 }));
 
 router.post('/documents/issue', requirePermission('fiscal.manage_documents'), validateBody(issueDocumentSchema), asyncHandler(async (req, res) => {
