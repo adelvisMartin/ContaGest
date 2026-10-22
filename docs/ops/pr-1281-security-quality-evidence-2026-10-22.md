@@ -79,3 +79,40 @@ The following fixes were made in this same PR without weakening runtime authenti
 - The updated test uses a deferred signal at the first attempted optional profile RPC as a deterministic barrier, then asserts consumed token, in-flight state, and inability to replay the recovery operation. No production credential code, provider error redaction, rate limiting, session semantics or control flow was changed; no \`waitForTimeout\`, sleeps or test skips were introduced.
 - The earlier \`dpl_6eWi3dHjAHr6j6e19Ys1J2jpZx9H\` Preview failed \`tests/hipico_operational_copy_center_277.test.mjs\`, exit 202, due to stale physical \`app.css\` assertions for legacy-imported responsive CSS. This was source-contract drift, not a proven runtime copy leak. The guard still requires manual copying and forbids automatic send.
 - This is **not** a native test PASS on the latest SHA until a new exact-SHA build executes. QA status remains PARTIAL / NOT_READY.
+
+
+## 2026-10-22 · Security authority reengineering and current QA evidence (#1281)
+
+### Real server and provider policy defect resolved in source
+The Bridge's \`source-policy-gate.mjs\` already returned \`NO_GO\`, but the backend's \`hipico-bridge.routes.ts\` treated \`HIPICO_SOURCE_AUTO_REPLY_ENABLED=true\` as enough to advertise \`sourceSendPossible\` and create executable SOURCE reply outbox commands. This was a **server-side authorization divergence** from the selected WhatsApp Messenger Terms, not merely an obsolete source test.
+
+- \`backend/src/modules/hipico/autonomous-reply.policy.ts\`: frozen reviewed \`SOURCE_REPLY_SEND_POLICY.status='NO_GO'\` and \`sourceAutoReplySendAuthorized()\`; an environment flag only controls shadow planning, never source-send permission.
+- \`backend/src/modules/hipico-bot/hipico-bridge.routes.ts\`: uses the reviewed authorization gate for health, event-command creation and reply receipts; an authenticated but unauthorized SOURCE receipt is denied with 403. There is no new bypass, flag or broadening of tenant/RBAC/financial authorities.
+- \`tools/hipico-whatsapp-web-bridge/src/preflight.mjs\`: compares backend readiness to **effective provider eligibility**, rather than comparing matching user-configurable flags. If policy denies send, \`sourceSendPossible:true\` must fail preflight.
+- \`backend/src/modules/hipico/autonomous-reply.policy.test.ts\`, \`tests/hipico_real_operativa_shadow_contract.test.mjs\`, \`tests/hipico_security_review_issue_114.test.mjs\`: inspect server and Bridge fail-closed gates. The deterministic planner's unit tests may still simulate candidate replies; that does not create transport permission.
+- Official references reviewed: WhatsApp Messenger Terms (https://www.whatsapp.com/legal/terms-of-service?lang=en&popup=false&retURL=%2F) and Messaging Guidelines updated 2026-09-23 (https://www.whatsapp.com/legal/messaging-guidelines?lang=es). **No provider permission was inferred**.
+
+### Additional observable privacy hardening (#979)
+\`backend/src/shared/observability/redaction.ts\` now censors unstructured email addresses in error messages and sensitive URL query values (email/phone/RIF/patient/client/user/tenant identifiers) in addition to credentials, bearer tokens, DSNs, Hípico capability links and signed URLs. \`backend/src/shared/observability/contract.test.ts\` has a synthetic-PII regression ensuring harmless URL parameters remain intact. The \`type/title/status/detail/instance\` semantics of RFC 9457 / legacy envelope are unchanged. **Native TS and HTTP tests of the latest SHA remain REQUIRED and are not claimed PASS.**
+
+### Concrete presentation issue discovered during QA
+\`frontend/public/hipico-control/recovery.html\` lacked \`platform-tokens-v1.css\` although the main index included it. The PWA recovery page now links both canonical stylesheets in the same order. Tests #266, #277, #v41 and #v412 explicitly validate the v4 multi-file CSS authority, 44px touch sizes, dark/system WCAG AA token contrast, PWA cache rotation, and native dialog focus. From the reviewed token pair \`#79B891\` foreground \`#08100B\`, the calculated dark/system primary contrast is ~8.33:1 (source-level ratio, not a substitute for browser computed-style review).
+
+### Provider native source-qa progression (historical exact commits)
+| Preview and SHA | First remaining nonzero native contract |
+| --- | --- |
+| \`dpl_FLR1cho8hMAqcbo35GaL6MqDfkXY\` / \`cda822b2c418bcd148dbb06b29031af926c59690\` | \`hipico_release_docs_305.test.mjs\` — release guide still declared Bridge 1.4.2 despite package/runtime/lock 1.6.0; release guide corrected without changing provider authorization |
+| \`dpl_7Mt6wgWfyC7SgjKs5L3Z5zCGVa7D\` / \`39f6a30d82017ccde418e44812cc64f3a020a5b4\` | \`hipico_schema_backup_restore_v23.test.mjs\` — test expected an overridable backup role; actual script hardcodes \`hipico_backup\` and rejects privilege overrides |
+| \`dpl_FtMQ3ZEkDoZqPHoMaVAjS6vyk9tr\` / \`243ee337d38c3f99f0956b82d8456ff0b4365fad\` | \`hipico_security_review_issue_114.test.mjs\` — test expected a retired client literal \`sourceSendPossible:false\` rather than actual backend+Bridge provider gate |
+| \`dpl_CwtMVSjzwTBL635pv6ifjSPnpuaE\` / \`694dc3331054e3ba28e980c543c7eee3086eb38a\` | \`hipico_ui_release_contract_277.test.mjs\` — one-file v2 contract, current UI uses generated tokens and ordered v4 CSS layers |
+| \`dpl_8MLKHN35QQA4diHTkr5ryu4g5a7H\` / \`89a22889c2266b1dc973c8b0b6f10c23a2d0734b\` | \`hipico_ui_system_v2_issue_266.test.mjs\` — 7/7 outdated v2 theme/layout checks; updated to seven v4 functional/accessibility controls |
+| \`dpl_Efy4m1nYR8sxipKeu6PzAtoPv9B4\` / \`d717a288f70209399807ccf7aec157a0a3b88ad6\` | \`hipico_ui_system_v41_contract.test.mjs\` — generated token authority and r38 cache incorrectly asserted under old v4 files |
+| \`dpl_zP6pCM1mueVLUN2eQ2ExWimnfMCt\` / \`0a2ad0288e89c3ce4cf7d8f3ba5df677acc38349\` | \`hipico_ui_v412_hardening_contract.test.mjs\` — modal/toast rules exist in actual v4 CSS imports, not tiny app.css entrypoint |
+
+The build exit numbers \`BUILD_UTILS_SPAWN_235/244/250\` are produced by failed native *project contracts*, **not** by a proven provider memory/spawn outage. Passing source contracts on one older SHA does not certify the new SHA. The final candidate must be reviewed against its own Vercel deployment.
+
+### Production catalog and advisor limits (#720)
+Read-only Supabase/PostgreSQL 17.6 catalog: 3 dedicated roles with no BYPASSRLS; 83 examined tenant tables with RLS and no effective anon/authenticated write grants. **New security advisor warnings**: 16 \`public.hipico_*\` \`SECURITY DEFINER\` functions owned by postgres and callable by authenticated (none by anon), plus leaked-password protection disabled. These are risks requiring per-function consumer/owner/tenant proof and plan-eligible Auth settings review. INFO: some RLS-enabled table has no policies (possibly intentional deny-all). See \`docs/ops/data-security-legal-control-map-2026-10-22.md\` for names and official remediation sources. No production GRANT/REVOKE/ALTER or Auth configuration was changed.
+
+### Exact closure
+The PR remains **NOT_READY** until latest-HEAD native Node source contracts, backend TypeScript checks, PostgreSQL 17 disposable A/B tenancy and backup/restore/rollback, security Problem Details/log redaction, browser accessibility and Vercel production READY+HTTP smoke all pass. GitHub queued/skipped checks must never be treated as PASS. Do not disable checks, force merge, close five tickets, or claim regulatory certification.
