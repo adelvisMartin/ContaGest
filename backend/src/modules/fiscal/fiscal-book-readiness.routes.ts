@@ -20,11 +20,15 @@ router.get('/readiness', asyncHandler(async (req, res) => {
   // All evidence reads are tenant-constrained. No tax amounts are inferred.
   const rows = params.book === 'sales'
     ? await prisma.salesInvoice.findMany({
-      where, select: { id: true, tenantId: true, number: true, status: true, issueDate: true },
+      where, select: { id: true, tenantId: true, number: true, controlNo: true, clientId: true,
+        currency: true, subtotal: true, iva: true, igtf: true, islrRetention: true, total: true,
+        status: true, issueDate: true },
       orderBy: { id: 'asc' }, take: 501,
     })
     : await prisma.purchaseInvoice.findMany({
-      where, select: { id: true, tenantId: true, number: true, status: true, issueDate: true },
+      where, select: { id: true, tenantId: true, number: true, controlNo: true, supplierId: true,
+        currency: true, subtotal: true, iva: true, igtf: true, retiva: true, total: true,
+        status: true, issueDate: true },
       orderBy: { id: 'asc' }, take: 501,
     });
   if (rows.length > 500) throw new HttpError(413,
@@ -35,6 +39,12 @@ router.get('/readiness', asyncHandler(async (req, res) => {
     rows: rows.map(row => ({
       tenantId: row.tenantId, id: row.id, number: row.number,
       status: row.status, issueDate: row.issueDate.toISOString(),
+      recordedFacts: { currency: row.currency, controlNo: row.controlNo,
+        counterpartyId: 'clientId' in row ? row.clientId : row.supplierId,
+        subtotalExact: row.subtotal.toString(), ivaExact: row.iva.toString(),
+        igtfExact: row.igtf.toString(), totalExact: row.total.toString(),
+        retentionExact: ('islrRetention' in row ? row.islrRetention : row.retiva).toString(),
+      },
     })),
   });
   ok(res, report);
