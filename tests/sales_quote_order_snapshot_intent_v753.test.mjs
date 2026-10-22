@@ -28,3 +28,14 @@ test('#753 duplicate line identity and currency mismatch forbidden',()=>{
 test('#753 output is an intent only; never allocates nor authorizes invoice/ledger',()=>{
  const a=go();assert.equal(a.inventoryReserved,false);assert.equal(a.converted,false);assert.equal(a.requiresTenantScopedConversionKey,true);
 });
+
+// Identifiers must be real strings, never JS objects with coercing toString().
+test('#753 rejects coercible quote, actor, customer, line and product identifiers',()=>{
+ const forged=value=>({toString:()=>value});
+ const tenant=forged('tenant-A');
+ fail(()=>go({...quote,tenantId:tenant},2,tenant));
+ fail(()=>go({...quote,id:forged('quote-1')}));
+ fail(()=>go({...quote,clientId:forged('client-1')}));
+ fail(()=>go({...quote,lines:[{...quote.lines[0],id:forged('l-1')}]}));
+ fail(()=>go({...quote,lines:[{...quote.lines[0],productId:forged('p-1')}]}));
+});
