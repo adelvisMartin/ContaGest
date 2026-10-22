@@ -31,3 +31,28 @@ test('#778 document issuance must block missing retry key and tampered version/h
   assert.match(repository, /FISCAL_RULE_VERSION_HASH_MISMATCH/);
   assert.match(repository, /fiscalEvidenceHash\(\{/);
 });
+
+test('#782 authoritative close must exclude missing fiscal rule snapshots and unverified external documents', () => {
+  assert.match(repository, /unverifiedFiscalDocuments: Number\(unverifiedFiscalDocuments/);
+  assert.match(repository, /NOT EXISTS \(/);
+  assert.match(repository, /"FiscalDocumentRuleSnapshot"/);
+  assert.match(repository, /unverifiedFiscalDocuments: prechecks\.unverifiedFiscalDocuments/);
+});
+
+test('#782 cross-route serialization: external capture, issue, close and reopen share one lock', () => {
+  const external = route.split("router.post('/documents'")[1]?.split("router.get('/documents'")[0];
+  assert.ok(external);
+  const occurrences = (route.match(/await lockFiscalPeriodMutation\(tx, ctx\.tenantId, req\.body\.period\)/g) || []).length;
+  assert.equal(occurrences, 4, 'close, reopen, issue and external register must take one tenant-period lock');
+  assert.match(external, /status: 'external_unverified'/);
+  assert.match(external, /_legalProvenance: 'UNVERIFIED_EXTERNAL'/);
+  assert.match(external, /tx\.auditLog\.create/);
+  assert.doesNotMatch(external, /await writeAudit\(/);
+  assert.match(external, /normalizeIdempotencyKey/);
+});
+
+test('#778 issued document audit commits with snapshots, not once per retry', () => {
+  assert.match(issue, /recordDocumentRuleSnapshots\(tx/);
+  assert.match(issue, /await tx\.auditLog\.create/);
+  assert.doesNotMatch(issue, /await writeAudit\(/);
+});
