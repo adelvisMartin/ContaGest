@@ -6,7 +6,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
-import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
+import { runFinancialIdempotentMutation, normalizeIdempotencyKey } from '../../shared/services/financial-idempotency.service.js';
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
 import fiscalComplianceWorkflowRoutes from './fiscal-compliance-workflow.routes.js';
@@ -218,13 +218,21 @@ router.post('/rules', requirePermission('fiscal.close'), validateBody(fiscalRule
 
 router.post('/close-period', requirePermission('fiscal.close'), validateBody(closeSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
+  const key = normalizeIdempotencyKey(req.header('Idempotency-Key'));
+  if (!key) throw new HttpError(428, 'Idempotency-Key obligatorio para cerrar el período.', { code: 'FISCAL_IDEMPOTENCY_REQUIRED' });
   const execution = await runFinancialIdempotentMutation({
     tenantId: ctx.tenantId,
     scope: `fiscal.close.${req.body.module}`,
-    key: req.header('Idempotency-Key'),
+    key,
     request: req.body,
     requestId: ctx.requestId || null
   }, async (tx) => {
+    const lock = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM public."ClosingPeriod"
+      WHERE "tenantId"=${ctx.tenantId} AND "period"=${req.body.period} AND "module"=${req.body.module}
+      FOR UPDATE
+    `;
+    if (lock.length !== 1) throw new HttpError(404, 'Período fiscal no encontrado; créalo abierto antes de cerrar.', { code: 'FISCAL_PERIOD_NOT_FOUND' });
     const existing = await tx.closingPeriod.findFirst({ where: { tenantId: ctx.tenantId, period: req.body.period, module: req.body.module } });
     if (!existing) throw new HttpError(404, 'Período fiscal no encontrado; créalo abierto antes de cerrar.', { code: 'FISCAL_PERIOD_NOT_FOUND' });
     if (existing.status !== 'open') throw new HttpError(409, 'Transición fiscal inválida: sólo un período abierto puede cerrarse.', { code: 'FISCAL_INVALID_TRANSITION', from: existing.status, to: 'closed' });
@@ -282,10 +290,12 @@ router.post('/reopen-period', requirePermission('fiscal.reopen'), validateBody(r
 router.post('/documents/issue', requirePermission('fiscal.manage_documents'), validateBody(issueDocumentSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   assertPayloadSize(req.body.payload);
+  const key = normalizeIdempotencyKey(req.header('Idempotency-Key'));
+  if (!key) throw new HttpError(428, 'Idempotency-Key obligatorio para emitir documentos fiscales.', { code: 'FISCAL_IDEMPOTENCY_REQUIRED' });
   const execution = await runFinancialIdempotentMutation({
     tenantId: ctx.tenantId,
     scope: `fiscal.document.issue.${req.body.kind}`,
-    key: req.header('Idempotency-Key'),
+    key,
     request: req.body,
     requestId: ctx.requestId || null
   }, async (tx) => {
