@@ -48,7 +48,7 @@ const fiscalRuleSchema = z.object({
   ruleKey: z.string().trim().regex(/^[a-z0-9][a-z0-9._:-]{1,79}$/i),
   effectiveFrom: z.coerce.date(),
   effectiveTo: z.coerce.date().nullable().optional(),
-  source: z.string().trim().min(3).max(240),
+  legalSourceId: z.string().uuid(),
   documentation: z.string().trim().min(3).max(1000),
   definition: z.record(z.string(), z.unknown())
 }).strict().superRefine((value, ctx) => {
@@ -195,7 +195,7 @@ router.post('/rules', requirePermission('fiscal.close'), validateBody(fiscalRule
     ruleKey: req.body.ruleKey,
     effectiveFrom: req.body.effectiveFrom,
     effectiveTo: req.body.effectiveTo || null,
-    source: req.body.source,
+    legalSourceId: req.body.legalSourceId,
     documentation: req.body.documentation,
     definition: req.body.definition,
     createdBy: ctx.userId || null
