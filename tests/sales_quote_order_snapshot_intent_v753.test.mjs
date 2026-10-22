@@ -39,3 +39,8 @@ test('#753 rejects coercible quote, actor, customer, line and product identifier
  fail(()=>go({...quote,lines:[{...quote.lines[0],id:forged('l-1')}]}));
  fail(()=>go({...quote,lines:[{...quote.lines[0],productId:forged('p-1')}]}));
 });
+
+test('#753 rejects coerced quote/line currency identities',()=>{
+ const currency={toString:()=> 'VES'};
+ fail(()=>go({...quote,currency,lines:[{...quote.lines[0],currency}]}));
+});
