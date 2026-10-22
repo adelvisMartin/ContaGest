@@ -89,7 +89,7 @@ When presentation assets change, update the shell cache revision and include all
 
 ## Responsive and failure-state QA reference
 
-The supported reference viewports for browser and visual review are **360**, **390/393**, **430**, **768** and **1440** CSS pixels. Also verify **200%** browser zoom and narrow layouts without horizontal scroll. These values are QA targets; they are not license to hard-code per-viewport styles. Responsive fixes belong in the canonical CSS stack.
+The supported reference viewports for browser and visual review are **360**, **390/393**, **430**, **768**, **1024** and **1440** CSS pixels. Also verify **200%** browser zoom and narrow layouts without horizontal scroll. These values are QA targets; they are not license to hard-code per-viewport styles. Responsive fixes belong in the canonical CSS stack.
 
 For keyboard access, verify visible **focus** and **teclado** navigation on dialogs, the sidebar and Command Center controls. Preserve **WCAG AA** contrast in light/dark/system themes and respect **reduced-motion**. Keep status semantics accessible in **loading**, **unavailable**, offline, empty, error and success states; stale data must not appear fresh.
 
