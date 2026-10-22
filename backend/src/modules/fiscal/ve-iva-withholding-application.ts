@@ -16,8 +16,9 @@ const denied=():never=>{throw new Error('VE_IVA_WITHHOLDING_APPLICATION_REJECTED
 const integer=(n:unknown):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0;
 export function exactMinor(value:string):number {
   if(typeof value!=='string'||!/^\d{1,14}\.\d{2}$/.test(value)) denied();
-  const [whole,fraction]=value.split('.');
-  const n=BigInt(whole)*100n+BigInt(fraction);
+  // Regex above guarantees exactly one decimal separator and two cents.
+  const split=value.indexOf('.');
+  const n=BigInt(value.slice(0,split))*100n+BigInt(value.slice(split+1));
   if(n>BigInt(Number.MAX_SAFE_INTEGER))denied();
   return Number(n);
 }
