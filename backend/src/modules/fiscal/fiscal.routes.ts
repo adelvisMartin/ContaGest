@@ -468,14 +468,37 @@ router.post('/documents', requirePermission('fiscal.manage_documents'), validate
     'Los documentos tributarios regulados deben emitirse con regla y perfil fiscal verificados.',
     { code: 'FISCAL_EXTERNAL_DOCUMENT_DENIED' }); }
   assertPayloadSize(req.body.payload);
-  const period = await prisma.closingPeriod.findFirst({ where: { tenantId: ctx.tenantId, period: req.body.period, module: { in: req.body.module === 'fiscal' ? ['fiscal'] : [req.body.module, 'fiscal'] }, status: 'closed' } });
-  if (period) throw new HttpError(409, `El período ${req.body.period} está cerrado para ${period.module}.`, { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: period.module });
-  const existing = await prisma.fiscalDocument.findUnique({ where: { tenantId_kind_number: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number } } });
-  if (existing) throw new HttpError(409, 'Documento fiscal duplicado.', { code: 'FISCAL_DOCUMENT_DUPLICATE' });
-  const controlledPayload = { ...req.body.payload, _fiscalModule: req.body.module, _numberingAuthority: 'external/manual' };
-  const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number, period: req.body.period, module: req.body.module, payload: controlledPayload });
-  const record = await prisma.fiscalDocument.create({ data: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number, period: req.body.period, status: 'external', payload: controlledPayload, hash } });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.document.created.external', entity: 'FiscalDocument', entityId: record.id, after: { id: record.id, kind: record.kind, number: record.number, period: record.period, module: req.body.module, status: record.status, hash: record.hash }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  const record = await prisma.$transaction(async tx => {
+    const period = await tx.closingPeriod.findFirst({ where: {
+      tenantId: ctx.tenantId, period: req.body.period,
+      module: { in: ['fiscal'] }, status: 'closed'
+    } });
+    if (period) throw new HttpError(409, `El período ${req.body.period} está cerrado.`,
+      { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: period.module });
+    const existing = await tx.fiscalDocument.findUnique({ where: { tenantId_kind_number: {
+      tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number
+    } } });
+    if (existing) throw new HttpError(409, 'Documento fiscal duplicado.', {
+      code: 'FISCAL_DOCUMENT_DUPLICATE'
+    });
+    const controlledPayload = { ...req.body.payload,
+      _fiscalModule: 'fiscal', _numberingAuthority: 'external/manual' };
+    const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind,
+      number: req.body.number, period: req.body.period,
+      module: 'fiscal', payload: controlledPayload });
+    const created = await tx.fiscalDocument.create({ data: {
+      tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number,
+      period: req.body.period, status: 'external', payload: controlledPayload, hash
+    } });
+    await tx.auditLog.create({data:{
+      tenantId:ctx.tenantId,userId:ctx.userId || null,action:'fiscal.document.created.external',
+      entity:'FiscalDocument',entityId:created.id,
+      after:{id:created.id,kind:created.kind,number:created.number,
+        period:created.period,module:'fiscal',status:'external',hash:created.hash},
+      ipAddress:ctx.ip || null,userAgent:ctx.userAgent || null
+    }});
+    return created;
+  });
   res.status(201).json({ ok: true, data: { ...record, module: req.body.module } });
 }));
 
