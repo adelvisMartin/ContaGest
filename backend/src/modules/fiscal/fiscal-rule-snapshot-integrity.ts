@@ -1,6 +1,6 @@
-import crypto from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
-/** Canonical hash used by the existing fiscal rule and its immutable document copy. */
+/** Preserve the original #561 canonicalization for existing stored hashes. */
 function canonicalize(value: unknown): unknown {
   if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return value;
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -12,14 +12,12 @@ function canonicalize(value: unknown): unknown {
 }
 
 export function fiscalEvidenceHash(value: unknown): string {
-  return crypto.createHash('sha256').update(JSON.stringify(canonicalize(value)), 'utf8').digest('hex');
+  return createHash('sha256').update(JSON.stringify(canonicalize(value)), 'utf8').digest('hex');
 }
 
-export type FiscalSnapshotIntegrityInput = Readonly<{
+type FiscalRuleEvidence = Readonly<{
   tenantId: string;
   ruleKey: string;
-  ruleVersion: number;
-  ruleHash: string;
   effectiveFrom: Date;
   effectiveTo: Date | null;
   source: string;
@@ -27,28 +25,53 @@ export type FiscalSnapshotIntegrityInput = Readonly<{
   definition: unknown;
 }>;
 
-const SHA256 = /^[0-9a-f]{64}$/;
-const fail = (): never => { throw new Error('FISCAL_RULE_SNAPSHOT_INTEGRITY'); };
+export type FiscalSnapshotIntegrityInput = FiscalRuleEvidence & Readonly<{
+  ruleVersion: number;
+  ruleHash: string;
+}>;
 
-/** Recompute the *original* hash, not a hash of current rule/catalog data. */
-export function assertFiscalRuleSnapshotIntegrity(snapshot: FiscalSnapshotIntegrityInput, tenantId: string): void {
-  if (!snapshot || typeof snapshot !== 'object' ||
-      typeof tenantId !== 'string' || !tenantId || snapshot.tenantId !== tenantId ||
-      typeof snapshot.ruleKey !== 'string' || !snapshot.ruleKey.trim() ||
-      !Number.isSafeInteger(snapshot.ruleVersion) || snapshot.ruleVersion <= 0 ||
-      typeof snapshot.ruleHash !== 'string' || !SHA256.test(snapshot.ruleHash) ||
-      !(snapshot.effectiveFrom instanceof Date) || !Number.isFinite(snapshot.effectiveFrom.getTime()) ||
-      (snapshot.effectiveTo !== null && (!(snapshot.effectiveTo instanceof Date) ||
-        !Number.isFinite(snapshot.effectiveTo.getTime()) || snapshot.effectiveTo <= snapshot.effectiveFrom)) ||
-      typeof snapshot.source !== 'string' || !snapshot.source.trim() ||
-      typeof snapshot.documentation !== 'string' || !snapshot.documentation.trim() ||
-      !snapshot.definition || typeof snapshot.definition !== 'object' || Array.isArray(snapshot.definition)) fail();
-  const computed = fiscalEvidenceHash({
-    tenantId, ruleKey: snapshot.ruleKey, version: snapshot.ruleVersion,
-    effectiveFrom: snapshot.effectiveFrom.toISOString(),
-    effectiveTo: snapshot.effectiveTo?.toISOString() || null,
-    source: snapshot.source, documentation: snapshot.documentation,
-    definition: snapshot.definition,
+export type FiscalRuleVersionIntegrityInput = FiscalRuleEvidence & Readonly<{
+  version: number;
+  hash: string;
+}>;
+
+const SHA256 = /^[0-9a-f]{64}$/;
+const denied = (): never => { throw new Error('FISCAL_RULE_EVIDENCE_INTEGRITY'); };
+
+/** No use of a freshly computed hash as authoritative: it must match the stored hash. */
+function assertEvidence(input: FiscalRuleEvidence, version: number, hash: string, tenantId: string): void {
+  if (!input || typeof input !== 'object' || typeof tenantId !== 'string' || !tenantId ||
+      input.tenantId !== tenantId || typeof input.ruleKey !== 'string' || !input.ruleKey.trim() ||
+      !Number.isSafeInteger(version) || version <= 0 ||
+      typeof hash !== 'string' || !SHA256.test(hash) ||
+      !(input.effectiveFrom instanceof Date) || !Number.isFinite(input.effectiveFrom.getTime()) ||
+      (input.effectiveTo !== null && (!(input.effectiveTo instanceof Date) ||
+        !Number.isFinite(input.effectiveTo.getTime()) || input.effectiveTo <= input.effectiveFrom)) ||
+      typeof input.source !== 'string' || !input.source.trim() ||
+      typeof input.documentation !== 'string' || !input.documentation.trim() ||
+      input.definition === null || !input.definition || typeof input.definition !== 'object' ||
+      Array.isArray(input.definition)) denied();
+
+  const actual = fiscalEvidenceHash({
+    tenantId, ruleKey: input.ruleKey, version,
+    effectiveFrom: input.effectiveFrom.toISOString(),
+    effectiveTo: input.effectiveTo?.toISOString() ?? null,
+    source: input.source, documentation: input.documentation, definition: input.definition,
   });
-  if (!crypto.timingSafeEqual(Buffer.from(computed, 'hex'), Buffer.from(snapshot.ruleHash, 'hex'))) fail();
+  if (!timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(hash, 'hex'))) denied();
+}
+
+/** Validate persisted rule evidence immediately before selecting it for a fiscal document. */
+export function assertFiscalRuleVersionIntegrity(
+  rule: FiscalRuleVersionIntegrityInput, tenantId: string, effectiveAt: Date,
+): void {
+  if (!rule || !(effectiveAt instanceof Date) || !Number.isFinite(effectiveAt.getTime())) denied();
+  assertEvidence(rule, rule.version, rule.hash, tenantId);
+  if (rule.effectiveFrom > effectiveAt || (rule.effectiveTo !== null && effectiveAt >= rule.effectiveTo)) denied();
+}
+
+/** Replay the original historical hash; never recalculate from an updated catalog row. */
+export function assertFiscalRuleSnapshotIntegrity(snapshot: FiscalSnapshotIntegrityInput, tenantId: string): void {
+  if (!snapshot) denied();
+  assertEvidence(snapshot, snapshot.ruleVersion, snapshot.ruleHash, tenantId);
 }

@@ -84,6 +84,21 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   const historicalAfter = await h.ok(`/fiscal/documents/${first.id}/rules`);
   assert.equal(historicalAfter[0].ruleVersion, 1, 'historical snapshot must not be reinterpreted with a new rule');
   assert.equal(historicalAfter[0].ruleHash, historicalBefore[0].ruleHash);
+  // Regression on isolated PostgreSQL 17: historical rows must be immutable
+  // below the API boundary, including for a session with write capability.
+  await assert.rejects(
+    h.prisma.$executeRaw`UPDATE public."FiscalDocumentRuleSnapshot"
+      SET "source" = 'tampered QA source'
+      WHERE "tenantId" = ${h.tenant.id} AND "fiscalDocumentId" = ${first.id}`,
+    /FISCAL_RULE_SNAPSHOT_IMMUTABLE/i
+  );
+  await assert.rejects(
+    h.prisma.$executeRaw`DELETE FROM public."FiscalDocumentRuleSnapshot"
+      WHERE "tenantId" = ${h.tenant.id} AND "fiscalDocumentId" = ${first.id}`,
+    /FISCAL_RULE_SNAPSHOT_IMMUTABLE/i
+  );
+  assert.equal((await h.ok(`/fiscal/documents/${first.id}/rules`))[0].ruleHash, historicalBefore[0].ruleHash);
+
 
   const tenantA = h.tenant.id;
   const tenantB = randomUUID();

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
-import { assertFiscalRuleSnapshotIntegrity, fiscalEvidenceHash } from './fiscal-rule-snapshot-integrity.js';
+import { assertFiscalRuleSnapshotIntegrity, assertFiscalRuleVersionIntegrity, fiscalEvidenceHash } from './fiscal-rule-snapshot-integrity.js';
 export { fiscalEvidenceHash } from './fiscal-rule-snapshot-integrity.js';
 
 export type FiscalDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
@@ -100,7 +100,7 @@ export async function listFiscalRuleVersions(tenantId: string, ruleKey?: string)
 export async function resolveFiscalRules(db: FiscalDb, input: { tenantId: string; ruleKeys: string[]; effectiveAt: Date }) {
   if (!input.ruleKeys.length) return [];
   const rows = await db.$queryRaw<FiscalRuleVersionRow[]>(Prisma.sql`
-    SELECT DISTINCT ON ("ruleKey") *
+    SELECT *
     FROM public."FiscalRuleVersion"
     WHERE "tenantId" = ${input.tenantId}
       AND "ruleKey" IN (${Prisma.join(input.ruleKeys)})
@@ -108,10 +108,19 @@ export async function resolveFiscalRules(db: FiscalDb, input: { tenantId: string
       AND ("effectiveTo" IS NULL OR "effectiveTo" > ${input.effectiveAt})
     ORDER BY "ruleKey", "effectiveFrom" DESC, "version" DESC
   `);
-  const found = new Set(rows.map((row) => row.ruleKey));
-  const missing = input.ruleKeys.filter((key) => !found.has(key));
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(row.ruleKey, (counts.get(row.ruleKey) ?? 0) + 1);
+  const missing = input.ruleKeys.filter(key => !counts.has(key));
   if (missing.length) {
     throw new HttpError(422, 'No existe una regla fiscal vigente para todos los ruleKeys solicitados.', { code: 'FISCAL_RULE_NOT_EFFECTIVE', missing });
+  }
+  if (input.ruleKeys.some(key => counts.get(key) !== 1)) {
+    throw new HttpError(409, 'Más de una regla fiscal vigente coincide con el selector.', { code: 'FISCAL_RULE_AMBIGUOUS' });
+  }
+  try {
+    for (const rule of rows) assertFiscalRuleVersionIntegrity(rule, input.tenantId, input.effectiveAt);
+  } catch {
+    throw new HttpError(409, 'La regla fiscal vigente no conserva evidencia íntegra.', { code: 'FISCAL_RULE_EVIDENCE_INTEGRITY' });
   }
   return rows;
 }
@@ -132,6 +141,8 @@ export async function allocateFiscalNumber(db: FiscalDb, input: { tenantId: stri
 
 export async function recordDocumentRuleSnapshots(db: FiscalDb, input: { tenantId: string; fiscalDocumentId: string; rules: FiscalRuleVersionRow[] }) {
   for (const rule of input.rules) {
+    try { assertFiscalRuleVersionIntegrity(rule, input.tenantId, rule.effectiveFrom); }
+    catch { throw new HttpError(409, 'La regla fiscal aplicada no conserva evidencia íntegra.', { code: 'FISCAL_RULE_EVIDENCE_INTEGRITY' }); }
     await db.$executeRaw(Prisma.sql`
       INSERT INTO public."FiscalDocumentRuleSnapshot" (
         "id", "tenantId", "fiscalDocumentId", "ruleKey", "ruleVersion", "ruleHash",
@@ -147,16 +158,16 @@ export async function recordDocumentRuleSnapshots(db: FiscalDb, input: { tenantI
 
 export async function getDocumentRuleSnapshots(tenantId: string, fiscalDocumentId: string) {
   const snapshots = await prisma.$queryRaw<Array<{
-    ruleKey: string; ruleVersion: number; ruleHash: string; effectiveFrom: Date; effectiveTo: Date | null;
+    tenantId: string; ruleKey: string; ruleVersion: number; ruleHash: string; effectiveFrom: Date; effectiveTo: Date | null;
     source: string; documentation: string; definition: unknown; capturedAt: Date;
   }>>(Prisma.sql`
-    SELECT "ruleKey", "ruleVersion", "ruleHash", "effectiveFrom", "effectiveTo", "source", "documentation", "definition", "capturedAt"
+    SELECT "tenantId", "ruleKey", "ruleVersion", "ruleHash", "effectiveFrom", "effectiveTo", "source", "documentation", "definition", "capturedAt"
     FROM public."FiscalDocumentRuleSnapshot"
     WHERE "tenantId" = ${tenantId} AND "fiscalDocumentId" = ${fiscalDocumentId}
     ORDER BY "ruleKey" ASC
   `);
   try {
-    for (const snapshot of snapshots) assertFiscalRuleSnapshotIntegrity({ tenantId, ...snapshot }, tenantId);
+    for (const snapshot of snapshots) assertFiscalRuleSnapshotIntegrity(snapshot, tenantId);
   } catch {
     throw new HttpError(409, 'La evidencia histórica de la regla fiscal no coincide con su hash original.', { code: 'FISCAL_RULE_SNAPSHOT_INTEGRITY' });
   }

@@ -1,55 +1,79 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertFiscalRuleSnapshotIntegrity, fiscalEvidenceHash } from '../backend/src/modules/fiscal/fiscal-rule-snapshot-integrity.ts';
+import {
+  assertFiscalRuleSnapshotIntegrity, assertFiscalRuleVersionIntegrity, fiscalEvidenceHash,
+} from '../backend/src/modules/fiscal/fiscal-rule-snapshot-integrity.ts';
 
-function snapshot() {
-  const data = {
+function source() {
+  return {
     tenantId: 'TENANT-A', ruleKey: 'synthetic.iva', version: 1,
     effectiveFrom: '2099-01-01T00:00:00.000Z', effectiveTo: '2099-07-01T00:00:00.000Z',
     source: 'QA Gazette NOT A LEGAL SOURCE', documentation: 'synthetic QA only',
     definition: { basis: 'net', syntheticRate: '10.00' },
   };
-  return {
-    ...data, ruleVersion: 1, ruleHash: fiscalEvidenceHash(data),
-    effectiveFrom: new Date(data.effectiveFrom), effectiveTo: new Date(data.effectiveTo),
-  };
 }
-const denied = (value, tenant = 'TENANT-A') =>
-  assert.throws(() => assertFiscalRuleSnapshotIntegrity(value, tenant), /FISCAL_RULE_SNAPSHOT_INTEGRITY/);
+function rule() {
+  const data = source();
+  return { ...data, hash: fiscalEvidenceHash(data),
+    effectiveFrom: new Date(data.effectiveFrom), effectiveTo: new Date(data.effectiveTo) };
+}
+function snapshot() {
+  const { hash, version, ...rest } = rule();
+  return { ...rest, ruleVersion: version, ruleHash: hash };
+}
+const invalid = (fn) => assert.throws(fn, /FISCAL_RULE_EVIDENCE_INTEGRITY/);
 
-test('#751 keeps the original canonical hash for existing fiscal snapshots', () => {
-  const value = snapshot();
-  assert.doesNotThrow(() => assertFiscalRuleSnapshotIntegrity(value, 'TENANT-A'));
+test('#751 retains the original canonical SHA-256 contract', () => {
   assert.equal(fiscalEvidenceHash({ z: 1, a: { y: 2, x: 3 } }),
     fiscalEvidenceHash({ a: { x: 3, y: 2 }, z: 1 }));
+  assert.doesNotThrow(() => assertFiscalRuleSnapshotIntegrity(snapshot(), 'TENANT-A'));
+  assert.doesNotThrow(() => assertFiscalRuleVersionIntegrity(rule(), 'TENANT-A', new Date('2099-06-15T00:00:00.000Z')));
 });
 
-test('#751 historical replay is not reinterpreted when future versions are created', () => {
-  const old = snapshot();
-  const newVersion = { ...old, ruleVersion: 2, ruleHash: 'f'.repeat(64) };
-  denied(newVersion);
-  assert.doesNotThrow(() => assertFiscalRuleSnapshotIntegrity(old, 'TENANT-A'));
+test('#751 checks inclusive start/exclusive end in UTC independent of process timezone', () => {
+  const value = rule();
+  assert.doesNotThrow(() => assertFiscalRuleVersionIntegrity(value, 'TENANT-A', new Date('2099-01-01T00:00:00.000Z')));
+  assert.doesNotThrow(() => assertFiscalRuleVersionIntegrity(value, 'TENANT-A', new Date('2099-06-30T23:59:59.999Z')));
+  for (const at of ['2098-12-31T23:59:59.999Z', '2099-07-01T00:00:00.000Z']) {
+    invalid(() => assertFiscalRuleVersionIntegrity(value, 'TENANT-A', new Date(at)));
+  }
+  invalid(() => assertFiscalRuleVersionIntegrity(value, 'TENANT-A', new Date('invalid')));
 });
 
-test('#751 refuses tampered rates, sources, date bounds, version and hash', () => {
-  const value = snapshot();
-  for (const changed of [
-    { definition: { ...value.definition, syntheticRate: '50.00' } },
-    { source: 'source changed' },
-    { documentation: 'documentation changed' },
+test('#751 fails closed on altered rule/snapshot provenance, dates, definition or hash', () => {
+  const a = rule();
+  const b = snapshot();
+  const mutations = [
+    { definition: { syntheticRate: '50.00', basis: 'net' } },
+    { source: 'unverified source' },
+    { documentation: 'unexpected' },
     { effectiveFrom: new Date('2099-01-02T00:00:00.000Z') },
     { effectiveTo: null },
-    { ruleVersion: 2 },
-    { ruleHash: '0'.repeat(64) },
-    { ruleHash: 'broken' },
-    { effectiveFrom: new Date('not-a-date') },
+    { ruleKey: 'synthetic.islr' },
+    { effectiveFrom: new Date('invalid') },
     { effectiveTo: new Date('2098-01-01T00:00:00.000Z') },
-    { definition: ['unsupported'] },
-  ]) denied({ ...value, ...changed });
+    { definition: [] }, { definition: null },
+  ];
+  for (const changed of mutations) {
+    invalid(() => assertFiscalRuleVersionIntegrity({ ...a, ...changed }, 'TENANT-A', new Date('2099-06-15T00:00:00Z')));
+    invalid(() => assertFiscalRuleSnapshotIntegrity({ ...b, ...changed }, 'TENANT-A'));
+  }
+  invalid(() => assertFiscalRuleVersionIntegrity({ ...a, version: 2 }, 'TENANT-A', new Date('2099-06-15T00:00:00Z')));
+  invalid(() => assertFiscalRuleSnapshotIntegrity({ ...b, ruleVersion: 2 }, 'TENANT-A'));
+  invalid(() => assertFiscalRuleSnapshotIntegrity({ ...b, ruleHash: 'f'.repeat(64) }, 'TENANT-A'));
+  invalid(() => assertFiscalRuleSnapshotIntegrity({ ...b, ruleHash: 'broken' }, 'TENANT-A'));
 });
 
-test('#751 tenant A snapshots cannot be replayed as tenant B', () => {
-  const value = snapshot();
-  denied(value, 'TENANT-B');
-  denied({ ...value, tenantId: 'TENANT-B' }, 'TENANT-B');
+test('#751 blocks rule selection and historical read for other tenants', () => {
+  invalid(() => assertFiscalRuleVersionIntegrity(rule(), 'TENANT-B', new Date('2099-03-01T00:00:00Z')));
+  invalid(() => assertFiscalRuleSnapshotIntegrity(snapshot(), 'TENANT-B'));
+  invalid(() => assertFiscalRuleSnapshotIntegrity({ ...snapshot(), tenantId: 'TENANT-B' }, 'TENANT-B'));
+});
+
+test('#751 future rate versions do not reinterpret immutable historical snapshots', () => {
+  const original = snapshot();
+  const newer = { ...rule(), version: 2, effectiveFrom: new Date('2099-07-01T00:00:00Z'), effectiveTo: null };
+  // Deliberately inconsistent until a fresh independently hashed version is created.
+  invalid(() => assertFiscalRuleVersionIntegrity(newer, 'TENANT-A', new Date('2099-07-01T00:00:00Z')));
+  assert.doesNotThrow(() => assertFiscalRuleSnapshotIntegrity(original, 'TENANT-A'));
 });
