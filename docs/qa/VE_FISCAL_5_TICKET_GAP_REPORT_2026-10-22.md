@@ -134,3 +134,28 @@ Hashes focales nuevos:
 - **ISLR Decreto 1.808** y modificaciones: los conceptos, UT, mínimos, sustraendos y condiciones del beneficiario siguen requiriendo mapeo legal humano. No simular que el ratio simple es suficiente.
 
 **Definición de salida del lote:** no alcanzada. La contabilización comercial sigue tomando porcentajes del cliente; no hay certificados legales reales con unicidad, entrega y reverso; falta PG17 A/B y E2E. **BLOCK_MAIN=yes; conservar PR DRAFT y cinco issues abiertos**.
+
+
+## Incremento de contabilidad real RET_IVA en el mismo PR (#775/#785)
+
+**Implementado en código pero NO VERIFICADO EN POSTGRESQL:** se añadió un flujo persistente distinto del preview.
+
+- **Migración:** `20261022213000_issue_775_withholding_application_ledger`: `FiscalWithholdingApplication` única por tenant/compra/tipo, referencias a compra y a asientos origen/aplicación/reverso, RLS+FORCE, trigger que impide editar base/IVA/retención y valida cruces tenant, ledger publicado, dos líneas, monto y reverso. Cualquier fallo SQL revierte todo el efecto.
+- **`POST /fiscal/withholding-applications`**: sólo `purchaseInvoiceId`, IVA/RET_IVA ruleKeys e `Idempotency-Key`. Obtiene compra, proveedor, condiciones, perfil activo, hora de asiento AP original, monedas y reglas legales de DB en una transacción. Compara IVA calculado según versión aprobada con el IVA de la compra histórica; no confía en `taxRate` del request. Sólo compra completamente gravada VES/FX1, proveedor `ordinary`, agente `special_notified`; falla cerrado fuera de esos supuestos.
+- **Libro mayor efectivo:** el asiento `tax` se publica Debe `ap` / Haber `withholding_payable` con roles reales postables del tenant, importe calculado BigInt y conciliación con cuenta AP e IVA originales. Auditoría y evidencia SHA en la misma transacción. **No emite comprobante fiscal oficial** ni prueba notificación SENIAT.
+- **`POST /fiscal/withholding-applications/:id/reverse`**: inversa el asiento exacto histórico, no reaplica porcentajes actuales, referencia `reversalOfId` y actualiza estado histórico sólo a REVERSED con motivo/auditoría. Replay idempotente, segundo reverso prohibido.
+- **Cancelación de compras:** `purchases.routes.ts` se coordina por `PurchaseInvoice FOR UPDATE` y rechaza una anulación mientras haya retención POSTED, exigiendo primero el reverso. Evita saldos de retención huérfanos.
+- **Frontend:** `FiscalService`, `BackendApi` con generación central de claves idempotentes y pantalla Tributos permiten visualizar historial, aplicar con ID compra/reglas revisadas y reversar con motivo; estados de error/denegación explícitos.
+- **QA PG17 escrito, NO ejecutado:** `qa/iva-withholding-application-v775.test.ts` emite compra real, crea fuentes y reglas revisadas con tres actores, activa perfil, prepara roles, aplica/reintenta, verifica asiento y único audit, bloquea doble aplicación/anulación prematura, reversa, después cancela la compra, protege hash y SQL inmutabilidad, y rechaza facturas con IVA manipulado. Se añadió al job PostgreSQL real de `.github/workflows/fiscal-authority-v561.yml`.
+- **Pruebas focales nuevas escritas:** `tests/ve_iva_withholding_application_v775.test.mjs` cubre importes exactos, ventanas, cruces tenant, ausencia de origen contabilizado y source-VAT mismatch. **No confundir prueba escrita con PASS real**.
+- **Documentación específica:** [`VE_IVA_WITHHOLDING_AP_LEDGER_V775.md`](../architecture/VE_IVA_WITHHOLDING_AP_LEDGER_V775.md), con ruta de transacciones, límites, fuentes normativas, reversos y runbook.
+
+### Brechas que permanecen bloqueantes
+
+1. El asiento interno de RET_IVA **NO es un certificado**. Faltan secuencia legal de catorce posiciones `AAAAMMSSSSSSSS`, constancia de entrega, identificación validada de notificación SPE, verificación de exclusiones, agrupación quincenal, corrección y enteramiento según SNAT/2025/000054 y calendario reimpreso 43.283.
+2. **ISLR #776:** no hay emisión de retenciones real con mínimos/sustraendos/UT y conceptos; tampoco certificado o conciliación; aún no tiene DoD.
+3. **IVA origen #775:** `sales.routes.ts` y `purchases.routes.ts` siguen calculando impuesto desde `taxRate` del cliente para la contabilización inicial. La nueva aplicación compara el resultado con una norma revisada, pero **no sustituye la validación del evento origen en todas las ventas/compras**.
+4. **Perfil #774:** el estado especial es una declaración revisada de un operador, **no una consulta ni acreditación automática del SENIAT**. Falta calendario, condiciones materiales, certificados/acuse de calificación y manejo de personas/beneficiarios.
+5. **#751/#785 y release:** migrations PG17 from-zero+upgrade y RLS tenant A/B, API real, build completo y browser no ejecutados. Revisar ejecución de CI y conservar exact-SHA. No se ha hecho merge ni deploy.
+
+**Gate:** `NOT_READY/BLOCK_MAIN`. El último PASS focal documentado (28/28) precede a este módulo; no extenderlo a estas implementaciones sin ejecutar sus pruebas nuevas. Reconciliar branch con main y ejecutar todo antes de declarar cumplimiento.
