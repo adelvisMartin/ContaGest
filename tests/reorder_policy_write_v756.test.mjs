@@ -62,5 +62,20 @@ test('#756 lead time invalid or over 365 days is rejected without guessing deman
 test('#756 malformed snapshots and prototype tricks fail closed',()=>{
   assert.throws(()=>normalizeReorderPolicyWrite(null),/REORDER_POLICY_WRITE_INVALID/);
   assert.throws(()=>normalizeReorderPolicyWrite([]),/REORDER_POLICY_WRITE_INVALID/);
-  assert.throws(()=>normalizeReorderPolicyWrite({...base,targetStockExact:{toString:()=> '20.000'}}),/REORDER_POLICY_QUANTITY_INVALID/);
+  assert.throws(()=>normalizeReorderPolicyWrite({...base,targetStockExact:{toString:()=> '20.000'}}),/REORDER_POLICY_WRITE_INVALID/);
+});
+
+test('#756 rejects hidden unknown keys, inherited values and malicious property accessors',()=>{
+  const hidden={...base};
+  Object.defineProperty(hidden,'tenantId',{value:'other-tenant',enumerable:false});
+  assert.throws(()=>normalizeReorderPolicyWrite(hidden),/REORDER_POLICY_WRITE_INVALID/);
+  const inherited=Object.create({enabled:true});
+  Object.assign(inherited,base);
+  delete inherited.enabled;
+  assert.throws(()=>normalizeReorderPolicyWrite(inherited),/REORDER_POLICY_WRITE_INVALID/);
+  let fired=0;
+  const getter={...base};
+  Object.defineProperty(getter,'targetStockExact',{enumerable:true,get(){fired++;throw new Error('getter executed')}});
+  assert.throws(()=>normalizeReorderPolicyWrite(getter),/REORDER_POLICY_WRITE_INVALID/);
+  assert.equal(fired,0);
 });
