@@ -65,7 +65,7 @@ test('SOURCE remains read-only and LAB identity guard is explicit', async () => 
   ]);
   // SOURCE transport helpers can exist for inspection, but both backend and
   // Bridge must deny an automated SOURCE send under the provider NO_GO policy.
-  assert.match(bridge, /const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH\.active/);
+  assert.match(bridge, /const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED[\s\S]*evaluateSourceAutoReplyPolicy\(config\)\.eligible/);
   assert.match(policy, /status:\s*'NO_GO'/);
   assert.match(policy, /eligible:\s*false/);
   assert.match(backend, /sourceSendPossible:false/);
