@@ -71,6 +71,8 @@ model Tenant {
   users       UserProfile[]
   roles       Role[]
   clients     Client[]
+  benefitDefinitions BenefitDefinition[]
+  customerEntitlements CustomerEntitlement[]
   suppliers   Supplier[]
   products    Product[]
   serviceCatalogCategories ServiceCatalogCategory[]
@@ -230,7 +232,9 @@ model Client {
 
   tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sales       SalesInvoice[]
+  customerEntitlements CustomerEntitlement[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, rif])
   @@index([tenantId, name])
 }
@@ -283,6 +287,7 @@ model Product {
   saleLines   SalesInvoiceLine[]
   purchaseLines PurchaseInvoiceLine[]
   serviceDefinitions ServiceDefinition[]
+  benefitDefinitions BenefitDefinition[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, sku])
@@ -860,6 +865,7 @@ model BusinessLocation {
   schedulingResources SchedulingResource[]
   schedulingBookings SchedulingBooking[]
   serviceEligibilities ServiceLocationEligibility[]
+  customerEntitlements CustomerEntitlement[]
 
   @@unique([tenantId, code])
   @@unique([tenantId, id])
@@ -1087,6 +1093,7 @@ model ServiceCatalogCategory {
 
   tenant       Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   services     ServiceDefinition[]
+  benefitDefinitions BenefitDefinition[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, slug])
@@ -1117,6 +1124,7 @@ model ServiceDefinition {
   revisions       ServiceDefinitionRevision[]
   staff           ServiceStaffCapability[]
   locations       ServiceLocationEligibility[]
+  benefitDefinitions BenefitDefinition[]
 
   @@unique([tenantId, id])
   @@index([tenantId, status, visibility, name])
@@ -1182,4 +1190,82 @@ model ServiceLocationEligibility {
 
   @@unique([tenantId, serviceId, locationId])
   @@index([tenantId, locationId, serviceId])
+}
+
+
+/**
+ * #852 Customer benefits are not SaaS LicenseKey and not financial ledger.
+ * Grant+events are append-only and tenant-reference-safe. Only finite rights
+ * are enabled in this foundation; do not infer purchase or booking authority.
+ */
+model BenefitDefinition {
+  id              String  @id @default(uuid())
+  tenantId        String
+  productId       String
+  name            String
+  scope           String   @default("ALL")
+  serviceId       String?
+  categoryId      String?
+  quantity        Decimal  @db.Decimal(18,3)
+  status          String   @default("active")
+  version         Int      @default(1)
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  product         Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
+  service         ServiceDefinition? @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+  category        ServiceCatalogCategory? @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
+  entitlements    CustomerEntitlement[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, productId, status])
+}
+
+model CustomerEntitlement {
+  id              String   @id @default(uuid())
+  tenantId        String
+  benefitId       String
+  beneficiaryId   String
+  sourceType      String
+  sourceId        String
+  snapshot        Json
+  grantedQuantity Decimal  @db.Decimal(18,3)
+  validFrom       DateTime @db.Timestamptz(3)
+  validUntil      DateTime @db.Timestamptz(3)
+  priority        Int      @default(0)
+  locationId      String?
+  grantedBy       String
+  createdAt       DateTime @default(now())
+
+  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  benefit         BenefitDefinition @relation(fields: [tenantId, benefitId], references: [tenantId, id], onDelete: Restrict)
+  beneficiary     Client @relation(fields: [tenantId, beneficiaryId], references: [tenantId, id], onDelete: Restrict)
+  location        BusinessLocation? @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Restrict)
+  events          EntitlementLedgerEvent[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, sourceType, sourceId, beneficiaryId, benefitId])
+  @@index([tenantId, beneficiaryId, validUntil])
+}
+
+model EntitlementLedgerEvent {
+  id             String   @id @default(uuid())
+  tenantId       String
+  entitlementId  String
+  sequence       Int
+  type           String
+  quantity       Decimal  @db.Decimal(18,3)
+  effectKey      String
+  bookingId      String?
+  actorId        String
+  reason         String?
+  createdAt      DateTime @default(now())
+
+  entitlement    CustomerEntitlement @relation(fields: [tenantId, entitlementId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, entitlementId, sequence])
+  @@unique([tenantId, effectKey])
+  @@index([tenantId, entitlementId, createdAt])
 }
