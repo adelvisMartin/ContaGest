@@ -95,12 +95,12 @@ test('#638: list pagination remains bounded and unknown sort/filter is refused',
   const results = executePolicy(cases);
   assert.deepEqual(results[0].value, { take: 100, skip: 0 });
   assert.deepEqual(results[1].value, { take: 500, skip: 0 });
-  results.slice(2, 10).forEach((value) => {
+  results.slice(2, 11).forEach((value) => {
     assert.equal(value.ok, false);
     assert.equal(value.status, 422);
   });
-  assert.equal(results[10].value, 'Ana');
-  results.slice(11).forEach((value) => assert.equal(value.status, 422));
+  assert.equal(results[11].value, 'Ana');
+  results.slice(12).forEach((value) => assert.equal(value.status, 422));
 });
 
 test('#638: CRUD route ids reject array and non-string route parameters', () => {
@@ -111,7 +111,7 @@ test('#638: CRUD route ids reject array and non-string route parameters', () => 
     { fn: 'parseCrudRouteId', args: [123] },
     { fn: 'parseCrudRouteId', args: [''] },
     { fn: 'parseCrudRouteId', args: ['   '] },
-    { fn: 'parseCrudRouteId', args: ['\\u0000'] },
+    { fn: 'parseCrudRouteId', args: ['\u0000'] },
     { fn: 'parseCrudRouteId', args: [' x '] },
     { fn: 'parseCrudRouteId', args: ['x'.repeat(256)] }
   ];
