@@ -109,6 +109,18 @@ CREATE TABLE public."ServiceLocationEligibility" (
 CREATE INDEX "ServiceLocationEligibility_tenantId_locationId_serviceId_idx"
   ON public."ServiceLocationEligibility"("tenantId","locationId","serviceId");
 
+-- Historical service revisions are append-only, even if future adapters
+-- accidentally get a generic Prisma CRUD permission.
+CREATE FUNCTION public.service_catalog_revision_immutable() RETURNS trigger
+LANGUAGE plpgsql AS $
+BEGIN
+  RAISE EXCEPTION 'SERVICE_CATALOG_REVISION_IMMUTABLE' USING ERRCODE = '23514';
+END;
+$;
+CREATE TRIGGER service_definition_revision_no_mutation
+  BEFORE UPDATE OR DELETE ON public."ServiceDefinitionRevision"
+  FOR EACH ROW EXECUTE FUNCTION public.service_catalog_revision_immutable();
+
 -- Separate RLS enforcement for every table. Canonical v845 tenant sidecar must
 -- install runtime tenant policies *after* deploying this migration.
 DO $$
@@ -123,7 +135,11 @@ BEGIN
     EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY',t);
     EXECUTE format('REVOKE ALL ON TABLE public.%I FROM PUBLIC',t);
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='contagest_runtime') THEN
-      EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO contagest_runtime',t);
+      IF t = 'ServiceDefinitionRevision' THEN
+        EXECUTE format('GRANT SELECT, INSERT ON TABLE public.%I TO contagest_runtime',t);
+      ELSE
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO contagest_runtime',t);
+      END IF;
     END IF;
     FOREACH role_name IN ARRAY ARRAY['anon','authenticated','service_role','contagest_backup','contagest_monitor'] LOOP
       IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname=role_name) THEN

@@ -28,3 +28,11 @@ test('#849 revisions preserve immutable historical plan versions as independent 
   assert.match(schema,/snapshot\s+Json/);
   assert.match(schema,/version\s+Int/);
 });
+
+test('#849 revision storage is append-only even against accidental ORM writes',()=>{
+  assert.match(sql,/CREATE TRIGGER service_definition_revision_no_mutation/);
+  assert.match(sql,/BEFORE UPDATE OR DELETE ON public\."ServiceDefinitionRevision"/);
+  assert.match(sql,/RAISE EXCEPTION 'SERVICE_CATALOG_REVISION_IMMUTABLE'/);
+  assert.match(sql,/IF t = 'ServiceDefinitionRevision' THEN/);
+  assert.match(sql,/GRANT SELECT, INSERT ON TABLE/);
+});
