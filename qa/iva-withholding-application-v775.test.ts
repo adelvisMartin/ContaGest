@@ -110,6 +110,11 @@ test('#775 invoice -> reviewed rule -> AP tax posting -> idempotent reversal wit
   const historical=await h.ok(`/fiscal/withholding-applications/${first.id}`);
   assert.equal(historical.evidence.purchaseInvoiceId,purchase.id);
   assert.equal(historical.evidenceSha256,first.evidenceSha256);
+  const internalBefore=await h.ok(`/fiscal/withholding-applications/reconciliation?period=${period}`);
+  assert.equal(internalBefore.status,'RECONCILED_INTERNAL_ONLY');
+  assert.equal(internalBefore.netOutstandingMinor,'1200');
+  assert.equal(internalBefore.externalFilingVerified,false,
+    'reconciled internal journals cannot be marked filed at SENIAT');
   const posted=await h.prisma.ledgerEntry.findFirst({
     where:{id:first.ledgerEntryId,tenantId:h.tenant.id,source:'tax',posted:true},
     include:{lines:true}
@@ -154,6 +159,10 @@ test('#775 invoice -> reviewed rule -> AP tax posting -> idempotent reversal wit
   const historicalCancelled=await h.ok(`/fiscal/withholding-applications/${first.id}`);
   assert.equal(historicalCancelled.evidenceSha256,first.evidenceSha256,
     'historical provenance must survive reversal of original purchase');
+  const internalAfter=await h.ok(`/fiscal/withholding-applications/reconciliation?period=${period}`);
+  assert.equal(internalAfter.status,'RECONCILED_INTERNAL_ONLY');
+  assert.equal(internalAfter.netOutstandingMinor,'0');
+  assert.equal(internalAfter.reversedMinor,'1200');
 
   await assert.rejects(
     h.prisma.$executeRaw`UPDATE public."FiscalWithholdingApplication"
