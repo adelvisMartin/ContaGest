@@ -66,3 +66,27 @@ npm run build:frontend
 ```
 
 After merging, inspect the **exact deployed main SHA** and follow each newly surfaced `source-qa` failure to its true owner. Do not close #688 before `READY` and post-deploy checks; the latest provider result in this section is an observed ERROR, not successful production recovery.
+
+
+## 2026-10-22 · five-ticket batch: #688, #985, #979, #638, #720
+
+### Exact observed production failure; not a generic infrastructure crash
+
+- GitHub baseline: main@0b9a78a15e1eb8d9afeeee2f39d86b87a6ab0ca1.
+- Vercel project prj_0kjuUKTv3iEKd8B3VeOyqgMI8gof, deployment dpl_8g8TxV3ALEwAfgvtnS8gASAWF2bR for that **exact** SHA: ERROR / BUILD_UTILS_SPAWN_103.
+- Project setting Node 24.x is overridden by repository engines.node=22.x; actual build ran Node v22.23.4. Do not infer a Node-mismatch failure.
+- Build workspace /vercel/path0/frontend; install npm ci --no-audit --no-fund; build npm run build invokes frontend/scripts/vercel-build.mjs. Identity stage 1/5 PASS; source-qa 2/5 FAIL at contracts-current (2 assertions fail). Later stages are **NOT EXECUTED**.
+- The failed source suite is tests/tenant_isolation_adversarial_issue_641.test.mjs. Its assertions at lines 31 and 45 expect a deprecated tenantScoped=false CRUD branch and mistake harmless static field labels (such as ['clientId']) for a user-provided foreign identifier.
+- The current CRUD source injects authenticated ctx.tenantId in all list/read/write operations and reports only fixed field-name labels. The batch source-contract fix checks tenant+permission middleware, scoped list/read/update/delete, server-owned tenant for create, write-body validation and non-disclosing relation errors. No API, auth, RLS, migrations or build stage is relaxed.
+- Pre-commit source-only matching checked ten CRUD source assertions, both guarded mutations and four constant-label error sites. This is **NOT** a native Node test, PostgreSQL/API regression run or Vercel PASS. The candidate SHA must pass those gates independently.
+
+### Reconciliation of the remaining four tickets
+
+| Issue | Integrated code / historical evidence | Material acceptance still pending |
+| --- | --- | --- |
+| #985 OPS disposable PostgreSQL | PR #987 merged disposable drill database name; PR #1159 merged recovery _restore name. The SQL guard remains strict. Historical run 38606567669 passed migrations but skipped restore/rollback after an unrelated quality failure. | Confirm a successful exact-SHA PostgreSQL 17 job with actual recovery and application rollback. |
+| #979 RFC7807 / redaction | PR #1160 merged nested credential redaction; PR #1263 merged private-key test fixture hardening. Problem Details v2 and negative leakage assertions exist. | Execute candidate-SHA runtime/CI observability regressions. |
+| #638 CRUD allowlists / RBAC | PRs #1009, #1163 and #1270 merged typed model-bound permissions and schemas, guarded fields, query limits and tenant predicates. | Backend typecheck and PostgreSQL 17 two-customer A/B HTTP authorization tests on final SHA. |
+| #720 production security | Prior read-only production catalogs reported least-privileged dedicated roles and 14/14 backend-only browser grants removed. Historical, not proof of current deployed process. | Vercel READY and deployed HTTP backend smoke verifying use of contagest_runtime, without destructive production QA. |
+
+**Release decision:** NOT_READY / PARTIAL until final candidate checks, recovery drills, security QA and deployment READY are verified. #647 and #669 must consume the real evidence independently, not a presumed production PASS. Keep all five issues open/in the validation backlog until their material acceptance gates pass. Do not disclose credentials, signed URLs or production environment values.
