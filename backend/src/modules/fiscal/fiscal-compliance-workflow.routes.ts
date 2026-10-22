@@ -12,7 +12,6 @@ import { assertBalanced } from '../accounting/accounting.service.js';
 import { assertComplianceTransition } from './fiscal-compliance-workflow-policy.js';
 
 const router = Router();
-router.use(requirePermission('fiscal.close'));
 const UUID = z.string().uuid();
 const HASH = z.string().regex(/^[a-f0-9]{64}$/i);
 const payloadSchema = z.discriminatedUnion('action', [
@@ -45,7 +44,7 @@ function existingEvidence(payload: Prisma.JsonValue): { payload: Record<string, 
   return { payload: record, workflow: (workflow || {}) as Record<string, unknown> };
 }
 
-router.post('/declarations/:id/transition', validateBody(payloadSchema), asyncHandler(async (req, res) => {
+router.post('/declarations/:id/transition', requirePermission('fiscal.close'), validateBody(payloadSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const id = UUID.parse(req.params.id);
   const input = payloadSchema.parse(req.body);
