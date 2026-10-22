@@ -14,7 +14,7 @@ const denied = (code: string): never => { throw new Error(code); };
 /** Valid for the reviewed /documents/issue route, not just for legacy manual insert. */
 export function assertUntrustedFiscalPayload(value: unknown): asserts value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) denied('FISCAL_PAYLOAD_INVALID');
-  for (const key of Object.keys(value)) {
+  for (const key of Object.keys(value as Record<string, unknown>)) {
     if (RESERVED.test(key)) denied('FISCAL_PAYLOAD_RESERVED_FIELD');
   }
 }
