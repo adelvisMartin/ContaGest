@@ -165,6 +165,11 @@ router.get('/:id',requirePermission('fiscal.read'),asyncHandler(async(req,res)=>
 
 /** AP recognized posting -> withholding payable. Does NOT issue a statutory voucher. */
 router.post('/',requirePermission('fiscal.manage_documents'),validateBody(applicationSchema),asyncHandler(async(req,res)=>{
+  // Prohibit accidental financial postings before PG17/RLS/browser + actual
+  // SENIAT agent/supplier eligibility evidence are signed off.
+  if(process.env.VE_FISCAL_INTERNAL_RETIVA_POSTING_ENABLED!=='true')
+    throw new HttpError(503,'La aplicación interna RETIVA está deshabilitada hasta su aprobación operativa.',
+      {code:'RETIVA_POSTING_NOT_ENABLED'});
   const ctx=context(req),userId=actor(ctx),key=idem(req);
   const input=req.body as z.infer<typeof applicationSchema>;
   const result=await runFinancialIdempotentMutation({
