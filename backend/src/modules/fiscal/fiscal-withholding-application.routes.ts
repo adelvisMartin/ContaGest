@@ -88,7 +88,7 @@ router.get('/reconciliation',requirePermission('fiscal.read'),asyncHandler(async
     status:'POSTED'|'REVERSED';purchaseStatus:string;sourceLedgerPosted:boolean;
     ledgerEntryId:string;ledgerPosted:boolean;ledgerSourceId:string;
     reversalLedgerEntryId:string|null;reversalLedgerPosted:boolean|null;
-    reversalOfId:string|null;withheldMinor:bigint;
+    reversalOfId:string|null;withheldMinor:bigint;reversalLinesInverse:boolean;
     postedDebitMinor:string;postedCreditMinor:string;
     reversalDebitMinor:string;reversalCreditMinor:string;
     evidence:unknown;evidenceSha256:string;
@@ -100,6 +100,22 @@ router.get('/reconciliation',requirePermission('fiscal.read'),asyncHandler(async
       coalesce(l."sourceId",'') AS "ledgerSourceId",
       a."reversalLedgerEntryId",r."posted" AS "reversalLedgerPosted",
       r."reversalOfId" AS "reversalOfId",a."withheldMinor",
+      CASE WHEN r."id" IS NULL THEN false ELSE (
+        SELECT COUNT(*)=2 AND
+          NOT EXISTS (
+            SELECT 1 FROM public."LedgerLine" src_line
+            WHERE src_line."entryId"=a."ledgerEntryId"
+              AND NOT EXISTS (
+                SELECT 1 FROM public."LedgerLine" reversed_line
+                WHERE reversed_line."entryId"=r."id"
+                  AND reversed_line."accountCode"=src_line."accountCode"
+                  AND reversed_line."debit"=src_line."credit"
+                  AND reversed_line."credit"=src_line."debit"
+              )
+          )
+        FROM public."LedgerLine" source_line_count
+        WHERE source_line_count."entryId"=a."ledgerEntryId"
+      ) END AS "reversalLinesInverse",
       coalesce((sums."debit"*100)::bigint,0)::text AS "postedDebitMinor",
       coalesce((sums."credit"*100)::bigint,0)::text AS "postedCreditMinor",
       coalesce((reverse_sums."debit"*100)::bigint,0)::text AS "reversalDebitMinor",
@@ -198,6 +214,8 @@ router.post('/',requirePermission('fiscal.manage_documents'),validateBody(applic
         legalSourceSha256:r.legalSourceSha256,definition:r.definition as AppliedRatio['definition']};
     };
     const roles=await resolveSemanticPostingAccounts(tx,ctx.tenantId,['ap','vat_input','withholding_payable']);
+    if(roles.ap.accountCode===roles.withholding_payable.accountCode)
+      throw bad('Las cuentas AP y retenciones por pagar deben ser distintas.', 'RETIVA_ACCOUNT_ROLE_COLLISION');
     const originalAP=posted.lines.filter(l=>l.accountCode===roles.ap.accountCode);
     const originalVAT=posted.lines.filter(l=>l.accountCode===roles.vat_input.accountCode);
     if(originalAP.length!==1||!originalAP[0].credit.eq(invoice.total)||
