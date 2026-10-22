@@ -385,7 +385,9 @@ router.post('/tax-events/preview', requirePermission('fiscal.read'),
 
 router.post('/documents/issue', requirePermission('fiscal.manage_documents'), validateBody(issueDocumentSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  assertUntrustedFiscalPayload(req.body.payload);
+  try { assertUntrustedFiscalPayload(req.body.payload); }
+  catch { throw new HttpError(422, 'El documento contiene campos fiscales reservados al servidor.',
+    { code: 'FISCAL_PAYLOAD_RESERVED_FIELD' }); }
   assertPayloadSize(req.body.payload);
   const execution = await runFinancialIdempotentMutation({
     tenantId: ctx.tenantId,
