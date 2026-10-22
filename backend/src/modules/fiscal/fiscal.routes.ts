@@ -23,6 +23,7 @@ import {
   getCloseEvidence,
   getDocumentRuleSnapshots,
   listFiscalRuleVersions,
+  lockFiscalPeriodMutation,
   persistCloseEvidence,
   recordDocumentRuleSnapshots,
   resolveFiscalRules
@@ -227,6 +228,7 @@ router.post('/close-period', requirePermission('fiscal.close'), validateBody(clo
     request: req.body,
     requestId: ctx.requestId || null
   }, async (tx) => {
+    await lockFiscalPeriodMutation(tx, ctx.tenantId, req.body.period);
     const lock = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM public."ClosingPeriod"
       WHERE "tenantId"=${ctx.tenantId} AND "period"=${req.body.period} AND "module"=${req.body.module}
@@ -294,6 +296,7 @@ router.post('/reopen-period', requirePermission('fiscal.reopen'), validateBody(r
     scope: `fiscal.reopen.${req.body.module}`,
     key, request: req.body, requestId: ctx.requestId || null,
   }, async tx => {
+    await lockFiscalPeriodMutation(tx, ctx.tenantId, req.body.period);
     // Close and reopen lock the same period. Different retry keys cannot
     // race a second transition or erase historical close evidence.
     const lock = await tx.$queryRaw<Array<{ id: string }>>`
@@ -341,6 +344,7 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     request: req.body,
     requestId: ctx.requestId || null
   }, async (tx) => {
+    await lockFiscalPeriodMutation(tx, ctx.tenantId, req.body.period);
     const closedPeriod = await tx.closingPeriod.findFirst({
       where: { tenantId: ctx.tenantId, period: req.body.period, module: { in: req.body.module === 'fiscal' ? ['fiscal'] : [req.body.module, 'fiscal'] }, status: 'closed' }
     });
@@ -367,6 +371,13 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind, number, period: req.body.period, module: req.body.module, payload: controlledPayload });
     const record = await tx.fiscalDocument.create({ data: { tenantId: ctx.tenantId, kind: req.body.kind, number, period: req.body.period, status: 'issued', payload: controlledPayload, hash } });
     await recordDocumentRuleSnapshots(tx, { tenantId: ctx.tenantId, fiscalDocumentId: record.id, rules });
+    await tx.auditLog.create({ data: {
+      tenantId: ctx.tenantId, userId: ctx.userId || null,
+      action: 'fiscal.document.issued', entity: 'FiscalDocument', entityId: record.id,
+      after: { id: record.id, kind: record.kind, number: record.number, period: record.period,
+        hash: record.hash, ruleKeys, ruleHashes: rules.map(rule => rule.hash) },
+      ipAddress: ctx.ip || null, userAgent: ctx.userAgent || null,
+    } });
     const snapshots = await tx.$queryRaw<Array<{ ruleKey: string; ruleVersion: number; ruleHash: string }>>`
       SELECT "ruleKey", "ruleVersion", "ruleHash" FROM public."FiscalDocumentRuleSnapshot"
       WHERE "tenantId"=${ctx.tenantId} AND "fiscalDocumentId"=${record.id} ORDER BY "ruleKey"
@@ -374,7 +385,6 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     return { data: { ...record, module: req.body.module, appliedRules: snapshots }, responseCode: 201, resourceType: 'FiscalDocument', resourceId: record.id };
   });
 
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.document.issued', entity: 'FiscalDocument', entityId: execution.resourceId || undefined, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   res.status(execution.responseCode).json({ ok: true, data: execution.data, meta: { replayed: execution.replayed } });
 }));
 
