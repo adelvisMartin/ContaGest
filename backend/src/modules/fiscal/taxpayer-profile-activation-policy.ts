@@ -3,6 +3,8 @@ export type ActiveTaxpayerProfile = Readonly<{
   id: string; tenantId: string; rifSnapshot: string; version: number;
   status: 'DRAFT' | 'REVIEWED' | 'ACTIVE'; effectiveFrom: Date; effectiveTo: Date | null;
   sourceReference: string; sourceContentSha256: string;
+  jurisdiction: string; taxpayerCategory: string; activityCodes: unknown;
+  legalSourceId: string | null;
   createdBy: string; reviewedBy: string | null; activatedBy: string | null;
 }>;
 const fail = (): never => { throw new Error('TAXPAYER_PROFILE_NOT_AUTHORIZED'); };
