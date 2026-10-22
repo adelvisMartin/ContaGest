@@ -99,6 +99,25 @@ test('#775 invoice -> reviewed rule -> AP tax posting -> idempotent reversal wit
   const request={purchaseInvoiceId:purchase.id,ivaRuleKey:ivaRule.ruleKey,
     retentionRuleKey:retRule.ruleKey};
   const key=`${RUN}-application`;
+  // A fiscal-document manager must not inherit permission to create liabilities
+  // or reverse posted ledgers. This is a real session-bound negative RBAC test.
+  const limitedRole=await h.prisma.role.create({data:{
+    tenantId:h.tenant.id,name:`QA docs only ${RUN}`,system:false
+  }});
+  const manageDocuments=await h.prisma.permission.findUniqueOrThrow({
+    where:{key:'fiscal.manage_documents'}
+  });
+  await h.prisma.rolePermission.create({data:{
+    roleId:limitedRole.id,permissionId:manageDocuments.id
+  }});
+  const limitedUser=await h.prisma.userProfile.create({data:{
+    tenantId:h.tenant.id,email:`limited-${RUN}@example.invalid`,
+    fullName:'QA fiscal documents only'
+  }});
+  await h.prisma.userRole.create({data:{userId:limitedUser.id,roleId:limitedRole.id}});
+  const limitedToken=await h.issueSessionTokenFor(limitedUser);
+  await h.status('/fiscal/withholding-applications',403,post(request,
+    `${RUN}-limited-post`),limitedToken);
   const first=await h.ok('/fiscal/withholding-applications',
     post(request,key));
   assert.equal(first.mode,'INTERNAL_AP_APPLICATION_NOT_CERTIFICATE');
@@ -133,6 +152,9 @@ test('#775 invoice -> reviewed rule -> AP tax posting -> idempotent reversal wit
     entityId:first.id,action:'fiscal.retiva.applied'
   }});
   assert.equal(issuedAudit.length,1);
+  await h.status(`/fiscal/withholding-applications/${first.id}/reverse`,403,
+    post({fiscalPeriod:period,reason:'Unauthorized document manager cannot reverse tax.'},
+      `${RUN}-limited-reverse`),limitedToken);
 
   // The original purchase may not be cancelled while a posted withholding
   // liability remains. Purchase and withholding routes share an invoice row lock.
