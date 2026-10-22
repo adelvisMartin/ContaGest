@@ -29,7 +29,17 @@ test('Hípico browser release matrix includes 360/390/430, keyboard focus, reduc
     read('playwright.hipico-matrix.config.mjs'),
     read('qa/support/hipico-visual-catalog-v105.mjs'),
     read('qa/hipico-visual-functional-v105.spec.mjs'),
-    read('frontend/public/hipico-control/assets/css/app.css'),
+    Promise.all([
+      read('frontend/public/hipico-control/assets/css/app.css'),
+      read('frontend/public/hipico-control/assets/css/ui-system-v3-compat.css'),
+      read('frontend/public/hipico-control/assets/css/ui-system-v4.css'),
+      read('frontend/public/hipico-control/assets/css/ui-system-v4-convergence.css')
+    ]).then((layers) => {
+      assert.match(layers[0], /@import url\("\.\/ui-system-v3-compat\.css"\) layer\(legacy\)/);
+      assert.match(layers[0], /@import url\("\.\/ui-system-v4\.css"\)/);
+      assert.match(layers[0], /@import url\("\.\/ui-system-v4-convergence\.css"\)/);
+      return layers.join('\n');
+    }),
     read('frontend/public/hipico-control/index.html'),
     read('frontend/public/hipico-control/assets/js/control-accessibility.js')
   ]);
