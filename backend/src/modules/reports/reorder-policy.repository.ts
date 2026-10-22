@@ -111,14 +111,18 @@ export async function savePersistedReorderPolicy(input: {
         select: productSelect
       });
       if (!product) throw new HttpError(404, 'Producto activo no encontrado.', {code:'REORDER_POLICY_PRODUCT_NOT_FOUND'});
-      // Validate the current stock/reservation relationship before saving policy.
-      previewReorderPolicy({
-        stockExact:product.stock,reservedExact:product.reserved,
-        canonicalMinStockExact:product.minStock,
-        reorderPointExact:values.reorderPoint,targetStockExact:values.targetStock,
-        safetyStockExact:values.safetyStock,orderMultipleExact:values.orderMultiple,
-        leadTimeDays:String(values.leadTimeDays)
-      });
+      // Disabling an existing policy is a safe kill switch even when the stock
+      // ledger requires reconciliation. Enabling/updating an active policy
+      // requires a coherent tenant product/reservation snapshot.
+      if (values.enabled) {
+        previewReorderPolicy({
+          stockExact:product.stock,reservedExact:product.reserved,
+          canonicalMinStockExact:product.minStock,
+          reorderPointExact:values.reorderPoint,targetStockExact:values.targetStock,
+          safetyStockExact:values.safetyStock,orderMultipleExact:values.orderMultiple,
+          leadTimeDays:String(values.leadTimeDays)
+        });
+      }
       let before: PolicyRow | null = null;
       if (normalized.expectedRevision === 0) {
         // A unique tenant/product DB key is the concurrent create arbiter.
