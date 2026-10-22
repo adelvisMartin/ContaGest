@@ -4,7 +4,7 @@
 
 ## Evidencia ejecutada en esta revisión
 
-- `node --experimental-strip-types --test tests/fiscal_rule_governance_policy_v751.test.mjs` sobre réplica local de la política pura: **4/4 PASS** con Node 22.16.0 en UTC y otras dos zonas horarias. El módulo publicado no tiene el mismo blob Git que la réplica debido a comentarios; NO usar esto como prueba exact-SHA del binario del repositorio.
+- `node --experimental-strip-types --test tests/fiscal_rule_governance_policy_v751.test.mjs` sobre copia local exacta de los dos blobs Git publicados (`f380d62b2440bfcd78ec6a1307f3bf514baeabca` módulo y `062fcff6c82dc796f49fb749516de6609e15a8ae` test): **4/4 PASS** con Node 22.16.0, comprobado en distintas zonas horarias. Es evidencia **focal exact-blob**, no QA del backend/DB del commit completo.
 - `tsc --strict --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext backend/src/modules/fiscal/fiscal-rule-governance-policy.ts` sobre réplica local: PASS focal. No sustituye el typecheck de workspace.
 - Suite `fiscal_rule_snapshot_integrity_v751.test.mjs`: 5/5 PASS aislado de la revisión anterior; no revalidada como gate del HEAD actual.
 - Verificación GitHub de branch/PR, cambios publicados, SHA y diff: VERIFIED (inspección, no ejecución de aplicación).
