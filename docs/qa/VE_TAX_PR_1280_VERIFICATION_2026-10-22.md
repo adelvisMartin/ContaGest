@@ -125,3 +125,13 @@ Each step is a new idempotent request after the preceding committed state. The s
 - **Executed independent local tests**: 18/18 PASS on exact-blob pure modules, with five-module strict TypeScript check in scratch sandbox, as described in Iteration 3. Root workspace suite and new source-contract tests not executed locally because GitHub checkout cannot resolve in this execution runtime.
 - **Pending PG17**: true parallel close/reopen with *different keys*, same-key races, crash/replay, DB row locks, draft-versus-closed GL writes, API RBAC/CSRF, immutable `FiscalCloseEvidence`, and migration from-zero/upgrade. **Do not assert PASS** until logs on candidate SHA are captured.
 - **Current ticket disposition:** #778 / #780 / #781 / #782 / #783: all **PARTIAL or BLOCKED** (see DoD gaps above). `test:ve-tax` success alone would not make any ticket DONE, because no complete tax→ledger→reversal→settlement chain exists and legal authority/profile prerequisites remain incomplete.
+
+## QA supplemental — exact Git source-contract inspection, not DB execution
+
+- Fetched actual HEAD source files from GitHub, blob SHAs:
+  - `backend/src/modules/payroll/payroll.routes.ts`: `d0feb1e7d95afe86da3223b362b71073068785cf`.
+  - `backend/src/modules/fiscal/fiscal.routes.ts`: `dc3ab05fbf9bcd191dfe9da52d96f1e41377ef5b`.
+  - `backend/src/modules/fiscal/fiscal.repository.ts`: `e704dcffdc0f9339ec2e9a3595b79fdb8d99611a`.
+- Ran **24/24 source-contract assertions PASS** on those exact Git blob texts using an isolated V8 script, checking transaction boundary, locks, audit inside TX, no out-of-TX receipt writes, JSON cap, mandatory fiscal idempotency, period/source digest checks.
+- Verified repository Git tree contains all **10** paths referenced by root `npm run test:ve-tax` script. This checks runner wiring, **not execution of the runner**.
+- **No PostgreSQL17 QA, npm workspace `typecheck` / `build` / `test:ve-tax` execution**, and no GitHub Actions pass can be claimed from these checks. Static source checks do not establish transaction behavior or compiler validity.
