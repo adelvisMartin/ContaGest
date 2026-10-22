@@ -12,7 +12,7 @@ import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.r
 import { getFxPolicy } from '../currency/fx.repository.js';
 import { fiscalEvidenceHash, resolveFiscalRules } from './fiscal.repository.js';
 import { getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
-import { exactMinor, planPostedPurchaseWithholding } from './ve-iva-withholding-application.js';
+import { exactMinor, planPostedPurchaseWithholding, isInternalRetivaPostingEnabled } from './ve-iva-withholding-application.js';
 import { reconcileVatWithholdingApplications } from './ve-iva-withholding-reconciliation.js';
 import type { AppliedRatio } from './ve-tax-posting-plan.js';
 
@@ -167,7 +167,7 @@ router.get('/:id',requirePermission('fiscal.read'),asyncHandler(async(req,res)=>
 router.post('/',requirePermission('fiscal.manage_documents'),validateBody(applicationSchema),asyncHandler(async(req,res)=>{
   // Prohibit accidental financial postings before PG17/RLS/browser + actual
   // SENIAT agent/supplier eligibility evidence are signed off.
-  if(process.env.VE_FISCAL_INTERNAL_RETIVA_POSTING_ENABLED!=='true')
+  if(!isInternalRetivaPostingEnabled(process.env.VE_FISCAL_INTERNAL_RETIVA_POSTING_ENABLED))
     throw new HttpError(503,'La aplicación interna RETIVA está deshabilitada hasta su aprobación operativa.',
       {code:'RETIVA_POSTING_NOT_ENABLED'});
   const ctx=context(req),userId=actor(ctx),key=idem(req);
