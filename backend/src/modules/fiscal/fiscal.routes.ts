@@ -293,7 +293,14 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     });
     if (closedPeriod) throw new HttpError(409, `El período ${req.body.period} está cerrado para ${closedPeriod.module}.`, { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: closedPeriod.module });
 
-    const effectiveAt = req.body.effectiveAt || new Date();
+    const effectiveAt: Date = req.body.effectiveAt || new Date();
+    // The effective rule must correspond to the actual fiscal-document period,
+    // never to a conveniently selected different month.
+    if (effectiveAt.toISOString().slice(0, 7) !== req.body.period) {
+      throw new HttpError(422, 'La fecha del hecho fiscal no corresponde al período del documento.', {
+        code: 'FISCAL_EVENT_PERIOD_MISMATCH',
+      });
+    }
     const ruleKeys: string[] = [...new Set(req.body.ruleKeys as string[])].sort();
     const rules = await resolveFiscalRules(tx, { tenantId: ctx.tenantId, ruleKeys, effectiveAt });
     const number = await allocateFiscalNumber(tx, {
