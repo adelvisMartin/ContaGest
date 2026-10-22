@@ -25,7 +25,8 @@ router.get('/readiness', asyncHandler(async (req, res) => {
     where: { tenantId },
     select: {
       id: true, tenantId: true, fiscalPeriod: true, posted: true,
-      reversalOfId: true, reversedBy: { select: { id: true } },
+      reversalOfId: true, reversalOf: { select: { tenantId: true } },
+      reversedBy: { select: { id: true, tenantId: true } },
       lines: {
         select: { accountCode: true, currency: true, debit: true, credit: true },
         take: 41, orderBy: { id: 'asc' as const },
@@ -51,6 +52,11 @@ router.get('/readiness', asyncHandler(async (req, res) => {
   if (rows.length > 500) throw new HttpError(413,
     'El período supera 500 documentos; no se certifica una vista parcial.',
     { code: 'FISCAL_BOOK_COVERAGE_LIMIT' });
+  if (rows.some(row => row.ledgerEntries.some(entry =>
+      (entry.reversalOf && entry.reversalOf.tenantId !== tenantId) ||
+      (entry.reversedBy && entry.reversedBy.tenantId !== tenantId))))
+    throw new HttpError(409, 'Se detectó un vínculo de reverso contable entre empresas distintas.',
+      { code: 'FISCAL_BOOK_CROSS_TENANT_REVERSAL' });
   if (rows.some(row => row.ledgerEntries.length > 3 ||
       row.ledgerEntries.some(entry => entry.lines.length > 40)))
     throw new HttpError(413, 'Demasiados asientos o líneas en el documento; no se certifica cobertura truncada.',
