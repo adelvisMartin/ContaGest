@@ -134,15 +134,17 @@ async function hasPermission(tenantId: string, userId: string | undefined, key: 
 }
 
 async function capabilities(ctx: RequestContext) {
-  const [read, manageDocuments, close, reopen, activateRules, activateProfiles] = await Promise.all([
+  const [read, manageDocuments, close, reopen, activateRules, activateProfiles, postWithholding, reverseWithholding] = await Promise.all([
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.read'),
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.manage_documents'),
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.close'),
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.reopen'),
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.activate_rules'),
-    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.activate_profiles')
+    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.activate_profiles'),
+    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.post_withholding'),
+    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.reverse_withholding')
   ]);
-  return { read, manageDocuments, close, reopen, activateRules, activateProfiles };
+  return { read, manageDocuments, close, reopen, activateRules, activateProfiles, postWithholding, reverseWithholding };
 }
 
 function stable(value: unknown): unknown {
