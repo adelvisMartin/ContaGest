@@ -41,7 +41,7 @@ export function planPostedPurchaseWithholding(input:PostedPurchaseEvidence) {
     ![input.taxableMinor,input.invoiceVatMinor,input.invoiceTotalMinor].every(integer)||
     input.taxableMinor===0||input.invoiceVatMinor===0||
     !/^iva[.:]/i.test(input.iva?.ruleKey??'')||!/^ret_iva[.:]/i.test(input.retention?.ruleKey??'')) denied();
-  let vat:number,withheld:number;
+  let vat=0,withheld=0;
   try{
     vat=calculateRatioMinor(input.taxableMinor,input.iva,'taxable_minor');
     withheld=calculateRatioMinor(input.invoiceVatMinor,input.retention,'tax_minor');
