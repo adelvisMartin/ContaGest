@@ -65,3 +65,23 @@ test('#782 invalid recorded GL values reject rather than round or truncate', () 
     ...ledger, lines: [{ ...ledger.lines[0], creditExact: '1.00' }],
   }]));
 });
+
+test('#782 GL digest changes when amounts move between accounts without changing total', () => {
+  const base = buildFiscalBookReadiness(params);
+  const changed = buildFiscalBookReadiness({ ...params, rows: [{
+    ...row, recordedLedger: [{ ...ledger, lines: ledger.lines.map(line =>
+      line.accountCode === 'REVENUE' ? { ...line, accountCode: 'UNAUTHORIZED_ACCOUNT' } : line) }],
+  }] });
+  assert.notEqual(base.sources[0].ledger.entries[0].ledgerLinesSha256,
+    changed.sources[0].ledger.entries[0].ledgerLinesSha256);
+  assert.notEqual(base.sourceEvidenceHash, changed.sourceEvidenceHash);
+  assert.equal(base.sources[0].ledger.entries[0].currencyBalances[0].balanced, true);
+  assert.equal(changed.sources[0].ledger.entries[0].currencyBalances[0].balanced, true);
+});
+test('#782 canonical GL digest normalizes equivalent recorded monetary notation', () => {
+  const changed = buildFiscalBookReadiness({ ...params, rows: [{
+    ...row, recordedLedger: [{ ...ledger, lines: ledger.lines.map(line =>
+      line.accountCode === 'AR' ? { ...line, debitExact: '116.0' } : line) }],
+  }] });
+  assert.equal(buildFiscalBookReadiness(params).sourceEvidenceHash, changed.sourceEvidenceHash);
+});
