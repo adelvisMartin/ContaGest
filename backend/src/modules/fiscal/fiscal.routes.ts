@@ -468,6 +468,27 @@ router.get('/documents', requirePermission('fiscal.read'), asyncHandler(async (r
   }));
 }));
 
+router.get('/documents/:id/taxpayer-profile', requirePermission('fiscal.read'),
+  asyncHandler(async (req,res) => {
+    const ctx=context(req);
+    const rows=await prisma.$queryRaw<Array<{
+      taxpayerProfileSnapshot:unknown;taxpayerProfileHash:string|null;
+    }>>`
+      SELECT "taxpayerProfileSnapshot","taxpayerProfileHash"
+      FROM public."FiscalDocument"
+      WHERE "tenantId"=${ctx.tenantId} AND "id"=${req.params.id}
+      LIMIT 1
+    `;
+    if(!rows[0])throw new HttpError(404,'Documento fiscal no encontrado.',{code:'FISCAL_DOCUMENT_NOT_FOUND'});
+    const snapshot=rows[0].taxpayerProfileSnapshot;
+    const hash=rows[0].taxpayerProfileHash;
+    if(snapshot!==null && (typeof hash!=='string'||fiscalEvidenceHash(snapshot)!==hash))
+      throw new HttpError(409,'Evidencia del perfil tributario alterada.',{code:'TAXPAYER_PROFILE_SNAPSHOT_INTEGRITY'});
+    if(snapshot===null&&hash!==null)
+      throw new HttpError(409,'Evidencia del perfil tributario incompleta.',{code:'TAXPAYER_PROFILE_SNAPSHOT_INTEGRITY'});
+    ok(res,{taxpayerProfileSnapshot:snapshot,taxpayerProfileHash:hash});
+  }));
+
 router.get('/documents/:id/rules', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const document = await prisma.fiscalDocument.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, select: { id: true } });
