@@ -6,6 +6,18 @@ import { buildCompliancePeriodReadiness } from './fiscal-compliance-readiness.js
 
 const router = Router();
 router.use(requirePermission('fiscal.read'));
+function workflowFlags(payload: unknown) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+  const record = (payload as Record<string, unknown>)._complianceEvidenceV1;
+  if (record === undefined) return undefined;
+  if (!record || typeof record !== 'object' || Array.isArray(record))
+    throw new HttpError(409, 'La evidencia interna de la declaración está dañada.', { code: 'COMPLIANCE_WORKFLOW_EVIDENCE_INVALID' });
+  const workflow = record as Record<string, unknown>;
+  // Only record presence; official proof and current bank matching are not
+  // inferred from potentially stale historical payloads.
+  return { review: !!workflow.review, filing: !!workflow.filing,
+    payment: !!workflow.payment, reconciliation: !!workflow.reconciliation };
+}
 router.get('/readiness', asyncHandler(async (req, res) => {
   const period = req.query.period;
   if (Object.keys(req.query).some(key => key !== 'period') ||
@@ -18,7 +30,7 @@ router.get('/readiness', asyncHandler(async (req, res) => {
     prisma.taxPeriod.findUnique({
       where: { tenantId_period: { tenantId, period } },
       select: { id: true, status: true, ivaDebit: true, ivaCredit: true, igtfPaid: true, declarations: {
-        take: 201, select: { id: true, kind: true, status: true, amount: true },
+        take: 201, select: { id: true, kind: true, status: true, amount: true, payload: true },
       } },
     }),
     prisma.closingPeriod.findMany({
@@ -36,6 +48,7 @@ router.get('/readiness', asyncHandler(async (req, res) => {
         ivaCredit: taxPeriod.ivaCredit.toString(), igtfPaid: taxPeriod.igtfPaid.toString() } } : null,
     declarations: (taxPeriod?.declarations || []).map(row => ({
       id: row.id, kind: row.kind, status: row.status, amountExact: row.amount.toString(),
+      workflowEvidence: workflowFlags(row.payload),
     })),
     closings, fiscalDocumentCount,
   });
