@@ -109,3 +109,19 @@ Each step is a new idempotent request after the preceding committed state. The s
 - Local shell cannot resolve github.com; no full Git checkout, npm workspace install, PostgreSQL binary, driver or Chromium available. CI exact final HEAD is a separate evidence gate.
 
 **Required follow-up:** test actual PostgreSQL17 concurrency under two tenants, all workflow transitions with RBAC/revocation, actual double-entry/reversal/linking, 2026 legal rules and employer-worker contributions, distributed close/read race, fiscal-book certified exports and bank ledger reconciliation, full lint/typecheck/build and UI. The PR must stay **DRAFT** and issues **OPEN** until those are met. This is not a production release sign-off.
+
+## Iteration 4 — concurrent financial lifecycle hardening
+
+- Fiscal document issue `POST /fiscal/documents/issue` now **requires an ASCII safe Idempotency-Key**. Missing key returns 428; same key/request produces a replay without a second sequence allocation; different payload with same key conflicts by existing idempotency authority.
+- Fiscal close `POST /fiscal/close-period` also **requires Idempotency-Key**, and locks the tenant+month+module `ClosingPeriod` database row `FOR UPDATE` before confirming status; two different retry keys cannot each perform a successful close. Close state, evidence SHA and audit row commit atomically (no audit created again during a successful replay).
+- Reopen `POST /fiscal/reopen-period` rewritten to use the same period row lock, mandatory idempotency, transaction-scoped status validation and audit; immutable prior close evidence is not erased by reopening.
+- `FiscalRuleVersion.hash` is recalculated from the canonical persisted definition/authoritative legal source whenever a new document resolves a rule; altered stored formulas are rejected with `FISCAL_RULE_VERSION_HASH_MISMATCH`.
+- Fiscal issue validates date/month in exact UTC through `fiscal-effective-period-policy.ts` before selecting rules.
+- Source-contract regressions in `tests/ve_fiscal_period_lifecycle_source_contract_778_782.test.mjs` verify locking, required keys, transaction-scoped audit and authoritative version-hash guard; included in root `npm run test:ve-tax`.
+
+### Operational QA / compatibility notes
+
+- **Behavior changes**: document issue, close and reopen now require explicit `Idempotency-Key`. UI/API callers must generate a distinct stable key for each logical user action, reuse on retry, and send a new one only for a new action. Audit consumers should not count replayed close/reopen as a second transition.
+- **Executed independent local tests**: 18/18 PASS on exact-blob pure modules, with five-module strict TypeScript check in scratch sandbox, as described in Iteration 3. Root workspace suite and new source-contract tests not executed locally because GitHub checkout cannot resolve in this execution runtime.
+- **Pending PG17**: true parallel close/reopen with *different keys*, same-key races, crash/replay, DB row locks, draft-versus-closed GL writes, API RBAC/CSRF, immutable `FiscalCloseEvidence`, and migration from-zero/upgrade. **Do not assert PASS** until logs on candidate SHA are captured.
+- **Current ticket disposition:** #778 / #780 / #781 / #782 / #783: all **PARTIAL or BLOCKED** (see DoD gaps above). `test:ve-tax` success alone would not make any ticket DONE, because no complete tax→ledger→reversal→settlement chain exists and legal authority/profile prerequisites remain incomplete.
