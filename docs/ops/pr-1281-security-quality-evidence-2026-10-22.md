@@ -49,3 +49,24 @@ Source-file edits and prior provider logs are **VERIFIED** as such. New PR candi
 ## Follow-ups outside the five-ticket scope
 
 Investigate outstanding source/security or visual failures from the **new** exact candidate separately; preserve failure details (file, line, expected/actual) and record which run corresponds to which SHA. Future Hípico v4 presentation or offline behavior changes need browser-render and accessibility evidence independently of source-only checks.
+
+
+## 2026-10-22 · Additional exact-SHA source-qa remediation
+
+The root cause of repeated Vercel exit codes 179/194/201/202 is **not** generic Vercel spawn failure. The project wrapper emits distinct nonzero codes when sequential \`hipico-root-contracts\` native Node test files fail. Subsequent files do not run after the first failure: absence of their logs is **NOT PASS**.
+
+The following fixes were made in this same PR without weakening runtime authentication, authorization, SOURCE read-only policy, financial logic, database permissions, production workflows or deployment settings:
+
+| Native Node test / exact-provider evidence | Source-contract authority retained |
+| --- | --- |
+| \`tests/hipico_icon_action_contract_v41.test.mjs\` | Generated \`platform-tokens-v1.css\` owns 32/36/38/44px values; \`ui-system-v4.css\` owns components; \`ui-system-v4-convergence.css\` owns SVG alignment and floating Help/WhatsApp spacing; literal icon-registry checks account for conditional \`copy/check\`. Decorative \`ACTION_ICONS\` is tested separately from mandatory accessible \`ICON_LABELS\`. PWA r38 and non-cacheable sensitive requests remain verified. |
+| Preview \`dpl_CR6gZHkXkNg49vK3fVfLb1NeJgKj\`, SHA \`5ac205d26bb1b8fda45c947c9b88c8f2e6b93566\` | Native v41 suite **9 PASS / 1 FAIL**, with the last false assertion treating \`'focus-fast': 'Captura rápida'\` screen-reader label as a forbidden action icon. Scoped the test to the actual action-icon registry; preserved the accessible label. Do not reuse this earlier 9/10 as current-head PASS. |
+| Preview \`dpl_AQpeweuQ5osdxfDZE3aReSXWnbeW\`, SHA \`76b9504f3adec85f855c9ac88b1027ddaf8a4af8\` | Advanced beyond v41 and failed \`tests/hipico_mobile_touch_targets_297.test.mjs\` (two CSS-file-path assumptions), exit 194. Eight original CSS invariants were checked against actual imported legacy compatibility stylesheet. |
+| Preview \`dpl_B4FAE227gmbhkPJFFs3VP5Jyv7jF\`, SHA \`5c5ef261ae461eae80b25711bc6c811fd440076a\` | Advanced beyond #297 and failed \`tests/hipico_operational_access_guard_279.test.mjs\` (two stale CSS/cache revision assumptions), exit 201. Assertions for hidden-by-default operational module, privileged auth gate, lazy import and purging state on loss of permission are retained. |
+| Preview \`dpl_6eWi3dHjAHr6j6e19Ys1J2jpZx9H\`, SHA \`bd22d0a7ba1c1aa67b98e9b7fa84e8fab6fd2022\` | Advanced beyond #279 and failed \`tests/hipico_operational_copy_center_277.test.mjs\` (one stale CSS-file-path check), exit 202. Manual-only copy, no HTTP send, group isolation, 44px targets and motion preferences are retained. |
+
+**Source versus runtime distinction:** The physical CSS architecture is a locally imported and layered bundle, not a single physical \`app.css\` file. Source-only checks establish that the guards exist; they do **not** establish actual computed browser layout, AA contrast, keyboard focus loops or offline reliability. The Playwright cross-browser/viewport tests remain mandatory.
+
+**Execution blocker:** Native shell checkout using \`git ls-remote https://github.com/adelvisMartin/ContaGest.git HEAD\` could not resolve \`github.com\` from the isolated local container, so native local lint/typecheck/full Node/PostgreSQL/Playwright could not be executed there. Actual native Node assertions were executed only in exact-SHA Vercel source-qa previews as stated. The repository's GitHub Actions checks for recent candidate commits remained overwhelmingly queued/skipped at inspection; no local/CI green is claimed.
+
+**Closure rule:** A preview build must reach READY for its own SHA and GitHub must complete required checks; only then can runtime production readiness for #688 and #720 be evaluated. #985 restore/rollback and #638/#979 security acceptance still require their independent executable gates. Do not merge or close the five tickets on a source-only repair.
