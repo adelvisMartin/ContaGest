@@ -17,6 +17,7 @@ import {
   assertFiscalClosePreconditions,
   buildCloseEvidence,
   createFiscalRuleVersion,
+  transitionFiscalRule,
   fiscalEvidenceHash,
   getCloseEvidence,
   getDocumentRuleSnapshots,
@@ -50,12 +51,18 @@ const fiscalRuleSchema = z.object({
   effectiveTo: z.coerce.date().nullable().optional(),
   source: z.string().trim().min(3).max(240),
   documentation: z.string().trim().min(3).max(1000),
-  definition: z.record(z.string(), z.unknown())
+  definition: z.record(z.string(), z.unknown()),
+  legalSourceId: z.string().uuid().nullable().optional(),
+  supersedesId: z.string().uuid().nullable().optional()
 }).strict().superRefine((value, ctx) => {
   if (value.effectiveTo && value.effectiveTo <= value.effectiveFrom) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['effectiveTo'], message: 'effectiveTo debe ser posterior a effectiveFrom.' });
   }
 });
+const fiscalRuleDecisionSchema = z.object({
+  reason: z.string().trim().min(15).max(500)
+}).strict();
+
 const taxpayerProfileDraftSchema = z.object({
   effectiveFrom:z.string(),
   effectiveTo:z.string().nullable().optional(),
@@ -198,7 +205,9 @@ router.post('/rules', requirePermission('fiscal.close'), validateBody(fiscalRule
     source: req.body.source,
     documentation: req.body.documentation,
     definition: req.body.definition,
-    createdBy: ctx.userId || null
+    createdBy: ctx.userId || null,
+    legalSourceId: req.body.legalSourceId || null,
+    supersedesId: req.body.supersedesId || null
   });
   await writeAudit({
     tenantId: ctx.tenantId,
@@ -212,6 +221,28 @@ router.post('/rules', requirePermission('fiscal.close'), validateBody(fiscalRule
   });
   res.status(201).json({ ok: true, data: created });
 }));
+
+router.post('/rules/:id/review', requirePermission('fiscal.close'),
+  validateBody(fiscalRuleDecisionSchema), asyncHandler(async (req, res) => {
+    const ctx = context(req);
+    if (!ctx.userId) throw new HttpError(401, 'La revisión requiere sesión de un usuario real.');
+    const ruleId = z.string().uuid().parse(req.params.id);
+    ok(res, await transitionFiscalRule({
+      tenantId: ctx.tenantId, ruleId, actorId: ctx.userId, action: 'REVIEW',
+      reason: req.body.reason
+    }));
+  }));
+
+router.post('/rules/:id/activate', requirePermission('fiscal.activate_rules'),
+  validateBody(fiscalRuleDecisionSchema), asyncHandler(async (req, res) => {
+    const ctx = context(req);
+    if (!ctx.userId) throw new HttpError(401, 'La activación requiere sesión de un usuario real.');
+    const ruleId = z.string().uuid().parse(req.params.id);
+    ok(res, await transitionFiscalRule({
+      tenantId: ctx.tenantId, ruleId, actorId: ctx.userId, action: 'ACTIVATE',
+      reason: req.body.reason
+    }));
+  }));
 
 router.post('/close-period', requirePermission('fiscal.close'), validateBody(closeSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
