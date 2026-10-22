@@ -36,11 +36,17 @@ test('PR268 maintains one ordered v4 CSS graph and consistent branded identity',
 });
 
 test('PR268 uses reviewed native UI primitives, accessibility and Help Center without React runtime', async () => {
-  const [ui, help, pkg] = await Promise.all([read(root + '/assets/js/ui.js'), read(root + '/assets/js/help-center.js'), read('frontend/package.json')]);
+  const [ui, dialogs, help, pkg] = await Promise.all([
+    read(root + '/assets/js/ui.js'), read(root + '/assets/js/dialog-accessibility.js'),
+    read(root + '/assets/js/help-center.js'), read('frontend/package.json')
+  ]);
   assert.match(ui, /export const ui = Object\.freeze/);
   for (const primitive of ['button','badge','card','field','state','dialog'])
     assert.match(ui, new RegExp(primitive + '\\('));
-  assert.match(ui, /focusableNodes/);
+  // Focus ownership moved to the dedicated native-dialog accessibility module.
+  assert.match(dialogs, /function focusable\(dialog\)/);
+  assert.match(dialogs, /function trapTab\(event\)/);
+  assert.match(dialogs, /event\.key === 'Escape'/);
   assert.match(ui, /aria-live/);
   assert.match(help, /Manual de uso/);
   assert.match(help, /SOURCE permanece sólo lectura/);
