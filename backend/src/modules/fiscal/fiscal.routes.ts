@@ -206,6 +206,7 @@ router.get('/rules', requirePermission('fiscal.read'), asyncHandler(async (req, 
 
 router.post('/rules', requirePermission('fiscal.close'), validateBody(fiscalRuleSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
+  if (!ctx.userId) throw new HttpError(401, 'La captura de reglas fiscales requiere un operador autenticado.');
   const created = await createFiscalRuleVersion({
     tenantId: ctx.tenantId,
     ruleKey: req.body.ruleKey,
