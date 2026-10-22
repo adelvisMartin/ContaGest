@@ -41,3 +41,12 @@ test('#744 empty period is not mistaken for reconciled account',()=>{
 test('#744 future issue dates cannot appear in an as-of period',()=>{
  fail(()=>projectOpenItemCoverage({...q,invoices:[{...rows[0],issueDate:'2026-10-17T00:00:00.000Z'}]}));
 });
+
+test('#744 never accepts negative, leading-zero or Decimal(18,2)-overflow invoice totals as reconcilable evidence',()=>{
+  for (const totalExact of ['-0.01','-0','-10.00','01.00','99999999999999999.99','10000000000000000.00']) {
+    fail(()=>projectOpenItemCoverage({...q,invoices:[{...rows[0],totalExact}]}));
+  }
+  const accepted=projectOpenItemCoverage({...q,invoices:[{...rows[0],totalExact:'9999999999999999.99'}]});
+  assert.equal(accepted.documents[0].sourceTotalExact,'9999999999999999.99');
+  assert.equal(accepted.authoritativeOpenBalance,false);
+});
