@@ -23,3 +23,7 @@ Condición para reactivar: orden/recipient resolved exclusivamente server-side, 
 ## Persistencia de consentimiento in-app (22-10-2026)
 
 Se añade `NotificationChannelPreference` con `tenantId,userId,channel='in_app'` y FK compuesta a `UserProfile`, consentimiento `granted|denied|unknown`, `enabled`, hora verificada, evidencia server-side `authenticated-self-service` y zona/ventana de silencio. SQL fuerza RLS y bloquea activar sin consentimiento; la ruta `GET/PUT /api/v1/notifications/preferences/me` usa únicamente `req.context.userId/tenantId`, valida usuario activo, franja horaria IANA, persiste la preferencia con auditoría en la misma transacción y no divulga PII ni proveedor. **Esta aceptación in-app jamás autoriza WhatsApp, SMS, email o web push**. No hay todavía dispatch, outbox de notificación, worker ni webhook y no se afirma delivery. Los envíos siguen HTTP 503 hasta integrar #853/#772.
+
+## QA PG17 de consentimiento (opt-in)
+
+`CG_NOTIFICATION_PREF_QA_ISOLATED=true npm run test:backend:notification-preferences:real` verifica en DB `*_v854` PostgreSQL 17 y seed/sidecar RLS la preferencia propia `in_app` concedida/revocada, quiet hours, persistencia al refrescar, auditoría, rechazo de tenant spoofing y no envío WhatsApp (503), sin token negativo. No se ejecutó en este entorno; preparar una DB exclusiva. No valida provider/webhook/worker; #854 sigue pendiente.
