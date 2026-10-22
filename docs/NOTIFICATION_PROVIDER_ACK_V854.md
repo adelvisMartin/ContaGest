@@ -13,3 +13,9 @@ Pruebas: `node --test tests/notification_provider_ack_v854.test.mjs`. Pendientes
 ## Hardened transport validation — 2026-10-22
 
 El adaptador directo heredado ahora valida destino internacional, acepta únicamente el campo `phone` dentro de `order`, limita el texto, rechaza campos inesperados fuera de `order` y valida versión/identificador de API Graph antes de construir la URL. Establece un timeout de 10 s. No registra teléfonos ni mensajes. **Esto no prueba consentimiento, delivery, outbox, idempotencia de proveedor ni un teléfono asociado a un pedido persistido**; producción automatizada sigue NO-GO hasta integrar #853/#772 y resolver esas referencias server-side. El enlace manual `wa.me` del frontend no usa este envío automático.
+
+## Política fail-closed frente a consentimiento ausente (2026-10-22)
+
+La versión anterior de `/whatsapp/order` aceptaba el teléfono proporcionado por el navegador y podía llamar Meta directamente **antes** de registrar el intento. No existe en Prisma evidencia tipada/auditable de consentimiento, preferencias de canal, ni garantía de deduplicación/recibo. Esa ruta ahora valida sintaxis y responde HTTP **503** sin hacer ninguna llamada externa, escribir `NotificationLog` o fingir envío. El clasificador puro `notification-provider-ack.mjs` se conserva para un futuro adapter #772, pero no está conectado. `/delivery-evidence` mantiene lectura de históricos sin PII. El enlace manual `wa.me` requiere interacción del operador y **abrirlo no demuestra entrega**.
+
+Condición para reactivar: orden/recipient resolved exclusivamente server-side, consentimiento persistido y trazable, preferencias + quiet hours, intento idempotente en #853 y adapter verificado #772 con recepción autenticada. No introducir un feature flag que permita saltar estos controles.

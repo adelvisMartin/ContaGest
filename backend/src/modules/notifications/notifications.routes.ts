@@ -5,7 +5,6 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { NotificationTemplateError, renderNotificationTemplate, evaluateNotificationQuietHours, listNotificationTemplateDescriptors } from './notification-template-catalog.js';
 import { projectNotificationDeliveryEvidence } from './notification-delivery-evidence.js';
-import { classifyWhatsAppProviderAck } from './notification-provider-ack.mjs';
 
 const router = Router();
 router.use(requireTenant);
@@ -27,49 +26,14 @@ const whatsappOrderSchema = z.object({
     .refine(value => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(value))
 }).strict();
 
-async function sendWhatsAppCloud(to: string, message: string) {
-  const token = process.env.WHATSAPP_CLOUD_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const version = process.env.WHATSAPP_GRAPH_VERSION || 'v23.0';
-  // Never interpolate arbitrary environment input into a provider URL.
-  if (!token || !phoneNumberId || !/^\d{6,20}$/.test(phoneNumberId) ||
-      !/^v[1-9]\d{0,2}\.\d{1,2}$/.test(version)) {
-    return { ok: false, provider: 'whatsapp-cloud', skipped: true, reason: 'Proveedor WhatsApp no configurado de forma válida.' };
-  }
-  const response = await fetch(`https://graph.facebook.com/${version}/${phoneNumberId}/messages`, {
-    method: 'POST',
-    signal: AbortSignal.timeout(10000),
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to: to.replace(/[^\d]/g, ''),
-      type: 'text',
-      text: { preview_url: false, body: message }
-    })
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new HttpError(response.status, 'WhatsApp Cloud API rechazó la solicitud.');
-  const acknowledgement=classifyWhatsAppProviderAck(response.ok,data);
-  return { ok:acknowledgement.providerAccepted, provider:'whatsapp-cloud', status:acknowledgement.status, delivered:false };
-}
-
-router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
-  const ctx = (req as any).context;
-  const body = whatsappOrderSchema.parse(req.body || {});
-  const result = await sendWhatsAppCloud(body.order.phone, body.message);
-  // #854: write to the same tenant-scoped authority read by /delivery-evidence.
-  // This is an attempt/acknowledgement, never verified delivery.
-  await prisma.notificationLog.create({
-    data: {
-      tenantId: ctx.tenantId,
-      channel: 'whatsapp',
-      provider: 'whatsapp-cloud',
-      status: result.ok ? 'provider_accepted' : result.status==='provider_unverified' ? 'provider_unverified' : 'skipped',
-      // Never store phone, arbitrary order fields, message body or raw provider JSON.
-      payload: { providerAccepted: result.ok, deliveryConfirmed: false }
-    }
-  });
-  ok(res, result.ok ? { ok: true, provider: 'whatsapp-cloud', status: 'provider_accepted', delivered: false } : result);
+// Automated WhatsApp dispatch is prohibited until the server can prove recipient
+// consent, original order ownership and a durable #853 intent + #772 adapter.
+// An operator's sales.manage permission is not the recipient's opt-in, nor is
+// order.phone in request.body a trusted destination. The manual wa.me link in
+// the frontend remains a deliberate human action, not a delivery receipt.
+router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(async (req, _res) => {
+  whatsappOrderSchema.parse(req.body || {});
+  throw new HttpError(503, 'El envío automático de WhatsApp no está habilitado sin consentimiento verificable y entrega durable.');
 }));
 
 // Tenant-scoped, permission-guarded PREVIEW ONLY; never delivers or persists data.

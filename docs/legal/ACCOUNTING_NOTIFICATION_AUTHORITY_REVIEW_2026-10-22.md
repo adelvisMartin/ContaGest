@@ -42,3 +42,7 @@
 ## Matrix de tests de caracterización incorporada al backend test (último incremento)
 
 El script `backend npm test` ahora incluye las regresiones nativas de #637 (servicio/reverso), #773 (touch/focus CSS), #849 (pasos ordenados), #852 (eventos contiguos) y #854 (redacción, estado no verificado y respuesta del proveedor). Se ejecutan con el Node 22 de CI y **no** sustituyen PG17/API/browser ni demuestran la Definition of Done. Los contratos de nuevos intentos permanecen scope limitado; ninguna suite se deshabilitó.
+
+## Política de WhatsApp no autorizado — revisión legal/técnica
+
+La ley venezolana de protección de privacidad de las comunicaciones (G.O. 34.863, art. 1) protege confidencialidad; por sí sola no determina todas las exigencias de opt-in que aplican bajo políticas del proveedor. Sin prueba de consentimiento ni vínculo server-side con destinatario, el endpoint automático queda HTTP 503 por diseño y se mantiene el enlace de acción manual separado. Fuentes verificadas: https://venezuela.justia.com/federales/leyes/ley-sobre-proteccion-a-la-privacidad-de-las-comunicaciones/gdoc/ y https://tributos.ivecofi.net/informacion/legislacion/providencias/pa-2024-102 .
