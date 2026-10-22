@@ -28,7 +28,8 @@ function numericField(input: unknown, field: string, fallback: number, min: numb
 
 export function parseReorderScanQuery(raw: Record<string, unknown>): ReorderScanQuery {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
-      Object.keys(raw).some(key => !['take', 'skip', 'onlyNeedsReorder'].includes(key))) {
+      Reflect.ownKeys(raw).some(key => typeof key !== 'string' ||
+        !['take', 'skip', 'onlyNeedsReorder'].includes(key))) {
     throw new TypeError('REORDER_SCAN_QUERY_INVALID');
   }
   // Read ONLY own data properties. Inherited query keys or accessors are not
