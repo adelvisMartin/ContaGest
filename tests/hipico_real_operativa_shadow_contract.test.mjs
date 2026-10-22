@@ -135,7 +135,7 @@ test('Bridge package version follows release policy and keeps a fail-closed LAB-
   assert.match(runtime,/openViaSearch/);
   assert.match(runtime,/mediaKind/);
   assert.doesNotMatch(runtime,/HIPICO_ALLOW_SEND/);
-  assert.match(runtime,/const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH\.active/);
+  assert.match(runtime,/const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED[\s\S]*evaluateSourceAutoReplyPolicy\(config\)\.eligible/);
   assert.match(runtime,/if \(!SOURCE_AUTO_REPLY_ACTIVE\) \{\s*const error = new Error\('SOURCE_AUTO_REPLY_DISABLED'\)/);
   assert.match(backendRoute,/if\(!sourceAutoReplySendAuthorized\(\)\)return res\.status\(403\)/);
   const old=read('tools/hipico-whatsapp-bridge/README.md');
