@@ -189,3 +189,22 @@ Hashes focales nuevos:
 - ISLR #776 aún sin taxonomía de conceptos, UT, sustraendo mínimo, residencia y certificado/ledger legal; #775 certificado de retención IVA formal todavía ausente.
 - RIF/notificación SPE reales no consultados contra SENIAT, y calendario 2026 reimpreso no aplicado con last digit; no fingir certificación.
 - Rama atrás respecto a `main` y runs CI exact-SHA sin conclusión; PR permanece DRAFT / NOT_READY. **No hacer merge hasta cierre de requisitos y gates**.
+
+
+## Evidencia ejecutada posterior — suite focal IVA RETIVA (#775)
+
+Se reconstruyeron copias locales de **cuatro blobs fuente/test** y se contrastaron sus hashes Git exactos contra GitHub. En la primera ejecución de `tsc --strict` se detectó **TS2454: variables de IVA/retención utilizadas antes de asignación** en `ve-iva-withholding-application.ts` (5 diagnósticos). Fue corregido en el repositorio inicializando ambos acumuladores a cero antes del cálculo protegido por `try/catch`, que conserva rechazo fail-closed. **No ocultar ese primer fallo**.
+
+Hashes Git después de la corrección, ejecutados en Node 22.16.0:
+- `backend/src/modules/fiscal/ve-iva-withholding-application.ts`: `8c9232752deb3c9d126ae1c54a9072aeff17d9b9`
+- `tests/ve_iva_withholding_application_v775.test.mjs`: `30698478e30f9ef9d535d8edc520165c562db249`
+- `backend/src/modules/fiscal/ve-iva-withholding-reconciliation.ts`: `066bb710553bc7d18d56467d0c2b55c868de3068`
+- `tests/ve_iva_withholding_reconciliation_v775.test.mjs`: `13e31ce770976312d242b276c20b5c5f83b687f1`
+
+**Re-ejecución:** `node --experimental-strip-types --test tests/ve_iva_withholding_application_v775.test.mjs tests/ve_iva_withholding_reconciliation_v775.test.mjs` → **PASS 12/12, FAIL 0**.
+
+**TypeScript:** `tsc --strict --noEmit --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --typeRoots /usr/local/slides_js/node_modules/@types --types node` sobre `ve-iva-withholding-application.ts`, `ve-iva-withholding-reconciliation.ts`, `ve-tax-posting-plan.ts` y `fiscal-rule-governance-policy.ts` → **PASS**. Las copias usan sólo enlaces locales `.js→.ts` para resolver imports de módulos TS no compilados; el workflow real usa `tsx`.
+
+**No confundir este resultado focal con CI global ni con pruebas SQL/API.** La base PostgreSQL 17, los joins del endpoint, la migración, RBAC HTTP y el frontend siguen `NOT_EXECUTED` en esta sesión. El último HEAD remoto y workflow deben verificarse otra vez tras el commit documental.
+
+**Normativa nueva comprobada:** Gaceta Oficial N.º 43.435 del 12-08-2026, `SNAT/2026/00080` RIF y derogación de `SNAT/2024/000121` sobre proveedores de sistemas informáticos. Las clases y notificaciones reales SENIAT siguen sin validación externa; el post RETIVA está desactivado por defecto.
