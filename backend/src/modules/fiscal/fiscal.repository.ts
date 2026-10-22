@@ -153,14 +153,14 @@ export async function resolveFiscalRules(db: FiscalDb, input: { tenantId: string
   if (keys.some(id => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id))) {
     throw new HttpError(422, 'Hay reglas fiscales históricas sin procedencia revisada.', { code: 'FISCAL_RULE_SOURCE_NOT_AUTHORIZED' });
   }
-  const sources = await db.$queryRaw<ReviewedFiscalLegalSource[]>(Prisma.sql`
+  const sources = keys.length ? await db.$queryRaw<ReviewedFiscalLegalSource[]>(Prisma.sql`
     SELECT "id", "tenantId", "reference", "contentSha256", "status",
            "reviewedBy", "reviewedAt", "createdBy"
     FROM public."FiscalLegalSource"
     WHERE "tenantId" = ${input.tenantId}
       AND "id" IN (${Prisma.join(keys as string[])})
       AND "status" = 'REVIEWED'
-  `);
+  `) : [];
   const sourceById = new Map(sources.map(row => [row.id, row]));
   for (const row of rows) {
     const def = row.definition as Record<string, unknown>;
