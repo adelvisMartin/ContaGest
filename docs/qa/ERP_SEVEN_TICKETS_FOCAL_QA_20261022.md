@@ -15,7 +15,7 @@ node --experimental-strip-types --test \
   tests/inventory_lot_fefo_preflight_v755.test.mjs \
   tests/reorder_query_property_integrity_v756.test.mjs \
   tests/purchase_receipt_preflight_v757.test.mjs
-# 55 tests; 55 pass; 0 fail; exit code 0.
+# 57 tests; 57 pass; 0 fail; exit code 0.
 
 tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext --skipLibCheck \
   node-crypto-shim.d.ts \
@@ -35,8 +35,8 @@ tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution noden
 | Ticket | Source blob SHA | Test blob SHA |
 | --- | --- | --- |
 | #743 | `33b566757592b4f8adc4cde85f6de6859e215d6b` | `465bebf4c15e274fa13ac7897e044abddf3252b6` |
-| #744 | `f242955ea895b772d8709ac7072aaaaadcd839f4` | `0a9b508ab626e7b2fd22f411fab07c1efff67ae8` |
-| #753 | `3322a75df85a6aa5fa6fed4843f5d9e14f470a03` | `70a245adf15a38ad212aff47a86b9555b8eebabe` |
+| #744 | `499b7dde082f9798dc39bab4c5293b5213a806f0` | `f915f26f05ab6bb433baac7c19f0e3a9d3fc527d` |
+| #753 | `11b3a770e9b0fd006883ed0846ddbdbbfa4cd063` | `98a20160d5e15e6269f03bf05c6d5ab1565adeea` |
 | #754 | `0a5badd9bd8be8b3186a7114620f518980700072` | `5995350e522510d4e135f7f99a18b417a8c965ef` |
 | #755 | `9eb72e71480289228ec01745c2f307a527cd2f03` | `e9edc13938688862966ab8e2c6d3b7460e589d7e` |
 | #756 | `fc2edc224908edbb06af72f189910186d3b5b38e` | `9a0d504fbf26cd6c272debcf7b5b776f79c3635a` |
@@ -52,3 +52,5 @@ tsc --noEmit --strict --target es2022 --module nodenext --moduleResolution noden
 ## Security/readiness decision
 
 `PARTIAL / NOT_RELEASE_READY`. No secrets, DDL, delete/overwrite, posting or automatic purchase in this increment. The PR can be reviewed as bounded security hardening but must remain **DRAFT** if represented as the full seven-ticket deliverable. Keep issues open and backlog active until material scopes and integration gates pass. Preserve fail-closed behavior and independent accounting/stock authorities; do not disable CI.
+
+Latest two regression cases additionally deny coercible currency/amount objects and Symbol evidence in #744, and coerced quote/line currency in #753. Both were executed in the same **57/57 PASS** Node22 invocation; focal strict tsc exit 0. The SHA table above reflects this final set of sources/tests.
