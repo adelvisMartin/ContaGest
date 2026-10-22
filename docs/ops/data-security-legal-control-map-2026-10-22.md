@@ -38,3 +38,22 @@ Fecha de revisión: 2026-10-22. Alcance: PR #1281 y tickets #688, #985, #979, #6
 ## Estado de conformidad
 
 **IMPLEMENTACIÓN Y VERIFICACIÓN INCOMPLETAS.** La existencia de aserciones fuente o evidencias históricas no acredita que los controles estén activos en el despliegue final. Esta matriz no declara que la empresa sea conforme con ninguna de las normas. #688/#720 siguen condicionados a READY y al smoke real; #985/#979/#638 conservan sus gates propios.
+
+
+## Evidencia read-only de infraestructura productiva (2026-10-22)
+
+Se ejecutó **una sola consulta SELECT sobre catálogos PostgreSQL** mediante el conector Supabase del proyecto ContaGest (PostgreSQL 17.6). No se leyeron filas de negocio ni secretos, no hubo DDL, DML, migraciones ni conexión HTTP a la aplicación:
+
+- Existen los tres roles LOGIN \`contagest_runtime\`, \`contagest_backup\`, \`contagest_monitor\`.
+- Ninguno presenta SUPERUSER, CREATEDB, CREATEROLE, REPLICATION o BYPASSRLS.
+- Entre **83 tablas directas** del esquema \`public\` con columna literal \`tenantId\`, **0** tienen RLS deshabilitado y **0** conceden INSERT/UPDATE/DELETE efectivo a \`anon\` o \`authenticated\`.
+- \`contagest_runtime\` no tiene CREATE sobre \`public\` ni pertenece al rol \`service_role\`.
+- **Límite del muestreo:** no certifica tablas hijas sin columna \`tenantId\`, funciones SECURITY DEFINER, vistas ni el \`current_user\` del backend desplegado; el smoke HTTP/financiero sigue bloqueado mientras Vercel no esté READY.
+
+## WhatsApp Messenger: política de producto, no un permiso legal
+
+La revisión del Bridge de Hípico detectó que la política de release declaraba versión de paquete \`1.4.2\` mientras **runtime, package.json y package-lock.json** coinciden en \`1.6.0\`. Se alineó el atributo **\`bridgePackageVersion\` a \`1.6.0\`** sin alterar la versión de la PWA ni la autorización de mensajes.
+
+Fuentes oficiales consultadas: [Condiciones de servicio WhatsApp Messenger](https://www.whatsapp.com/legal/terms-of-service?lang=en&popup=false&retURL=%2F) y [Normas de mensajes de WhatsApp, actualizadas el 2026-09-23](https://www.whatsapp.com/legal/messaging-guidelines?lang=es). Describen restricciones para mensajería masiva o automática no autorizada; **la existencia de un grupo privado recreativo no constituye autorización de automatización**. El Bridge actual mantiene \`SOURCE_AUTO_REPLY_POLICY_NO_GO\` y el envío SOURCE por defecto apagado. El backend aún posee una ruta opt-in por env con semántica histórica y el test \`hipico_real_operativa_shadow_contract\` no debe marcarse verde alterando su expectativa de SOURCE cerrado: **reconciliar autoridad de servidor y Bridge es un bloqueo material de seguridad, fuera de las cinco historias financieras/OPS salvo dependency gate de build**. Hasta resolverlo, ninguna puesta en producción de respuestas automáticas SOURCE está autorizada.
+
+Ninguna corrección de test equivale a permiso regulatorio o a validación de compatibilidad con los términos de un tercero.
