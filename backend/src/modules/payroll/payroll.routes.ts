@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { Prisma, PayrollStatus } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
@@ -25,8 +25,15 @@ const receiptSchema = z.object({
 }).refine((value) => Boolean(value.periodId || value.period), { message: 'Indica periodId o period.' });
 const statusSchema = z.object({ status: z.enum(['draft', 'approved', 'paid', 'cancelled']) });
 
-const context = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
-const serializeReceipt = (receipt: any) => ({
+type PayrollContext = { tenantId: string; userId?: string; ip?: string; userAgent?: string };
+const context = (req: Request): PayrollContext => {
+  const value = (req as Request & { context?: Partial<PayrollContext> }).context;
+  if (!value?.tenantId || typeof value.tenantId !== 'string')
+    throw new HttpError(401, 'Se requiere empresa autenticada.');
+  return { tenantId: value.tenantId, userId: value.userId, ip: value.ip, userAgent: value.userAgent };
+};
+type PayrollAmount = { gross: Prisma.Decimal; deductions: Prisma.Decimal; net: Prisma.Decimal };
+const serializeReceipt = <T extends PayrollAmount>(receipt: T) => ({
   ...receipt,
   gross: serializeLegacyNumber(receipt.gross),
   deductions: serializeLegacyNumber(receipt.deductions),
@@ -35,7 +42,11 @@ const serializeReceipt = (receipt: any) => ({
   deductionsExact: serializeDecimal(receipt.deductions, 2),
   netExact: serializeDecimal(receipt.net, 2)
 });
-const serializePeriod = (period: any) => ({
+type PayrollPeriodAmounts = {
+  totalGross: Prisma.Decimal; totalDeductions: Prisma.Decimal; totalNet: Prisma.Decimal;
+  receipts?: readonly PayrollAmount[];
+};
+const serializePeriod = <T extends PayrollPeriodAmounts>(period: T) => ({
   ...period,
   totalGross: serializeLegacyNumber(period.totalGross),
   totalDeductions: serializeLegacyNumber(period.totalDeductions),
@@ -71,9 +82,9 @@ async function recalculatePeriod(periodId: string, tx: Prisma.TransactionClient)
 
 router.get('/periods', asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const status = String(req.query.status || '');
+  const status = z.nativeEnum(PayrollStatus).optional().parse(req.query.status);
   const rows = await prisma.payrollPeriod.findMany({
-    where: { tenantId: ctx.tenantId, ...(status ? { status: status as any } : {}) },
+    where: { tenantId: ctx.tenantId, ...(status ? { status } : {}) },
     include: { receipts: { include: { employee: true }, orderBy: { createdAt: 'desc' } } },
     orderBy: { period: 'desc' },
     take: 100
