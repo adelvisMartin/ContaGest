@@ -16,10 +16,22 @@ export type ReorderPolicyWrite = Readonly<{
  * use a fresh tenant-scoped Product snapshot from the database.
  */
 export function normalizeReorderPolicyWrite(input: ReorderPolicyWrite) {
+  const fields = ['expectedRevision','enabled','reorderPointExact','targetStockExact',
+    'safetyStockExact','orderMultipleExact','leadTimeDays'] as const;
   if (!input || typeof input !== 'object' || Array.isArray(input) ||
-      !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 ||
+      Reflect.ownKeys(input).length !== fields.length ||
+      Reflect.ownKeys(input).some(key=>typeof key !== 'string' || !fields.includes(key as typeof fields[number]))) {
+    throw new TypeError('REORDER_POLICY_WRITE_INVALID');
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(input);
+  if (fields.some(key=>!Object.hasOwn(descriptors,key) || !Object.hasOwn(descriptors[key],'value'))) {
+    throw new TypeError('REORDER_POLICY_WRITE_INVALID');
+  }
+  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0 ||
       input.expectedRevision > 2_147_483_645 ||
-      typeof input.enabled !== 'boolean') {
+      typeof input.enabled !== 'boolean' ||
+      ![input.reorderPointExact,input.targetStockExact,input.safetyStockExact,
+        input.orderMultipleExact,input.leadTimeDays].every(value=>typeof value === 'string')) {
     throw new TypeError('REORDER_POLICY_WRITE_INVALID');
   }
   const preview = previewReorderPolicy({
