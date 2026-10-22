@@ -98,6 +98,7 @@ model Tenant {
   importBatches ImportBatch[]
   regulatoryFeeds RegulatoryFeed[]
   idempotencyRecords IdempotencyRecord[]
+  reorderPolicies InventoryReorderPolicy[]
   documentSequences DocumentSequence[]
   asyncJobIntents AsyncJobIntent[]
   businessLocations BusinessLocation[]
@@ -280,6 +281,7 @@ model Product {
   productCodes ProductCode[]
   saleLines   SalesInvoiceLine[]
   purchaseLines PurchaseInvoiceLine[]
+  reorderPolicy InventoryReorderPolicy?
 
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])
@@ -1060,4 +1062,26 @@ model SchedulingResourceAllocation {
   @@unique([bookingId, stepId, resourceId])
   @@index([tenantId, resourceId, occupiedStartAt])
   @@index([tenantId, bookingId])
+}
+
+// #756: persisted operational policy only; Product.stock/reserved + InventoryMovement remain the stock authority.
+model InventoryReorderPolicy {
+  tenantId       String
+  productId      String
+  enabled        Boolean  @default(true)
+  reorderPoint   Decimal  @db.Decimal(18,3)
+  targetStock    Decimal  @db.Decimal(18,3)
+  safetyStock    Decimal  @default(0) @db.Decimal(18,3)
+  orderMultiple  Decimal  @default(1) @db.Decimal(18,3)
+  leadTimeDays   Int      @default(0)
+  revision       Int      @default(1)
+  updatedBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@id([tenantId, productId])
+  @@index([tenantId, enabled])
 }
