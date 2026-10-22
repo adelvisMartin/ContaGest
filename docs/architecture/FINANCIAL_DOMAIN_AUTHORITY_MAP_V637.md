@@ -42,3 +42,9 @@ El incremento actual **solo** cubre atomicidad de reverso, regresión estructura
 ## Close/post advisory serialization — 2026-10-22
 
 Se unificó el lock transaccional `pg_advisory_xact_lock(hashtextextended('cg:ledger-period:v1:<tenant>:<period>',0))` para el `createAccountingPeriod`, `closeAccountingPeriod` y `assertPeriodOpen(...,tx)` usado por contabilizaciones manuales y flujos sales/purchases. El lock cubre período aún sin fila y se mantiene hasta COMMIT/ROLLBACK. `assertPeriodOpen(...,prisma)` permanece sólo como lectura informativa: **ningún escritor puede interpretarla como barrera transaccional**. La creación y auditoría del período también son atómicas. Atención: otros escritores no cubiertos y cierres de módulo `all` podrían requerir locks equivalentes; hace falta test real PG17 con dos sesiones y dos tenants para cerrar DoD.
+
+## PostgreSQL 17 concurrency probe (opt-in)
+
+`qa/accounting-period-concurrency-v637.test.ts` ejecuta dos sesiones Prisma reales: el escritor mantiene `assertPeriodOpen(...,tx)`, la segunda conexión intenta `pg_try_advisory_xact_lock` y debe obtener `false`, luego cierra período y verifica 409 ante otro posting guard. Exige `CG_ACCOUNTING_PERIOD_QA_ISOLATED=true`, PostgreSQL **17** y seed QA. Ejecución: `CG_ACCOUNTING_PERIOD_QA_ISOLATED=true npm run test:backend:accounting:period:real`. NO ejecutar en producción: por diseño conserva el período cerrado y auditorías en la base descartable. Aunque pase, esta prueba de exclusión de lock **no** sustituye carreras completas con facturas/post/reversos para dos tenants y módulos fiscales. Estado actual: NOT_EXECUTED — ningún PostgreSQL17 local accesible en el entorno de edición.
+
+Funciones verificadas contra PostgreSQL upstream: `pg_advisory_xact_lock` conserva el bloqueo hasta commit/rollback; `pg_try_advisory_xact_lock` devuelve `false` si otra sesión ya lo posee. https://www.postgresql.org/docs/current/functions-admin.html
