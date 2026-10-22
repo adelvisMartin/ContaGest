@@ -98,12 +98,12 @@ router.post('/declarations/:id/transition', validateBody(payloadSchema), asyncHa
       if (!original.workflow.review) reject('Falta revisión interna.', 'COMPLIANCE_INTERNAL_REVIEW_REQUIRED');
       // Serialize duplicate receipt claims tenant-wide; never infer official receipt authenticity.
       await tx.$queryRaw(Prisma.sql`
-        SELECT pg_advisory_xact_lock(hashtextextended(${ctx.tenantId+':filing:'+input.receiptReference},783)) AS "locked"
+        SELECT pg_advisory_xact_lock(hashtextextended(${ctx.tenantId+':filing:'+input.receiptReference.toUpperCase()},783)) AS "locked"
       `);
       const duplicates = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT d."id" FROM public."TaxDeclaration" d JOIN public."TaxPeriod" p ON p."id"=d."periodId"
         WHERE p."tenantId"=${ctx.tenantId} AND d."id"<>${id}
-          AND d."payload" #>> '{_complianceEvidenceV1,filing,evidence,receiptReference}' = ${input.receiptReference}
+          AND lower(d."payload" #>> '{_complianceEvidenceV1,filing,evidence,receiptReference}') = lower(${input.receiptReference})
         LIMIT 1
       `);
       if (duplicates.length) reject('Referencia externa ya usada en otra declaración.', 'COMPLIANCE_DUPLICATE_FILING_REFERENCE');
