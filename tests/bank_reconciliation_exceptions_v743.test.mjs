@@ -10,3 +10,13 @@ test('#743 over-allocation is visible without changing history',()=>{const a=go(
 test('#743 cross-account and cross-tenant fail closed',()=>{bad(()=>go([r({tenantId:'t-B'})]));bad(()=>go([r({accountId:'acc-B'})]));});
 test('#743 forged values or duplicate rows rejected',()=>{bad(()=>go([r({allocated:'5',remaining:'8.10'})]));bad(()=>go([r(),r()]));bad(()=>go([r({amount:'NaN'})]));});
 test('#743 empty page never means certified reconciliation',()=>{const a=go([]);assert.equal(a.inspectedCount,0);assert.equal(a.reconciliationCertified,false);});
+
+// An object with a matching toString() is not server-verifiable ID evidence.
+test('#743 rejects objects pretending to be tenant, account or statement line IDs',()=>{
+ const forged=value=>({toString:()=>value});
+ const tenant=forged('t-A');
+ bad(()=>projectBankReconciliationExceptions({tenantId:tenant,accountId:'acc-1',lines:[r({tenantId:tenant})]}));
+ const account=forged('acc-1');
+ bad(()=>projectBankReconciliationExceptions({tenantId:'t-A',accountId:account,lines:[r({accountId:account})]}));
+ bad(()=>go([r({id:forged('id-1')})]));
+});
