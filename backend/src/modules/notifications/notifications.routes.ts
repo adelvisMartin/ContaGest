@@ -36,6 +36,84 @@ router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(a
   throw new HttpError(503, 'El envío automático de WhatsApp no está habilitado sin consentimiento verificable y entrega durable.');
 }));
 
+
+// Internal self-service consent is not a provider opt-in. The only supported
+// channel here is in_app; external transport remains disabled.
+const preferenceSchema=z.object({
+  enabled:z.boolean(),
+  consent:z.enum(['granted','denied']),
+  quietHours:z.object({
+    timeZone:z.string().trim().min(1).max(120),
+    start:z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/),
+    end:z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/)
+  }).strict().nullish()
+}).strict().superRefine((row,c)=>{
+  if(row.enabled && row.consent!=='granted')
+    c.addIssue({code:'custom',message:'La habilitación requiere consentimiento explícito.'});
+  if(row.quietHours?.start===row.quietHours?.end&&row.quietHours)
+    c.addIssue({code:'custom',message:'Las horas de silencio deben delimitar un intervalo.'});
+});
+const authenticatedSelf=(req:any)=>{
+  const context=req.context as {tenantId:string;userId?:string};
+  if(!context.userId)throw new HttpError(401,'Sesión requerida.');
+  return {tenantId:context.tenantId,userId:context.userId};
+};
+router.get('/preferences/me',asyncHandler(async(req,res)=>{
+  const {tenantId,userId}=authenticatedSelf(req);
+  const pref=await prisma.notificationChannelPreference.findUnique({
+    where:{tenantId_userId_channel:{tenantId,userId,channel:'in_app'}},
+    select:{channel:true,enabled:true,consent:true,verifiedAt:true,
+      timeZone:true,quietStart:true,quietEnd:true,updatedAt:true}
+  });
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,pref||{channel:'in_app',enabled:false,consent:'unknown',verifiedAt:null,
+    timeZone:null,quietStart:null,quietEnd:null});
+}));
+router.put('/preferences/me',asyncHandler(async(req,res)=>{
+  const {tenantId,userId}=authenticatedSelf(req);
+  const input=preferenceSchema.parse(req.body||{});
+  if(input.quietHours){
+    try{
+      new Intl.DateTimeFormat('en-US',{timeZone:input.quietHours.timeZone}).format(new Date());
+    }catch{throw new HttpError(422,'Zona horaria inválida.');}
+  }
+  const saved=await prisma.$transaction(async tx=>{
+    const active=await tx.userProfile.findFirst({
+      where:{id:userId,tenantId,status:'active'},select:{id:true}
+    });
+    if(!active)throw new HttpError(403,'Usuario no disponible.');
+    const key={tenantId,userId,channel:'in_app'};
+    const old=await tx.notificationChannelPreference.findUnique({
+      where:{tenantId_userId_channel:key}
+    });
+    const now=new Date();
+    const data={
+      enabled:input.enabled,consent:input.consent,
+      verifiedAt:input.consent==='granted'?now:null,
+      verifiedSource:input.consent==='granted'?'authenticated-self-service':null,
+      timeZone:input.quietHours?.timeZone||null,
+      quietStart:input.quietHours?.start||null,
+      quietEnd:input.quietHours?.end||null,
+      updatedBy:userId
+    };
+    const current=await tx.notificationChannelPreference.upsert({
+      where:{tenantId_userId_channel:key},
+      create:{...key,...data},update:data
+    });
+    await tx.auditLog.create({data:{
+      tenantId,userId,action:'notification.preference.self-updated',
+      entity:'NotificationChannelPreference',entityId:current.id,
+      before:old?{enabled:old.enabled,consent:old.consent}:null,
+      after:{channel:'in_app',enabled:current.enabled,consent:current.consent},
+    }});
+    return current;
+  });
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,{channel:'in_app',enabled:saved.enabled,consent:saved.consent,
+    verifiedAt:saved.verifiedAt,timeZone:saved.timeZone,
+    quietStart:saved.quietStart,quietEnd:saved.quietEnd});
+}));
+
 // Tenant-scoped, permission-guarded PREVIEW ONLY; never delivers or persists data.
 const previewSchema = z.object({
   key: z.enum(['operational.notice', 'sales.order-status']),
