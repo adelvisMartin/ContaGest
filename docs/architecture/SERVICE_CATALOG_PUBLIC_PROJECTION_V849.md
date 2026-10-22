@@ -11,3 +11,11 @@ Tests: `node --test tests/service_public_projection_v849.test.mjs` (negativos de
 ## Versionado real de elegibilidad staff/location (2026-10-22)
 
 Una alta/baja efectiva en capacidades de profesional o elegibilidad de sede incrementa `ServiceDefinition.version` **en la misma transacción**, guarda `ServiceDefinitionRevision.snapshot` con `staff[]` y `locations[]` ordenados por ID y registra auditoría; reintentos idempotentes sin cambio no producen nuevas revisiones. La baja de referencias inactivas sigue permitida dentro del tenant; las altas exigen refs activas. Estas revisiones protegen la interpretación del catálogo histórico, aunque **un booking sólo queda protegido cuando #848 guarde su propio snapshot/version**.
+
+## Backend API y PG17 E2E (2026-10-22)
+
+Se incorporaron modelos `ServiceCatalogCategory, ServiceDefinition, ServiceStep, ServiceDefinitionRevision, ServiceStaffCapability, ServiceLocationEligibility` con FK tenant+Product/Employee/BusinessLocation y FORCE RLS, más una API admin `/api/v1/service-catalog` con comandos auditados y transacciones. Los changes de planes y de staff/location guardan snapshots de versión; consultas bidireccionales leen la misma tabla.
+
+**Advertencia:** `GET /public` es por ahora una proyección de lectura autenticada que requiere `admin.manage`, no exposición pública por URL arbitraria, hasta #850 tenant resolution. La tarifa/impuesto son referenciados mediante Product, nunca se duplican. No hay booking clínico ni actividad de Gym asociada todavía; #852 es owner de derechos.
+
+**PG17 test diseñado**: `CG_SERVICE_CATALOG_QA_ISOLATED=true npm run test:backend:service-catalog:real`, usando PostgreSQL17 con nombre terminado `_v849` y permisos RLS, no producción. Incluye API categoría→servicio→pasos→profesional/sede→publicación, igualdad de historiales/versiones, repetición, tenant A/B, mass assignment, rechazo RBAC sin token y exclusión PII. No se ha ejecutado en este entorno: `NOT_EXECUTED` hasta levantar PG17 desechable con migra+seed+sidecar.
