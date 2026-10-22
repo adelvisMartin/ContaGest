@@ -7,6 +7,7 @@ import { canonicalRequestHash, normalizeIdempotencyKey } from '../../shared/serv
 import { createLedgerEntry, postLedgerEntry, reverseLedgerEntry } from '../accounting/accounting.service.js';
 import { claimApproval, finishApprovalClaim, releaseApprovalClaim } from '../approvals/approvals.service.js';
 import { parseBankStatement, statementLineHash, statementSourceHash } from './statement-parser.js';
+import { statementImportLineHash } from './statement-line-identity.js';
 import { evaluateBankClosingReadiness } from './bank-closing-readiness.mjs';
 import { projectBankReconciliationExceptions } from './bank-exception-window.js';
 
@@ -168,8 +169,14 @@ export async function importBankStatement(input:{tenantId:string;userId?:string;
       return {duplicate:true,importId:existing[0].id,inserted:0,deduplicated:parsed.lines.length,parserVersion:parsed.parserVersion};
     }
     let inserted=0;
-    for(const line of parsed.lines){
-      const id=randomUUID();const lineHash=statementLineHash(line);
+    for(const [rowIndex,line] of parsed.lines.entries()){
+      const id=randomUUID();
+      const lineHash=statementImportLineHash({
+        canonicalLineHash:statementLineHash(line),
+        sourceHash,
+        rowIndex,
+        bankLineId:line.bankLineId
+      });
       const normalized={bankLineId:line.bankLineId,bookedAt:line.bookedAt.toISOString(),valueDate:line.valueDate?.toISOString()||null,amount:line.amount,currency:line.currency,reference:line.reference,memo:line.memo,counterparty:line.counterparty,parserVersion:parsed.parserVersion};
       const changed=await tx.$executeRaw(Prisma.sql`
         INSERT INTO "BankStatementLine" ("id","tenantId","importId","accountId","bankLineId","lineHash","bookedAt","valueDate","amount","currency","reference","memo","counterparty","raw","normalized","status")
