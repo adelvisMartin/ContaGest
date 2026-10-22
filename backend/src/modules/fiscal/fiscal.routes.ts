@@ -11,7 +11,7 @@ import { assertBalanced } from '../accounting/accounting.service.js';
 import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.repository.js';
 import { planReviewedTaxEvent, type AppliedRatio } from './ve-tax-posting-plan.js';
 import { assertFiscalDocumentRuleFamily } from './fiscal-event-rule-family.js';
-import { assertUntrustedFiscalPayload, assertExternalFiscalRecordAllowed } from './fiscal-document-authority-policy.js';
+import { assertUntrustedFiscalPayload, assertExternalFiscalRecordAllowed, assertReviewedIssueKindSupported } from './fiscal-document-authority-policy.js';
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts, transitionTaxpayerProfile, getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
@@ -375,6 +375,10 @@ router.post('/tax-events/preview', requirePermission('fiscal.read'),
 
 router.post('/documents/issue', requirePermission('fiscal.manage_documents'), validateBody(issueDocumentSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
+  try { assertReviewedIssueKindSupported(req.body.kind); }
+  catch { throw new HttpError(422,
+    'Comprobantes de retención, declaraciones y notas de ajuste requieren un workflow legal, contable y de certificados específico.',
+    { code: 'FISCAL_CERTIFICATE_WORKFLOW_NOT_READY' }); }
   try { assertUntrustedFiscalPayload(req.body.payload); }
   catch { throw new HttpError(422, 'El documento contiene campos fiscales reservados al servidor.',
     { code: 'FISCAL_PAYLOAD_RESERVED_FIELD' }); }
