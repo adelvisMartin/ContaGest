@@ -23,6 +23,26 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   assert.match(databaseRows[0]?.name || '', /fiscal_v561_e2e$/, 'issue #561 must run only on disposable *_fiscal_v561_e2e PostgreSQL');
 
   await h.prisma.closingPeriod.deleteMany({ where: { tenantId: h.tenant.id, period: PERIOD, module: 'fiscal' } });
+  // #751 / #775: an external/manual record cannot be used to bypass reviewed
+  // rules, the authenticated taxpayer profile, or immutable evidence.
+  const externalBase = {
+    number: `${RUN}-SUPPORT`,period:PERIOD,module:'fiscal',
+    kind:'supporting_document',payload:{evidence:'external, non-regulated QA'}
+  };
+  for(const body of [
+    {...externalBase,module:'iva'},
+    {...externalBase,kind:'invoice'},
+    {...externalBase,kind:'withholding'},
+    {...externalBase,kind:'tax_return'},
+    {...externalBase,payload:{_taxpayerProfileHash:'a'.repeat(64)}}
+  ]) {
+    await h.status('/fiscal/documents',422,{method:'POST',body:JSON.stringify(body)});
+  }
+  const external=await h.ok('/fiscal/documents',{
+    method:'POST',body:JSON.stringify(externalBase)
+  });
+  assert.equal(external.status,'external','manual supports must not impersonate issued tax documents');
+
   await h.ok('/fiscal/periods', { method: 'POST', body: JSON.stringify({ period: PERIOD, module: 'fiscal', note: `${RUN} exact SHA ${sha}` }) });
 
 
