@@ -12,7 +12,8 @@ export type OpenItemEvidenceInput = Readonly<{
 }>;
 const DATE = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/;
 const ISO = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
-const MONEY = /^-?\d{1,18}(?:\.\d{1,2})?$/;
+// Canonical SalesInvoice/PurchaseInvoice.total: nonnegative Decimal(18,2), max 16 integer digits.
+const MONEY = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
 const CURRENCY = /^[A-Z]{3}$/;
 const STATES = new Set(['draft','issued','paid','overdue','cancelled']);
 const fail=():never=>{throw new Error('SUBLEDGER_COVERAGE_EVIDENCE_INVALID');};
