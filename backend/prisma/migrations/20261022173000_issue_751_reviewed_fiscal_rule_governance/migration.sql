@@ -27,6 +27,15 @@ ALTER TABLE public."FiscalRuleVersion"
   ADD CONSTRAINT "FiscalRuleVersion_supersedes_fk" FOREIGN KEY ("tenantId","supersedesId")
     REFERENCES public."FiscalRuleVersion"("tenantId","id") ON UPDATE RESTRICT ON DELETE RESTRICT;
 
+-- Snapshot the exact reviewed source digest used by a financial event, without
+-- recalculating previously emitted documents.
+ALTER TABLE public."FiscalDocumentRuleSnapshot"
+  ADD COLUMN "legalSourceId" uuid,
+  ADD COLUMN "legalSourceSha256" char(64),
+  ADD CONSTRAINT "FiscalDocumentRuleSnapshot_source_fk"
+    FOREIGN KEY ("tenantId","legalSourceId")
+    REFERENCES public."FiscalLegalSource"("tenantId","id") ON DELETE RESTRICT ON UPDATE RESTRICT;
+
 CREATE INDEX "FiscalRuleVersion_active_rule_idx"
   ON public."FiscalRuleVersion" ("tenantId","ruleKey","effectiveFrom")
   WHERE "status"='ACTIVE';
@@ -83,11 +92,15 @@ BEGIN
       OR checked_source."contentSha256"<>NEW."legalSourceSha256" THEN
       RAISE EXCEPTION 'FISCAL_RULE_UNREVIEWED_LEGAL_SOURCE' USING ERRCODE='23514';
     END IF;
-    IF jsonb_typeof(NEW."definition") <> 'object'
-      OR (NEW."definition"->>'formula') <> 'RATIO_MINOR_UNITS'
+    IF jsonb_typeof(NEW."definition") IS DISTINCT FROM 'object'
+      OR (SELECT COUNT(*) FROM jsonb_object_keys(NEW."definition")) <> 4
+      OR (NEW."definition"->>'formula') IS DISTINCT FROM 'RATIO_MINOR_UNITS'
+      OR (NEW."definition"->>'basis') IS NULL
       OR (NEW."definition"->>'basis') NOT IN ('taxable_minor','tax_minor','payment_minor')
-      OR jsonb_typeof(NEW."definition"->'numerator') <> 'number'
-      OR jsonb_typeof(NEW."definition"->'denominator') <> 'number'
+      OR jsonb_typeof(NEW."definition"->'numerator') IS DISTINCT FROM 'number'
+      OR jsonb_typeof(NEW."definition"->'denominator') IS DISTINCT FROM 'number'
+      OR (NEW."definition"->>'numerator')::numeric <> trunc((NEW."definition"->>'numerator')::numeric)
+      OR (NEW."definition"->>'denominator')::numeric <> trunc((NEW."definition"->>'denominator')::numeric)
       OR (NEW."definition"->>'denominator')::numeric <= 0
       OR (NEW."definition"->>'numerator')::numeric < 0
       OR (NEW."definition"->>'numerator')::numeric > (NEW."definition"->>'denominator')::numeric THEN
