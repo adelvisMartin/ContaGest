@@ -107,11 +107,30 @@ void test('Android parity gate requires Command Center runtime and hashes comple
   assert.match(sync, /filesUnder\(root\)/);
 });
 
-void test('Command Center preserves UI System v2 single-CSS authority', () => {
+void test('Command Center preserves canonical UI System v4.1 CSS entrypoint and platform token authority', () => {
   const cssDirectory = path.join(pwa, 'assets/css');
+  // Two top-level links are intentional: the app entrypoint and the generated
+  // cross-product platform-token adapter. Submodules are imported by app.css.
   const css = fs.readdirSync(cssDirectory).filter((file) => file.endsWith('.css')).sort();
-  assert.deepEqual(css, ['app.css']);
+  assert.deepEqual(css, [
+    'app.css',
+    'platform-tokens-v1.css',
+    'ui-system-v3-compat.css',
+    'ui-system-v4-convergence.css',
+    'ui-system-v4.css'
+  ]);
   const index = read('frontend/public/hipico-control/index.html');
-  assert.equal((index.match(/rel="stylesheet"/g) || []).length, 1);
-  assert.match(index, /\.\/assets\/css\/app\.css/);
+  const hrefs = [...index.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"\s*>/g)].map(([,href]) => href);
+  assert.deepEqual(hrefs, ['./assets/css/app.css', './assets/css/platform-tokens-v1.css']);
+  assert.ok(index.indexOf('./assets/js/theme-bootstrap.js') < index.indexOf(hrefs[0]), 'theme initializes before CSS');
+  const entrypoint = read('frontend/public/hipico-control/assets/css/app.css');
+  assert.match(entrypoint, /@layer legacy;/);
+  const imports = [...entrypoint.matchAll(/@import\s+url\("([^"]+)"\)(?:\s+layer\(legacy\))?;/g)].map(([,name]) => name);
+  assert.deepEqual(imports, [
+    './ui-system-v3-compat.css',
+    './ui-system-v4.css',
+    './ui-system-v4-convergence.css'
+  ], 'legacy CSS must have lower precedence than v4 and convergence');
+  assert.match(entrypoint, /ui-system-v3-compat\.css"\)\s+layer\(legacy\)/);
+  assert.doesNotMatch(index, /rel="stylesheet"[^>]*href="https?:\/\//, 'offline shell must not use CDN stylesheets');
 });
