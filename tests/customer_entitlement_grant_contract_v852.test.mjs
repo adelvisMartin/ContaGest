@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const svc=readFileSync(new URL('../backend/src/modules/entitlements/customer-entitlement.service.ts',import.meta.url),'utf8');
+const routes=readFileSync(new URL('../backend/src/modules/entitlements/customer-entitlement.routes.ts',import.meta.url),'utf8');
+const manifest=readFileSync(new URL('../backend/src/modules/route-manifest.ts',import.meta.url),'utf8');
+test('#852 manual grant is source-scoped, audited, and atomic with its first ledger event',()=>{
+  const grant=svc.split('export async function grantCustomerRight(')[1].split('export async function readCustomerRights')[0];
+  assert.match(grant,/prisma\.\$transaction\(async tx=>/);
+  assert.match(grant,/tx\.customerEntitlement\.create/);
+  assert.match(grant,/tx\.entitlementLedgerEvent\.create/);
+  assert.match(grant,/sequence:1,type:'GRANT'/);
+  assert.match(grant,/await audit\(tx,ctx,'entitlement\.manual-grant'/);
+  assert.match(grant,/sourceId:input\.effectKey/);
+  assert.match(grant,/if\(!identical\)denied\(409/);
+});
+test('#852 customer and benefit refs validated from tenant backend, no arbitrary balance writes',()=>{
+  assert.match(svc,/tx\.client\.findFirst\(\{where:\{tenantId:ctx\.tenantId,id:input\.beneficiaryId,active:true\}/);
+  assert.match(svc,/tx\.benefitDefinition\.findFirst\(/);
+  assert.match(svc,/tenantId:ctx\.tenantId,id:input\.locationId,status:'active'/);
+  assert.doesNotMatch(routes,/remaining|balance|creditsLeft|wallet/);
+  assert.match(svc,/projectEntitlementLedger/);
+});
+test('#852 admin-only API uses narrow manual grant + pure read without consume orphan writes',()=>{
+  assert.match(manifest,/path: '\/customer-entitlements'/);
+  assert.match(routes,/router\.use\(requireTenant\)/);
+  assert.match(routes,/router\.use\(requirePermission\('admin\.manage'\)\)/);
+  assert.match(routes,/reason:z\.string\(\)\.trim\(\)\.min\(10\)/);
+  assert.match(routes,/Idempotency-Replayed/);
+  assert.match(routes,/private, no-store/);
+  assert.doesNotMatch(routes,/router\.post\('\/(?:consume|refund)|router\.put\('\/(?:consume|refund)/);
+});
