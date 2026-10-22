@@ -32,7 +32,7 @@ router.get('/readiness', asyncHandler(async (req, res) => {
       },
     },
     take: 4, orderBy: { id: 'asc' as const },
-  };
+  } as const;
 
   // All evidence reads are tenant-constrained. No tax amounts are inferred.
   const rows = params.book === 'sales'
