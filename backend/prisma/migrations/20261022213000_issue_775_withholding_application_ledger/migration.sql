@@ -57,7 +57,7 @@ CREATE FUNCTION public.contagest_775_guard_withholding_application()
 RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
 DECLARE purchase_tenant text; source_tenant text; ledger_tenant text; reverse_tenant text;
   source_valid boolean; ledger_valid boolean; reversal_valid boolean;
-  line_count integer; debit_total numeric; credit_total numeric;
+  line_count integer; distinct_accounts integer; debit_total numeric; credit_total numeric;
 BEGIN
   IF TG_OP='DELETE' THEN
     RAISE EXCEPTION 'FISCAL_WITHHOLDING_IMMUTABLE' USING ERRCODE='55000';
@@ -90,10 +90,11 @@ BEGIN
       AND l."sourceId"=NEW."id"::text AND l."posted"=true
       AND l."reversalOfId" IS NULL
   ) INTO ledger_valid;
-  SELECT COUNT(*)::integer,COALESCE(SUM(ll."debit"),0),COALESCE(SUM(ll."credit"),0)
-    INTO line_count,debit_total,credit_total
+  SELECT COUNT(*)::integer,COUNT(DISTINCT ll."accountCode")::integer,
+         COALESCE(SUM(ll."debit"),0),COALESCE(SUM(ll."credit"),0)
+    INTO line_count,distinct_accounts,debit_total,credit_total
     FROM public."LedgerLine" ll WHERE ll."entryId"=NEW."ledgerEntryId";
-  IF NOT source_valid OR NOT ledger_valid OR line_count<>2 OR
+  IF NOT source_valid OR NOT ledger_valid OR line_count<>2 OR distinct_accounts<>2 OR
      debit_total<>(NEW."withheldMinor"::numeric/100) OR
      credit_total<>(NEW."withheldMinor"::numeric/100) THEN
     RAISE EXCEPTION 'FISCAL_WITHHOLDING_LEDGER_NOT_RECONCILED' USING ERRCODE='23514';
