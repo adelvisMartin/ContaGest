@@ -94,6 +94,7 @@ model Tenant {
   analyticsEvents AnalyticsEvent[]
   productCodes ProductCode[]
   notificationLogs NotificationLog[]
+  channelPreferences NotificationChannelPreference[]
   demoAccesses DemoAccess[]
   aiConversations AiConversation[]
   licenseKeys LicenseKey[]
@@ -166,9 +167,11 @@ model UserProfile {
   userRoles   UserRole[]
   auditLogs   AuditLog[]
   notificationLogs NotificationLog[]
+  channelPreferences NotificationChannelPreference[]
   aiConversations AiConversation[]
   licenseKeys LicenseKey[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, email])
   @@index([tenantId])
   @@index([accessExpiresAt])
@@ -1268,4 +1271,27 @@ model EntitlementLedgerEvent {
   @@unique([tenantId, entitlementId, sequence])
   @@unique([tenantId, effectKey])
   @@index([tenantId, entitlementId, createdAt])
+}
+
+model NotificationChannelPreference {
+  id             String   @id @default(uuid())
+  tenantId       String
+  userId         String
+  channel        String
+  enabled        Boolean  @default(false)
+  consent        String   @default("unknown")
+  verifiedAt     DateTime? @db.Timestamptz(3)
+  verifiedSource String?
+  timeZone       String?
+  quietStart     String?
+  quietEnd       String?
+  updatedBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user           UserProfile @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, userId, channel])
+  @@index([tenantId, channel, consent])
 }
