@@ -34,3 +34,33 @@ Los enlaces secundarios documentan y orientan búsqueda, pero el administrador d
 ## Criterio de aceptación futuro
 
 No emitir comprobante de retención ni afectar ledger hasta que cada línea tenga determinación normativa, perfil/beneficiario, impuesto exacto, asiento equilibrado y certificado idempotente en **la misma transacción**; reverso auditado, nunca borrado histórico, y comprobación completa con fixture sintético y revisión normativa humana.
+
+
+## Actualización de fuentes verificadas (22-10-2026)
+
+### Calendario SENIAT 2026 — NO usar solo la edición original
+
+- Providencia **SNAT/2025/000091**: calendario para Sujetos Pasivos Especiales y agentes de retención, publicado inicialmente en Gaceta Oficial N.º **43.273 del 09-12-2025**.
+- **Reimpreso por error material** en Gaceta Oficial N.º **43.283 del 23-12-2025**; debe consultarse esta última versión para las fechas 2026, distinguiendo obligación, período, tipo de contribuyente y último dígito del RIF.
+- Índice oficial de gacetas (metadatos): https://www.gacetaoficial.gob.ve/gacetas/43273
+- Referencia de reimpresión y cronología: https://accesoalajusticia.org/reimpresion-de-la-providencia-administrativa-que-establece-el-calendario-tributario-del-2026/
+- Nota sobre la reedición: https://www.pwc.com/ve/es/assets/documentos/stl/NAC-Calendarios-de-Sujetos-Pasivos-Especiales-A%C3%B1o-2026%E2%80%8B.pdf
+
+**Regla de implementación:** nunca inferir deadlines por «día fijo del mes» ni por tasa del frontend. Una captura de calendario debe identificar `legalSourceId`, SHA-256 de la **reimpresión** aplicable, dígito RIF y el tipo de obligación; debe tener revisión humana distinta del autor. No se importaron fechas de vencimiento preestablecidas en este PR.
+
+### Requisitos de comprobante IVA — SNAT/2025/000054
+
+Texto transcrito para cotejo con gaceta primaria (la cabecera de esta transcripción presenta un **error tipográfico de año**, por lo que no sirve como documento oficial por sí sola):
+https://tributos.ivecofi.net/informacion/legislacion/providencias/pa-2025-54
+
+- **Artículo 13:** momento de retención al pago o al abono en cuenta, lo que suceda primero.
+- **Artículo 14:** retenciones 1–15 y 16–fin de mes deben enterarse conforme al calendario aplicable.
+- **Artículo 16:** numeración consecutiva de **14 caracteres** `AAAAMMSSSSSSSS`; datos del agente y proveedor (RIF), identificación de factura/control, base imponible, total, cuota tributaria y monto retenido, además de emisión/entrega y conservación. Verificar días hábiles del período siguiente en el texto oficial aprobado.
+- No basta guardar un `FiscalDocument` de tipo `withholding`; un certificado legalmente exigible requiere un modelo propio que preserve la identidad de la factura origen, del proveedor, del hecho imponible/pago/abono, de la retención, del asiento y del acuse de entrega. Debe ser **idempotente y reversible**, sin editar históricos ni consultar tasas futuras para revertir.
+- Cualquier intento de registrar `kind=withholding` en el endpoint manual `POST /fiscal/documents` se rechaza. Los soportes manuales admitidos reciben estado `external`, no `issued`.
+
+### Evidencia de implementación actual
+
+El nuevo módulo `fiscal-document-authority-policy.ts` prohíbe que el endpoint manual cree facturas, notas de crédito/débito, certificados, declaraciones o documentos clasificados IVA/ISLR/RETIVA/IGTF/MUNICIPAL. Prohíbe asimismo insertar desde el cliente campos `_fiscalModule`, `_ruleKeys`, `_taxpayerProfileHash` u otros metadatos con prefijo reservado. Tests: `tests/fiscal_document_authority_v751.test.mjs`.
+
+**No confundir investigación con revisión legal humana:** ninguna descarga/web page se ha insertado ni marcado `REVIEWED` en la base de datos de una empresa. El cierre de #775/#776 continúa bloqueado mientras los cálculos comerciales históricos tomen `taxRate` desde el request y no existan certificados y reversos contables completos.
