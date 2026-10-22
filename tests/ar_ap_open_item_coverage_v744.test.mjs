@@ -50,3 +50,10 @@ test('#744 never accepts negative, leading-zero or Decimal(18,2)-overflow invoic
   assert.equal(accepted.documents[0].sourceTotalExact,'9999999999999999.99');
   assert.equal(accepted.authoritativeOpenBalance,false);
 });
+
+test('#744 rejects coercible currency and amount values instead of silently trusting toString',()=>{
+  const forged=value=>({toString:()=>value});
+  fail(()=>projectOpenItemCoverage({...q,invoices:[{...rows[0],currency:forged('VES')}]}));
+  fail(()=>projectOpenItemCoverage({...q,invoices:[{...rows[0],totalExact:forged('100.00')}]}));
+  fail(()=>projectOpenItemCoverage({...q,invoices:[{...rows[0],currency:Symbol('VES')}]}));
+});
