@@ -27,6 +27,13 @@ function TaxesWorkspace({state,context}){
   const [taxPreviewResult,setTaxPreviewResult]=useState(null);
   const [taxPreviewBusy,setTaxPreviewBusy]=useState(false);
   const [taxPreviewError,setTaxPreviewError]=useState('');
+  const [ivaApplications,setIvaApplications]=useState([]);
+  const [ivaApplicationError,setIvaApplicationError]=useState('');
+  const [ivaApplicationBusy,setIvaApplicationBusy]=useState('');
+  const [ivaApplication,setIvaApplication]=useState({
+    purchaseInvoiceId:'',ivaRuleKey:'',retentionRuleKey:'',
+    reversalPeriod:currentPeriod(),reversalReason:''
+  });
   const [fiscalRules,setFiscalRules]=useState([]);
   const [ruleEvidenceLoading,setRuleEvidenceLoading]=useState(true);
   const [ruleEvidenceError,setRuleEvidenceError]=useState('');
@@ -127,6 +134,49 @@ function TaxesWorkspace({state,context}){
       notify('Perfil tributario actualizado con auditoría del servidor.','success');
     }catch(cause){notify(cause?.message||'Perfil rechazado por el servidor.','error');}
     finally{setDecisionBusy('');}
+  }
+
+  async function loadIvaApplications(){
+    try{
+      const records=await FiscalService.vatWithholdingApplications();
+      setIvaApplications(Array.isArray(records)?records:[]);
+      setIvaApplicationError('');
+    }catch(error){
+      setIvaApplications([]);
+      setIvaApplicationError(error?.message||'No se pudo consultar las aplicaciones IVA.');
+    }
+  }
+  useEffect(()=>{void loadIvaApplications();},[]);
+
+  async function applyIvaWithholding(event){
+    event.preventDefault();
+    if(ivaApplicationBusy)return;
+    setIvaApplicationBusy('apply');setIvaApplicationError('');
+    try{
+      const created=await FiscalService.applyVatWithholding({
+        purchaseInvoiceId:ivaApplication.purchaseInvoiceId.trim(),
+        ivaRuleKey:ivaApplication.ivaRuleKey,
+        retentionRuleKey:ivaApplication.retentionRuleKey
+      });
+      await loadIvaApplications();
+      notify(`Aplicación contable interna registrada: ${created?.id||'verifica el historial'}`,'success');
+      setIvaApplication(old=>({...old,purchaseInvoiceId:''}));
+    }catch(error){setIvaApplicationError(error?.message||'La aplicación fue rechazada por la autoridad fiscal.');}
+    finally{setIvaApplicationBusy('');}
+  }
+  async function reverseIvaWithholding(id){
+    if(ivaApplicationBusy)return;
+    if(ivaApplication.reversalReason.trim().length<15)return notify('El reverso requiere un motivo de al menos 15 caracteres.','error');
+    setIvaApplicationBusy(id);setIvaApplicationError('');
+    try{
+      await FiscalService.reverseVatWithholding(id,{
+        fiscalPeriod:ivaApplication.reversalPeriod,
+        reason:ivaApplication.reversalReason.trim()
+      });
+      await loadIvaApplications();
+      notify('Reverso contable registrado; el original permanece intacto.','success');
+    }catch(error){setIvaApplicationError(error?.message||'No se pudo reversar la aplicación.');}
+    finally{setIvaApplicationBusy('');}
   }
 
   async function previewTaxPosting(event){
@@ -278,7 +328,7 @@ function TaxesWorkspace({state,context}){
     <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))',lg:'repeat(3,minmax(0,1fr))'},gap:1}}>
       {Object.entries(taxes).map(([key,item])=><Paper key={key} variant="outlined" sx={{p:1.4}}>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
-          <Box><Typography variant="h6">{taxLabel(key,item)}</Typography><Typography variant="caption" color="text.secondary">Alícuota aplicada en operaciones compatibles.</Typography></Box>
+          <Box><Typography variant="h6">{taxLabel(key,item)}</Typography><Typography variant="caption" color="text.secondary">Parámetro visual/comercial legado; no es alícuota legal revisada ni sustituye reglas fiscales ACTIVE.</Typography></Box>
           <FormControlLabel control={<Switch checked={Boolean(item.active)} onChange={(e)=>setTaxes((current)=>({...current,[key]:{...current[key],active:e.target.checked}}))}/>} label={<CgStatusChip size="small" label={item.active?'Activo':'Inactivo'} tone={item.active?'success':'default'}/>}/>
         </Stack>
         <CgTextField sx={{mt:1}} fullWidth label="Alícuota %" type="number" inputProps={{step:.01,min:0}} value={item.rate||0} onChange={(e)=>setTaxes((current)=>({...current,[key]:{...current[key],rate:Number(e.target.value||0)}}))}/>
@@ -338,6 +388,59 @@ function TaxesWorkspace({state,context}){
         ]} rows={taxPreviewResult.accountLines||[]} empty="Sin líneas contables"/>
         <Typography variant="caption" color="text.secondary">Resultado no contabilizado. No es comprobante fiscal ni certificado de retención.</Typography>
       </>:null}
+    </Paper>
+
+    <Paper variant="outlined" sx={{p:1.5}}>
+      <Typography variant="h6">Retención IVA · Aplicación contable interna</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{mb:1}}>
+        Vincula la compra VES ya contabilizada, su proveedor ordinario y el perfil de agente especial revisado
+        con las reglas IVA y RET_IVA activas. El servidor determina el abono en cuenta desde el asiento original
+        y valida importes, cuentas, período e idempotencia. Esto <strong>no</strong> crea ni sustituye el comprobante
+        formal exigido por SENIAT; no habilitar su uso como documento de retención.
+      </Typography>
+      {ivaApplicationError?<CgState severity="error" title="Operación no autorizada">{ivaApplicationError}</CgState>:null}
+      {governance.capabilities?.manageDocuments?
+        <Box component="form" onSubmit={applyIvaWithholding} sx={{display:'grid',gap:1}}>
+          <CgTextField fullWidth required label="ID UUID de la factura de compra contabilizada"
+            value={ivaApplication.purchaseInvoiceId}
+            onChange={event=>setIvaApplication(x=>({...x,purchaseInvoiceId:event.target.value}))}/>
+          <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))'},gap:1}}>
+            <CgSelect label="Regla IVA de la factura" value={ivaApplication.ivaRuleKey}
+              onChange={event=>setIvaApplication(x=>({...x,ivaRuleKey:event.target.value}))}
+              options={[{value:'',label:'Selecciona IVA vigente'},...fiscalRules
+                .filter(x=>x.status==='ACTIVE'&&/^iva[.:]/i.test(x.ruleKey))
+                .map(x=>({value:x.ruleKey,label:`${x.ruleKey} · v${x.version}`}))]}/>
+            <CgSelect label="Regla retención IVA del abono" value={ivaApplication.retentionRuleKey}
+              onChange={event=>setIvaApplication(x=>({...x,retentionRuleKey:event.target.value}))}
+              options={[{value:'',label:'Selecciona retención vigente'},...fiscalRules
+                .filter(x=>x.status==='ACTIVE'&&/^ret_iva[.:]/i.test(x.ruleKey))
+                .map(x=>({value:x.ruleKey,label:`${x.ruleKey} · v${x.version}`}))]}/>
+          </Box>
+          <CgButton type="submit" disabled={Boolean(ivaApplicationBusy)||
+            !/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(ivaApplication.purchaseInvoiceId)||
+            !ivaApplication.ivaRuleKey||!ivaApplication.retentionRuleKey}>
+            {ivaApplicationBusy==='apply'?'Comprobando compra y asiento…':'Registrar aplicación contable interna'}
+          </CgButton>
+        </Box>:null}
+      <Typography variant="subtitle1" sx={{mt:2}}>Historial de aplicaciones y reversos</Typography>
+      <CgDataTable columns={[
+        {key:'purchaseInvoiceId',label:'Compra origen'},
+        {key:'period',label:'Período'},
+        {key:'withheldMinor',label:'Retenido (céntimos)'},
+        {key:'status',label:'Estado',render:r=><CgStatusChip size="small"
+          label={r.status} tone={r.status==='REVERSED'?'warning':'success'}/>},
+        {key:'action',label:'Reverso auditado',render:r=>governance.capabilities?.manageDocuments&&r.status==='POSTED'?
+          <CgButton disabled={Boolean(ivaApplicationBusy)||ivaApplication.reversalReason.trim().length<15}
+            onClick={()=>reverseIvaWithholding(r.id)}>Reversar</CgButton>:'—'}
+      ]} rows={ivaApplications} empty="No hay aplicaciones internas registradas"/>
+      {governance.capabilities?.manageDocuments?
+        <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'1fr 2fr'},gap:1,mt:1}}>
+          <CgTextField label="Período del reverso (AAAA-MM)" value={ivaApplication.reversalPeriod}
+            onChange={event=>setIvaApplication(x=>({...x,reversalPeriod:event.target.value}))}/>
+          <CgTextField label="Motivo del reverso (mínimo 15 caracteres)" value={ivaApplication.reversalReason}
+            onChange={event=>setIvaApplication(x=>({...x,reversalReason:event.target.value}))}/>
+        </Box>:null}
+      <CgButton onClick={loadIvaApplications} disabled={Boolean(ivaApplicationBusy)}>Actualizar historial</CgButton>
     </Paper>
 
     <Paper variant="outlined" sx={{p:1.5}}>
