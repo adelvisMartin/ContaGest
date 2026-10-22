@@ -80,6 +80,10 @@ test('#638: list pagination remains bounded and unknown sort/filter is refused',
     { fn: 'parseCrudListWindow', args: [{}] },
     { fn: 'parseCrudListWindow', args: [{ take: '900000', skip: '-5', q: 'Cliente' }] },
     { fn: 'parseCrudListWindow', args: [{ take: 'invalid', skip: 'invalid' }] },
+    { fn: 'parseCrudListWindow', args: [{ take: '', skip: 0 }] },
+    { fn: 'parseCrudListWindow', args: [{ take: '1e3' }] },
+    { fn: 'parseCrudListWindow', args: [{ take: 1.5 }] },
+    { fn: 'parseCrudListWindow', args: [{ skip: '12oops' }] },
     { fn: 'parseCrudListWindow', args: [{ sort: 'tenantId' }] },
     { fn: 'parseCrudListWindow', args: [{ filter: { OR: [{ tenantId: 'OTHER' }] } }] },
     { fn: 'parseCrudListWindow', args: [{ tenantId: 'OTHER' }] },
@@ -91,10 +95,12 @@ test('#638: list pagination remains bounded and unknown sort/filter is refused',
   const results = executePolicy(cases);
   assert.deepEqual(results[0].value, { take: 100, skip: 0 });
   assert.deepEqual(results[1].value, { take: 500, skip: 0 });
-  assert.deepEqual(results[2].value, { take: 100, skip: 0 });
-  results.slice(3, 7).forEach((value) => assert.equal(value.status, 422));
-  assert.equal(results[7].value, 'Ana');
-  results.slice(8).forEach((value) => assert.equal(value.status, 422));
+  results.slice(2, 10).forEach((value) => {
+    assert.equal(value.ok, false);
+    assert.equal(value.status, 422);
+  });
+  assert.equal(results[10].value, 'Ana');
+  results.slice(11).forEach((value) => assert.equal(value.status, 422));
 });
 
 test('#638: CRUD route ids reject array and non-string route parameters', () => {
@@ -103,7 +109,11 @@ test('#638: CRUD route ids reject array and non-string route parameters', () => 
     { fn: 'parseCrudRouteId', args: [['client-1']] },
     { fn: 'parseCrudRouteId', args: [null] },
     { fn: 'parseCrudRouteId', args: [123] },
-    { fn: 'parseCrudRouteId', args: [''] }
+    { fn: 'parseCrudRouteId', args: [''] },
+    { fn: 'parseCrudRouteId', args: ['   '] },
+    { fn: 'parseCrudRouteId', args: ['\\u0000'] },
+    { fn: 'parseCrudRouteId', args: [' x '] },
+    { fn: 'parseCrudRouteId', args: ['x'.repeat(256)] }
   ];
   const results = executePolicy(cases);
   assert.deepEqual(results[0], { ok: true, value: 'client-1' });
