@@ -173,6 +173,19 @@ export async function resolveFiscalRules(db: FiscalDb, input: { tenantId: string
       throw new HttpError(422, 'La versión fiscal no conserva autoridad legal revisada.', { code: 'FISCAL_RULE_SOURCE_NOT_AUTHORIZED' });
     }
   }
+  // Hash validation protects against changes to rate/definition after provenance review.
+  for (const row of rows) {
+    const expected = fiscalEvidenceHash({
+      tenantId: row.tenantId, ruleKey: row.ruleKey, version: row.version,
+      effectiveFrom: row.effectiveFrom.toISOString(),
+      effectiveTo: row.effectiveTo?.toISOString() || null,
+      source: row.source, documentation: row.documentation, definition: row.definition,
+    });
+    if (!/^[0-9a-f]{64}$/.test(row.hash) || expected !== row.hash)
+      throw new HttpError(409, 'Se detectó una versión fiscal alterada; se bloqueó la emisión.', {
+        code: 'FISCAL_RULE_VERSION_HASH_MISMATCH', ruleKey: row.ruleKey, version: row.version,
+      });
+  }
   const found = new Set(rows.map((row) => row.ruleKey));
   const missing = input.ruleKeys.filter((key) => !found.has(key));
   if (missing.length) {
