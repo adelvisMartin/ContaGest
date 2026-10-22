@@ -27,6 +27,7 @@ Los ADR financieros existentes incluyen, entre otros:
 - [`ADR_TRANSACTIONAL_IMPORT_V95.md`](ADR_TRANSACTIONAL_IMPORT_V95.md) — importaciones transaccionales.
 - [`ADR_FISCAL_GOVERNANCE_V96.md`](ADR_FISCAL_GOVERNANCE_V96.md) — gobernanza fiscal.
 - [`architecture/FISCAL_SNAPSHOT_INTEGRITY_V751.md`](architecture/FISCAL_SNAPSHOT_INTEGRITY_V751.md) — seguridad de snapshots fiscales, regresiones, despliegue y bloqueos legales.
+- [`architecture/FISCAL_RULE_GOVERNANCE_V751.md`](architecture/FISCAL_RULE_GOVERNANCE_V751.md) — revisión independiente, autorización de reglas fiscales y catálogo normativo candidato sin tasas automáticas.
 
 Nuevas decisiones estructurales deben documentar contexto, decisión, alternativas, invariantes, migración y rollback; no deben ocultarse dentro de un PR grande.
 
