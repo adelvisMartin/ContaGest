@@ -99,7 +99,12 @@ test('operator exposes read-only shadow projection using RC1-compatible matching
 test('Bridge package version follows release policy and keeps a fail-closed LAB-only send path',()=>{
   const pkg=JSON.parse(read('tools/hipico-whatsapp-web-bridge/package.json'));
   const policy=JSON.parse(read('products/hipico-control/release-policy.json'));
+  const locked=JSON.parse(read('tools/hipico-whatsapp-web-bridge/package-lock.json'));
+  const runtimeConfig=read('tools/hipico-whatsapp-web-bridge/src/runtime-config.mjs');
   assert.equal(pkg.version,policy.bridgePackageVersion);
+  assert.equal(locked.version,pkg.version);
+  assert.equal(locked.packages[''].version,pkg.version);
+  assert.match(runtimeConfig,new RegExp("export const VERSION = '"+pkg.version.replaceAll('.','\\.')+"'"));
   assert.equal(pkg.dependencies['playwright-core'],'1.62.1');
   assert.equal(pkg.dependencies['whatsapp-web.js'],undefined);
   const runtime=read('tools/hipico-whatsapp-web-bridge/src/index.mjs');
