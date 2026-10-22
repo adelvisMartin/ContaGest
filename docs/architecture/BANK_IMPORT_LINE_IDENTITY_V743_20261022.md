@@ -24,3 +24,9 @@ QA aislado Node 22: las cinco nuevas pruebas de identidad **PASS**; tras añadir
 Rollback: revertir el importador y helper/test; si se han importado filas bajo la identidad nueva, preservar sus registros y planificar reconciliación manual antes de revertir código; **no** borrar datos financieros ni volver a descartar líneas. Revisar conflictos de `backend/package.json` con PR #1282 antes de merge.
 
 SOURCE_REUSE=NONE.
+
+## Reutilización de bankLineId con payload divergente
+
+La segunda revisión detectó otro efecto de `ON CONFLICT DO NOTHING`: un `bankLineId` conocido puede llegar en otro extracto con importe/fecha/referencia diferentes; la constraint de bank ID impedía guardar la línea modificada, pero el importador lo contaba como deduplicado. Ahora, ante una inserción sin filas afectadas, el servicio consulta el registro del tenant/cuenta por hash o bank ID y aplica `assertBankLineReplayIdentity`: solo hash **y** bank ID idénticos permiten una repetición; de lo contrario, error HTTP **409** `BANK_STATEMENT_IDENTITY_CONFLICT` y rollback completo de la importación en curso. Las dos regresiones nuevas de replay/colisión están integradas en la suite oficial del módulo. Esto NO permite mutar un movimiento previamente conciliado ni lo corrige automáticamente.
+
+**QA focal tras segundo cambio:** **64/64 PASS** (Node 22, suite conjunta ocho archivos) y `tsc --noEmit --strict` focal PASS; hashes SHA exactos del módulo de identidad `d60ed233f26919ca13c1a6916c19f5cb42b7be3a` y test `ddc4aff2f04578878e8b3acd5e264cc4629cf3f3`. El servicio de importación completo y las transacciones PostgreSQL17 permanecen **NOT VERIFIED** en este entorno. Para certificación se requieren pruebas SQL reales de unique por tenant/cuenta, importación simultánea y reverso/conciliación.
