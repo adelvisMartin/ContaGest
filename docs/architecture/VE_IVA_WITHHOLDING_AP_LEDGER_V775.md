@@ -50,3 +50,23 @@ El módulo Tributos incorpora selección visible de reglas `ACTIVE`, formulario 
 ### Operación y migración
 
 Migración aditiva `20261022213000_issue_775_withholding_application_ledger/migration.sql`, con RLS/FORCE RLS, permisos de columna, trigger antifraude, unicidad por tenant/compra/tipo, historial append-only y referencias ledger. No ejecutar migraciones ni pruebas sobre producción. Exigir respaldo, drill PG17 from-zero/upgrade, RLS dos tenants y reconciliación antes de merge. Si el sistema no cuenta con ambas reglas aprobadas o se trata de una excepción legal, **denegar** y gestionar mediante revisión fiscal/contable fuera de esta ruta.
+
+
+## Conciliación interna real de retenciones
+
+`GET /fiscal/withholding-applications/reconciliation?period=AAAA-MM`, permiso `fiscal.read`, consulta transaccional de sólo lectura con `tenantId`. Devuelve hasta 1000 aplicaciones; superar el límite retorna 413 en vez de declarar completos datos truncados.
+
+Invariantes de cada aplicación:
+- Compra origen y asiento de compra tienen vínculo tenant propio; origen `posted`.
+- `ledgerEntryId` publicado `source=tax` y `sourceId` de la aplicación; dos líneas contables en cuentas **distintas**.
+- `ΣDebe` y `ΣHaber` expresados en céntimos enteros exactos, ambos iguales a `withheldMinor`.
+- `POSTED` no tiene reverso ni puede tener `PurchaseInvoice.status=cancelled`.
+- `REVERSED` apunta a un ledger posted cuyo `reversalOfId` es exactamente el asiento aplicado; contiene dos líneas con **mismas cuentas y Debe/Haber intercambiados**, no sólo totales balanceados.
+- SHA de `evidence` se vuelve a computar y compara con `evidenceSha256`; cualquier diferencia deja reporte bloqueado.
+- El agregado entrega `grossWithheldMinor`, `reversedMinor`, `netOutstandingMinor`, `issueCount` y razones específicas por fila (sin punto flotante ni números fabricados).
+
+Estados: `RECONCILED_INTERNAL_ONLY`, `BLOCKED_INTERNAL_RECONCILIATION` o `BLOCKED_EMPTY_PERIOD`. Incluso `RECONCILED_INTERNAL_ONLY` devuelve `officialCertificateVerified:false` y `externalFilingVerified:false`: **no autoriza** presentar ni enterar impuestos. La página Tributos permite consultar el período e inspeccionar alertas. Pruebas puras en `tests/ve_iva_withholding_reconciliation_v775.test.mjs`, ejecutadas por el workflow fiscal con `tsx`; prueba PostgreSQL real de estado antes/después en `qa/iva-withholding-application-v775.test.ts`.
+
+## Gate de liberación
+
+El workflow ahora depende de `npm ci`, migración canónica PostgreSQL 17 desde cero, seed aislado, QA HTTP con sesión/tenant/ledger, tests focales `tsx`, `typecheck` y `build:backend`. Los tests están incorporados; **sin un resultado real en GitHub Actions, todo lo anterior está implementado pero no es evidencia PASS**. Validar además upgrade PG17 y browser E2E exact-SHA. La consulta de conciliación interna no equivale a libros de compra certificados ni a conciliación SENIAT.
