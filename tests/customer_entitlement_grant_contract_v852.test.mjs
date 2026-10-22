@@ -38,3 +38,22 @@ test('#852 concurrent manual grant replay serializes on tenant+effect before rea
   assert.ok(grant.indexOf('pg_advisory_xact_lock')<grant.indexOf('const prior=await tx.customerEntitlement.findFirst'));
   assert.match(grant,/return \{entitlement:prior,replayed:true\}/);
 });
+
+test('#852 booking consume has no independent route and executes as a single caller-owned tx',()=>{
+  const consume=svc.split('export async function consumeCustomerRightInBookingTransaction(')[1];
+  assert.match(consume,/tx===prisma/);
+  assert.match(consume,/pg_advisory_xact_lock\(hashtextextended\(/);
+  assert.match(consume,/sourceType:'client',sourceId:right\.beneficiaryId/);
+  assert.match(consume,/tx\.schedulingResourceAllocation\.findFirst\(/);
+  assert.match(consume,/status:'active'/);
+  assert.match(consume,/projectEntitlementLedger/);
+  assert.match(consume,/tx\.entitlementLedgerEvent\.create\(/);
+  assert.match(consume,/await audit\(tx,ctx,'entitlement\.booking-consume'/);
+  assert.doesNotMatch(routes,/\/consume/);
+});
+test('#852 only integer-milli amounts authorize consumption, never float math',()=>{
+  const consume=svc.split('export async function consumeCustomerRightInBookingTransaction(')[1];
+  assert.match(consume,/BigInt\(w\)\*1000n/);
+  assert.match(consume,/if\(milli\(quantity\)>milli\(projected\.remaining\)\)/);
+  assert.doesNotMatch(consume,/Number\(quantity\)/);
+});
