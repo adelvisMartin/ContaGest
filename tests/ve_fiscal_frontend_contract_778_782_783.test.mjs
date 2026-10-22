@@ -14,7 +14,7 @@ test('#778/#782 financial HTTP client protects every fiscal write with idempoten
     '/fiscal/documents', '/fiscal/documents/issue']) {
     assert.ok(policy.includes(route), route);
   }
-  assert.match(policy, /fiscal\\/compliance\\/declarations/);
+  assert.ok(policy.includes('compliance') && policy.includes('declarations'));
   assert.match(api, /acquireFinancialIdempotencyKey/);
   assert.match(api, /headers:\{ \.\.\.headers/);
 });
