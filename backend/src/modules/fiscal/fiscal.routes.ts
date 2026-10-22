@@ -10,6 +10,7 @@ import { runFinancialIdempotentMutation } from '../../shared/services/financial-
 import { assertBalanced } from '../accounting/accounting.service.js';
 import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.repository.js';
 import { planReviewedTaxEvent, type AppliedRatio } from './ve-tax-posting-plan.js';
+import { assertFiscalDocumentRuleFamily } from './fiscal-event-rule-family.js';
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts, transitionTaxpayerProfile, getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
@@ -397,6 +398,17 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     if (closedPeriod) throw new HttpError(409, `El período ${req.body.period} está cerrado para ${closedPeriod.module}.`, { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: closedPeriod.module });
 
     const effectiveAt = req.body.effectiveAt || new Date();
+    try {
+      assertFiscalDocumentRuleFamily({
+        module:req.body.module,kind:req.body.kind,period:req.body.period,
+        effectiveAt,explicitEffectiveAt:Boolean(req.body.effectiveAt),
+        ruleKeys:req.body.ruleKeys as string[]
+      });
+    } catch {
+      throw new HttpError(422,'La regla, fecha UTC o módulo fiscal no corresponde al evento.',{
+        code:'FISCAL_EVENT_RULE_FAMILY_MISMATCH'
+      });
+    }
     const ruleKeys: string[] = [...new Set(req.body.ruleKeys as string[])].sort();
     const rules = await resolveFiscalRules(tx, { tenantId: ctx.tenantId, ruleKeys, effectiveAt });
     const requiresProfile = ['iva','islr','retiva'].includes(req.body.module) ||
