@@ -261,10 +261,18 @@ router.post('/close-period', requirePermission('fiscal.close'), validateBody(clo
       postCloseHash,
       closedBy: ctx.userId || null
     });
+    // The close state, immutable evidence and actor audit must commit together.
+    // Idempotent replays skip this callback and cannot duplicate the audit.
+    await tx.auditLog.create({ data: {
+      tenantId: ctx.tenantId, userId: ctx.userId || null,
+      action: 'fiscal.period.closed', entity: 'ClosingPeriod', entityId: updated.id,
+      before: { status: existing.status, period: existing.period, module: existing.module },
+      after: { status: updated.status, postCloseHash, evidenceId: evidence.id,
+        closedBy: updated.closedBy, period: updated.period, module: updated.module },
+      ipAddress: ctx.ip || null, userAgent: ctx.userAgent || null,
+    } });
     return { data: { ...updated, prechecks, postCloseReport, postCloseHash, evidenceId: evidence.id }, resourceType: 'ClosingPeriod', resourceId: updated.id };
   });
-
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.period.closed', entity: 'ClosingPeriod', entityId: execution.resourceId || undefined, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   res.status(execution.responseCode).json({ ok: true, data: execution.data, meta: { replayed: execution.replayed } });
 }));
 
