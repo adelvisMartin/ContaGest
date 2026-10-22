@@ -102,6 +102,8 @@ router.get('/reconciliation',requirePermission('fiscal.read'),asyncHandler(async
       r."reversalOfId" AS "reversalOfId",a."withheldMinor",
       CASE WHEN r."id" IS NULL THEN false ELSE (
         SELECT COUNT(*)=2 AND
+          (SELECT COUNT(*) FROM public."LedgerLine" reverse_line_count
+             WHERE reverse_line_count."entryId"=r."id")=2 AND
           NOT EXISTS (
             SELECT 1 FROM public."LedgerLine" src_line
             WHERE src_line."entryId"=a."ledgerEntryId"
