@@ -70,3 +70,10 @@ Estados: `RECONCILED_INTERNAL_ONLY`, `BLOCKED_INTERNAL_RECONCILIATION` o `BLOCKE
 ## Gate de liberación
 
 El workflow ahora depende de `npm ci`, migración canónica PostgreSQL 17 desde cero, seed aislado, QA HTTP con sesión/tenant/ledger, tests focales `tsx`, `typecheck` y `build:backend`. Los tests están incorporados; **sin un resultado real en GitHub Actions, todo lo anterior está implementado pero no es evidencia PASS**. Validar además upgrade PG17 y browser E2E exact-SHA. La consulta de conciliación interna no equivale a libros de compra certificados ni a conciliación SENIAT.
+
+
+## Fail-closed release switch
+
+El endpoint de creación del asiento `POST /fiscal/withholding-applications` ahora exige `VE_FISCAL_INTERNAL_RETIVA_POSTING_ENABLED=true`. **Por defecto está deshabilitado** y responde `503 RETIVA_POSTING_NOT_ENABLED`; no basta que un actor tenga permiso o que existan reglas ACTIVE. No habilitar en producción sin acuerdo del responsable contable, verificación efectiva de condición SPE/agente, elegibilidad y exclusiones del proveedor, QA PG17 de dos tenants, balances, restauración, E2E y revisión del texto normativo aplicable.
+
+El workflow fiscal habilita el switch **sólo en la base PostgreSQL 17 desechable**, sin modificar los entornos productivos. La lectura de históricos y el reverso auditado siguen accesibles cuando el switch esté apagado para posibilitar la corrección reversible de operaciones existentes. Esto es una barrera adicional, no una acreditación legal ni garantía de cumplimiento.
