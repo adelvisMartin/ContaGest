@@ -29,6 +29,8 @@ function TaxesWorkspace({state,context}){
   const [taxPreviewError,setTaxPreviewError]=useState('');
   const [ivaApplications,setIvaApplications]=useState([]);
   const [ivaApplicationError,setIvaApplicationError]=useState('');
+  const [ivaReconciliation,setIvaReconciliation]=useState(null);
+  const [ivaReconciliationBusy,setIvaReconciliationBusy]=useState(false);
   const [ivaApplicationBusy,setIvaApplicationBusy]=useState('');
   const [ivaApplication,setIvaApplication]=useState({
     purchaseInvoiceId:'',ivaRuleKey:'',retentionRuleKey:'',
@@ -147,6 +149,17 @@ function TaxesWorkspace({state,context}){
     }
   }
   useEffect(()=>{void loadIvaApplications();},[]);
+
+  async function loadVatReconciliation(){
+    setIvaReconciliationBusy(true);
+    try{
+      const report=await FiscalService.reconcileVatWithholding(ivaApplication.reversalPeriod);
+      setIvaReconciliation(report);
+    }catch(error){
+      setIvaReconciliation(null);
+      setIvaApplicationError(error?.message||'No se pudo conciliar el libro interno RETIVA.');
+    }finally{setIvaReconciliationBusy(false);}
+  }
 
   async function applyIvaWithholding(event){
     event.preventDefault();
@@ -440,7 +453,35 @@ function TaxesWorkspace({state,context}){
           <CgTextField label="Motivo del reverso (mínimo 15 caracteres)" value={ivaApplication.reversalReason}
             onChange={event=>setIvaApplication(x=>({...x,reversalReason:event.target.value}))}/>
         </Box>:null}
-      <CgButton onClick={loadIvaApplications} disabled={Boolean(ivaApplicationBusy)}>Actualizar historial</CgButton>
+      <Stack direction="row" spacing={1} sx={{mt:1}}>
+        <CgButton onClick={loadIvaApplications} disabled={Boolean(ivaApplicationBusy)}>Actualizar historial</CgButton>
+        <CgButton onClick={loadVatReconciliation}
+          disabled={ivaReconciliationBusy||Boolean(ivaApplicationBusy)}>
+          {ivaReconciliationBusy?'Conciliando…':'Conciliar período (interno)'}
+        </CgButton>
+      </Stack>
+      {ivaReconciliation?<>
+        <Typography variant="subtitle1" sx={{mt:1}}>
+          {ivaReconciliation.status==='RECONCILED_INTERNAL_ONLY'
+            ?'Conciliado internamente · NO certificado SENIAT'
+            :'Conciliación pendiente / bloqueada'}
+        </Typography>
+        <Typography variant="body2">
+          Aplicaciones: {ivaReconciliation.applicationCount} · Retenido bruto (céntimos): {ivaReconciliation.grossWithheldMinor}
+          {' · '} Reversado: {ivaReconciliation.reversedMinor}
+          {' · '} Saldo pendiente: {ivaReconciliation.netOutstandingMinor}
+          {' · '} Incidencias: {ivaReconciliation.issueCount}
+        </Typography>
+        <CgDataTable columns={[
+          {key:'purchaseInvoiceId',label:'Compra'},
+          {key:'status',label:'Estado'},
+          {key:'withheldMinor',label:'Retenido (céntimos)'},
+          {key:'blockingIssues',label:'Alertas',render:r=>r.blockingIssues?.join(', ')||'Sin diferencias'}
+        ]} rows={ivaReconciliation.rows||[]} empty="Sin evidencia del período: NO certificado"/>
+        <Typography variant="caption" color="text.secondary">
+          Conciliación interna únicamente. No acredita presentación, enteramiento ni entrega de comprobantes.
+        </Typography>
+      </>:null}
     </Paper>
 
     <Paper variant="outlined" sx={{p:1.5}}>
