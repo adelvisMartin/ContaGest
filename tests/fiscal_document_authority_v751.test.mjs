@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assertExternalFiscalRecordAllowed, assertUntrustedFiscalPayload,
+  assertExternalFiscalRecordAllowed, assertUntrustedFiscalPayload, assertReviewedIssueKindSupported,
 } from '../backend/src/modules/fiscal/fiscal-document-authority-policy.ts';
 
 const basic = {module:'fiscal',kind:'supporting_document',payload:{reference:'external',amount:'0'}};
@@ -28,5 +28,14 @@ test('#751 payload cannot forge server-owned evidence metadata',()=>{
 test('#751 rejects unsafe non-JSON record payload shapes',()=>{
   for (const payload of [null,[],0,'{}']) {
     assert.throws(()=>assertUntrustedFiscalPayload(payload),/FISCAL_PAYLOAD_INVALID/);
+  }
+});
+
+test('#775 generic issuance cannot counterfeit a compliant withholding certificate or tax return',()=>{
+  for(const kind of ['withholding','tax_return','credit_note','debit_note']) {
+    assert.throws(()=>assertReviewedIssueKindSupported(kind),/FISCAL_CERTIFICATE_WORKFLOW_NOT_READY/);
+  }
+  for(const kind of ['invoice','supporting_document','other']) {
+    assert.doesNotThrow(()=>assertReviewedIssueKindSupported(kind));
   }
 });
