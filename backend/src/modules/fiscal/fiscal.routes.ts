@@ -30,8 +30,8 @@ import {
 const router = Router();
 router.use(requireTenant);
 router.use('/books', fiscalBookReadinessRoutes);
-router.use('/compliance', fiscalComplianceReadinessRoutes);
 router.use('/compliance', fiscalComplianceWorkflowRoutes);
+router.use('/compliance', fiscalComplianceReadinessRoutes);
 
 const periodSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Usa formato AAAA-MM.');
 const moduleSchema = z.enum(['fiscal', 'iva', 'islr', 'igtf', 'retiva', 'municipal']);
