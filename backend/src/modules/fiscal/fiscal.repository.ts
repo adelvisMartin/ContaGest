@@ -6,6 +6,22 @@ import { addRuleAuthority, assertFiscalRuleAuthority, createFiscalRuleAuthority,
 
 export type FiscalDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
 
+/** Serialize fiscal issue, external capture and close/reopen for the same tenant
+ * and calendar period. A shared advisory lock works even when a closing row
+ * has not been created yet; it is scoped to one PG transaction only. */
+export async function lockFiscalPeriodMutation(
+  db: FiscalDb, tenantId: string, period: string,
+): Promise<void> {
+  if (!tenantId || !/^\\d{4}-(0[1-9]|1[0-2])$/.test(period))
+    throw new HttpError(422, 'Período o tenant inválido para mutación fiscal.',
+      { code: 'FISCAL_PERIOD_LOCK_SCOPE_INVALID' });
+  await db.$queryRaw<Array<{ locked: unknown }>>(Prisma.sql`
+    SELECT pg_advisory_xact_lock(
+      hashtextextended(${'fiscal-period:'+tenantId+':'+period}, 910)
+    ) AS "locked"
+  `);
+}
+
 export type FiscalRuleVersionRow = {
   id: string;
   tenantId: string;
