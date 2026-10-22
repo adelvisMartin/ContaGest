@@ -16,7 +16,7 @@ router.get('/readiness', asyncHandler(async (req, res) => {
   const [taxPeriod, closings, fiscalDocumentCount] = await Promise.all([
     prisma.taxPeriod.findUnique({
       where: { tenantId_period: { tenantId, period } },
-      select: { id: true, status: true, declarations: {
+      select: { id: true, status: true, ivaDebit: true, ivaCredit: true, igtfPaid: true, declarations: {
         take: 201, select: { id: true, kind: true, status: true, amount: true },
       } },
     }),
@@ -30,7 +30,9 @@ router.get('/readiness', asyncHandler(async (req, res) => {
     throw new HttpError(413, 'El período supera el límite del diagnóstico; no se devuelve información truncada.', { code: 'COMPLIANCE_EVIDENCE_LIMIT' });
   const report = buildCompliancePeriodReadiness({
     tenantId, period,
-    taxPeriod: taxPeriod ? { id: taxPeriod.id, status: taxPeriod.status } : null,
+    taxPeriod: taxPeriod ? { id: taxPeriod.id, status: taxPeriod.status,
+      recordedBalancesExact: { ivaDebit: taxPeriod.ivaDebit.toString(),
+        ivaCredit: taxPeriod.ivaCredit.toString(), igtfPaid: taxPeriod.igtfPaid.toString() } } : null,
     declarations: (taxPeriod?.declarations || []).map(row => ({
       id: row.id, kind: row.kind, status: row.status, amountExact: row.amount.toString(),
     })),
