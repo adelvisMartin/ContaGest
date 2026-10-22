@@ -27,8 +27,8 @@ for(const item of report.css?.legacyDirectoryFiles||[])fail('css','legacy-css-ac
 if(report.css?.runtimeOrderOk===false)fail('css','runtime-import-order',(report.css?.runtimeImports||[]).join(' → '));
 for(const item of report.theme?.retiredCatalog||[])fail('theme','retired-theme-catalog',item);
 for(const item of report.theme?.retiredApp||[])fail('theme','retired-theme-app',item);
-if(report.theme?.storeOfficialBinary===false)fail('theme','store-not-light-dark','OFFICIAL_THEMES no es binario light/dark.');
-if(report.theme?.appBinary===false)fail('theme','runtime-not-light-dark','applyTheme no normaliza a light/dark.');
+if(report.theme?.storePreferenceContract!==true)fail('theme','store-preference-contract','Persistencia fuera de light/dark/system o normalizador no autoritativo.');
+if(report.theme?.appResolvesMode!==true)fail('theme','runtime-resolved-mode','Tema system no resuelve a light/dark conforme al contrato UX.');
 for(const [key,value] of Object.entries(report.shell||{}))if(typeof value==='boolean'&&!value)fail('shell',key,'invariante shell=false');
 for(const [key,value] of Object.entries(report.criticalMigrations||{}))if(!value)fail('migration',key,'invariante visual crítica=false');
 
