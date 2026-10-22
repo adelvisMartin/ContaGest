@@ -236,16 +236,6 @@ router.post('/rules', requirePermission('fiscal.close'), validateBody(fiscalRule
     legalSourceId: req.body.legalSourceId || null,
     supersedesId: req.body.supersedesId || null
   });
-  await writeAudit({
-    tenantId: ctx.tenantId,
-    userId: ctx.userId,
-    action: 'fiscal.rule.version.created',
-    entity: 'FiscalRuleVersion',
-    entityId: created.id,
-    after: { ruleKey: created.ruleKey, version: created.version, effectiveFrom: created.effectiveFrom, effectiveTo: created.effectiveTo, source: created.source, documentation: created.documentation, hash: created.hash },
-    ipAddress: ctx.ip,
-    userAgent: ctx.userAgent
-  });
   res.status(201).json({ ok: true, data: created });
 }));
 
@@ -452,10 +442,22 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
       SELECT "ruleKey", "ruleVersion", "ruleHash" FROM public."FiscalDocumentRuleSnapshot"
       WHERE "tenantId"=${ctx.tenantId} AND "fiscalDocumentId"=${record.id} ORDER BY "ruleKey"
     `;
+    // Fiscal audit must commit atomically with number allocation, document and
+    // immutable snapshots. Retrying a successful idempotency key must not write
+    // a second 'issued' event or return 500 after an already-committed issuance.
+    await tx.auditLog.create({data:{
+      tenantId:ctx.tenantId,userId:ctx.userId || null,action:'fiscal.document.issued',
+      entity:'FiscalDocument',entityId:record.id,
+      after:{
+        kind:record.kind,number:record.number,period:record.period,module:req.body.module,
+        hash:record.hash,ruleHashes:snapshots.map(r=>r.ruleHash),
+        taxpayerProfileHash:profileHash,
+        requestId:ctx.requestId || null,
+      },ipAddress:ctx.ip || null,userAgent:ctx.userAgent || null
+    }});
     return { data: { ...record, module: req.body.module, appliedRules: snapshots, taxpayerProfileHash: profileHash }, responseCode: 201, resourceType: 'FiscalDocument', resourceId: record.id };
   });
 
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.document.issued', entity: 'FiscalDocument', entityId: execution.resourceId || undefined, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   res.status(execution.responseCode).json({ ok: true, data: execution.data, meta: { replayed: execution.replayed } });
 }));
 
