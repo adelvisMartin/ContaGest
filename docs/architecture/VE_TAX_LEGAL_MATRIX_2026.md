@@ -91,3 +91,14 @@ Artículos observados:
 - **4 y 5:** 75% usual, 100% en los supuestos de la providencia; **estos porcentajes no se precargan**: cada regla productiva exige fuente/review/fecha.
 - **13 y 14:** evento cuando ocurre pago o abono en cuenta, lo primero; períodos quincenales con plazo según calendario del contribuyente.
 - **16:** comprobante propio, numeración de catorce caracteres y obligaciones de emisión/entrega. El asiento interno de retención de este PR no suple el comprobante.
+
+
+## Incremento #775: validador de evidencia de comprobante RETIVA
+
+El módulo `backend/src/modules/fiscal/retiva-voucher-evidence-policy.ts` aporta exclusivamente validación de estructura documental para comprobantes conforme al artículo 16 de SNAT/2025/000054 (G.O. 43.171, 16-07-2025). Incluye período `AAAA-MM`, serie `AAAAMMSSSSSSSS` de 14 dígitos, identidad fiscal de agente/proveedor, dirección fiscal del proveedor, número y control de la factura origen, fechas de factura, reconocimiento y entrega, base gravable, cuota IVA, importe retenido, ID de aplicación y huella SHA-256 del evento.
+
+La función `formatRetivaVoucherNumber` **no asigna correlativos**: esa operación exige una secuencia PostgreSQL protegida por lock y evidencia de último número. `assertRetivaVoucherEvidence` **no certifica** el texto jurídico completo, no firma, no entrega al proveedor y no hace posting. Para el formato real de RIF y reglas de impresión aplicables se requiere verificación por el responsable fiscal; la expresión regular aplicada es una barrera sintáctica, no verificación del registro SENIAT.
+
+El workflow fiscal ejecutará `tests/retiva_voucher_evidence_v775.test.mjs`. Antes de producción: prueba PostgreSQL 17 con doble agente/tenant, secuencia concurrente, datos del comprobante real, acuse de entrega en los primeros días hábiles legalmente establecidos, conciliación con `FiscalWithholdingApplication` y reverso sin modificación de evidencias originales.
+
+**Importante:** el HEAD incorporó también `FiscalWithholdingApplication` y rutas de aplicación interna de IVA en otro incremento de la misma rama. Su activación se mantiene protegida por `VE_FISCAL_INTERNAL_RETIVA_POSTING_ENABLED`; no modificar esa bandera ni afirmar que el nuevo validador de comprobantes está integrado con el posting. La relación y el E2E requieren un cambio posterior validado.
