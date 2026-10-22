@@ -4,16 +4,28 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root=resolve(import.meta.dirname,'..');
-const css=readFileSync(resolve(root,'frontend/public/hipico-control/assets/css/app.css'),'utf8');
+// v4 CSS is a reviewed, ordered stack: app entrypoint, generated tokens and
+// locally imported compatibility/component/convergence layers.
+const canonicalCss = [
+  'app.css',
+  'platform-tokens-v1.css',
+  'ui-system-v3-compat.css',
+  'ui-system-v4.css',
+  'ui-system-v4-convergence.css'
+];
+const css=canonicalCss.map(name => readFileSync(resolve(root,'frontend/public/hipico-control/assets/css',name),'utf8')).join('\n');
 const ui=readFileSync(resolve(root,'frontend/public/hipico-control/assets/js/ui.js'),'utf8');
 const app=readFileSync(resolve(root,'frontend/public/hipico-control/assets/js/app.js'),'utf8');
 const guide=readFileSync(resolve(root,'frontend/public/hipico-control/STYLE-GUIDE.md'),'utf8');
 
 test('Editorial Race Control stays inside the canonical Hípico UI authorities',()=>{
-  assert.match(guide,/assets\/css\/app\.css.*única hoja CSS global/s);
-  assert.match(guide,/assets\/js\/ui\.js.*única biblioteca de primitivas/s);
-  assert.match(css,/--hc-bg:\s*#0f1012/);
-  assert.match(css,/--hc-surface:\s*#17181b/);
+  assert.match(guide,/ordered multi-file CSS architecture/i);
+  assert.match(guide,/All views reuse the same Button, IconButton/i);
+  assert.match(guide,/assets\/css\/app\.css/);
+  // Semantic tokens, not a frozen dark-only legacy hex palette, own colors.
+  assert.match(css,/--hc-bg/);
+  assert.match(css,/--hc-surface/);
+  assert.match(css,/:root\[data-theme="dark"\]/);
   assert.match(css,/\.more-dashboard\s*\{/);
   assert.match(css,/\.filter-grid\s*\{[^}]*align-items:\s*end/s);
   assert.match(css,/\.filter-grid \.date-button small\s*\{\s*display:\s*none/s);
