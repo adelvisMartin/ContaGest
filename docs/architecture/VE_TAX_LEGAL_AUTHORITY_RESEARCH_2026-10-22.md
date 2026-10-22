@@ -52,3 +52,13 @@ The `POST /fiscal/rules` API no longer accepts `source` as a client-supplied leg
 - This research does not modify current production fiscal rates or database state. It is not a filing integration.
 
 **Required acceptance:** #751 provenance, #774 taxpayer profile, #785 semantic posting, #643 accounting reconciliation, PostgreSQL 17 tenant A/B and full browser/API QA. Do not close #778/#780/#781/#782/#783 based on this document.
+
+## Secondary primary-text verification: harmonization law, G.O. 6.755 (Oct 22, 2026)
+
+The [facsimile of G.O. 6.755 published on a Venezuelan government domain](https://satdc.gobernacion.web.ve/documentos/ordenanzas/ley_organica_de_coordinacion_y_armonizacion_de_las_potestades_tributarias_de_los_estados_y_municipios.pdf) was checked both as extracted text and visually on pages 1 and 3 (PDF pages 0 and 2):
+- **Art. 8**: every municipal imposition needs a local law/ordinance specifying taxable event, basis, rate, subjects and exemptions. **Implementation:** a non-empty municipality/activity selector by itself is not primary proof of applicability; without a tenant-specific ordinance captured and reviewed, no active rate or payable posting.
+- **Arts. 13–14**: municipal taxes, charges and penalties are payable in **VES**, and any dynamic unit of account must use the BCV reference in effect on payment date. **Implementation:** no implicit USD→VES conversion and no bank settlement from an unverified exchange rate or bank movement.
+- **Art. 20**: taxpayer-facing electronic forms for assessment/liquidation must distinguish taxable base, applicable rate and each fiscal concept. **Implementation:** any future municipal book/filing UI must display `baseExact`, applicable `ruleId`/`ruleVersion`/`ruleHash`, rate numerator/denominator, VES converted amount and BCV reference where applicable, or fail closed. Current municipal module is *NON_POSTING_PREVIEW*.
+- **Art. 31**: ordinary maximum **3%** of gross revenue for municipal economic activity tax; express listed-sector exceptions up to **6.5%**. These are **upper legal limits**, **not** national applicable tax rates: do not apply either as defaults, and verify ordinances/classifier/current amendments before selecting. The article specifies 8 exception sectors and refers to the BCV unit for annual minimum; not all municipal fees are subject to the same limits.
+
+**Legal authority warning:** the facsimile establishes the text of the 2023 enactment but cannot exclude later amendments to the law or local ordinances. Capture official gazette bytes, provenance hash, local ordinance, business classification and independent human legal review before making a fiscal rule effective. No hardcoded rate or invented SHA entered the software as a result of this research.
