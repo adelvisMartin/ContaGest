@@ -116,3 +116,10 @@ Read-only Supabase/PostgreSQL 17.6 catalog: 3 dedicated roles with no BYPASSRLS;
 
 ### Exact closure
 The PR remains **NOT_READY** until latest-HEAD native Node source contracts, backend TypeScript checks, PostgreSQL 17 disposable A/B tenancy and backup/restore/rollback, security Problem Details/log redaction, browser accessibility and Vercel production READY+HTTP smoke all pass. GitHub queued/skipped checks must never be treated as PASS. Do not disable checks, force merge, close five tickets, or claim regulatory certification.
+
+### 2026-10-22 additional SOURCE transport defense (#110)
+
+- The latest `b4993cbfefb98a36a3264b990a8917f289601fc4` Preview `dpl_GJ8DUfDpqAP9Y2MC1enLSWNsLJuK` failed `tests/hipico_whatsapp_safety_issue_110.test.mjs`, exit 250 (one failed/four passed). The old assertion searched for a constant `sourceSendPossible:false` in the browser Bridge, while runtime exposes computed capability; the more important finding was that `SOURCE_AUTO_REPLY_ACTIVE` had been calculated only from the environment flag and kill switch.
+- Applied defense-in-depth to `tools/hipico-whatsapp-web-bridge/src/index.mjs`: `SOURCE_AUTO_REPLY_ACTIVE` now also requires `evaluateSourceAutoReplyPolicy(config).eligible`. This independent legal/provider gate is `false` under the 2026-10-15 Messenger review. Its status must not become GO by changing an environment variable.
+- Regressions `tests/hipico_epic_102_implementation_handoff.test.mjs` and `tests/hipico_real_operativa_shadow_contract.test.mjs` now assert the extra policy predicate; backend `sourceAutoReplySendAuthorized` already separately enforces `SOURCE_REPLY_SEND_POLICY.status === 'GO'`. No data or network sending was executed to validate this.
+- The correct operational status is **NO_GO on automated SOURCE writes** and **PARTIAL/NOT_READY for release** until the exact-SHA preview and integrated CI pass. The QA repairs do not grant WhatsApp permission.
