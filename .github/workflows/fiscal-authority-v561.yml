@@ -11,6 +11,10 @@ on:
       - 'tests/fiscal_rule_snapshot_integrity_v751.test.mjs'
       - 'tests/fiscal_rule_snapshot_integrity_contract_v751.test.mjs'
       - 'tests/fiscal_rule_governance_policy_v751.test.mjs'
+      - 'tests/taxpayer_profile_activation_v774.test.mjs'
+      - 'tests/ve_tax_posting_plan_v775_v776.test.mjs'
+      - 'backend/src/modules/chart-accounts/**'
+      - 'docs/architecture/VE_TAX_LEGAL_MATRIX_2026.md'
       - 'qa/fiscal-authority-v561.test.ts'
       - 'tests/fiscal_single_source_v629_contract.test.mjs'
       - 'config/fiscal-authority-v629.json'
@@ -48,7 +52,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: node --experimental-strip-types --test tests/fiscal_authority_v561_contract.test.mjs tests/fiscal_single_source_v629_contract.test.mjs tests/fiscal_legal_source_draft_v751.test.mjs tests/fiscal_rule_snapshot_integrity_v751.test.mjs tests/fiscal_rule_snapshot_integrity_contract_v751.test.mjs tests/fiscal_rule_governance_policy_v751.test.mjs
+      - run: node --experimental-strip-types --test tests/fiscal_authority_v561_contract.test.mjs tests/fiscal_single_source_v629_contract.test.mjs tests/fiscal_legal_source_draft_v751.test.mjs tests/fiscal_rule_snapshot_integrity_v751.test.mjs tests/fiscal_rule_snapshot_integrity_contract_v751.test.mjs tests/fiscal_rule_governance_policy_v751.test.mjs tests/taxpayer_profile_activation_v774.test.mjs tests/ve_tax_posting_plan_v775_v776.test.mjs
 
   postgres-real:
     name: PostgreSQL real · concurrency and close boundaries
