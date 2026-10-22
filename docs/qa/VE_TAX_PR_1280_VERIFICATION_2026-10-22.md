@@ -42,3 +42,51 @@ node --experimental-strip-types --test tests/ve_fiscal_recorded_money_v782.test.
 ```
 
 No bypasses, `skip`, `only`, forced merges or disabled workflows were introduced.
+
+
+## Iteration 2 — source authority, live GL links, compliance transition and payroll net hardening
+
+### Implemented in this exact PR branch
+
+1. **#751 prerequisite + #778/#780/#781:** new `fiscal-rule-authority-policy.ts`. `POST /fiscal/rules` accepts `legalSourceId` instead of caller-provided `source`. Within a transaction `createFiscalRuleVersion` requires a same-tenant `REVIEWED` source, independently reviewed. It embeds legal-source UUID/hash/reference/reviewer/time in the version definition; `resolveFiscalRules` rechecks source membership and rejects unproven historical rule versions on future document issues. No automatic rule seed or rate activated.
+2. **#782:** `fiscal-ledger-coverage.ts`, extended `fiscal-book-readiness.ts` and related Prisma read route. Sales/purchases read the **actual existing ledger entries and lines**, with nested fan-out cap, tenant-isolated GL and reversal link verification. Exact VES/USD balances are kept separate with `BigInt`, unposted/imbalanced/reversed/wrong-period/unlinked GL adds blockers and changes evidence SHA. No book is certified without fiscal provenance.
+3. **#783:** new `fiscal-compliance-workflow-policy.ts` and `fiscal-compliance-workflow.routes.ts`, mounted before read-only diagnostics to prevent accidental double RBAC. Authenticated `fiscal.close` + `Idempotency-Key` on **POST** `/fiscal/compliance/declarations/:id/transition`; `fiscal.read` on **GET** readiness. States: `draft → reviewed → filed_externally → paid → reconciled`, respectively actions `REVIEW`, `RECORD_EXTERNAL_FILING`, `LINK_BANK_PAYMENT`, `CONFIRM_RECONCILIATION`. Audit and transition in one transaction. Source review, immutable server-derived money, tenant/period locking, receipt reference and bank movement duplication, existing matched VES bank movement linked to posted balanced unreversed GL and tenant-mapped semantic `tax_payable`/`bank` accounts enforced. Each replay retains stored response; no public filing integration exists. Filing is a **user-attested external record**, not SENIAT-verifiable proof. Readiness only projects operator-recorded flags, still `safeToFileOrPay: false`.
+4. **#781:** `payroll-receipt-arithmetic.ts` integrated with existing receipt creation, exact-decimal `gross = deductions + net`. Employer contributions do not subtract from worker net. No speculative FAOV/IVSS/INCES rates or double payroll engine.
+
+### Executed local QA (22 October 2026)
+
+Environment: Node **22.16.0**, TypeScript **5.8.3**. **Network isolation:** no clone, workspace install, PostgreSQL binary or running server; never claim monorepo E2E or DB17 pass.
+
+- Verified Git blob **`f334b363`** of `fiscal-rule-authority-policy.ts` before regression, found a REAL `tsc --strict` narrowing error. Fixed and published corrected Git blob **`41fa1f31165d843f1d180f940824066b363d50c2`**, byte-identical to tested sandbox file.
+- Verified Git blob **`116330c1f8a395e664c819f0d3dee50d87028ff0`** of `fiscal-compliance-workflow-policy.ts`.
+- **7/7 PASS** locally in isolated Node (4 provenance security + 3 manual filing/payment transition tests), after reproducing exact source blobs.
+- Verified Git blob **`03c33895d07c7488e2270caee730c0c169427c5a`** of `fiscal-recorded-money.ts` and **`63608235b845446365a7598edae9e49fd3960328`** of `fiscal-ledger-coverage.ts`.
+- **7/7 PASS** locally in isolated Node (exact balanced GL, hash independent from line order, cross-tenant, duplicate, wrong period/unposted/reverse, multi-currency and invalid amount).
+- **`tsc --noEmit --strict` PASS on four exact new source policy/ledger files**, with small **test-only** declarations of missing `Buffer` and `node:crypto`; this is not workspace typecheck.
+- Review uncovered and fixed accidental middleware collision: compliance writes are no longer forced through the read permission and GET never passes through write permission.
+- GitHub tests added for source authority, GL book and compliance workflow; their exact repository runner result must be checked per candidate SHA. Committed tests should **not** be reported as passing in full monorepo until executed there.
+
+### Remaining DoD gaps — DO NOT MERGE ON THIS EVIDENCE
+
+- Full repo `npm ci`, typecheck, lint, builds, API integration, PG17 from-zero/upgrade/RLS/tenant A/B, browser coverage: **NOT EXECUTED** in this environment.
+- `FiscalLegalSource` still captures operator-supplied **hash/metadata without verifying original source bytes against signed official document**; independent review does not guarantee legal rate correctness.
+- Taxpayer profile #774 still DRAFT; no safe canonical tenant applicability to tax events. **No actual automatic IGTF or municipal assessment/retention/payment accounting**; #778/#780 previews remain non-posting and cannot yet satisfy DoD.
+- Parafiscal FAOV/IVSS/INCES employer+worker posting/accrual, contribution caps, actual payroll derived rule snapshots and bank settlements missing; arithmetic guard alone is not #781 completion.
+- Fiscal books lack verified commercial-to-FiscalDocumentRuleSnapshot FK and legally classified multi-aliquot lines/notes/corrections, frozen certified close/export and tax-subledger reconciliation; #782 remains BLOCKED despite actual GL evidence.
+- Compliance remains partially integrated: manual receipt hash is not a stored verified document, external authority filing status is unverified; no comprehensive calendar/due date/outbox, no continuous read-time revalidation of bank/GL after reversal. #783 remains PARTIAL.
+- Upstream #751/#774/#785 and reconciliation #643 need end-to-end acceptance. No changes to workflow gates, no forced merge, no ticket closed.
+
+### Manual workflow contract (requires reviewed tenant source and posted matched VES bank GL)
+
+```text
+POST /fiscal/compliance/declarations/:id/transition
+Authorization: active tenant/session + fiscal.close
+Idempotency-Key: unique ASCII key >=8 characters
+Body #1: {"action":"REVIEW","legalSourceId":"<reviewed-source-uuid>","reason":"Reviewed manual declaration against retained legal source"}
+Body #2: {"action":"RECORD_EXTERNAL_FILING","authority":"SENIAT","receiptReference":"<actual-external-reference>","receiptSha256":"<64-hex>","filedAt":"2026-10-22T12:00:00.000Z"}
+Body #3: {"action":"LINK_BANK_PAYMENT","bankMovementId":"<matched-bank-movement-uuid>"}
+Body #4: {"action":"CONFIRM_RECONCILIATION"}
+```
+
+Each step is a new idempotent request after the preceding committed state. The source, receipt, GL and bank movement references in this example are **placeholders**, not actual filings or proof that taxes were paid.
+
