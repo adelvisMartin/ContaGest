@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { summarizeRecordedMoney, parseRecordedMinor } from './fiscal-recorded-money.js';
+import { buildFiscalLedgerCoverage, type FiscalLedgerSource } from './fiscal-ledger-coverage.js';
 
 // #782: diagnostic of real commercial-document coverage, NOT a tax book.
 // FiscalDocument has no verified FK to SalesInvoice/PurchaseInvoice in this schema.
@@ -9,6 +10,7 @@ export type FiscalSourceRow = Readonly<{
   status: string; issueDate: string;
   recordedFacts?: Readonly<{ currency: string; controlNo: string | null; counterpartyId: string | null;
     subtotalExact: string; ivaExact: string; igtfExact: string; retentionExact: string; totalExact: string }>;
+  recordedLedger?: readonly FiscalLedgerSource[];
 }>;
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
 const SHA_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -42,7 +44,8 @@ export function buildFiscalBookReadiness(input: Readonly<{
         try { parseRecordedMinor(v); return true; } catch { return false; }
       })
     )) blocked();
-    const reasons = ['UNLINKED_FISCAL_PROVENANCE'];
+    const ledger = buildFiscalLedgerCoverage(input.tenantId, input.fiscalPeriod, row.recordedLedger ?? []);
+    const reasons = ['UNLINKED_FISCAL_PROVENANCE', ...ledger.blockers];
     if (!f) reasons.push('RECORDED_FINANCIAL_FACTS_NOT_CAPTURED');
     if (row.status === 'draft') reasons.push('DRAFT_SOURCE');
     if (row.status === 'cancelled') reasons.push('CANCELLATION_RECONCILIATION_REQUIRED');
@@ -50,6 +53,7 @@ export function buildFiscalBookReadiness(input: Readonly<{
     return Object.freeze({ sourceId: row.id, number: row.number,
       issueDate: row.issueDate, sourceStatus: row.status,
       recordedFacts: f ? Object.freeze({ ...f }) : null,
+      ledger,
       blockers: Object.freeze(reasons) });
   }).sort((a, b) => a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0);
   // Report recorded amounts only; never treat invoice sums as certified fiscal liability.
