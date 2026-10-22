@@ -17,12 +17,12 @@ test('#751 PostgreSQL17 review requires a second authorized actor and preserves 
   t.after(async () => { await h.prisma.userProfile.delete({ where: { id: reviewer.id } }); });
   const adminRoles = await h.prisma.userRole.findMany({ where: { userId: h.admin.id }, select: { roleId: true } });
   await h.prisma.userRole.createMany({ data: adminRoles.map(({ roleId }) => ({ userId: reviewer.id, roleId })) });
-  const reviewerToken = await h.issueQaToken(reviewer);
+  const reviewerToken = await h.issueSessionTokenFor(reviewer);
   const unprivileged = await h.prisma.userProfile.create({ data: {
     tenantId: h.tenant.id, email: `qa751-denied-${suffix}@example.invalid`, fullName: 'QA fiscal read-only denial'
   } });
   t.after(async () => { await h.prisma.userProfile.delete({ where: { id: unprivileged.id } }); });
-  const unprivilegedToken = await h.issueQaToken(unprivileged);
+  const unprivilegedToken = await h.issueSessionTokenFor(unprivileged);
 
   const unboundToken = signAccessToken({ id: h.admin.id, email: h.admin.email }, h.tenant.id);
   await h.status('/fiscal/legal-sources', 401, {}, unboundToken);
