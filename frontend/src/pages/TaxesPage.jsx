@@ -63,7 +63,7 @@ function TaxesWorkspace({state,context}){
     }finally{setLoading(false);}
   }
 
-  useEffect(()=>{if(!state.fiscalGovernance?.loaded||state.fiscalDocuments===undefined)void loadFiscal({silent:true});},[]);
+  useEffect(()=>{void loadFiscal({silent:true});},[]);
 
   async function loadProfiles(){
     setProfilesLoading(true);setProfilesError('');
