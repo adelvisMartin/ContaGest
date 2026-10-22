@@ -23,9 +23,10 @@ function actor(ctx:CatalogActor){
 function denied(code:string,reason:string,status=409):never{
   throw new HttpError(status,reason,{code});
 }
-async function audit(tx:Prisma.TransactionClient,ctx:CatalogActor,action:string,entityId:string,after:Record<string,unknown>){
+async function audit(tx:Prisma.TransactionClient,ctx:CatalogActor,action:string,entityId:string,
+  after:Record<string,unknown>,entity:'ServiceDefinition'|'ServiceCatalogCategory'='ServiceDefinition'){
   await tx.auditLog.create({data:{
-    tenantId:ctx.tenantId,userId:actor(ctx),action,entity:'ServiceDefinition',entityId,
+    tenantId:ctx.tenantId,userId:actor(ctx),action,entity,entityId,
     after,ipAddress:ctx.ip||null,userAgent:ctx.userAgent||null
   }});
 }
@@ -56,13 +57,24 @@ async function snapshotRevision(tx:Prisma.TransactionClient,ctx:CatalogActor,
  service:{id:string;tenantId:string;version:number;name:string;description:string|null;
   categoryId:string|null;productId:string|null;modality:string;durationMinutes:number;
   status:string;visibility:string}){
-  const steps=await tx.serviceStep.findMany({
-    where:{tenantId:ctx.tenantId,serviceId:service.id},orderBy:{position:'asc'},
-    select:{id:true,position:true,label:true,durationMinutes:true,gapAfterMinutes:true}
-  });
+  const [steps,staff,locations]=await Promise.all([
+    tx.serviceStep.findMany({
+      where:{tenantId:ctx.tenantId,serviceId:service.id},orderBy:{position:'asc'},
+      select:{id:true,position:true,label:true,durationMinutes:true,gapAfterMinutes:true}
+    }),
+    tx.serviceStaffCapability.findMany({
+      where:{tenantId:ctx.tenantId,serviceId:service.id},
+      select:{employeeId:true},orderBy:{employeeId:'asc'}
+    }),
+    tx.serviceLocationEligibility.findMany({
+      where:{tenantId:ctx.tenantId,serviceId:service.id},
+      select:{locationId:true},orderBy:{locationId:'asc'}
+    })
+  ]);
   const snapshot={name:service.name,description:service.description,categoryId:service.categoryId,
     productId:service.productId,modality:service.modality,durationMinutes:service.durationMinutes,
-    status:service.status,visibility:service.visibility,steps};
+    status:service.status,visibility:service.visibility,steps,
+    staff:staff.map(item=>item.employeeId),locations:locations.map(item=>item.locationId)};
   await tx.serviceDefinitionRevision.create({data:{
     tenantId:ctx.tenantId,serviceId:service.id,version:service.version,
     snapshot,createdBy:actor(ctx)
@@ -78,7 +90,7 @@ export async function createServiceCategory(ctx:CatalogActor,input:{
         id,tenantId:ctx.tenantId,slug:input.slug,name:input.name,
         displayOrder:input.displayOrder
       }});
-      await audit(tx,ctx,'service-category.created',id,{slug:row.slug});
+      await audit(tx,ctx,'service-category.created',id,{slug:row.slug},'ServiceCatalogCategory');
       return row;
     }catch(e:any){
       if(e?.code==='P2002')denied('CATEGORY_SLUG_CONFLICT','La categoría ya existe.',409);
@@ -138,7 +150,10 @@ export async function assignServiceStaff(ctx:CatalogActor,serviceId:string,
     await lockService(tx,ctx.tenantId,serviceId);
     const service=await ownedService(tx,ctx.tenantId,serviceId);
     if(service.status==='archived')denied('SERVICE_ARCHIVED','Servicio archivado.');
-    const employee=await tx.employee.findFirst({where:{tenantId:ctx.tenantId,id:employeeId,active:true},select:{id:true}});
+    const employee=await tx.employee.findFirst({
+      where:{tenantId:ctx.tenantId,id:employeeId,...(enabled?{active:true}:{})},
+      select:{id:true}
+    });
     if(!employee)denied('SERVICE_STAFF_NOT_FOUND','Profesional no disponible en la empresa.',422);
     const exists=await tx.serviceStaffCapability.findFirst({where:{tenantId:ctx.tenantId,serviceId,employeeId},select:{id:true}});
     if(enabled&&!exists){
@@ -148,8 +163,15 @@ export async function assignServiceStaff(ctx:CatalogActor,serviceId:string,
     }else if(!enabled&&exists){
       await tx.serviceStaffCapability.deleteMany({where:{tenantId:ctx.tenantId,serviceId,employeeId}});
     }
-    if(Boolean(exists)!==enabled)
-      await audit(tx,ctx,'service.staff-assignment',serviceId,{employeeId,enabled});
+    if(Boolean(exists)!==enabled){
+      const updated=await tx.serviceDefinition.update({
+        where:{tenantId:ctx.tenantId,id:serviceId},
+        data:{version:{increment:1},updatedBy:actor(ctx)}
+      });
+      await snapshotRevision(tx,ctx,updated);
+      await audit(tx,ctx,'service.staff-assignment',serviceId,
+        {employeeId,enabled,version:updated.version});
+    }
     return {serviceId,employeeId,enabled,changed:Boolean(exists)!==enabled};
   });
 }
@@ -159,7 +181,10 @@ export async function assignServiceLocation(ctx:CatalogActor,serviceId:string,
     await lockService(tx,ctx.tenantId,serviceId);
     const service=await ownedService(tx,ctx.tenantId,serviceId);
     if(service.status==='archived')denied('SERVICE_ARCHIVED','Servicio archivado.');
-    const location=await tx.businessLocation.findFirst({where:{tenantId:ctx.tenantId,id:locationId,status:'active'},select:{id:true}});
+    const location=await tx.businessLocation.findFirst({
+      where:{tenantId:ctx.tenantId,id:locationId,...(enabled?{status:'active'}:{})},
+      select:{id:true}
+    });
     if(!location)denied('SERVICE_LOCATION_NOT_FOUND','Sede no disponible en la empresa.',422);
     const exists=await tx.serviceLocationEligibility.findFirst({where:{tenantId:ctx.tenantId,serviceId,locationId},select:{id:true}});
     if(enabled&&!exists){
@@ -169,8 +194,15 @@ export async function assignServiceLocation(ctx:CatalogActor,serviceId:string,
     }else if(!enabled&&exists){
       await tx.serviceLocationEligibility.deleteMany({where:{tenantId:ctx.tenantId,serviceId,locationId}});
     }
-    if(Boolean(exists)!==enabled)
-      await audit(tx,ctx,'service.location-assignment',serviceId,{locationId,enabled});
+    if(Boolean(exists)!==enabled){
+      const updated=await tx.serviceDefinition.update({
+        where:{tenantId:ctx.tenantId,id:serviceId},
+        data:{version:{increment:1},updatedBy:actor(ctx)}
+      });
+      await snapshotRevision(tx,ctx,updated);
+      await audit(tx,ctx,'service.location-assignment',serviceId,
+        {locationId,enabled,version:updated.version});
+    }
     return {serviceId,locationId,enabled,changed:Boolean(exists)!==enabled};
   });
 }

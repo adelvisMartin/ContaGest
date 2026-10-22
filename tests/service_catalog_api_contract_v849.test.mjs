@@ -30,3 +30,14 @@ test('#849 categories, services and staff/location use server scoped relation re
     assert.ok(routes.includes(path),'missing endpoint '+path);
   }
 });
+
+test('#849 changed staff/location assignment increments service version and immutable snapshot',()=>{
+  const staff=service.split('export async function assignServiceStaff(')[1].split('export async function assignServiceLocation(')[0];
+  const place=service.split('export async function assignServiceLocation(')[1].split('export async function setServiceStatus(')[0];
+  for(const body of [staff,place]){
+    assert.match(body,/data:\{version:\{increment:1\},updatedBy:actor\(ctx\)\}/);
+    assert.match(body,/await snapshotRevision\(tx,ctx,updated\)/);
+    assert.match(body,/if\(Boolean\(exists\)!==enabled\)/);
+  }
+  assert.match(service,/staff:staff\.map\(item=>item\.employeeId\),locations:locations\.map\(item=>item\.locationId\)/);
+});
