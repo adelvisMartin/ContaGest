@@ -30,3 +30,11 @@ export function assertExternalFiscalRecordAllowed(input: FiscalDocumentRequest):
     denied('FISCAL_EXTERNAL_DOCUMENT_DENIED');
   }
 }
+
+/** A fiscal rule snapshot is NOT a withholding certificate, statutory return or
+ * adjustment to an original invoice. Until those lifecycles exist, fail closed. */
+export function assertReviewedIssueKindSupported(kind: string): void {
+  if (!['invoice','supporting_document','other'].includes(kind)) {
+    denied('FISCAL_CERTIFICATE_WORKFLOW_NOT_READY');
+  }
+}
