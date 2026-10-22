@@ -92,7 +92,9 @@ test('typed receipt recovery has no database writes and is gated after backend e
   const route=readFileSync(new URL('./hipico-bridge.routes.ts',import.meta.url),'utf8');
   const store=readFileSync(new URL('./hipico-handoff.store.ts',import.meta.url),'utf8');
   const start=route.indexOf("if(input.channelRole==='lab'&&!event.inserted&&!input.historySync)");
-  const end=route.indexOf('const autoReplyConfigured=sourceAutoReplyEnabled();',start);
+  // Keep the LAB immutable receipt boundary isolated from SOURCE auto-send.
+  // The server now enforces a reviewed NO_GO gate rather than a bare flag.
+  const end=route.indexOf('const autoReplyConfigured=sourceAutoReplySendAuthorized();',start);
   assert.ok(start>0&&end>start);
   const block=route.slice(start,end);
   assert.match(block,/readResponseReceiptForRecovery\(/);
