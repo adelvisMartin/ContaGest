@@ -7,7 +7,7 @@ import { canonicalRequestHash, normalizeIdempotencyKey } from '../../shared/serv
 import { createLedgerEntry, postLedgerEntry, reverseLedgerEntry } from '../accounting/accounting.service.js';
 import { claimApproval, finishApprovalClaim, releaseApprovalClaim } from '../approvals/approvals.service.js';
 import { parseBankStatement, statementLineHash, statementSourceHash } from './statement-parser.js';
-import { statementImportLineHash } from './statement-line-identity.js';
+import { assertBankLineReplayIdentity, statementImportLineHash } from './statement-line-identity.js';
 import { evaluateBankClosingReadiness } from './bank-closing-readiness.mjs';
 import { projectBankReconciliationExceptions } from './bank-exception-window.js';
 
@@ -193,8 +193,12 @@ export async function importBankStatement(input:{tenantId:string;userId?:string;
           WHERE "tenantId"=${input.tenantId} AND "accountId"=${input.accountId} ${identityFilter}
           LIMIT 1
         `);
-        if (!existing[0] || existing[0].lineHash !== lineHash ||
-            existing[0].bankLineId !== line.bankLineId) {
+        try {
+          assertBankLineReplayIdentity(existing[0] ?? null, {
+            lineHash,
+            bankLineId:line.bankLineId
+          });
+        } catch {
           throw new HttpError(409,'Una línea bancaria con identidad existente cambió sus datos.',{
             code:'BANK_STATEMENT_IDENTITY_CONFLICT'
           });
