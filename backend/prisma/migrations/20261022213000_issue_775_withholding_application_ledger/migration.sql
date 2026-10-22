@@ -112,3 +112,17 @@ END $$;
 CREATE TRIGGER contagest_775_guard_withholding_application
   BEFORE INSERT OR UPDATE OR DELETE ON public."FiscalWithholdingApplication"
   FOR EACH ROW EXECUTE FUNCTION public.contagest_775_guard_withholding_application();
+
+-- Least privilege: access to fiscal documents does not imply authority to post
+-- a tax liability or unwind a posted ledger entry.
+INSERT INTO public."Permission" ("id","key","description") VALUES
+  ('77500000-0000-4000-8000-000000000001','fiscal.post_withholding',
+   'Contabilizar aplicación de retención interna IVA sobre compras revisadas'),
+  ('77500000-0000-4000-8000-000000000002','fiscal.reverse_withholding',
+   'Reversar aplicación interna de retención IVA con auditoría contable')
+ON CONFLICT ("key") DO NOTHING;
+INSERT INTO public."RolePermission" ("roleId","permissionId")
+SELECT r."id",p."id" FROM public."Role" r JOIN public."Permission" p
+ ON p."key" IN ('fiscal.post_withholding','fiscal.reverse_withholding')
+WHERE r."system"=true AND r."name"='Administrador Global'
+ON CONFLICT ("roleId","permissionId") DO NOTHING;
