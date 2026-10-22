@@ -503,7 +503,7 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
 
   // Product catalog and optional observed sales share one PG snapshot.
   // Across separate offset pages there is NO durable snapshot.
-  const { activeProducts, scan, salesGroups } = await prisma.$transaction(async tx => {
+  const { activeProducts, scan, salesGroups, policyRows } = await prisma.$transaction(async tx => {
     const [activeProducts, products] = await Promise.all([
       tx.product.count({ where: { tenantId: ctx.tenantId, active: true } }),
       tx.product.findMany({
@@ -522,6 +522,11 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
         take
       })
     ]);
+    const policyRows = products.length
+      ? await tx.inventoryReorderPolicy.findMany({
+          where: { tenantId: ctx.tenantId, enabled: true, productId: { in: products.map(p=>p.id) } }
+        })
+      : [];
     // Validate and segregate ALL canonical page balances first, while still
     // inside the same snapshot and BEFORE even an optional sales aggregation.
     // A malformed page must fail as 409, never escape as an unhandled TypeError.
@@ -558,13 +563,50 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
           orderBy: { productId: 'asc' }
         })
       : [];
-    return { activeProducts, scan, salesGroups };
+    return { activeProducts, scan, salesGroups, policyRows };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 
   // The validated page and commercial aggregate came from ONE snapshot.
   // Invalid balances remain in the original rows/summary, not candidates.
   const { rows, stockReview, reorderCandidates } = scan;
   const filteredRows = onlyNeedsReorder ? rows.filter(row => row.needsReorder) : rows;
+  // Stored policies and Product balances came from the same repeatable-read snapshot.
+  // These do NOT redefine the legacy minStock report or authorize purchasing.
+  const safeRows = new Map(stockReview.eligibleRows.map(row => [row.productId, row]));
+  const persistedPolicyCandidates: Array<{
+    productId:string;revision:number;suggestedReviewQuantityExact:string;
+    availableExact:string;reorderPointExact:string;targetStockExact:string;
+    manualApprovalRequired:true;autoPurchaseEnabled:false
+  }> = [];
+  const persistedPolicyExceptions: Array<{productId:string;code:string}> = [];
+  for (const policy of policyRows) {
+    const row = safeRows.get(policy.productId);
+    if (!row) {
+      persistedPolicyExceptions.push({productId:policy.productId,code:'POLICY_STOCK_NOT_RECONCILABLE'});
+      continue;
+    }
+    try {
+      const review = previewReorderPolicy({
+        stockExact:row.stockExact,reservedExact:row.reservedExact,
+        canonicalMinStockExact:row.minStockExact,
+        reorderPointExact:policy.reorderPoint,targetStockExact:policy.targetStock,
+        safetyStockExact:policy.safetyStock,orderMultipleExact:policy.orderMultiple,
+        leadTimeDays:String(policy.leadTimeDays)
+      });
+      if (review.triggered) persistedPolicyCandidates.push({
+        productId:policy.productId,revision:policy.revision,
+        suggestedReviewQuantityExact:review.suggestedReviewQuantityExact,
+        availableExact:review.availableExact,
+        reorderPointExact:review.assumedPolicy.reorderPointExact,
+        targetStockExact:review.assumedPolicy.targetStockExact,
+        manualApprovalRequired:true,autoPurchaseEnabled:false
+      });
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
+      persistedPolicyExceptions.push({productId:policy.productId,code:'POLICY_ASSUMPTIONS_INVALID'});
+    }
+  }
+  persistedPolicyCandidates.sort((a,b)=>a.productId.localeCompare(b.productId));
   const pagination = (() => {
     try {
       return reorderScanPageMeta({
@@ -618,6 +660,10 @@ router.get('/inventory/reorder', asyncHandler(async (req, res) => {
       autoPurchaseEnabled: false,
       noLocationForecastUntil: '#755',
       reorderCandidates,
+      persistedPolicyCandidates,
+      persistedPolicyExceptions,
+      persistedPolicyScope:'ACTIVE_CATALOG_PAGE_ONLY',
+      persistedPolicyAuthority:'InventoryReorderPolicy plus Product.stock/reserved',
       stockExceptions: stockReview.stockExceptions,
       stockExceptionCount: stockReview.stockExceptions.length,
       exceptionsScope: 'SCANNED_CATALOG_PAGE_ONLY',
