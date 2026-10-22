@@ -66,3 +66,9 @@ test('#852 consume prevents booking cancel/allocation release races with SQL row
   assert.ok(consume.indexOf('const bookingLocks=')<consume.indexOf('const existing=await tx.entitlementLedgerEvent.findFirst'));
   assert.ok(consume.indexOf('const allocationLocks=')<consume.indexOf('const existing=await tx.entitlementLedgerEvent.findFirst'));
 });
+
+test('#852 effect replay also preserves original courtesy reason',()=>{
+  const grant=svc.split('export async function grantCustomerRight(')[1].split('export async function readCustomerRights')[0];
+  assert.match(grant,/tx\.entitlementLedgerEvent\.findFirst\(/);
+  assert.match(grant,/const identical=first\?\.reason===input\.reason/);
+});

@@ -77,7 +77,12 @@ export async function grantCustomerRight(ctx:CustomerRightActor,input:ManualGran
       where:{tenantId:ctx.tenantId,sourceType:'manual',sourceId:input.effectKey}
     });
     if(prior){
-      const identical=prior.beneficiaryId===input.beneficiaryId&&prior.benefitId===input.benefitId
+      const first=await tx.entitlementLedgerEvent.findFirst({
+        where:{tenantId:ctx.tenantId,entitlementId:prior.id,sequence:1,type:'GRANT'},
+        select:{reason:true}
+      });
+      const identical=first?.reason===input.reason&&
+        prior.beneficiaryId===input.beneficiaryId&&prior.benefitId===input.benefitId
         &&prior.validFrom.getTime()===input.validFrom.getTime()
         &&prior.validUntil.getTime()===input.validUntil.getTime()
         &&prior.locationId===(input.locationId||null);

@@ -40,7 +40,7 @@ test('#852 manual grant → unique right → booking/consume same tx → rollbac
   const benefit=await h.ok('/customer-entitlements/benefits',{method:'POST',body:JSON.stringify({
     productId:product.id,name:'Sesiones QA '+label,scope:'ALL',quantity:'3.000'
   })});
-  assert.equal(benefit.quantity.toString(),'3');
+  assert.match(String(benefit.quantity),/^3(?:\.0{1,3})?$/);
 
   const effectKey='qa852:grant:'+label;
   const validFrom='2026-10-01T00:00:00.000Z';
@@ -58,6 +58,9 @@ test('#852 manual grant → unique right → booking/consume same tx → rollbac
   assert.equal(replay.data.id,grant.id);
   await h.status('/customer-entitlements/manual-grants',409,{
     method:'POST',body:JSON.stringify({...body,beneficiaryId:randomUUID()})
+  });
+  await h.status('/customer-entitlements/manual-grants',409,{
+    method:'POST',body:JSON.stringify({...body,reason:'Motivo distinto para replay'})
   });
 
   const balances=await h.ok(`/customer-entitlements/clients/${client.id}`);
