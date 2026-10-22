@@ -47,6 +47,7 @@ import dataLifecycleRoutes from './data-lifecycle/data-lifecycle.routes.js';
 import documentSequenceRoutes from './document-sequences/document-sequences.routes.js';
 import businessLocationRoutes from './business-locations/business-locations.routes.js';
 import priceBookRoutes from './pricing/price-books.routes.js';
+import serviceCatalogRoutes from './service-catalog/service-catalog.routes.js';
 import crmClientPreflightRoutes from './crm/crm.routes.js';
 
 const clientRouter = createCrudRouter({ model:'client', entity:'client', permission:'clients.manage', schema:clientSchema });
@@ -66,6 +67,7 @@ export const MODULE_ROUTE_MANIFEST: readonly RouteManifestEntry[] = Object.freez
   { id: 'document-sequences', domain: 'platform', path: '/document-sequences', router: documentSequenceRoutes },
   { id: 'business-locations', domain: 'operations', path: '/business-locations', router: businessLocationRoutes },
   { id: 'price-books', domain: 'commercial', path: '/price-books', router: priceBookRoutes },
+  { id: 'service-catalog', domain: 'commercial', path: '/service-catalog', router: serviceCatalogRoutes },
   { id: 'clients', domain: 'commercial', path: '/clients', router: clientRouter },
   { id: 'suppliers', domain: 'commercial', path: '/suppliers', router: createCrudRouter({ model:'supplier', entity:'supplier', permission:'purchases.manage', schema:supplierSchema }) },
   { id: 'products', domain: 'operations', path: '/products', router: createCrudRouter({ model:'product', entity:'product', permission:'inventory.manage', schema:productSchema }) },
