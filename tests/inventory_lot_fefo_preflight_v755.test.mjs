@@ -27,3 +27,15 @@ test('FEFO empty allocations remain immutable without minting stock',()=>{
   assert.equal(result.allocatedExact,'0');
   assert.equal(result.backorderExact,'5');
 });
+
+// Historical as-of FEFO eligibility must ignore future-day lot receipts.
+test('#755 ignores future-day lot receipts without inventing stock',()=>{
+ const future=lot('future','5','2026-11-01','2026-10-17T00:00:00.000Z');
+ const onDay=lot('today','3','2026-11-01','2026-10-16T23:59:59.999Z');
+ const earlier=lot('old','4','2026-11-01','2026-10-15T00:00:00.000Z');
+ const result=plan({...base,lots:[future,onDay,earlier]});
+ assert.deepEqual(result.lots,[{lotId:'old',quantityExact:'4'},{lotId:'today',quantityExact:'1'}]);
+ assert.equal(result.allocatedExact,'5');assert.equal(result.stockMovementAuthorized,false);
+ const onlyFuture=plan({...base,lots:[future]});
+ assert.equal(onlyFuture.allocatedExact,'0');assert.equal(onlyFuture.backorderExact,'5');
+});
