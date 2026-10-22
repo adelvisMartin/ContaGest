@@ -391,15 +391,57 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
 router.post('/documents', requirePermission('fiscal.manage_documents'), validateBody(fiscalSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   assertPayloadSize(req.body.payload);
-  const period = await prisma.closingPeriod.findFirst({ where: { tenantId: ctx.tenantId, period: req.body.period, module: { in: req.body.module === 'fiscal' ? ['fiscal'] : [req.body.module, 'fiscal'] }, status: 'closed' } });
-  if (period) throw new HttpError(409, `El período ${req.body.period} está cerrado para ${period.module}.`, { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: period.module });
-  const existing = await prisma.fiscalDocument.findUnique({ where: { tenantId_kind_number: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number } } });
-  if (existing) throw new HttpError(409, 'Documento fiscal duplicado.', { code: 'FISCAL_DOCUMENT_DUPLICATE' });
-  const controlledPayload = { ...req.body.payload, _fiscalModule: req.body.module, _numberingAuthority: 'external/manual' };
-  const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number, period: req.body.period, module: req.body.module, payload: controlledPayload });
-  const record = await prisma.fiscalDocument.create({ data: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number, period: req.body.period, status: 'issued', payload: controlledPayload, hash } });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.document.created.external', entity: 'FiscalDocument', entityId: record.id, after: { id: record.id, kind: record.kind, number: record.number, period: record.period, module: req.body.module, status: record.status, hash: record.hash }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  res.status(201).json({ ok: true, data: { ...record, module: req.body.module } });
+  const key = normalizeIdempotencyKey(req.header('Idempotency-Key'));
+  if (!key) throw new HttpError(428, 'Idempotency-Key obligatorio para registrar documentos fiscales externos.', {
+    code: 'FISCAL_IDEMPOTENCY_REQUIRED',
+  });
+  // External/manual references are provenance UNVERIFIED and never grant an
+  // authoritative FiscalDocumentRuleSnapshot or a certified tax/book status.
+  let execution;
+  try {
+    execution = await runFinancialIdempotentMutation({
+      tenantId: ctx.tenantId, scope: 'fiscal.document.register_external',
+      key, request: req.body, requestId: ctx.requestId || null,
+    }, async tx => {
+      await lockFiscalPeriodMutation(tx, ctx.tenantId, req.body.period);
+      const closed = await tx.closingPeriod.findFirst({
+        where: { tenantId: ctx.tenantId, period: req.body.period,
+          module: { in: req.body.module === 'fiscal' ? ['fiscal'] : [req.body.module, 'fiscal'] },
+          status: 'closed' },
+      });
+      if (closed) throw new HttpError(409, 'El período está cerrado para nuevos documentos fiscales.', {
+        code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: closed.module,
+      });
+      const existing = await tx.fiscalDocument.findUnique({
+        where: { tenantId_kind_number: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number } },
+      });
+      if (existing) throw new HttpError(409, 'Documento fiscal duplicado.', { code: 'FISCAL_DOCUMENT_DUPLICATE' });
+      const controlledPayload = { ...req.body.payload, _fiscalModule: req.body.module,
+        _numberingAuthority: 'external/manual', _legalProvenance: 'UNVERIFIED_EXTERNAL' };
+      const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind,
+        number: req.body.number, period: req.body.period, module: req.body.module, payload: controlledPayload });
+      const record = await tx.fiscalDocument.create({
+        data: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number,
+          period: req.body.period, status: 'external_unverified', payload: controlledPayload, hash },
+      });
+      await tx.auditLog.create({ data: {
+        tenantId: ctx.tenantId, userId: ctx.userId || null,
+        action: 'fiscal.document.created.external_unverified',
+        entity: 'FiscalDocument', entityId: record.id,
+        after: { id: record.id, kind: record.kind, number: record.number, period: record.period,
+          status: record.status, hash: record.hash, legalProvenance: 'UNVERIFIED_EXTERNAL' },
+        ipAddress: ctx.ip || null, userAgent: ctx.userAgent || null,
+      } });
+      return { data: { ...record, module: req.body.module, legalProvenance: 'UNVERIFIED_EXTERNAL' },
+        responseCode: 201, resourceType: 'FiscalDocument', resourceId: record.id };
+    });
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002')
+      throw new HttpError(409, 'Documento fiscal duplicado.', { code: 'FISCAL_DOCUMENT_DUPLICATE' });
+    throw error;
+  }
+  res.status(execution.responseCode).json({ ok: true, data: execution.data,
+    meta: { replayed: execution.replayed } });
 }));
 
 router.get('/documents', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
