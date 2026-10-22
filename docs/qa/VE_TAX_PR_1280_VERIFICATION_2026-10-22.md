@@ -90,3 +90,22 @@ Body #4: {"action":"CONFIRM_RECONCILIATION"}
 
 Each step is a new idempotent request after the preceding committed state. The source, receipt, GL and bank movement references in this example are **placeholders**, not actual filings or proof that taxes were paid.
 
+
+## Iteration 3 — real QA and rule/payroll/GL controls (22 October 2026)
+
+**Implementation in this iteration:**
+- #782 fixed **GL evidence substitution**: balancing alone did not detect posting to a different account. `fiscal-ledger-coverage.ts` now computes stable `ledgerLinesSha256` from sorted, normalized **account code + currency + debit/credit**; `sourceEvidenceHash` changes if account distribution changes, even when aggregate still balances. A swapped-line order does not change digest. Two regressions added.
+- #783 strengthened bank matching: `TaxDeclaration` payment transition obtains DB row-level locks on both existing tenant bank movement and linked ledger entry, then checks live `matched`, VES currency, exact amount, same fiscal period, unreversed status, `exchangeRate=1`, exactly **two** lines (Debit `tax_payable`, Credit `bank`) from tenant-specific semantic account mappings. Balanced but extraneous lines are rejected, and corrected/reversed banking audit links remain blocked. No bank balance or journal is auto-created.
+- #781 rewrote canonical receipt create/approve/delete to use `prisma.$transaction` + tenant-owned `PayrollPeriod FOR UPDATE`, with audited mutation and recalc in the **same transaction**. Concurrent duplicate employee receipts are checked *after* lock; mismatched `periodId/period` is rejected; status and deletes lock same period. Removed route request-context and monetary serialization `any`; strict Zod receipt payload and 32KiB details cap.
+- Fiscal rule defense: reverify the stored **canonical `FiscalRuleVersion.hash`** on every `resolveFiscalRules` before issuing new documents; changes to the tax formula cannot pass merely because legal-source references match. Fiscal document issuance requires `effectiveAt` UTC calendar month to match `period` exactly (new pure policy).
+- Reproducible QA command added to root `package.json`: `npm run test:ve-tax` (nine test files, using installed `tsx` from backend workspace). This runner was **registered but NOT executed** against a full repository checkout in this session; do not conflate it with local isolated runs.
+- Legal authority updated with Aug-2026 SENIAT SNAT/2026/00084 repeal and Sept-2026 social contribution secondary analysis. No new percentages/rates inserted.
+
+**Executed local tests (real, narrow):**
+- Node.js 22.16.0 `node --experimental-strip-types --test test.mjs ledger-test.mjs period-test.mjs` in a *standalone scratch fixture* containing reviewed source modules: **18/18 PASS**. These include ledger account-substitution and UTC effective-date boundaries.
+- Confirmed exact Git blob SHA match `fiscal-ledger-coverage.ts` **`4939bbee3b09c0cff87a0d83f2ccaf90cabe1435`** and `fiscal-effective-period-policy.ts` **`be6b20ec82dc2a9878ee6523b960534e3eeb3b99`** against the local modules; `fiscal-recorded-money.ts` stays at exact blob **`03c33895d07c7488e2270caee730c0c169427c5a`**.
+- `tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext` on **five pure policy/ledger modules**, using temporary `node:crypto` and `Buffer` declarations because the sandbox lacks the workspace dependencies: **PASS**. **Not equivalent** to the full backend typecheck or build.
+- New **source-contract** guard `tests/ve_payroll_atomicity_source_contract_781.test.mjs` not executed in the isolated fixture (it requires the actual source route file); scheduled for the registered repo QA script.
+- Local shell cannot resolve github.com; no full Git checkout, npm workspace install, PostgreSQL binary, driver or Chromium available. CI exact final HEAD is a separate evidence gate.
+
+**Required follow-up:** test actual PostgreSQL17 concurrency under two tenants, all workflow transitions with RBAC/revocation, actual double-entry/reversal/linking, 2026 legal rules and employer-worker contributions, distributed close/read race, fiscal-book certified exports and bank ledger reconciliation, full lint/typecheck/build and UI. The PR must stay **DRAFT** and issues **OPEN** until those are met. This is not a production release sign-off.
