@@ -18,7 +18,30 @@ function enabledFlag(value: unknown) {
 }
 
 export function sourceAutoReplyEnabled(env: RuntimeEnv = process.env) {
+  // Explicit feature request is NOT provider authorization. Used by the
+  // deterministic shadow engine, never as the network-send gate.
   return enabledFlag(env.HIPICO_SOURCE_AUTO_REPLY_ENABLED);
+}
+
+/**
+ * Consumer Messenger policy review #1011 (2026-10-15): automated SOURCE
+ * messaging is NOT authorized. This server-side gate intentionally remains
+ * independent of operator-set environment flags, bridge/runtime transport
+ * settings and the LLM's suggestion. An approved policy change requires a
+ * new reviewed release and explicit implementation, never only an env flag.
+ */
+export const SOURCE_REPLY_SEND_POLICY: Readonly<{
+  status: 'NO_GO' | 'GO';
+  reviewId: string;
+  reason: string;
+}> = Object.freeze({
+  status: 'NO_GO',
+  reviewId: 'WHATSAPP_MESSENGER_POLICY_2026-10-15',
+  reason: 'MESSENGER_AUTOMATED_MESSAGING_NOT_AUTHORIZED'
+});
+
+export function sourceAutoReplySendAuthorized(env: RuntimeEnv = process.env): boolean {
+  return sourceAutoReplyEnabled(env) && SOURCE_REPLY_SEND_POLICY.status === 'GO';
 }
 
 export function safeConversationalIntent(intent: string) {
