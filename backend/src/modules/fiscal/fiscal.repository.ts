@@ -56,6 +56,9 @@ export async function createFiscalRuleVersion(input: {
       FROM public."FiscalRuleVersion"
       WHERE "tenantId" = ${input.tenantId}
         AND "ruleKey" = ${input.ruleKey}
+        -- A staged replacement may overlap exactly its own predecessor.
+        -- Only ACTIVE candidates participate in productive rule resolution.
+        AND ("id" <> ${input.supersedesId || null}::uuid OR ${input.supersedesId || null}::uuid IS NULL)
         AND tstzrange("effectiveFrom", COALESCE("effectiveTo", 'infinity'::timestamptz), '[)')
             && tstzrange(${input.effectiveFrom}, COALESCE(${input.effectiveTo || null}::timestamptz, 'infinity'::timestamptz), '[)')
       LIMIT 1
