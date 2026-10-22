@@ -221,8 +221,13 @@ function requirePostingActor(value?: string) {
 
 export async function createLedgerEntry(
   input: { tenantId: string; fiscalPeriod: string; description: string; source?: any; sourceId?: string; lines: LedgerLineInput[] },
-  db: AccountingDb = prisma
+  db: AccountingDb
 ) {
+  // Do not let a caller bypass the advisory period lock by using a standalone
+  // Prisma client. The same transaction must own guard + inserted draft.
+  if (!db || db === prisma) {
+    throw new HttpError(500, 'El asiento requiere una transacción de dominio autorizada.');
+  }
   const normalizedLines = normalizeLedgerLines(input.lines);
   assertBalanced(normalizedLines);
   await assertPeriodOpen(input.tenantId, input.fiscalPeriod, db);

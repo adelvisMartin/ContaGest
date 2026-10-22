@@ -52,3 +52,7 @@ Funciones verificadas contra PostgreSQL upstream: `pg_advisory_xact_lock` conser
 ### Regla de seguridad del test PostgreSQL
 
 `qa/accounting-period-concurrency-v637.test.ts` exige nombre de base de datos acabado en `_v637`, `NODE_ENV !== production`, ausencia de `VERCEL/VERCEL_ENV` y flag `CG_ACCOUNTING_PERIOD_QA_ISOLATED=true`, antes de crear filas. Ejecuta el bloqueo en el contexto runtime tenant y la segunda sesión de prueba con una instancia Prisma independiente para no reutilizar accidentalmente la conexión del escritor. **El script no aprovisiona ni limpia datos de una base compartida.**
+
+### Defensa adicional de creación de borrador
+
+`createLedgerEntry` ahora exige explícitamente un `AccountingDb` transaccional y rechaza `prisma` raíz / `undefined` con error: un consumidor que olvidara pasar `tx` podría eludir el mutex `period-open` en la creación inicial del borrador. Los callers de ruta ya pasan el `tx` producido por idempotencia, y el control nuevo evita que adaptadores futuros hagan escrituras aisladas. **Pendiente:** caracterizar cualquier consumidor externo que dependiera de la firma opcional previa. No se ha ejecutado typecheck exact-SHA.

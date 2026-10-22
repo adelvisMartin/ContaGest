@@ -44,3 +44,11 @@ test('#637 period format accepts valid months, rejects malformed month and slash
   for(const input of ['2026-00','2026-13','2026-1','2026-10junk','\\d{4}-10'])
     assert.equal(format.test(input),false,input);
 });
+
+test('#637 draft ledger cannot bypass the domain transaction lock with root Prisma', () => {
+  const create = service.split('export async function createLedgerEntry(')[1].split('async function lockScopedLedgerEntry(')[0];
+  assert.match(create, /if \(!db \|\| db === prisma\)/);
+  assert.match(create, /await assertPeriodOpen\(input\.tenantId, input\.fiscalPeriod, db\)/);
+  assert.match(create, /return db\.ledgerEntry\.create/);
+  assert.doesNotMatch(create, /AccountingDb = prisma/);
+});
