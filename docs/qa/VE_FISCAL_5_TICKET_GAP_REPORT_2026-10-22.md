@@ -159,3 +159,33 @@ Hashes focales nuevos:
 5. **#751/#785 y release:** migrations PG17 from-zero+upgrade y RLS tenant A/B, API real, build completo y browser no ejecutados. Revisar ejecución de CI y conservar exact-SHA. No se ha hecho merge ni deploy.
 
 **Gate:** `NOT_READY/BLOCK_MAIN`. El último PASS focal documentado (28/28) precede a este módulo; no extenderlo a estas implementaciones sin ejecutar sus pruebas nuevas. Reconciliar branch con main y ejecutar todo antes de declarar cumplimiento.
+
+
+## Revisión de seguimiento de la aplicación RET_IVA y cambios legales hasta 22-10-2026
+
+**Código publicado** en el mismo PR #1279, **sin habilitar posting productivo por defecto**.
+
+| Evidencia | Resultado |
+| --- | --- |
+| Implementación `FiscalWithholdingApplication`, debit AP/credit withholding, reverso, lock compra, RLS, dos cuentas distintas, FK ledger, source checks | IMPLEMENTED / PG17 NOT_EXECUTED |
+| Endpoint `GET /reconciliation?period=`, conteo sin truncar, hash, saldos BigInt, comparación exacta de reversos, estado vacío bloqueado | IMPLEMENTED / PG17 NOT_EXECUTED |
+| Registro de fuente jurídica y reglas/versiones completas, perfil tributario completo, hash de evento append-only | IMPLEMENTED / PG17 NOT_EXECUTED |
+| Permisos diferenciados `fiscal.post_withholding` y `fiscal.reverse_withholding`, sólo Administrador Global inicialmente, UI con capacidades derivadas de servidor | IMPLEMENTED / RBAC HTTP NOT_EXECUTED |
+| Interruptor `VE_FISCAL_INTERNAL_RETIVA_POSTING_ENABLED` apagado de fábrica; sólo `true` permite creación de asientos en PG17 QA disposable | IMPLEMENTED / integration NOT_EXECUTED |
+| Dominio `tests/ve_iva_withholding_application_v775.test.mjs` (incluye flag) y `tests/ve_iva_withholding_reconciliation_v775.test.mjs` (reverso/cuentas/saldo cero) | WRITTEN, **NO PASS proclamado** |
+| `qa/iva-withholding-application-v775.test.ts` con sesión/roles limitados 403, compra real con factura IVA legal fixture, deducción, replay, cancel-before-reverse rechazo, reverso, cancel-after-reverse permitido, reconciliación y SQL inmutable | WRITTEN, PG17 **NO EJECUTADO** |
+| Última prueba focal previa de políticas #751/#774/#775 sin esta nueva aplicación y conciliación | PASS 28/28 en pasada anterior; **no extrapolable** |
+
+### Normativa posterior que cambia criterios del perfil RIF
+
+**SNAT/2026/00080** publicada en la Gaceta Oficial **43.435 del 12 de agosto de 2026**: modernizó inscripción y actualización del RIF por medio electrónico, eliminó vigencia de 3 años y exige exhibir RIF en facturas/documentos/libros, según texto accesible y boletín especializado. El sumario de la misma Gaceta deroga **SNAT/2024/000121** sobre proveedores de sistemas informáticos para emisión fiscal, **sin** implicar que toda facturación quede exenta de regulación. Véase `docs/architecture/VE_TAX_LEGAL_MATRIX_2026.md`. Estado legal: FUENTE CANDIDATA para captura primaria y revisión humana; **no insertada/validada ni activada en base productiva**.
+
+**SNAT/2025/000054**, Gaceta 43.171 del 16-07-2025: se inspeccionó reproducción de la Gaceta con artículos 1 (agente especial notificado), 3 (exclusiones), 4–5 (porcentajes según supuestos), 13 (pago/abono: el primero), 14 (enteramiento) y 16 (comprobante formal). **El código de aplicación interno NO certifica condición de agente ni ausencia de las excepciones**; sólo permite caso conservador validado por fuentes revisadas del ERP y feature flag. Formularios/entrega/enteramiento siguen sin implementarse.
+
+### Bloqueadores exactos para DoD del lote
+
+- No hay PG17 verdadero desde cero y upgrade ni pruebas reales tenant A/B, concurso de operaciones, restore, frontend/browser y build completo de este SHA.
+- IVA de factura original sigue dependiendo de la tasa de las líneas cliente; el flujo interno compara y deniega discrepancias, pero **no impone fuente fiscal en todos los orígenes**.
+- ISLR #776 aún sin taxonomía de conceptos, UT, sustraendo mínimo, residencia y certificado/ledger legal; #775 certificado de retención IVA formal todavía ausente.
+- RIF/notificación SPE reales no consultados contra SENIAT, y calendario 2026 reimpreso no aplicado con last digit; no fingir certificación.
+- Rama atrás respecto a `main` y runs CI exact-SHA sin conclusión; PR permanece DRAFT / NOT_READY. **No hacer merge hasta cierre de requisitos y gates**.
