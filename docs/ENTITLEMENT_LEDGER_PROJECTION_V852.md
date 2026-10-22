@@ -15,3 +15,9 @@ Esta protección **no** resuelve por sí sola la vinculación causal entre cada 
 ## Integridad de historial parcial (2026-10-22)
 
 La proyección exige ahora secuencias **contiguas** desde el evento GRANT (1), además de orden creciente. El antiguo chequeo monotónico permitía recibir 1 y 3 sin 2: una consulta incompleta podía ocultar un CONSUME y sobrestimar el saldo. Se rechaza con `ENTITLEMENT_INVALID_SEQUENCE` y regresiones; no se reconstruye ni suple un evento faltante. Pendiente integración DB/worker/booking bajo transacción.
+
+## Elegibilidad determinista de lectura — 2026-10-22
+
+El módulo puro `entitlement-eligibility-policy.mjs` resuelve una **vista previa** de derechos entre snapshots server-side, con cantidad en milésimas BigInt, scope ALL/SERVICE/CATEGORY, location, vigencia `[validFrom, validUntil)` en UTC, prioridad descendente y desempate por vencimiento más próximo e ID. Rechaza mezcla de tenant/beneficiary, duplicados, faltantes, counters forjados en unlimited y fechas malformadas. Respuesta inmutable `writeAuthorized:false` y `consumed:false`. No autoriza acceso ni sustituye revalidación transaccional, registro de events ni idempotencia PostgreSQL. Primero vincularla a un repositorio authoritative server-only, después integrar #848/#746 y probar concurrencia de último crédito. **No exponer este policy directamente a request.body.**
+
+QA: `node --test tests/entitlement_eligibility_v852.test.mjs` (elegibilidad/negativos y desempate).
