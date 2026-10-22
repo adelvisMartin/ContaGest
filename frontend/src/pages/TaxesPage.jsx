@@ -20,6 +20,13 @@ function TaxesWorkspace({state,context}){
   const [error,setError]=useState('');
   const [profiles,setProfiles]=useState([]);
   const [legalSources,setLegalSources]=useState([]);
+  const [taxPreviewRequest,setTaxPreviewRequest]=useState({
+    kind:'purchase',effectiveAt:new Date().toISOString(),taxableMinor:'',exemptMinor:'0',
+    notSubjectMinor:'0',vatRuleKey:'',retainedVatRuleKey:'',retainedIslrRuleKey:''
+  });
+  const [taxPreviewResult,setTaxPreviewResult]=useState(null);
+  const [taxPreviewBusy,setTaxPreviewBusy]=useState(false);
+  const [taxPreviewError,setTaxPreviewError]=useState('');
   const [fiscalRules,setFiscalRules]=useState([]);
   const [ruleEvidenceLoading,setRuleEvidenceLoading]=useState(true);
   const [ruleEvidenceError,setRuleEvidenceError]=useState('');
@@ -120,6 +127,29 @@ function TaxesWorkspace({state,context}){
       notify('Perfil tributario actualizado con auditoría del servidor.','success');
     }catch(cause){notify(cause?.message||'Perfil rechazado por el servidor.','error');}
     finally{setDecisionBusy('');}
+  }
+
+  async function previewTaxPosting(event){
+    event.preventDefault();setTaxPreviewBusy(true);setTaxPreviewError('');setTaxPreviewResult(null);
+    try{
+      const minor=(input)=>{
+        if(!/^\\d{1,15}$/.test(String(input)))throw new Error('Usa números enteros no negativos en céntimos.');
+        const parsed=Number(input);
+        if(!Number.isSafeInteger(parsed))throw new Error('Importe fuera del rango permitido.');
+        return parsed;
+      };
+      const body={
+        kind:taxPreviewRequest.kind,effectiveAt:taxPreviewRequest.effectiveAt,
+        taxableMinor:minor(taxPreviewRequest.taxableMinor),exemptMinor:minor(taxPreviewRequest.exemptMinor),
+        notSubjectMinor:minor(taxPreviewRequest.notSubjectMinor),vatRuleKey:taxPreviewRequest.vatRuleKey,
+        ...(taxPreviewRequest.retainedVatRuleKey?{retainedVatRuleKey:taxPreviewRequest.retainedVatRuleKey}:{}),
+        ...(taxPreviewRequest.retainedIslrRuleKey?{retainedIslrRuleKey:taxPreviewRequest.retainedIslrRuleKey}:{})
+      };
+      const preview=await FiscalService.previewReviewedTaxEvent(body);
+      if(preview?.mode!=='NON_POSTING_PREVIEW')throw new Error('La respuesta no es una vista previa segura.');
+      setTaxPreviewResult(preview);
+    }catch(cause){setTaxPreviewError(cause?.message||'No se pudo obtener la simulación fiscal.');}
+    finally{setTaxPreviewBusy(false);}
   }
 
   async function submitProfileDraft(event){
@@ -254,6 +284,61 @@ function TaxesWorkspace({state,context}){
         <CgTextField sx={{mt:1}} fullWidth label="Alícuota %" type="number" inputProps={{step:.01,min:0}} value={item.rate||0} onChange={(e)=>setTaxes((current)=>({...current,[key]:{...current[key],rate:Number(e.target.value||0)}}))}/>
       </Paper>)}
     </Box>
+
+    <Paper variant="outlined" sx={{p:1.5}}>
+      <Typography variant="h6">Simulación fiscal revisada · Sin contabilizar</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{mb:1}}>
+        La fuente y la regla deben estar revisadas y activas; se exige perfil tributario vigente y cuentas semánticas válidas.
+        No emite comprobantes, no altera asientos ni determina automáticamente obligaciones ante SENIAT.
+      </Typography>
+      {taxPreviewError?<CgState severity="error" title="Simulación bloqueada">{taxPreviewError}</CgState>:null}
+      <Box component="form" onSubmit={previewTaxPosting} sx={{display:'grid',gap:1}}>
+        <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))'},gap:1}}>
+          <CgSelect label="Evento" value={taxPreviewRequest.kind}
+            onChange={e=>setTaxPreviewRequest(c=>({...c,kind:e.target.value}))}
+            options={[{value:'purchase',label:'Compra / retención por pagar'},{value:'sale',label:'Venta / retención por cobrar'}]}/>
+          <CgTextField label="Fecha UTC de aplicación" required
+            value={taxPreviewRequest.effectiveAt}
+            onChange={e=>setTaxPreviewRequest(c=>({...c,effectiveAt:e.target.value}))}/>
+          <CgTextField label="Gravado (céntimos)" required type="number" inputProps={{step:1,min:0}}
+            value={taxPreviewRequest.taxableMinor}
+            onChange={e=>setTaxPreviewRequest(c=>({...c,taxableMinor:e.target.value}))}/>
+          <CgTextField label="Exento (céntimos)" required type="number" inputProps={{step:1,min:0}}
+            value={taxPreviewRequest.exemptMinor}
+            onChange={e=>setTaxPreviewRequest(c=>({...c,exemptMinor:e.target.value}))}/>
+          <CgTextField label="No sujeto (céntimos)" required type="number" inputProps={{step:1,min:0}}
+            value={taxPreviewRequest.notSubjectMinor}
+            onChange={e=>setTaxPreviewRequest(c=>({...c,notSubjectMinor:e.target.value}))}/>
+          <CgSelect label="IVA: regla activa" value={taxPreviewRequest.vatRuleKey}
+            onChange={e=>setTaxPreviewRequest(c=>({...c,vatRuleKey:e.target.value}))}
+            options={[{value:'',label:'Elegir regla IVA'},...fiscalRules
+              .filter(r=>r.status==='ACTIVE'&&/^iva[.:]/i.test(r.ruleKey))
+              .map(r=>({value:r.ruleKey,label:`${r.ruleKey} · v${r.version}`}))]}/>
+          <CgSelect label="Retención IVA (opcional)" value={taxPreviewRequest.retainedVatRuleKey}
+            onChange={e=>setTaxPreviewRequest(c=>({...c,retainedVatRuleKey:e.target.value}))}
+            options={[{value:'',label:'Sin retención IVA'},...fiscalRules
+              .filter(r=>r.status==='ACTIVE'&&/^ret_iva[.:]/i.test(r.ruleKey))
+              .map(r=>({value:r.ruleKey,label:`${r.ruleKey} · v${r.version}`}))]}/>
+          <CgSelect label="Retención ISLR (opcional)" value={taxPreviewRequest.retainedIslrRuleKey}
+            onChange={e=>setTaxPreviewRequest(c=>({...c,retainedIslrRuleKey:e.target.value}))}
+            options={[{value:'',label:'Sin retención ISLR'},...fiscalRules
+              .filter(r=>r.status==='ACTIVE'&&/^islr[.:]/i.test(r.ruleKey))
+              .map(r=>({value:r.ruleKey,label:`${r.ruleKey} · v${r.version}`}))]}/>
+        </Box>
+        <CgButton type="submit" disabled={taxPreviewBusy||!taxPreviewRequest.vatRuleKey}>
+          {taxPreviewBusy?'Verificando evidencia…':'Simular Debe/Haber sin contabilizar'}
+        </CgButton>
+      </Box>
+      {taxPreviewResult?<>
+        <Typography variant="subtitle1" sx={{mt:1}}>Importes (céntimos)</Typography>
+        <Typography variant="body2">IVA: {taxPreviewResult.vatMinor} · Retención IVA: {taxPreviewResult.retainedVatMinor} · Retención ISLR: {taxPreviewResult.retainedIslrMinor} · Neto: {taxPreviewResult.netMinor}</Typography>
+        <CgDataTable columns={[
+          {key:'role',label:'Rol contable'},{key:'accountCode',label:'Cuenta'},
+          {key:'debit',label:'Debe'},{key:'credit',label:'Haber'}
+        ]} rows={taxPreviewResult.accountLines||[]} empty="Sin líneas contables"/>
+        <Typography variant="caption" color="text.secondary">Resultado no contabilizado. No es comprobante fiscal ni certificado de retención.</Typography>
+      </>:null}
+    </Paper>
 
     <Paper variant="outlined" sx={{p:1.5}}>
       <Typography variant="h6">Documentos fiscales</Typography>
