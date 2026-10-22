@@ -40,6 +40,28 @@ CREATE INDEX "FiscalRuleVersion_active_rule_idx"
   ON public."FiscalRuleVersion" ("tenantId","ruleKey","effectiveFrom")
   WHERE "status"='ACTIVE';
 
+-- The legal capture may transition once from DRAFT to reviewed/rejected.
+-- No user or later sidecar GRANT may silently replace source/hash metadata.
+CREATE FUNCTION public.contagest_751_guard_legal_source()
+RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $
+BEGIN
+  IF TG_OP='DELETE' THEN
+    RAISE EXCEPTION 'FISCAL_LEGAL_SOURCE_IMMUTABLE' USING ERRCODE='55000';
+  END IF;
+  IF (to_jsonb(NEW) - ARRAY['status','reviewedBy','reviewedAt','reviewReason'])
+      IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['status','reviewedBy','reviewedAt','reviewReason'])
+     OR OLD."status"<>'DRAFT'
+     OR NEW."status" NOT IN ('REVIEWED','REJECTED')
+     OR NEW."reviewedBy" IS NULL OR NEW."reviewedBy"=OLD."createdBy"
+     OR NEW."reviewedAt" IS NULL THEN
+    RAISE EXCEPTION 'FISCAL_LEGAL_SOURCE_IMMUTABLE' USING ERRCODE='55000';
+  END IF;
+  RETURN NEW;
+END; $;
+CREATE TRIGGER contagest_751_guard_legal_source
+  BEFORE UPDATE OR DELETE ON public."FiscalLegalSource"
+  FOR EACH ROW EXECUTE FUNCTION public.contagest_751_guard_legal_source();
+
 -- Secure workflow across direct SQL and API: immutable evidence, independent
 -- review and activation, and serialization of overlapping active intervals.
 CREATE FUNCTION public.contagest_751_guard_fiscal_rule()
@@ -101,6 +123,8 @@ BEGIN
       OR jsonb_typeof(NEW."definition"->'denominator') IS DISTINCT FROM 'number'
       OR (NEW."definition"->>'numerator')::numeric <> trunc((NEW."definition"->>'numerator')::numeric)
       OR (NEW."definition"->>'denominator')::numeric <> trunc((NEW."definition"->>'denominator')::numeric)
+      OR (NEW."definition"->>'numerator')::numeric > 9007199254740991
+      OR (NEW."definition"->>'denominator')::numeric > 9007199254740991
       OR (NEW."definition"->>'denominator')::numeric <= 0
       OR (NEW."definition"->>'numerator')::numeric < 0
       OR (NEW."definition"->>'numerator')::numeric > (NEW."definition"->>'denominator')::numeric THEN
