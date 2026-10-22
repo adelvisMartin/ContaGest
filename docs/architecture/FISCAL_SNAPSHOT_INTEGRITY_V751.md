@@ -34,3 +34,5 @@
 ## Evidencia exact-SHA
 
 El PR solamente puede marcar `PASS` para comandos realmente ejecutados sobre su candidate SHA. Los checks queued/in_progress no son PASS. La ausencia de PostgreSQL 17, checkout integral o browser bloquea el DoD y el merge aunque el diff de código sea revisado.
+
+**Límite criptográfico:** SHA-256 sin clave detecta alteraciones no acompañadas de un hash coherente; un administrador con acceso directo de escritura a todas las columnas podría recalcularlo. No constituye firma digital, prueba externa de vigencia ni evidencia jurídica suficiente por sí solo. La protección adicional depende de RLS/permisos mínimos, revisión independiente, auditoría y backups íntegros.

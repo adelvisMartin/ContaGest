@@ -70,10 +70,18 @@ test('#751 blocks rule selection and historical read for other tenants', () => {
   invalid(() => assertFiscalRuleSnapshotIntegrity({ ...snapshot(), tenantId: 'TENANT-B' }, 'TENANT-B'));
 });
 
-test('#751 future rate versions do not reinterpret immutable historical snapshots', () => {
+test('#751 a valid future rule version never reinterprets a prior snapshot', () => {
   const original = snapshot();
-  const newer = { ...rule(), version: 2, effectiveFrom: new Date('2099-07-01T00:00:00Z'), effectiveTo: null };
-  // Deliberately inconsistent until a fresh independently hashed version is created.
-  invalid(() => assertFiscalRuleVersionIntegrity(newer, 'TENANT-A', new Date('2099-07-01T00:00:00Z')));
+  const laterDefinition = {
+    ...source(), version: 2,
+    effectiveFrom: '2099-07-01T00:00:00.000Z', effectiveTo: null,
+    definition: { basis: 'net', syntheticRate: '20.00' },
+  };
+  const later = {
+    ...laterDefinition, hash: fiscalEvidenceHash(laterDefinition),
+    effectiveFrom: new Date(laterDefinition.effectiveFrom), effectiveTo: null,
+  };
+  assert.doesNotThrow(() => assertFiscalRuleVersionIntegrity(later, 'TENANT-A', new Date('2099-07-01T00:00:00Z')));
   assert.doesNotThrow(() => assertFiscalRuleSnapshotIntegrity(original, 'TENANT-A'));
+  assert.notEqual(original.ruleHash, later.hash);
 });
