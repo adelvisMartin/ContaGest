@@ -134,6 +134,16 @@ router.post('/declarations/:id/transition', requirePermission('fiscal.close'), v
           movement.debit.lte(0) || !movement.credit.isZero() ||
           !movement.debit.equals(row.amount) || row.amount.lte(0))
         reject('Monto, conciliación o cuenta del movimiento no equivalen a la declaración.', 'COMPLIANCE_BANK_EVIDENCE_MISMATCH');
+      // Bank movements with a reversal/correction audit link are not final
+      // settlement evidence, even if a stale matched flag is still true.
+      const lifecycleLinks = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id" FROM public."BankMovementAuditLink"
+        WHERE "tenantId"=${ctx.tenantId} AND "kind" IN ('reversal', 'correction')
+          AND ("originalMovementId"=${movement.id} OR "relatedMovementId"=${movement.id})
+        LIMIT 1
+      `);
+      if (lifecycleLinks.length)
+        reject('Movimiento bancario corregido o reversado no prueba pago vigente.', 'COMPLIANCE_BANK_MOVEMENT_REVERSED');
       const ledger = await tx.ledgerEntry.findFirst({
         where: { id: movement.ledgerEntryId, tenantId: ctx.tenantId, posted: true },
         include: { lines: true, reversedBy: true },
