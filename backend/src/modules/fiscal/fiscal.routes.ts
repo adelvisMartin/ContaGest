@@ -11,6 +11,7 @@ import { assertBalanced } from '../accounting/accounting.service.js';
 import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.repository.js';
 import { planReviewedTaxEvent, type AppliedRatio } from './ve-tax-posting-plan.js';
 import { assertFiscalDocumentRuleFamily } from './fiscal-event-rule-family.js';
+import { assertUntrustedFiscalPayload, assertExternalFiscalRecordAllowed } from './fiscal-document-authority-policy.js';
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts, transitionTaxpayerProfile, getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
@@ -384,6 +385,7 @@ router.post('/tax-events/preview', requirePermission('fiscal.read'),
 
 router.post('/documents/issue', requirePermission('fiscal.manage_documents'), validateBody(issueDocumentSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
+  assertUntrustedFiscalPayload(req.body.payload);
   assertPayloadSize(req.body.payload);
   const execution = await runFinancialIdempotentMutation({
     tenantId: ctx.tenantId,
@@ -457,6 +459,10 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
 
 router.post('/documents', requirePermission('fiscal.manage_documents'), validateBody(fiscalSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
+  try { assertExternalFiscalRecordAllowed(req.body); }
+  catch { throw new HttpError(422,
+    'Los documentos tributarios regulados deben emitirse con regla y perfil fiscal verificados.',
+    { code: 'FISCAL_EXTERNAL_DOCUMENT_DENIED' }); }
   assertPayloadSize(req.body.payload);
   const period = await prisma.closingPeriod.findFirst({ where: { tenantId: ctx.tenantId, period: req.body.period, module: { in: req.body.module === 'fiscal' ? ['fiscal'] : [req.body.module, 'fiscal'] }, status: 'closed' } });
   if (period) throw new HttpError(409, `El período ${req.body.period} está cerrado para ${period.module}.`, { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: period.module });
@@ -464,7 +470,7 @@ router.post('/documents', requirePermission('fiscal.manage_documents'), validate
   if (existing) throw new HttpError(409, 'Documento fiscal duplicado.', { code: 'FISCAL_DOCUMENT_DUPLICATE' });
   const controlledPayload = { ...req.body.payload, _fiscalModule: req.body.module, _numberingAuthority: 'external/manual' };
   const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number, period: req.body.period, module: req.body.module, payload: controlledPayload });
-  const record = await prisma.fiscalDocument.create({ data: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number, period: req.body.period, status: 'issued', payload: controlledPayload, hash } });
+  const record = await prisma.fiscalDocument.create({ data: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number, period: req.body.period, status: 'external', payload: controlledPayload, hash } });
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.document.created.external', entity: 'FiscalDocument', entityId: record.id, after: { id: record.id, kind: record.kind, number: record.number, period: record.period, module: req.body.module, status: record.status, hash: record.hash }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   res.status(201).json({ ok: true, data: { ...record, module: req.body.module } });
 }));
