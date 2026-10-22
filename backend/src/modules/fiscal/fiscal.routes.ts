@@ -77,9 +77,9 @@ const fiscalRuleDecisionSchema = z.object({
 const verifiedTaxPreviewSchema = z.object({
   kind:z.enum(['sale','purchase']),
   effectiveAt:utcInstantSchema,
-  taxableMinor:z.number().int().nonnegative().safe(),
-  exemptMinor:z.number().int().nonnegative().safe(),
-  notSubjectMinor:z.number().int().nonnegative().safe(),
+  taxableMinor:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  exemptMinor:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  notSubjectMinor:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   vatRuleKey:z.string().regex(/^iva[.:][a-z0-9._:-]{1,60}$/i),
   retainedVatRuleKey:z.string().regex(/^ret_iva[.:][a-z0-9._:-]{1,60}$/i).optional(),
   retainedIslrRuleKey:z.string().regex(/^islr[.:][a-z0-9._:-]{1,60}$/i).optional()
@@ -338,7 +338,7 @@ router.post('/reopen-period', requirePermission('fiscal.reopen'), validateBody(r
 router.post('/tax-events/preview', requirePermission('fiscal.read'),
   validateBody(verifiedTaxPreviewSchema), asyncHandler(async (req,res) => {
   const ctx=context(req);
-  const body=verifiedTaxPreviewSchema.parse(req.body);
+  const body=req.body as z.infer<typeof verifiedTaxPreviewSchema>;
   const output=await prisma.$transaction(async tx=>{
     const profile=await getEffectiveTaxpayerProfile(tx,ctx.tenantId,body.effectiveAt);
     const keys=[body.vatRuleKey,body.retainedVatRuleKey,body.retainedIslrRuleKey].filter((x):x is string=>!!x);
