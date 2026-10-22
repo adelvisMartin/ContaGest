@@ -125,6 +125,14 @@ router.post('/declarations/:id/transition', requirePermission('fiscal.close'), v
         LIMIT 1
       `);
       if (duplicates.length) reject('Movimiento ya reservado por otra declaración.', 'COMPLIANCE_PAYMENT_ALREADY_ALLOCATED');
+      // Synchronize against concurrent bank reconciliation updates. An existing
+      // matched flag is merely evidence, never authorization without live GL.
+      const bankRow = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id" FROM public."BankMovement"
+        WHERE "id"=${movementId} AND "tenantId"=${ctx.tenantId}
+        FOR UPDATE
+      `);
+      if (!bankRow.length) reject('Movimiento bancario no encontrado para la empresa.', 'COMPLIANCE_BANK_MOVEMENT_NOT_FOUND');
       const movement = await tx.bankMovement.findFirst({
         where: { id: movementId, tenantId: ctx.tenantId, matched: true },
         include: { account: true },
@@ -144,19 +152,40 @@ router.post('/declarations/:id/transition', requirePermission('fiscal.close'), v
       `);
       if (lifecycleLinks.length)
         reject('Movimiento bancario corregido o reversado no prueba pago vigente.', 'COMPLIANCE_BANK_MOVEMENT_REVERSED');
+      // The accounting reversal path locks the same original row before
+      // creating a reversal; serialize payment confirmation with that path.
+      await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT "id" FROM public."LedgerEntry"
+        WHERE "id"=${movement.ledgerEntryId} AND "tenantId"=${ctx.tenantId}
+        FOR UPDATE
+      `);
       const ledger = await tx.ledgerEntry.findFirst({
         where: { id: movement.ledgerEntryId, tenantId: ctx.tenantId, posted: true },
         include: { lines: true, reversedBy: true },
       });
       if (!ledger || ledger.reversalOfId || ledger.reversedBy ||
-          ledger.lines.some(line => line.currency !== 'VES'))
+          ledger.fiscalPeriod !== row.period.period ||
+          ledger.lines.length !== 2 ||
+          ledger.lines.some(line => line.currency !== 'VES' || !line.exchangeRate.equals(1)))
         reject('Asiento de pago ausente, reversado o con monedas no verificables.', 'COMPLIANCE_LEDGER_EVIDENCE_MISMATCH');
       assertBalanced(ledger.lines);
       const accounts = await resolveSemanticPostingAccounts(tx, ctx.tenantId, ['tax_payable', 'bank']);
       const total = (accountCode: string, side: 'debit' | 'credit') =>
         ledger.lines.filter(line => line.accountCode === accountCode)
           .reduce((sum, line) => sum.plus(line[side]), new Prisma.Decimal(0));
-      if (!total(accounts.tax_payable.accountCode, 'debit').equals(row.amount) ||
+      // Disallow balanced-but-unrelated journal lines: Debe tax payable and
+      // Haber bank must exactly explain the amount of this single settlement.
+      const isTaxDebit = (line: (typeof ledger.lines)[number]) =>
+        line.accountCode === accounts.tax_payable.accountCode &&
+        line.debit.equals(row.amount) && line.credit.isZero();
+      const isBankCredit = (line: (typeof ledger.lines)[number]) =>
+        line.accountCode === accounts.bank.accountCode &&
+        line.credit.equals(row.amount) && line.debit.isZero();
+      if (accounts.tax_payable.accountCode === accounts.bank.accountCode ||
+          ledger.lines.filter(isTaxDebit).length !== 1 ||
+          ledger.lines.filter(isBankCredit).length !== 1 ||
+          !ledger.lines.every(line => isTaxDebit(line) || isBankCredit(line)) ||
+          !total(accounts.tax_payable.accountCode, 'debit').equals(row.amount) ||
           !total(accounts.bank.accountCode, 'credit').equals(row.amount))
         reject('El asiento no cancela el pasivo fiscal contra banco por el importe declarado.', 'COMPLIANCE_SEMANTIC_POSTING_MISMATCH');
       evidence = { bankMovementId: movement.id, ledgerEntryId: ledger.id,
