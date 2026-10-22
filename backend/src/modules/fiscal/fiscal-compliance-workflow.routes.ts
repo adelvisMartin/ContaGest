@@ -10,6 +10,7 @@ import { serializeDecimal } from '../../shared/financial/decimal.js';
 import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.repository.js';
 import { assertBalanced } from '../accounting/accounting.service.js';
 import { assertComplianceTransition } from './fiscal-compliance-workflow-policy.js';
+import { lockFiscalPeriodMutation } from './fiscal.repository.js';
 
 const router = Router();
 const UUID = z.string().uuid();
@@ -55,6 +56,15 @@ router.post('/declarations/:id/transition', requirePermission('fiscal.close'), v
     tenantId: ctx.tenantId, scope: 'fiscal.compliance.transition',
     key, request: { id, ...input },
   }, async (tx) => {
+    // Coordinate with fiscal close/reopen/document issue BEFORE loading or
+    // changing the declaration. A closed period must never accept a filing
+    // status transition during a concurrent close.
+    const periodRef = await tx.taxDeclaration.findFirst({
+      where: { id, period: { tenantId: ctx.tenantId } },
+      select: { period: { select: { period: true } } },
+    });
+    if (!periodRef) throw new HttpError(404, 'Declaración no encontrada en la empresa activa.');
+    await lockFiscalPeriodMutation(tx, ctx.tenantId, periodRef.period.period);
     // Lock declaration row, never a free-form tenant selector supplied by browser.
     const locked = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT d."id" FROM public."TaxDeclaration" d
@@ -67,7 +77,10 @@ router.post('/declarations/:id/transition', requirePermission('fiscal.close'), v
     const row = await tx.taxDeclaration.findFirst({
       where: { id, period: { tenantId: ctx.tenantId } }, include: { period: true },
     });
-    if (!row) throw new HttpError(404, 'Declaración no encontrada en la empresa activa.');
+    if (!row || row.period.period !== periodRef.period.period)
+      throw new HttpError(409, 'La declaración cambió de período durante la transición.', {
+        code: 'COMPLIANCE_DECLARATION_PERIOD_CHANGED',
+      });
     if (row.period.status !== 'open') reject('Período tributario bloqueado.', 'COMPLIANCE_PERIOD_LOCKED');
     const closed = await tx.closingPeriod.count({ where: {
       tenantId: ctx.tenantId, period: row.period.period, status: 'closed',
