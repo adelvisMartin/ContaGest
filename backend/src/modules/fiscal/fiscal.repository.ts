@@ -266,11 +266,13 @@ export async function recordDocumentRuleSnapshots(db: FiscalDb, input: { tenantI
     await db.$executeRaw(Prisma.sql`
       INSERT INTO public."FiscalDocumentRuleSnapshot" (
         "id", "tenantId", "fiscalDocumentId", "ruleKey", "ruleVersion", "ruleHash",
-        "effectiveFrom", "effectiveTo", "source", "documentation", "definition"
+        "effectiveFrom", "effectiveTo", "source", "documentation", "definition",
+        "legalSourceId", "legalSourceSha256"
       ) VALUES (
         ${randomUUID()}::uuid, ${input.tenantId}, ${input.fiscalDocumentId},
         ${rule.ruleKey}, ${rule.version}, ${rule.hash}, ${rule.effectiveFrom}, ${rule.effectiveTo},
-        ${rule.source}, ${rule.documentation}, ${JSON.stringify(rule.definition)}::jsonb
+        ${rule.source}, ${rule.documentation}, ${JSON.stringify(rule.definition)}::jsonb,
+        ${rule.legalSourceId}::uuid, ${rule.legalSourceSha256}
       )
     `);
   }
@@ -280,8 +282,9 @@ export async function getDocumentRuleSnapshots(tenantId: string, fiscalDocumentI
   const snapshots = await prisma.$queryRaw<Array<{
     tenantId: string; ruleKey: string; ruleVersion: number; ruleHash: string; effectiveFrom: Date; effectiveTo: Date | null;
     source: string; documentation: string; definition: unknown; capturedAt: Date;
+    legalSourceId: string | null; legalSourceSha256: string | null;
   }>>(Prisma.sql`
-    SELECT "tenantId", "ruleKey", "ruleVersion", "ruleHash", "effectiveFrom", "effectiveTo", "source", "documentation", "definition", "capturedAt"
+    SELECT "tenantId", "ruleKey", "ruleVersion", "ruleHash", "effectiveFrom", "effectiveTo", "source", "documentation", "definition", "capturedAt", "legalSourceId", "legalSourceSha256"
     FROM public."FiscalDocumentRuleSnapshot"
     WHERE "tenantId" = ${tenantId} AND "fiscalDocumentId" = ${fiscalDocumentId}
     ORDER BY "ruleKey" ASC
