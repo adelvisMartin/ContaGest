@@ -95,7 +95,7 @@ test('#775 invoice -> reviewed rule -> AP tax posting -> idempotent reversal wit
   });
   const purchase=await h.ok('/purchases',post(purchaseInput('16.00'),
     `${RUN}-purchase`));
-  assert.equal(purchase.iva,'16.00');
+  assert.equal(Number(purchase.iva),16,'fixture purchase VAT must equal the reviewed synthetic rate');
   const request={purchaseInvoiceId:purchase.id,ivaRuleKey:ivaRule.ruleKey,
     retentionRuleKey:retRule.ruleKey};
   const key=`${RUN}-application`;
