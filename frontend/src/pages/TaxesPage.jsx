@@ -85,7 +85,13 @@ function TaxesWorkspace({state,context}){
       setComplianceError(cause?.message||'No fue posible consultar la evidencia del período.');
     }finally{setComplianceLoading(false);}
   }
-  useEffect(()=>{void loadCompliancePeriod(readinessPeriod);},[readinessPeriod]);
+  useEffect(()=>{
+    if (/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(readinessPeriod)) {
+      void loadCompliancePeriod(readinessPeriod);
+    } else {
+      setCompliance(null);
+    }
+  },[readinessPeriod]);
 
   async function submitProfileDraft(event){
     event.preventDefault();
