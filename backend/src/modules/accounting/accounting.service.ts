@@ -264,19 +264,21 @@ export async function reverseLedgerEntry(input: {
   audit?: LedgerAuditContext;
 }) {
   const actorId = requirePostingActor(input.postedBy || input.audit?.userId);
-  const original = await prisma.ledgerEntry.findFirst({
-    where: { id: input.entryId, tenantId: input.tenantId },
-    include: { lines: true, reversalOf: true, reversedBy: true }
-  });
-  if (!original) throw new HttpError(404, 'Asiento contable no encontrado.');
-  assertLedgerActionAllowed(original, 'reverse');
-
-  await assertPeriodOpen(input.tenantId, input.fiscalPeriod);
-  const lines = inverseLedgerLines(original.lines);
-  const postedAt = new Date();
 
   try {
     return await prisma.$transaction(async (tx) => {
+      // Serialize reversal against post/edit/delete of the same tenant entry.
+      // All authorization/state and target-period checks use this transaction.
+      await lockScopedLedgerEntry(tx, input.tenantId, input.entryId);
+      const original = await tx.ledgerEntry.findFirst({
+        where: { id: input.entryId, tenantId: input.tenantId },
+        include: { lines: true, reversalOf: true, reversedBy: true }
+      });
+      if (!original) throw new HttpError(404, 'Asiento contable no encontrado.');
+      assertLedgerActionAllowed(original, 'reverse');
+      await assertPeriodOpen(input.tenantId, input.fiscalPeriod, tx);
+      const lines = inverseLedgerLines(original.lines);
+      const postedAt = new Date();
       const draft = await tx.ledgerEntry.create({
         data: {
           tenantId: input.tenantId,
