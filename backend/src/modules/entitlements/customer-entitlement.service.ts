@@ -63,6 +63,13 @@ export async function grantCustomerRight(ctx:CustomerRightActor,input:ManualGran
   if(input.validFrom.getTime()>=input.validUntil.getTime())
     denied(422,'El período del derecho es inválido.','ENTITLEMENT_WINDOW_INVALID');
   return prisma.$transaction(async tx=>{
+    // Two grants with the same effect must serialize even when they start
+    // before either transaction inserts its unique index entry. The unique
+    // constraint remains the final guard for writers outside this service.
+    const effectLock=`cg:entitlement-grant:v1:${ctx.tenantId}:${input.effectKey}`;
+    await tx.$queryRaw<Array<{locked:string|null}>>`
+      SELECT pg_advisory_xact_lock(hashtextextended(${effectLock},0))::text AS locked
+    `;
     // Idempotent replay is tenant-wide for the effect key. Replays may not
     // silently change beneficiary/benefit/time window or grant twice.
     const prior=await tx.customerEntitlement.findFirst({

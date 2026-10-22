@@ -30,3 +30,11 @@ test('#852 admin-only API uses narrow manual grant + pure read without consume o
   assert.match(routes,/private, no-store/);
   assert.doesNotMatch(routes,/router\.post\('\/(?:consume|refund)|router\.put\('\/(?:consume|refund)/);
 });
+
+test('#852 concurrent manual grant replay serializes on tenant+effect before reading prior grant',()=>{
+  const grant=svc.split('export async function grantCustomerRight(')[1].split('export async function readCustomerRights')[0];
+  assert.match(grant,/cg:entitlement-grant:v1:\$\{ctx\.tenantId\}:\$\{input\.effectKey\}/);
+  assert.match(grant,/pg_advisory_xact_lock\(hashtextextended\(/);
+  assert.ok(grant.indexOf('pg_advisory_xact_lock')<grant.indexOf('const prior=await tx.customerEntitlement.findFirst'));
+  assert.match(grant,/return \{entitlement:prior,replayed:true\}/);
+});
