@@ -27,6 +27,8 @@ export const FiscalService={
   activateRule(id,reason){return BackendApi.post(`/fiscal/rules/${encodeURIComponent(id)}/activate`,{reason});},
   taxpayerProfiles(){return BackendApi.get('/fiscal/taxpayer-profiles');},
   captureTaxpayerProfileDraft(data){return BackendApi.post('/fiscal/taxpayer-profiles',data);},
+  reviewTaxpayerProfile(id,reason){return BackendApi.post(`/fiscal/taxpayer-profiles/${encodeURIComponent(id)}/review`,{reason});},
+  activateTaxpayerProfile(id,reason){return BackendApi.post(`/fiscal/taxpayer-profiles/${encodeURIComponent(id)}/activate`,{reason});},
   periods(){return BackendApi.get('/fiscal/periods');},
   createPeriod(data){return BackendApi.post('/fiscal/periods',data);},
   closePeriod(data){return BackendApi.post('/fiscal/close-period',data);},
