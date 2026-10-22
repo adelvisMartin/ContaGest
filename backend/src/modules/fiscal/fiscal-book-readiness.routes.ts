@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -15,7 +15,9 @@ const schema = z.object({
 
 router.get('/readiness', asyncHandler(async (req, res) => {
   const params = schema.parse(req.query);
-  const tenantId = (req as any).context.tenantId as string;
+  const tenantId = (req as Request & { context?: { tenantId?: unknown } }).context?.tenantId;
+  if (typeof tenantId !== 'string' || !tenantId.trim())
+    throw new HttpError(401, 'Se requiere empresa autenticada para consultar el libro.', { code: 'FISCAL_TENANT_REQUIRED' });
   const where = { tenantId, fiscalPeriod: params.period };
   // All evidence reads are tenant-constrained. No tax amounts are inferred.
   const rows = params.book === 'sales'
