@@ -70,8 +70,12 @@ test('important business actions keep text labels while utilities use icons', ()
   assert.match(shell, /ACTION_ICONS/);
   assert.match(shell, /'copy-balances': 'copy'/);
   assert.match(shell, /'export-history': 'report'/);
-  assert.doesNotMatch(shell, /'focus-fast':\s*'[^']+'/);
-  assert.doesNotMatch(shell, /'settle-race':\s*'[^']+'/);
+  const iconMap = shell.slice(shell.indexOf('const ACTION_ICONS ='), shell.indexOf('const ICON_LABELS ='));
+  assert.ok(iconMap.includes("'copy-balances': 'copy'"));
+  assert.doesNotMatch(iconMap, /'focus-fast':\s*'[^']+'/);
+  assert.doesNotMatch(iconMap, /'settle-race':\s*'[^']+'/);
+  // The same action MUST retain its screen-reader label; it is not an icon.
+  assert.match(shell, /'focus-fast': 'Captura rápida'/);
   assert.match(operationalCenter, /<span>Archivo del día \(\.txt\)<\/span>/);
 });
 
