@@ -147,11 +147,11 @@ router.post('/',requirePermission('fiscal.manage_documents'),validateBody(applic
        originalVAT.length!==1||!originalVAT[0].debit.eq(invoice.iva))
       throw bad('El asiento original y las cuentas AP/IVA no concilian con la factura.','RETIVA_SOURCE_RECONCILIATION_FAILED');
 
-    const taxableMinor=exactMinor(invoice.subtotal.toFixed(2)),
-      invoiceVatMinor=exactMinor(invoice.iva.toFixed(2)),
-      totalMinor=exactMinor(invoice.total.toFixed(2));
     let plan:ReturnType<typeof planPostedPurchaseWithholding>;
     try{
+      const taxableMinor=exactMinor(invoice.subtotal.toFixed(2));
+      const invoiceVatMinor=exactMinor(invoice.iva.toFixed(2));
+      const totalMinor=exactMinor(invoice.total.toFixed(2));
       plan=planPostedPurchaseWithholding({
         tenantId:ctx.tenantId,invoiceTenantId:invoice.tenantId,supplierTenantId:invoice.supplier.tenantId,
         sourceLedgerTenantId:posted.tenantId,invoiceStatus:invoice.status,
@@ -194,7 +194,7 @@ router.post('/',requirePermission('fiscal.manage_documents'),validateBody(applic
       vatSourceSha256:vatAtInvoice[0].legalSourceSha256,
       retentionRuleId:retAtRecognition[0].id,retentionRuleHash:retAtRecognition[0].hash,
       retentionSourceSha256:retAtRecognition[0].legalSourceSha256,
-      taxableMinor,vatMinor:plan.vatMinor,withheldMinor:plan.withheldMinor,
+      taxableMinor:plan.taxableMinor,vatMinor:plan.vatMinor,withheldMinor:plan.withheldMinor,
       ledgerEntryId:newEntry.id,accounts:lines.map(l=>l.accountCode)
     };
     const evidenceSha256=fiscalEvidenceHash(evidence);
