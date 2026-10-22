@@ -73,6 +73,8 @@ model Tenant {
   clients     Client[]
   suppliers   Supplier[]
   products    Product[]
+  serviceCatalogCategories ServiceCatalogCategory[]
+  serviceDefinitions ServiceDefinition[]
   sales       SalesInvoice[]
   purchases   PurchaseInvoice[]
   ledger      LedgerEntry[]
@@ -280,7 +282,9 @@ model Product {
   productCodes ProductCode[]
   saleLines   SalesInvoiceLine[]
   purchaseLines PurchaseInvoiceLine[]
+  serviceDefinitions ServiceDefinition[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])
   @@index([tenantId, name])
@@ -543,7 +547,9 @@ model Employee {
 
   tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   receipts    PayrollReceipt[]
+  serviceCapabilities ServiceStaffCapability[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, idNumber])
   @@index([tenantId, department])
   @@index([tenantId, hiredAt])
@@ -853,6 +859,7 @@ model BusinessLocation {
   addressGeocode AddressGeocode? @relation(fields: [addressGeocodeId], references: [id], onDelete: SetNull)
   schedulingResources SchedulingResource[]
   schedulingBookings SchedulingBooking[]
+  serviceEligibilities ServiceLocationEligibility[]
 
   @@unique([tenantId, code])
   @@unique([tenantId, id])
@@ -1060,4 +1067,119 @@ model SchedulingResourceAllocation {
   @@unique([bookingId, stepId, resourceId])
   @@index([tenantId, resourceId, occupiedStartAt])
   @@index([tenantId, bookingId])
+}
+
+
+/**
+ * #849 Shared commercial service catalog. Product/price book owns all prices
+ * and taxes, scheduling owns allocations, entitlements owns remaining uses.
+ * Published/used revisions are append-only snapshots.
+ */
+model ServiceCatalogCategory {
+  id           String   @id @default(uuid())
+  tenantId     String
+  slug         String
+  name         String
+  status       String   @default("active")
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  services     ServiceDefinition[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, slug])
+  @@index([tenantId, status, displayOrder])
+}
+
+model ServiceDefinition {
+  id              String   @id @default(uuid())
+  tenantId        String
+  categoryId      String?
+  productId       String?
+  name            String
+  description     String?
+  status          String   @default("draft")
+  visibility      String   @default("internal")
+  modality        String   @default("onsite")
+  durationMinutes Int
+  version         Int      @default(1)
+  createdBy       String
+  updatedBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  category        ServiceCatalogCategory? @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
+  product         Product? @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
+  steps           ServiceStep[]
+  revisions       ServiceDefinitionRevision[]
+  staff           ServiceStaffCapability[]
+  locations       ServiceLocationEligibility[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status, visibility, name])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, productId])
+}
+
+model ServiceStep {
+  id              String @id @default(uuid())
+  tenantId        String
+  serviceId       String
+  position        Int
+  label           String
+  durationMinutes Int
+  gapAfterMinutes Int @default(0)
+
+  service         ServiceDefinition @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, serviceId, id])
+  @@unique([tenantId, serviceId, position])
+}
+
+model ServiceDefinitionRevision {
+  id          String   @id @default(uuid())
+  tenantId    String
+  serviceId   String
+  version     Int
+  snapshot    Json
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  service     ServiceDefinition @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, serviceId, version])
+  @@index([tenantId, createdAt])
+}
+
+model ServiceStaffCapability {
+  id           String @id @default(uuid())
+  tenantId     String
+  serviceId    String
+  employeeId   String
+  createdAt    DateTime @default(now())
+  createdBy    String
+
+  service      ServiceDefinition @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+  employee     Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, serviceId, employeeId])
+  @@index([tenantId, employeeId, serviceId])
+}
+
+model ServiceLocationEligibility {
+  id           String @id @default(uuid())
+  tenantId     String
+  serviceId    String
+  locationId   String
+  createdAt    DateTime @default(now())
+  createdBy    String
+
+  service      ServiceDefinition @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+  location     BusinessLocation @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, serviceId, locationId])
+  @@index([tenantId, locationId, serviceId])
 }
