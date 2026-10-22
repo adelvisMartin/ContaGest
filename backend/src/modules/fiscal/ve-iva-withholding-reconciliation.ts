@@ -4,7 +4,7 @@ export type WithholdingReconciliationRow = Readonly<{
   purchaseStatus:string;sourceLedgerPosted:boolean;
   ledgerEntryId:string;ledgerPosted:boolean;ledgerSourceId:string;
   reversalLedgerEntryId:string|null;reversalLedgerPosted:boolean|null;
-  reversalOfId:string|null;withheldMinor:string;
+  reversalOfId:string|null;reversalLinesInverse:boolean;withheldMinor:string;
   postedDebitMinor:string;postedCreditMinor:string;
   reversalDebitMinor:string;reversalCreditMinor:string;
   evidenceValid:boolean;
@@ -41,6 +41,7 @@ export function reconcileVatWithholdingApplications(tenantId:string,period:strin
         reasons.push('REVERSAL_JOURNAL_MISSING');
       if(parse(row.reversalDebitMinor)!==amount||parse(row.reversalCreditMinor)!==amount)
         reasons.push('REVERSAL_JOURNAL_OUT_OF_BALANCE');
+      if(row.reversalLinesInverse!==true)reasons.push('REVERSAL_LINES_NOT_INVERSE');
     }
     gross+=amount;
     if(row.status==='REVERSED')reverse+=amount;
@@ -55,7 +56,8 @@ export function reconcileVatWithholdingApplications(tenantId:string,period:strin
     grossWithheldMinor:gross.toString(),reversedMinor:reverse.toString(),
     netOutstandingMinor:(gross-reverse).toString(),issueCount,
     rows:Object.freeze(evidence),
-    status:issueCount===0?'RECONCILED_INTERNAL_ONLY':'BLOCKED_INTERNAL_RECONCILIATION',
+    status:rows.length===0?'BLOCKED_EMPTY_PERIOD':
+      issueCount===0?'RECONCILED_INTERNAL_ONLY':'BLOCKED_INTERNAL_RECONCILIATION',
     officialCertificateVerified:false,externalFilingVerified:false
   });
 }
