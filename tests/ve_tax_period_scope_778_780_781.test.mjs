@@ -42,6 +42,11 @@ test('#780 period evidence is order-independent and cannot double-count', () => 
   assert.throws(() => previewReviewedMunicipalPeriodFromCatalog({ ...input, events: [events[0], events[0]] }, [municipal]));
   assert.throws(() => previewReviewedMunicipalPeriodFromCatalog({ ...input, period: '2026-08' }, [municipal]));
   assert.throws(() => previewReviewedMunicipalPeriodFromCatalog(input, [municipal, { ...municipal, id: 'overlap' }]));
+  const otherEvent = { ...events[0], eventId: 'event-3', municipalityCode: 'M2' };
+  const otherRule = { ...municipal, id: 'municipality-m2', selector: 'M2|A1|SERVICE|REGULAR' };
+  assert.throws(() => previewReviewedMunicipalPeriodFromCatalog(
+    { ...input, events: [events[0], otherEvent] }, [municipal, otherRule]));
+
 });
 test('#781 payroll period and effective event month are tied', () => {
   const payroll = { tenantId: 'tenant-A', eventDate: '2026-09-15', payrollPeriod: '2026-09',
