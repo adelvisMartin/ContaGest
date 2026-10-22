@@ -43,3 +43,6 @@ El comando de consumo ahora toma locks PostgreSQL `FOR SHARE` sobre la `Scheduli
 ### Identidad de motivos de concesión
 
 Los reintentos de `manual-grants` comparan ahora también el motivo original de la cortesía almacenado en el primer evento `GRANT`, no sólo beneficiario/beneficio/vigencia/location. Cambiar el motivo con el mismo `effectKey` da conflicto 409 en lugar de devolver un derecho existente como si fuera la misma petición. La verificación corre bajo mutex transaccional tenant+effect.
+
+## Invalid-Date defense (2026-10-22)
+El servicio domain de manual grant rechaza `Date('invalid')` (NaN), ausencia de instancia Date e intervalos no crecientes, antes de abrir SQL. `NaN >= end` devolvía false y permitía saltar el guard en consumidores internos no HTTP. Contrato agregado al `npm --workspace backend test`. QA PostgreSQL17 y replay real permanecen por verificar.

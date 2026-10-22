@@ -61,7 +61,12 @@ export type ManualGrant=Readonly<{
 }>;
 export async function grantCustomerRight(ctx:CustomerRightActor,input:ManualGrant){
   const actorId=requireActor(ctx);
-  if(input.validFrom.getTime()>=input.validUntil.getTime())
+  // A malformed Date produces NaN and bypasses a simple >= comparison.
+  // Domain callers are not necessarily HTTP, so validate inside authority.
+  if(!(input.validFrom instanceof Date)||!(input.validUntil instanceof Date)||
+    !Number.isFinite(input.validFrom.getTime())||
+    !Number.isFinite(input.validUntil.getTime())||
+    input.validFrom.getTime()>=input.validUntil.getTime())
     denied(422,'El período del derecho es inválido.','ENTITLEMENT_WINDOW_INVALID');
   return prisma.$transaction(async tx=>{
     // Two grants with the same effect must serialize even when they start
