@@ -17,11 +17,15 @@ function runBlockedPreflight(failStage) {
     const trace = path.join(fixture, 'calls.txt');
     const output = path.join(fixture, 'source');
     mkdirSync(pathBin);
+    const hashLookup = spawnSync('which', ['sha256sum'], { encoding: 'utf8' });
+    assert.equal(hashLookup.status, 0, 'real sha256sum is mandatory for the canonical inventory guard');
+    const realSha256sum = hashLookup.stdout.trim();
     const binaries = ['psql', 'pg_dump', 'pg_restore', 'age', 'rclone', 'sha256sum', 'git', 'node'];
     for (const name of binaries) {
       const destination = path.join(pathBin, name);
       let command;
       if (name === 'git') command = '#!/bin/sh\nprintf "%s\\n" "$HIPICO_CANDIDATE_SHA"\n';
+      else if (name === 'sha256sum') command = '#!/bin/sh\necho inventory-sha256 >> "$HIPICO_TEST_TRACE"\nexec "$HIPICO_TEST_REAL_SHA256SUM" "$@"\n';
       else if (name === 'node') command = [
         '#!/bin/sh',
         'case "$1" in',
@@ -43,6 +47,7 @@ function runBlockedPreflight(failStage) {
         HIPICO_CANDIDATE_SHA: candidateSha,
         HIPICO_TEST_TRACE: trace,
         HIPICO_TEST_FAIL_STAGE: failStage,
+        HIPICO_TEST_REAL_SHA256SUM: realSha256sum,
         HIPICO_BACKUP_DATABASE_URL: 'postgresql://hipico_backup:private@localhost/test',
         HIPICO_BACKUP_AGE_RECIPIENT: 'age1example',
         HIPICO_BACKUP_RCLONE_REMOTE: 'fake:private',
@@ -64,7 +69,7 @@ function runBlockedPreflight(failStage) {
 test('#842 failed exact-SHA preflight prevents role verification and all backup I/O', () => {
   const result = runBlockedPreflight('sha');
   assert.notEqual(result.status, 0);
-  assert.deepEqual(result.calls, ['sha']);
+  assert.deepEqual(result.calls, ['inventory-sha256', 'inventory-sha256', 'sha']);
   assert.equal(result.generated, false);
   assert.doesNotMatch(result.output, /private|age1example|fake:private/);
 });
@@ -72,7 +77,7 @@ test('#842 failed exact-SHA preflight prevents role verification and all backup 
 test('#842 failed least-privilege role verification prevents queries, dumps, encryption and off-site upload', () => {
   const result = runBlockedPreflight('role');
   assert.notEqual(result.status, 0);
-  assert.deepEqual(result.calls, ['sha', 'role']);
+  assert.deepEqual(result.calls, ['inventory-sha256', 'inventory-sha256', 'sha', 'role']);
   assert.equal(result.generated, false);
   assert.match(result.output, /hipico_backup privileges invalid/);
   assert.doesNotMatch(result.output, /private|age1example|fake:private/);
