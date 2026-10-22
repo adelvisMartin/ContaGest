@@ -14,6 +14,7 @@ import { assertFiscalDocumentRuleFamily } from './fiscal-event-rule-family.js';
 import { assertUntrustedFiscalPayload, assertExternalFiscalRecordAllowed, assertReviewedIssueKindSupported } from './fiscal-document-authority-policy.js';
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
+import fiscalWithholdingApplicationRoutes from './fiscal-withholding-application.routes.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts, transitionTaxpayerProfile, getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
 import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
 import { createFiscalLegalSourceDraft, listFiscalLegalSources, reviewFiscalLegalSource } from './fiscal-legal-source.repository.js';
@@ -36,6 +37,7 @@ const router = Router();
 router.use(requireTenant);
 router.use('/books', fiscalBookReadinessRoutes);
 router.use('/compliance', fiscalComplianceReadinessRoutes);
+router.use('/withholding-applications', fiscalWithholdingApplicationRoutes);
 
 const periodSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Usa formato AAAA-MM.');
 const moduleSchema = z.enum(['fiscal', 'iva', 'islr', 'igtf', 'retiva', 'municipal']);
