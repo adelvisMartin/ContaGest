@@ -13,6 +13,7 @@ import { getFxPolicy } from '../currency/fx.repository.js';
 import { fiscalEvidenceHash, resolveFiscalRules } from './fiscal.repository.js';
 import { getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
 import { exactMinor, planPostedPurchaseWithholding } from './ve-iva-withholding-application.js';
+import { reconcileVatWithholdingApplications } from './ve-iva-withholding-reconciliation.js';
 import type { AppliedRatio } from './ve-tax-posting-plan.js';
 
 const router=Router();
@@ -78,6 +79,62 @@ router.get('/',requirePermission('fiscal.read'),asyncHandler(async(req,res)=>{
   `);
   ok(res,rows.map(row=>publicApplication(row,ctx.tenantId)));
 }));
+/** Aggregate the actual accounting evidence, not a fabricated IVA filing report. */
+router.get('/reconciliation',requirePermission('fiscal.read'),asyncHandler(async(req,res)=>{
+  const ctx=context(req);
+  const period=z.string().regex(/^20\d{2}-(0[1-9]|1[0-2])$/).parse(req.query.period);
+  const records=await prisma.$queryRaw<Array<{
+    id:string;tenantId:string;purchaseInvoiceId:string;
+    status:'POSTED'|'REVERSED';purchaseStatus:string;sourceLedgerPosted:boolean;
+    ledgerEntryId:string;ledgerPosted:boolean;ledgerSourceId:string;
+    reversalLedgerEntryId:string|null;reversalLedgerPosted:boolean|null;
+    reversalOfId:string|null;withheldMinor:bigint;
+    postedDebitMinor:string;postedCreditMinor:string;
+    reversalDebitMinor:string;reversalCreditMinor:string;
+    evidence:unknown;evidenceSha256:string;
+  }>>(Prisma.sql`
+    SELECT a."id",a."tenantId",a."purchaseInvoiceId",
+      a."status",p."status"::text AS "purchaseStatus",
+      coalesce(src."posted",false) AS "sourceLedgerPosted",
+      a."ledgerEntryId",coalesce(l."posted",false) AS "ledgerPosted",
+      coalesce(l."sourceId",'') AS "ledgerSourceId",
+      a."reversalLedgerEntryId",r."posted" AS "reversalLedgerPosted",
+      r."reversalOfId" AS "reversalOfId",a."withheldMinor",
+      coalesce((sums."debit"*100)::bigint,0)::text AS "postedDebitMinor",
+      coalesce((sums."credit"*100)::bigint,0)::text AS "postedCreditMinor",
+      coalesce((reverse_sums."debit"*100)::bigint,0)::text AS "reversalDebitMinor",
+      coalesce((reverse_sums."credit"*100)::bigint,0)::text AS "reversalCreditMinor",
+      a."evidence",a."evidenceSha256"
+    FROM public."FiscalWithholdingApplication" a
+    JOIN public."PurchaseInvoice" p
+      ON p."id"=a."purchaseInvoiceId" AND p."tenantId"=a."tenantId"
+    LEFT JOIN public."LedgerEntry" src
+      ON src."id"=a."sourceLedgerEntryId" AND src."tenantId"=a."tenantId"
+    LEFT JOIN public."LedgerEntry" l
+      ON l."id"=a."ledgerEntryId" AND l."tenantId"=a."tenantId"
+    LEFT JOIN public."LedgerEntry" r
+      ON r."id"=a."reversalLedgerEntryId" AND r."tenantId"=a."tenantId"
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM("debit"),0) AS "debit",COALESCE(SUM("credit"),0) AS "credit"
+      FROM public."LedgerLine" WHERE "entryId"=a."ledgerEntryId"
+    ) sums ON true
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM("debit"),0) AS "debit",COALESCE(SUM("credit"),0) AS "credit"
+      FROM public."LedgerLine" WHERE "entryId"=a."reversalLedgerEntryId"
+    ) reverse_sums ON true
+    WHERE a."tenantId"=${ctx.tenantId} AND a."period"=${period}
+    ORDER BY a."id" LIMIT 1001
+  `);
+  if(records.length>1000)throw new HttpError(413,
+    'El período supera 1000 aplicaciones; no se emite conciliación parcial.',
+    {code:'RETIVA_RECONCILIATION_COVERAGE_LIMIT'});
+  const report=reconcileVatWithholdingApplications(ctx.tenantId,period,records.map(row=>({
+    ...row,withheldMinor:row.withheldMinor.toString(),
+    evidenceValid:fiscalEvidenceHash(row.evidence)===row.evidenceSha256
+  })));
+  ok(res,report);
+}));
+
 router.get('/:id',requirePermission('fiscal.read'),asyncHandler(async(req,res)=>{
   const ctx=context(req),id=z.string().uuid().parse(req.params.id);
   const rows=await prisma.$queryRaw<ApplicationRow[]>(Prisma.sql`
