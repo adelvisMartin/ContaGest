@@ -56,6 +56,8 @@ END $$;
 CREATE FUNCTION public.contagest_775_guard_withholding_application()
 RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
 DECLARE purchase_tenant text; source_tenant text; ledger_tenant text; reverse_tenant text;
+  source_valid boolean; ledger_valid boolean; reversal_valid boolean;
+  line_count integer; debit_total numeric; credit_total numeric;
 BEGIN
   IF TG_OP='DELETE' THEN
     RAISE EXCEPTION 'FISCAL_WITHHOLDING_IMMUTABLE' USING ERRCODE='55000';
@@ -76,10 +78,31 @@ BEGIN
      NEW."ledgerEntryId"=NEW."sourceLedgerEntryId" THEN
      RAISE EXCEPTION 'FISCAL_WITHHOLDING_TENANT_MISMATCH' USING ERRCODE='23514';
   END IF;
+  SELECT EXISTS(
+    SELECT 1 FROM public."LedgerEntry" l
+    WHERE l."id"=NEW."sourceLedgerEntryId" AND l."source"='purchase'
+      AND l."sourceId"=NEW."purchaseInvoiceId" AND l."posted"=true
+      AND l."reversalOfId" IS NULL
+  ) INTO source_valid;
+  SELECT EXISTS(
+    SELECT 1 FROM public."LedgerEntry" l
+    WHERE l."id"=NEW."ledgerEntryId" AND l."source"='tax'
+      AND l."sourceId"=NEW."id"::text AND l."posted"=true
+      AND l."reversalOfId" IS NULL
+  ) INTO ledger_valid;
+  SELECT COUNT(*)::integer,COALESCE(SUM(ll."debit"),0),COALESCE(SUM(ll."credit"),0)
+    INTO line_count,debit_total,credit_total
+    FROM public."LedgerLine" ll WHERE ll."entryId"=NEW."ledgerEntryId";
+  IF NOT source_valid OR NOT ledger_valid OR line_count<>2 OR
+     debit_total<>(NEW."withheldMinor"::numeric/100) OR
+     credit_total<>(NEW."withheldMinor"::numeric/100) THEN
+    RAISE EXCEPTION 'FISCAL_WITHHOLDING_LEDGER_NOT_RECONCILED' USING ERRCODE='23514';
+  END IF;
   IF NEW."status"='REVERSED' THEN
-    SELECT l."tenantId" INTO reverse_tenant FROM public."LedgerEntry" l
+    SELECT l."tenantId",l."posted" INTO reverse_tenant,reversal_valid
+    FROM public."LedgerEntry" l
        WHERE l."id"=NEW."reversalLedgerEntryId" AND l."reversalOfId"=NEW."ledgerEntryId";
-    IF reverse_tenant IS DISTINCT FROM NEW."tenantId" THEN
+    IF reverse_tenant IS DISTINCT FROM NEW."tenantId" OR reversal_valid IS DISTINCT FROM true THEN
       RAISE EXCEPTION 'FISCAL_WITHHOLDING_REVERSAL_INVALID' USING ERRCODE='23514';
     END IF;
   END IF;
