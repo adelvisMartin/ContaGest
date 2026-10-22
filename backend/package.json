@@ -70,7 +70,7 @@
     "test:pricing": "tsx --test src/modules/pricing/*.test.ts",
     "test:pricing:postgres": "tsx --test ../qa/price-book-authority-v856.test.ts",
     "test:hipico:lab-receipt:postgres": "tsx --test src/modules/hipico-bot/hipico-lab-canonical-receipt.integration.ts",
-    "test:erp-input-integrity": "node --experimental-strip-types --test ../tests/bank_reconciliation_exceptions_v743.test.mjs ../tests/sales_quote_order_snapshot_intent_v753.test.mjs ../tests/delivery_lifecycle_intent_v754.test.mjs ../tests/inventory_lot_fefo_preflight_v755.test.mjs ../tests/ar_ap_open_item_coverage_v744.test.mjs ../tests/reorder_query_property_integrity_v756.test.mjs ../tests/purchase_receipt_preflight_v757.test.mjs"
+    "test:erp-input-integrity": "node --experimental-strip-types --test ../tests/bank_reconciliation_exceptions_v743.test.mjs ../tests/sales_quote_order_snapshot_intent_v753.test.mjs ../tests/delivery_lifecycle_intent_v754.test.mjs ../tests/inventory_lot_fefo_preflight_v755.test.mjs ../tests/ar_ap_open_item_coverage_v744.test.mjs ../tests/reorder_query_property_integrity_v756.test.mjs ../tests/purchase_receipt_preflight_v757.test.mjs ../tests/bank_statement_line_identity_v743.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
