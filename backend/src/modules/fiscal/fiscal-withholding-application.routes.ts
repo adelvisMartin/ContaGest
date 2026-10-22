@@ -164,7 +164,7 @@ router.get('/:id',requirePermission('fiscal.read'),asyncHandler(async(req,res)=>
 }));
 
 /** AP recognized posting -> withholding payable. Does NOT issue a statutory voucher. */
-router.post('/',requirePermission('fiscal.manage_documents'),validateBody(applicationSchema),asyncHandler(async(req,res)=>{
+router.post('/',requirePermission('fiscal.post_withholding'),validateBody(applicationSchema),asyncHandler(async(req,res)=>{
   // Prohibit accidental financial postings before PG17/RLS/browser + actual
   // SENIAT agent/supplier eligibility evidence are signed off.
   if(!isInternalRetivaPostingEnabled(process.env.VE_FISCAL_INTERNAL_RETIVA_POSTING_ENABLED))
@@ -335,7 +335,7 @@ router.post('/',requirePermission('fiscal.manage_documents'),validateBody(applic
   res.status(result.responseCode).json({ok:true,data:result.data,meta:{replayed:result.replayed}});
 }));
 
-router.post('/:id/reverse',requirePermission('fiscal.manage_documents'),
+router.post('/:id/reverse',requirePermission('fiscal.reverse_withholding'),
   validateBody(reversalSchema),asyncHandler(async(req,res)=>{
   const ctx=context(req),userId=actor(ctx),key=idem(req);
   const id=z.string().uuid().parse(req.params.id);
