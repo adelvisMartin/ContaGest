@@ -13,7 +13,7 @@ import { assertPayrollReceiptArithmetic } from './payroll-receipt-arithmetic.js'
 const router = Router();
 router.use(requireTenant, requirePermission('payroll.manage'));
 
-const periodSchema = z.object({ period: z.string().min(4).max(30) });
+const periodSchema = z.object({ period: z.string().min(4).max(30) }).strict();
 const receiptSchema = z.object({
   periodId: z.string().uuid().optional(),
   period: z.string().min(4).max(30).optional(),
@@ -22,8 +22,19 @@ const receiptSchema = z.object({
   deductions: decimalSchema('money', { nonnegative: true }),
   net: decimalSchema('money', { nonnegative: true }),
   details: z.record(z.string(), z.unknown()).optional()
-}).refine((value) => Boolean(value.periodId || value.period), { message: 'Indica periodId o period.' });
-const statusSchema = z.object({ status: z.enum(['draft', 'approved', 'paid', 'cancelled']) });
+}).strict()
+  .refine((value) => Boolean(value.periodId || value.period), { message: 'Indica periodId o period.' })
+  .superRefine((value, ctx) => {
+    // Free-form payroll detail JSON must not become an unbounded audit/DB vector.
+    if (value.details !== undefined) {
+      const serialized = JSON.stringify(value.details);
+      if (!serialized || Buffer.byteLength(serialized, 'utf8') > 32_768) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['details'],
+          message: 'Los detalles de nómina no pueden superar 32 KiB.' });
+      }
+    }
+  });
+const statusSchema = z.object({ status: z.enum(['draft', 'approved', 'paid', 'cancelled']) }).strict();
 
 type PayrollContext = { tenantId: string; userId?: string; ip?: string; userAgent?: string };
 const context = (req: Request): PayrollContext => {
