@@ -75,6 +75,8 @@ test('#562 exposes server-side admin workflows and is mounted in the canonical r
 
 test('#562 CI proves PostgreSQL isolation and a real filesystem storage sandbox', () => {
   assert.match(workflow, /postgres:17/);
+  assert.match(workflow, /migration:test:from-zero/, 'use canonical disposable historical bootstrap before PG tests');
+  assert.match(workflow, /github\.event\.pull_request\.head\.sha/, 'pin PG17 evidence to PR head SHA');
   assert.match(workflow, /data-lifecycle-v562.integration.test.ts/);
   assert.match(workflow, /storage sandbox/i);
   assert.match(workflow, /npm run typecheck/);
@@ -211,4 +213,35 @@ test('#658 pg advisory lock results never return PostgreSQL void to Prisma', () 
   for (const scope of [policyWrite, legalHold, purge]) {
     assert.match(scope, /1::integer\s+AS\s+"lockAcquired"\s+FROM\s+pg_advisory_xact_lock/);
   }
+});
+
+
+test('#658 archive-first policies never silently become hard-delete adapters', () => {
+  const matrixEntity = parsedMatrix.entities.find((entry) => entry.entity === 'NotificationLog');
+  assert.equal(matrixEntity?.deleteSemantics, 'archive');
+  const policy = service.slice(service.indexOf('export async function createRetentionPolicyVersion'), service.indexOf('export async function listRetentionPolicies'));
+  const claim = service.slice(service.indexOf('export async function requestPurgeJob'), service.indexOf('async function deletePurgeableRows'));
+  const execute = service.slice(service.indexOf('export async function executePurgeBatch'), service.indexOf('export async function registerStorageObject'));
+  assert.match(service, /const ARCHIVE_FIRST_ENTITIES = new Set\(\['NotificationLog'\]\)/);
+  assert.match(policy, /ARCHIVE_FIRST_ENTITIES\.has\(input\.entityType\)/);
+  assert.match(policy, /ARCHIVE_EXPORT_REQUIRED/);
+  for (const scope of [claim, execute]) {
+    assert.match(scope, /policy\.deleteSemantics !== 'purge'/);
+    assert.match(scope, /ARCHIVE_EXPORT_REQUIRED/);
+  }
+});
+
+test('#658 tenant and immutable clinical media cannot bypass storage lifecycle through upsert or zero-day retention', () => {
+  const register = service.slice(service.indexOf('export async function registerStorageObject'), service.indexOf('export async function markStorageObjectDeleted'));
+  const deletion = service.slice(service.indexOf('export async function assertStorageDeletionAllowed'), service.indexOf('async function countRows'));
+  assert.match(register, /ON CONFLICT \("tenantId", "bucket", "objectKey"\)/);
+  assert.match(register, /WHERE public\."DataStorageObject"\."lifecycleEntityType" <> 'ClinicalMediaObject'/);
+  assert.match(register, /EXCLUDED\."lifecycleEntityType" = 'ClinicalMediaObject'/);
+  assert.match(register, /PROTECTED_STORAGE_RECLASSIFICATION_FORBIDDEN/);
+  assert.match(deletion, /input\.objectKey\.startsWith\(/);
+  assert.match(deletion, /STORAGE_TENANT_SCOPE_INVALID/);
+  assert.match(deletion, /bucket === 'contagest-clinical-media'/);
+  assert.match(deletion, /registered\[0\]\?\.lifecycleEntityType === 'ClinicalMediaObject'/);
+  assert.match(deletion, /PROTECTED_STORAGE_DELETE_FORBIDDEN/);
+  assert.match(deletion, /STORAGE_RETENTION_AGE_UNKNOWN/);
 });
