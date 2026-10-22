@@ -19,6 +19,12 @@ function TaxesWorkspace({state,context}){
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
   const [profiles,setProfiles]=useState([]);
+  const [legalSources,setLegalSources]=useState([]);
+  const [fiscalRules,setFiscalRules]=useState([]);
+  const [ruleEvidenceLoading,setRuleEvidenceLoading]=useState(true);
+  const [ruleEvidenceError,setRuleEvidenceError]=useState('');
+  const [decisionReason,setDecisionReason]=useState('');
+  const [decisionBusy,setDecisionBusy]=useState('');
   const [profilesLoading,setProfilesLoading]=useState(true);
   const [profilesError,setProfilesError]=useState('');
   const [profileSaving,setProfileSaving]=useState(false);
@@ -71,6 +77,36 @@ function TaxesWorkspace({state,context}){
   }
   useEffect(()=>{void loadProfiles();},[]);
 
+  async function loadRuleEvidence(){
+    setRuleEvidenceLoading(true);setRuleEvidenceError('');
+    try{
+      const [sources,rules]=await Promise.all([FiscalService.legalSources(),FiscalService.rules()]);
+      setLegalSources(Array.isArray(sources)?sources:[]);
+      setFiscalRules(Array.isArray(rules)?rules:[]);
+    }catch(cause){
+      setLegalSources([]);setFiscalRules([]);
+      setRuleEvidenceError(cause?.status===403?'No autorizado para consultar fuentes o reglas fiscales.':cause?.message||'No se pudo cargar la evidencia fiscal.');
+    }finally{setRuleEvidenceLoading(false);}
+  }
+  useEffect(()=>{void loadRuleEvidence();},[]);
+
+  async function decideLegalEvidence(id,action){
+    if(!decisionReason.trim()||decisionReason.trim().length<15)return notify('Documenta la decisión con al menos 15 caracteres.','error');
+    if(decisionBusy)return;
+    const key=`${action}:${id}`;
+    setDecisionBusy(key);
+    try{
+      if(action==='review-source')await FiscalService.reviewLegalSource(id,true,decisionReason.trim());
+      else if(action==='review-rule')await FiscalService.reviewRule(id,decisionReason.trim());
+      else if(action==='activate-rule')await FiscalService.activateRule(id,decisionReason.trim());
+      else throw new Error('Acción de gobernanza no autorizada.');
+      setDecisionReason('');
+      await loadRuleEvidence();
+      notify('Decisión auditada por el servidor. Verifica el estado persistido.','success');
+    }catch(cause){notify(cause?.message||'Operación fiscal rechazada.','error');}
+    finally{setDecisionBusy('');}
+  }
+
   async function submitProfileDraft(event){
     event.preventDefault();
     if(!governance.capabilities?.close)return notify('El servidor no habilitó fiscal.close.','error');
@@ -104,6 +140,27 @@ function TaxesWorkspace({state,context}){
     {key:'kind',label:'Tipo'},{key:'number',label:'Número'},{key:'period',label:'Período'},{key:'module',label:'Módulo'},
     {key:'status',label:'Estado',render:(doc)=><CgStatusChip size="small" label={String(doc.status||'issued').toUpperCase()} tone="success"/>},
     {key:'hash',label:'Hash',render:(doc)=><Typography variant="caption" sx={{fontFamily:'monospace'}} title={doc.hash}>{String(doc.hash||'').slice(0,12)}{doc.hash?'…':''}</Typography>}
+  ];
+  const legalSourceColumns=[
+    {key:'reference',label:'Referencia normativa'},
+    {key:'sourceType',label:'Tipo'},
+    {key:'status',label:'Revisión',render:(row)=><CgStatusChip size="small" label={row.status} tone={row.status==='REVIEWED'?'success':'warning'}/>},
+    {key:'contentSha256',label:'Huella SHA-256',render:(row)=><Typography variant="caption" sx={{fontFamily:'monospace'}} title={row.contentSha256}>{String(row.contentSha256||'').slice(0,16)}…</Typography>},
+    {key:'reviewedBy',label:'Revisor',render:(row)=>row.reviewedBy||'Pendiente'},
+    {key:'action',label:'Acción auditada',render:(row)=>row.status==='DRAFT'&&governance.capabilities?.close?
+      <CgButton disabled={Boolean(decisionBusy)||decisionReason.trim().length<15} onClick={()=>decideLegalEvidence(row.id,'review-source')}>Revisar fuente</CgButton>:'—'}
+  ];
+  const fiscalRuleColumns=[
+    {key:'ruleKey',label:'Regla/selector'},
+    {key:'version',label:'Versión'},
+    {key:'status',label:'Estado',render:(row)=><CgStatusChip size="small" label={row.status||'DRAFT'} tone={row.status==='ACTIVE'?'success':'warning'}/>},
+    {key:'legalSourceSha256',label:'Fuente',render:(row)=><Typography variant="caption" sx={{fontFamily:'monospace'}}>{row.legalSourceSha256?String(row.legalSourceSha256).slice(0,16)+'…':'Sin fuente revisada'}</Typography>},
+    {key:'effectiveFrom',label:'Desde UTC',render:(row)=>String(row.effectiveFrom||'').slice(0,10)},
+    {key:'action',label:'Acción auditada',render:(row)=>{
+      if(row.status==='DRAFT'&&governance.capabilities?.close)return <CgButton disabled={Boolean(decisionBusy)||decisionReason.trim().length<15} onClick={()=>decideLegalEvidence(row.id,'review-rule')}>Revisar regla</CgButton>;
+      if(row.status==='REVIEWED'&&governance.capabilities?.activateRules)return <CgButton disabled={Boolean(decisionBusy)||decisionReason.trim().length<15} onClick={()=>decideLegalEvidence(row.id,'activate-rule')}>Activar regla</CgButton>;
+      return '—';
+    }}
   ];
   const profileColumns=[
     {key:'version',label:'Versión'},
@@ -145,6 +202,23 @@ function TaxesWorkspace({state,context}){
           <CgButton type="submit" disabled={profileSaving} sx={{mt:1}}>{profileSaving?'Guardando borrador…':'Guardar perfil como BORRADOR'}</CgButton>
         </Box>
         :<CgState severity="info" title="Captura restringida">Se necesita el permiso fiscal.close para registrar borradores tributarios.</CgState>}
+    </Paper>
+
+    <Paper variant="outlined" sx={{p:1.5}}>
+      <Typography variant="h6">Fuentes legales y reglas versionadas · auditoría</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{mb:1}}>
+        La captura de una fuente no certifica una tasa. Sólo reglas con fuente revisada, aprobación independiente y activación del servidor pueden alimentar documentos. No se precargan porcentajes legales.
+      </Typography>
+      {ruleEvidenceError?<CgState severity="error" title="Evidencia fiscal no disponible">{ruleEvidenceError}</CgState>:null}
+      {ruleEvidenceLoading?<CgState severity="info" title="Consultando gobernanza">Cargando fuentes y reglas del servidor.</CgState>:null}
+      {!ruleEvidenceLoading&&!ruleEvidenceError?<>
+        <CgTextField fullWidth label="Motivo de revisión o activación (15–500 caracteres)" value={decisionReason}
+          inputProps={{minLength:15,maxLength:500}} onChange={(event)=>setDecisionReason(event.target.value)}/>
+        <Typography variant="subtitle1" sx={{mt:1}}>Fuentes legales capturadas</Typography>
+        <Box sx={{maxWidth:'100%',overflowX:'auto'}}><CgDataTable columns={legalSourceColumns} rows={legalSources} empty="No hay fuentes legales capturadas"/></Box>
+        <Typography variant="subtitle1" sx={{mt:1}}>Versiones fiscales</Typography>
+        <Box sx={{maxWidth:'100%',overflowX:'auto'}}><CgDataTable columns={fiscalRuleColumns} rows={fiscalRules} empty="No hay reglas fiscales versionadas"/></Box>
+      </>:null}
     </Paper>
 
     <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))',lg:'repeat(3,minmax(0,1fr))'},gap:1}}>
