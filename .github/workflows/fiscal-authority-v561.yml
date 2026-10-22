@@ -8,6 +8,9 @@ on:
       - 'backend/prisma/migrations/**issue_751**'
       - 'backend/prisma/migrations/**issue_774**'
       - 'backend/prisma/migrations/**issue_785**'
+      - 'backend/prisma/migrations/**issue_775**'
+      - 'frontend/src/services/backendApi.js'
+      - 'qa/iva-withholding-application-v775.test.ts'
       - 'frontend/src/pages/TaxesPage.jsx'
       - 'frontend/src/services/fiscalService.js'
       - 'qa/support/real-backend-harness.ts'
@@ -103,6 +106,7 @@ jobs:
       - run: npm run seed
       - run: npm run test:backend:fiscal:authority:real
       - run: npm --workspace backend exec -- tsx --test ../qa/fiscal-legal-source-review-v751.test.ts
+      - run: npm --workspace backend exec -- tsx --test ../qa/iva-withholding-application-v775.test.ts
       - run: npm run typecheck
       - run: npm run build:backend
       - name: Evidence
