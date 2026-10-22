@@ -6,7 +6,9 @@ export type ComplianceDeclaration = Readonly<{ id: string; kind: string; status:
 export type ComplianceClosing = Readonly<{ module: string; status: string }>;
 export type CompliancePeriodInput = Readonly<{
   tenantId: string; period: string;
-  taxPeriod: Readonly<{ id: string; status: string }> | null;
+  taxPeriod: Readonly<{ id: string; status: string; recordedBalancesExact?: Readonly<{
+    ivaDebit: string; ivaCredit: string; igtfPaid: string;
+  }> }> | null;
   declarations: readonly ComplianceDeclaration[];
   closings: readonly ComplianceClosing[];
   fiscalDocumentCount: number;
@@ -29,6 +31,13 @@ export function buildCompliancePeriodReadiness(input: CompliancePeriodInput) {
       (input.taxPeriod !== null && (!input.taxPeriod || !id(input.taxPeriod.id) ||
         !id(input.taxPeriod.status)))) failed();
   if (input.taxPeriod === null && input.declarations.length) failed();
+  const balances = input.taxPeriod?.recordedBalancesExact;
+  if (balances !== undefined && (
+      !balances || typeof balances !== 'object' || Array.isArray(balances) ||
+      Object.keys(balances).length !== 3 ||
+      ![balances.ivaDebit, balances.ivaCredit, balances.igtfPaid].every(value =>
+        typeof value === 'string' && AMOUNT.test(value))
+  )) failed();
   const seen = new Set<string>();
   const declarations = input.declarations.map((row) => {
     if (!row || !id(row.id) || seen.has(row.id) || !KINDS.has(row.kind) ||
@@ -55,7 +64,8 @@ export function buildCompliancePeriodReadiness(input: CompliancePeriodInput) {
   ];
   const evidence = {
     tenantId: input.tenantId, period: input.period,
-    taxPeriod: input.taxPeriod ? { id: input.taxPeriod.id, internalStatus: input.taxPeriod.status } : null,
+    taxPeriod: input.taxPeriod ? { id: input.taxPeriod.id, internalStatus: input.taxPeriod.status,
+      recordedBalancesExact: balances ? Object.freeze({ ...balances }) : null } : null,
     fiscalDocumentCount: input.fiscalDocumentCount, declarations, closings,
   };
   const evidenceSha256 = createHash('sha256').update(JSON.stringify(evidence), 'utf8').digest('hex');
