@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { summarizeRecordedMoney, parseRecordedMinor } from './fiscal-recorded-money.js';
 
 // #782: diagnostic of real commercial-document coverage, NOT a tax book.
 // FiscalDocument has no verified FK to SalesInvoice/PurchaseInvoice in this schema.
@@ -11,7 +12,6 @@ export type FiscalSourceRow = Readonly<{
 }>;
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/;
 const SHA_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-const MONEY = /^-?(?:0|[1-9]\d{0,17})(?:\.\d{1,2})?$/;
 function blocked(): never { throw new Error('FISCAL_BOOK_SOURCE_NOT_VERIFIABLE'); }
 export function buildFiscalBookReadiness(input: Readonly<{
   tenantId: string; fiscalPeriod: string; book: FiscalBookKind;
@@ -38,8 +38,9 @@ export function buildFiscalBookReadiness(input: Readonly<{
       !/^[A-Z]{3}$/.test(f.currency) ||
       (f.controlNo !== null && (typeof f.controlNo !== 'string' || f.controlNo.length > 160)) ||
       (f.counterpartyId !== null && (typeof f.counterpartyId !== 'string' || !f.counterpartyId.trim())) ||
-      ![f.subtotalExact, f.ivaExact, f.igtfExact, f.retentionExact, f.totalExact].every(v =>
-        typeof v === 'string' && MONEY.test(v))
+      ![f.subtotalExact, f.ivaExact, f.igtfExact, f.retentionExact, f.totalExact].every(v => {
+        try { parseRecordedMinor(v); return true; } catch { return false; }
+      })
     )) blocked();
     const reasons = ['UNLINKED_FISCAL_PROVENANCE'];
     if (!f) reasons.push('RECORDED_FINANCIAL_FACTS_NOT_CAPTURED');
@@ -51,12 +52,16 @@ export function buildFiscalBookReadiness(input: Readonly<{
       recordedFacts: f ? Object.freeze({ ...f }) : null,
       blockers: Object.freeze(reasons) });
   }).sort((a, b) => a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0);
+  // Report recorded amounts only; never treat invoice sums as certified fiscal liability.
+  // Null means at least one legacy source lacks trustworthy recorded money evidence.
+  const recordedCurrencyTotals = evidence.every(row => row.recordedFacts !== null)
+    ? summarizeRecordedMoney(evidence.map(row => row.recordedFacts!)) : null;
   const digest = createHash('sha256').update(JSON.stringify({
     tenantId: input.tenantId, fiscalPeriod: input.fiscalPeriod, book: input.book, evidence,
   }), 'utf8').digest('hex');
   return Object.freeze({
     tenantId: input.tenantId, fiscalPeriod: input.fiscalPeriod, book: input.book,
-    sourceCount: evidence.length, sourceEvidenceHash: digest,
+    sourceCount: evidence.length, sourceEvidenceHash: digest, recordedCurrencyTotals,
     sources: Object.freeze(evidence),
     status: 'BLOCKED_NOT_CERTIFIED' as const,
     reason: evidence.length ? 'UNLINKED_FISCAL_PROVENANCE' : 'EMPTY_PERIOD_NOT_CERTIFIED',
