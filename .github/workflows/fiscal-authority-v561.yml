@@ -5,6 +5,12 @@ on:
     paths:
       - 'backend/src/modules/fiscal/**'
       - 'backend/prisma/migrations/**fiscal**'
+      - 'backend/prisma/migrations/**issue_751**'
+      - 'backend/prisma/migrations/**issue_774**'
+      - 'backend/prisma/migrations/**issue_785**'
+      - 'frontend/src/pages/TaxesPage.jsx'
+      - 'frontend/src/services/fiscalService.js'
+      - 'qa/support/real-backend-harness.ts'
       - 'qa/fiscal-authority-v561.test.ts'
       - 'qa/fiscal-legal-source-review-v751.test.ts'
       - 'tests/fiscal_authority_v561_contract.test.mjs'
