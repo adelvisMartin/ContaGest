@@ -91,3 +91,29 @@ ALTER TABLE public."FiscalDocument"
     OR (jsonb_typeof("taxpayerProfileSnapshot")='object' AND
         "taxpayerProfileHash" ~ '^[a-f0-9]{64}$')
   );
+
+-- Once a taxpayer snapshot is written inside the issuance transaction it is
+-- append-only, even when some caller gets broad direct SQL privileges.
+CREATE FUNCTION public.contagest_774_guard_document_profile_snapshot()
+RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
+BEGIN
+  IF OLD."taxpayerProfileHash" IS NOT NULL AND
+    (NEW."taxpayerProfileSnapshot" IS DISTINCT FROM OLD."taxpayerProfileSnapshot" OR
+     NEW."taxpayerProfileHash" IS DISTINCT FROM OLD."taxpayerProfileHash") THEN
+    RAISE EXCEPTION 'TAXPAYER_DOCUMENT_PROFILE_IMMUTABLE' USING ERRCODE='55000';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER contagest_774_guard_document_profile_snapshot
+  BEFORE UPDATE ON public."FiscalDocument"
+  FOR EACH ROW EXECUTE FUNCTION public.contagest_774_guard_document_profile_snapshot();
+
+INSERT INTO public."Permission" ("id","key","description") VALUES
+  ('77400000-0000-4000-8000-000000000001','fiscal.activate_profiles',
+   'Activar perfiles tributarios documentados con revisión independiente')
+ON CONFLICT ("key") DO NOTHING;
+INSERT INTO public."RolePermission" ("roleId","permissionId")
+SELECT r."id",p."id" FROM public."Role" r
+JOIN public."Permission" p ON p."key"='fiscal.activate_profiles'
+WHERE r."system"=true AND r."name"='Administrador Global'
+ON CONFLICT ("roleId","permissionId") DO NOTHING;
