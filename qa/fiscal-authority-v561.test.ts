@@ -138,9 +138,23 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
 
   const ruleV2 = await createReviewedRule({
     reference: `QA-GAZETTE-V2-${actorSuffix}`,
-    effectiveFrom: '2099-07-01T00:00:00.000Z', numerator: 17
+    // This window overlaps v1 intentionally. Supersession is explicit and
+    // commits atomically; old documents continue to replay v1 snapshots.
+    effectiveFrom: '2099-06-25T00:00:00.000Z', numerator: 17,
+    supersedesId: ruleV1.id
   });
   assert.equal(ruleV2.version, 2);
+  const firstVersion = (await h.ok(`/fiscal/rules?ruleKey=${encodeURIComponent(ruleV1.ruleKey)}`))
+    .find((row: { id: string }) => row.id === ruleV1.id);
+  assert.equal(firstVersion?.status, 'SUPERSEDED');
+  const successorDocs = await h.ok('/fiscal/documents/issue', { method: 'POST',
+    headers: { 'Idempotency-Key': `${RUN}-successor-rule` },
+    body: JSON.stringify({ kind: 'invoice', period: PERIOD, module: 'fiscal',
+      payload: { syntheticSuccessor: true }, ruleKeys: [ruleV1.ruleKey],
+      effectiveAt: '2099-06-26T12:00:00.000Z', prefix: `${RUN}-`, width: 4 })
+  });
+  assert.equal(successorDocs.appliedRules[0].ruleVersion, 2);
+
   const historicalAfter = await h.ok(`/fiscal/documents/${first.id}/rules`);
   assert.equal(historicalAfter[0].ruleVersion, 1, 'historical snapshot must not be reinterpreted with a new rule');
   assert.equal(historicalAfter[0].ruleHash, historicalBefore[0].ruleHash);
