@@ -22,21 +22,24 @@ export type FiscalRuleAuthority = Readonly<{
 
 const SHA = /^[a-f0-9]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const reject = (): never => { throw new Error('FISCAL_RULE_SOURCE_NOT_AUTHORIZED'); };
+function reject(): never { throw new Error('FISCAL_RULE_SOURCE_NOT_AUTHORIZED'); }
 
 function authorizedSource(source: ReviewedFiscalLegalSource, tenantId: string): FiscalRuleAuthority {
   if (!source || source.tenantId !== tenantId || source.status !== 'REVIEWED' ||
       typeof source.id !== 'string' || !UUID.test(source.id) ||
       !source.reference?.trim() || !SHA.test(source.contentSha256) ||
-      !source.reviewedBy?.trim() || source.reviewedBy === source.createdBy ||
-      !source.reviewedAt) reject();
-  const reviewed = new Date(source.reviewedAt);
+      typeof source.createdBy !== 'string' || !source.createdBy.trim()) reject();
+  const reviewer = source.reviewedBy;
+  const reviewedAt = source.reviewedAt;
+  if (typeof reviewer !== 'string' || !reviewer.trim() || reviewer === source.createdBy ||
+      reviewedAt === null || reviewedAt === undefined) reject();
+  const reviewed = new Date(reviewedAt);
   if (!Number.isFinite(reviewed.getTime()) || reviewed.getTime() > Date.now() + 60_000) reject();
   return Object.freeze({
     legalSourceId: source.id,
     legalSourceHash: source.contentSha256,
     legalSourceReference: source.reference,
-    legalSourceReviewedBy: source.reviewedBy,
+    legalSourceReviewedBy: reviewer,
     legalSourceReviewedAt: reviewed.toISOString(),
   });
 }
