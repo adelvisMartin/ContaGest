@@ -252,7 +252,7 @@ export async function getDocumentRuleSnapshots(tenantId: string, fiscalDocumentI
 }
 
 export async function buildCloseEvidence(db: FiscalDb, input: { tenantId: string; period: string; module: string }) {
-  const [unposted, draftSales, draftPurchases, imbalancedEntries, fiscalDocuments] = await Promise.all([
+  const [unposted, draftSales, draftPurchases, imbalancedEntries, fiscalDocuments, unverifiedFiscalDocuments] = await Promise.all([
     db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."LedgerEntry" WHERE "tenantId"=${input.tenantId} AND "fiscalPeriod"=${input.period} AND "posted"=false`),
     db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."SalesInvoice" WHERE "tenantId"=${input.tenantId} AND "fiscalPeriod"=${input.period} AND "status"::text='draft'`),
     db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."PurchaseInvoice" WHERE "tenantId"=${input.tenantId} AND "fiscalPeriod"=${input.period} AND "status"::text='draft'`),
@@ -266,7 +266,17 @@ export async function buildCloseEvidence(db: FiscalDb, input: { tenantId: string
         HAVING ROUND(SUM(l."debit"),2) <> ROUND(SUM(l."credit"),2)
       ) q
     `),
-    db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."FiscalDocument" WHERE "tenantId"=${input.tenantId} AND "period"=${input.period}`)
+    db.$queryRaw<CountRow[]>(Prisma.sql`SELECT COUNT(*)::bigint AS count FROM public."FiscalDocument" WHERE "tenantId"=${input.tenantId} AND "period"=${input.period}`),
+    // Legacy/external fiscal documents without rule snapshots are evidence,
+    // not certified fiscal issues. They must block an authoritative close.
+    db.$queryRaw<CountRow[]>(Prisma.sql`
+      SELECT COUNT(*)::bigint AS count FROM public."FiscalDocument" d
+      WHERE d."tenantId"=${input.tenantId} AND d."period"=${input.period}
+        AND (d."status" <> 'issued' OR NOT EXISTS (
+          SELECT 1 FROM public."FiscalDocumentRuleSnapshot" s
+          WHERE s."tenantId"=d."tenantId" AND s."fiscalDocumentId"=d."id"
+        ))
+    `)
   ]);
 
   return {
@@ -276,7 +286,8 @@ export async function buildCloseEvidence(db: FiscalDb, input: { tenantId: string
     draftSalesDocuments: Number(draftSales[0]?.count || 0n),
     draftPurchaseDocuments: Number(draftPurchases[0]?.count || 0n),
     imbalancedPostedEntries: Number(imbalancedEntries[0]?.count || 0n),
-    fiscalDocumentCount: Number(fiscalDocuments[0]?.count || 0n)
+    fiscalDocumentCount: Number(fiscalDocuments[0]?.count || 0n),
+    unverifiedFiscalDocuments: Number(unverifiedFiscalDocuments[0]?.count || 0n)
   };
 }
 
@@ -285,7 +296,8 @@ export function assertFiscalClosePreconditions(prechecks: Awaited<ReturnType<typ
     unpostedLedgerEntries: prechecks.unpostedLedgerEntries,
     draftSalesDocuments: prechecks.draftSalesDocuments,
     draftPurchaseDocuments: prechecks.draftPurchaseDocuments,
-    imbalancedPostedEntries: prechecks.imbalancedPostedEntries
+    imbalancedPostedEntries: prechecks.imbalancedPostedEntries,
+    unverifiedFiscalDocuments: prechecks.unverifiedFiscalDocuments
   };
   if (Object.values(blockers).some((value) => value > 0)) {
     throw new HttpError(409, 'El período no puede cerrarse porque existen invariantes fiscales/contables pendientes.', { code: 'FISCAL_CLOSE_PRECHECK_FAILED', blockers });
