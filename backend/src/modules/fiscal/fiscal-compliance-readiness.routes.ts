@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
@@ -11,8 +11,9 @@ router.get('/readiness', asyncHandler(async (req, res) => {
   if (Object.keys(req.query).some(key => key !== 'period') ||
       typeof period !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period))
     throw new HttpError(422, 'Período requerido en formato AAAA-MM.', { code: 'COMPLIANCE_PERIOD_INVALID' });
-  const tenantId = (req as any).context?.tenantId as string;
-  if (!tenantId) throw new HttpError(401, 'Se requiere contexto de empresa autenticada.');
+  const tenantId = (req as Request & { context?: { tenantId?: unknown } }).context?.tenantId;
+  if (typeof tenantId !== 'string' || !tenantId.trim())
+    throw new HttpError(401, 'Se requiere contexto de empresa autenticada.', { code: 'FISCAL_TENANT_REQUIRED' });
   const [taxPeriod, closings, fiscalDocumentCount] = await Promise.all([
     prisma.taxPeriod.findUnique({
       where: { tenantId_period: { tenantId, period } },
