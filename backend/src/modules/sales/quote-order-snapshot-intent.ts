@@ -30,7 +30,7 @@ export function prepareAcceptedQuoteSnapshot(input:{
      !validId(quote.id)||!validId(quote.clientId)||
      quote.status!=='accepted'||!Number.isSafeInteger(quote.revision)||quote.revision<1||
      quote.revision!==input.expectedRevision||
-     !CURRENCY.test(quote.currency)||
+     typeof quote.currency!=='string'||!CURRENCY.test(quote.currency)||
      !Array.isArray(quote.lines)||quote.lines.length<1||quote.lines.length>100)fail();
   const seen=new Set<string>();let sum=0n;
   const lines=quote.lines.map(line=>{
