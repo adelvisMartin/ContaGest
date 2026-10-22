@@ -38,6 +38,13 @@ En `backend/prisma/schema.prisma` del baseline auditado hay `SalesInvoice`, `Pur
 - **#744:** `open-item-coverage.ts` ahora valida valores de factura no negativos y sin overflow `Decimal(18,2)` de los modelos Prisma actuales. No implica que el balance abierto sea calculable sin PaymentAllocation y vencimientos.
 - **#756:** `reports/reorder-scan-page.ts` usa `Reflect.ownKeys` para rechazar claves desconocidas aunque sean no enumerables o símbolos. Conserva defaults, filtros propios y alcance `PAGE_ONLY`.
 - **#757:** el contrato de recepción existente mantiene `persisted:false`; se incorporó su suite a la ejecución conjunta de siete tickets sin duplicar la autoridad de compras.
-- **Evidencia actualizada:** [55/55 focales sobre Git blobs exactos](../qa/ERP_SEVEN_TICKETS_FOCAL_QA_20261022.md) y [matriz jurídica Venezuela](../compliance/VENEZUELA_ERP_AR_AP_BANKING_COMMERCIAL_MATRIX_20261022.md). Ambas dejan explícitamente el estado `PARTIAL / NOT_RELEASE_READY`.
+- **Evidencia actualizada:** [73/73 focales sobre Git blobs exactos](../qa/ERP_SEVEN_TICKETS_FOCAL_QA_20261022.md) y [matriz jurídica Venezuela](../compliance/VENEZUELA_ERP_AR_AP_BANKING_COMMERCIAL_MATRIX_20261022.md). Ambas dejan explícitamente el estado `PARTIAL / NOT_RELEASE_READY`.
 - **Concurrencia de PR:** #1282 modifica `backend/package.json`, ruta que también edita #1283; revisar y conciliar ese archivo contra el HEAD actualizado antes de merge. Nunca sobrescribir scripts ajenos ni afirmar que el baseline histórico siga siendo HEAD.
-- Los gates PG17, full backend build, API/RBAC/browser y GL permanecen **NOT_VERIFIED**. Revertir los commits implicados (no hay DDL); el texto anterior de «un único commit» correspondía al alcance inicial, no a esta ampliación.
+- Los gates PG17, full backend build, API/RBAC/browser y GL permanecen **NOT_VERIFIED**. Este PR ya incluye DDL forward-only #756; su rollback requiere preservar políticas/audit; el texto anterior de «un único commit» correspondía al alcance inicial, no a esta ampliación.
+
+
+## Incremento persistente #756 (2026-10-22)
+
+- **IMPLEMENTED IN SOURCE:** Prisma `InventoryReorderPolicy` + PG migration `20261022172000_issue_756_reorder_policy`, tenant FK/RLS, API `GET/PUT /api/v1/reorder-policies/:productId` con `reports.view/inventory.manage`, serializable CAS `expectedRevision`, auditoría atómica, rechazo de entradas coercibles, derivación de candidatos sobre lectura RepeatableRead con `Product.stock/reserved` sin duplicar saldo. Ver [contrato](ERP_REORDER_POLICY_PERSISTENCE_V756_20261022.md).
+- 9 regresiones del módulo nuevo ejecutadas con JS emitido por `tsc --strict` desde blobs TS exactos; **9/9 PASS**. Siete tickets anteriores **64/64 PASS** (aislados), total focal **73/73 PASS**. Los 9 tests entran al backend via `tsx --test`, pero `tsx` y Prisma del backend completo no se ejecutaron aquí por falta de checkout/dependencias.
+- **NOT VERIFIED:** PG17 migration/schema, HTTP RBAC/tenant A/B, serializable concurrencia, report nuevo end-to-end, browser/UI, GL/stock ledger #738, CI exact-SHA. Las otras seis autoridades de tickets siguen parciales/no implementadas; **NO DoD, NO merge, NO close**.
