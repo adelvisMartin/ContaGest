@@ -123,3 +123,11 @@ The PR remains **NOT_READY** until latest-HEAD native Node source contracts, bac
 - Applied defense-in-depth to `tools/hipico-whatsapp-web-bridge/src/index.mjs`: `SOURCE_AUTO_REPLY_ACTIVE` now also requires `evaluateSourceAutoReplyPolicy(config).eligible`. This independent legal/provider gate is `false` under the 2026-10-15 Messenger review. Its status must not become GO by changing an environment variable.
 - Regressions `tests/hipico_epic_102_implementation_handoff.test.mjs` and `tests/hipico_real_operativa_shadow_contract.test.mjs` now assert the extra policy predicate; backend `sourceAutoReplySendAuthorized` already separately enforces `SOURCE_REPLY_SEND_POLICY.status === 'GO'`. No data or network sending was executed to validate this.
 - The correct operational status is **NO_GO on automated SOURCE writes** and **PARTIAL/NOT_READY for release** until the exact-SHA preview and integrated CI pass. The QA repairs do not grant WhatsApp permission.
+
+### Visual v16 theme authority update (2026-10-22)
+
+Preview `dpl_8ur9S4aD1T9ZjVubmeRnM5XSaojA` at `b03894064c2a1a574cd6965233ff0bbaedb92162` passed the prior Hípico native source and backend gates but failed visual-source audit with `runtime-not-light-dark` and `store-not-light-dark` (BUILD_UTILS_SPAWN_125). These were stale v16 audit assumptions that theme *preference* is only `light/dark`.
+
+The current authoritative `frontend/src/design-system/uxContract.v1.js` **explicitly supports `light/dark/system` preferences**. The app normalizes preference, observes the OS `(prefers-color-scheme: dark)` media query and resolves an effective binary `light/dark` CSS mode, storing preference separately from `data-resolved-theme`. The store's normalization uses that same authority.
+
+`scripts/visual-system-audit.mjs` now checks the actual three-preference contract, store normalization, `resolveThemeMode`, and binary resolved mode; `scripts/visual-source-gate-v16.mjs` consumes these named assertions and fails closed when absent. This is not bypassing UI quality—unauthorized theme preferences or removal of system resolution now fail. Visual/browser computed-theme and 200% zoom tests remain separate required gates. New Vercel Preview is scoped to its own exact SHA and is **not** inherited from the earlier failure. Do not claim READY without actual provider state.
