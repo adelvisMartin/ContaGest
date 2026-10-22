@@ -20,7 +20,7 @@ export function prepareFefoAllocation(input:{tenantId:string;productId:string;lo
   if(typeof lot.active!=='boolean'||typeof lot.receivedAtUtc!=='string'||!TIME.test(lot.receivedAtUtc)||!Number.isFinite(Date.parse(lot.receivedAtUtc))||new Date(lot.receivedAtUtc).toISOString()!==lot.receivedAtUtc)throw new TypeError('FEFO_LOT_METADATA_INVALID');
   if(lot.expiresOn!==null)isoDate(lot.expiresOn);
   const available=units(lot.availableExact);
-  // An as-of UTC day cannot include stock received on a later day.
+  // A proposal as-of a UTC day cannot select inventory received on a later day.
   if(lot.active&&available>0n&&lot.receivedAtUtc.slice(0,10)<=input.asOfDate&&
      (lot.expiresOn===null||lot.expiresOn>=input.asOfDate))eligible.push({lot,available});
  }
