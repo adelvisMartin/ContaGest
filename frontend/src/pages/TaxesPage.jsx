@@ -22,6 +22,10 @@ function TaxesWorkspace({state,context}){
   const [profilesLoading,setProfilesLoading]=useState(true);
   const [profilesError,setProfilesError]=useState('');
   const [profileSaving,setProfileSaving]=useState(false);
+  const [readinessPeriod,setReadinessPeriod]=useState(currentPeriod());
+  const [compliance,setCompliance]=useState(null);
+  const [complianceLoading,setComplianceLoading]=useState(false);
+  const [complianceError,setComplianceError]=useState('');
   const [profileDraft,setProfileDraft]=useState({
     effectiveFrom:new Date().toISOString().slice(0,10),effectiveTo:'',jurisdiction:'',
     taxpayerCategory:'',activityCodes:'',sourceReference:'',sourceContentSha256:''
@@ -71,6 +75,18 @@ function TaxesWorkspace({state,context}){
   }
   useEffect(()=>{void loadProfiles();},[]);
 
+  async function loadCompliancePeriod(period=readinessPeriod){
+    setComplianceLoading(true);setComplianceError('');
+    try{
+      const report=await FiscalService.complianceReadiness(period);
+      setCompliance(report);
+    }catch(cause){
+      setCompliance(null);
+      setComplianceError(cause?.message||'No fue posible consultar la evidencia del período.');
+    }finally{setComplianceLoading(false);}
+  }
+  useEffect(()=>{void loadCompliancePeriod(readinessPeriod);},[readinessPeriod]);
+
   async function submitProfileDraft(event){
     event.preventDefault();
     if(!governance.capabilities?.close)return notify('El servidor no habilitó fiscal.close.','error');
@@ -110,6 +126,13 @@ function TaxesWorkspace({state,context}){
         tone="warning"/>;
     }},
     {key:'hash',label:'Hash',render:(doc)=><Typography variant="caption" sx={{fontFamily:'monospace'}} title={doc.hash}>{String(doc.hash||'').slice(0,12)}{doc.hash?'…':''}</Typography>}
+  ];
+  const complianceColumns=[
+    {key:'kind',label:'Obligación'},
+    {key:'amountExact',label:'Monto registrado (no determinado)'},
+    {key:'internalStatus',label:'Estado interno'},
+    {key:'externalFiling',label:'Presentación externa',render:()=> <CgStatusChip size="small" label="SIN VERIFICACIÓN OFICIAL" tone="warning"/>},
+    {key:'bankReconciliation',label:'Conciliación',render:()=> <CgStatusChip size="small" label="NO CERTIFICADA" tone="warning"/>}
   ];
   const profileColumns=[
     {key:'version',label:'Versión'},
@@ -162,6 +185,37 @@ function TaxesWorkspace({state,context}){
         <CgTextField sx={{mt:1}} fullWidth label="Alícuota %" type="number" inputProps={{step:.01,min:0}} value={item.rate||0} onChange={(e)=>setTaxes((current)=>({...current,[key]:{...current[key],rate:Number(e.target.value||0)}}))}/>
       </Paper>)}
     </Box>
+
+    <Paper variant="outlined" sx={{p:1.5}}>
+      <Typography variant="h6">Centro de cumplimiento fiscal · diagnóstico por período</Typography>
+      <Typography variant="body2" color="text.secondary">
+        Datos internos existentes, no una declaración ante SENIAT ni una autorización de pago.
+        Los saldos reflejan registros, no obligaciones legalmente determinadas.
+      </Typography>
+      <Stack direction={{xs:'column',sm:'row'}} spacing={1} alignItems={{sm:'center'}} sx={{mt:1}}>
+        <CgTextField label="Período fiscal (AAAA-MM)" value={readinessPeriod}
+          inputProps={{pattern:'[0-9]{4}-(0[1-9]|1[0-2])'}}
+          onChange={(event)=>{const value=event.target.value;if(value.length<=7)setReadinessPeriod(value);}}/>
+        <CgButton disabled={complianceLoading||!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(readinessPeriod)}
+          onClick={()=>void loadCompliancePeriod()}>{complianceLoading?'Consultando…':'Actualizar evidencia'}</CgButton>
+      </Stack>
+      {complianceLoading?<CgState severity="info" title="Consultando">Leyendo evidencia interna del período.</CgState>:null}
+      {complianceError?<CgState severity="warning" title="Evidencia no disponible">{complianceError}</CgState>:null}
+      {compliance && !complianceLoading?<>
+        <CgState severity="warning" title="NO APTO PARA DECLARAR O PAGAR">
+          Estado: {compliance.status}. Existen {compliance.blockers?.length||0} bloqueos de procedencia,
+          presentación o conciliación. No se verificó información ante la autoridad fiscal.
+        </CgState>
+        <Typography variant="caption" color="text.secondary">
+          Documentos fiscales registrados: {compliance.fiscalDocumentCount||0}.
+          Saldos internos IVA débito: {compliance.taxPeriod?.recordedBalancesExact?.ivaDebit||'—'};
+          IVA crédito: {compliance.taxPeriod?.recordedBalancesExact?.ivaCredit||'—'};
+          IGTF pagado registrado: {compliance.taxPeriod?.recordedBalancesExact?.igtfPaid||'—'}.
+        </Typography>
+        <CgDataTable columns={complianceColumns} rows={compliance.declarations||[]}
+          empty="Sin declaraciones registradas para este período"/>
+      </>:null}
+    </Paper>
 
     <Paper variant="outlined" sx={{p:1.5}}>
       <Typography variant="h6">Documentos fiscales</Typography>
