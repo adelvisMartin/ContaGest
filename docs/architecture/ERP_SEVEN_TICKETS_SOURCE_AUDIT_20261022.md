@@ -33,3 +33,11 @@ En `backend/prisma/schema.prisma` del baseline auditado hay `SalesInvoice`, `Pur
 - **Riesgos**: entradas inválidas antes toleradas pasarán a error seguro; FEFO histórico ya no utilizará inventario recibido después del corte. Sin DDL, sin migraciones, sin efectos en pagos/stock/GL.
 - **Estado**: **PARTIAL**. Mantener este PR como **DRAFT** y los siete issues **OPEN** hasta implementar y probar los flujos completos. No cerrar el backlog por un arreglo de preflight. Rollback mediante revert de los commits (sin reversión de datos).
 
+## Ampliación posterior · 2026-10-22
+
+- **#744:** `open-item-coverage.ts` ahora valida valores de factura no negativos y sin overflow `Decimal(18,2)` de los modelos Prisma actuales. No implica que el balance abierto sea calculable sin PaymentAllocation y vencimientos.
+- **#756:** `reports/reorder-scan-page.ts` usa `Reflect.ownKeys` para rechazar claves desconocidas aunque sean no enumerables o símbolos. Conserva defaults, filtros propios y alcance `PAGE_ONLY`.
+- **#757:** el contrato de recepción existente mantiene `persisted:false`; se incorporó su suite a la ejecución conjunta de siete tickets sin duplicar la autoridad de compras.
+- **Evidencia actualizada:** [55/55 focales sobre Git blobs exactos](../qa/ERP_SEVEN_TICKETS_FOCAL_QA_20261022.md) y [matriz jurídica Venezuela](../compliance/VENEZUELA_ERP_AR_AP_BANKING_COMMERCIAL_MATRIX_20261022.md). Ambas dejan explícitamente el estado `PARTIAL / NOT_RELEASE_READY`.
+- **Concurrencia de PR:** #1282 modifica `backend/package.json`, ruta que también edita #1283; revisar y conciliar ese archivo contra el HEAD actualizado antes de merge. Nunca sobrescribir scripts ajenos ni afirmar que el baseline histórico siga siendo HEAD.
+- Los gates PG17, full backend build, API/RBAC/browser y GL permanecen **NOT_VERIFIED**. Revertir los commits implicados (no hay DDL); el texto anterior de «un único commit» correspondía al alcance inicial, no a esta ampliación.
