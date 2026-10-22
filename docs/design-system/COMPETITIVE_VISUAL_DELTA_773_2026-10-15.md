@@ -49,3 +49,7 @@ The PR-scoped `ux-touch-focus-v773.yml` workflow runs the two targeted checks on
 ## Revisión de alcance del lote multi-ticket (2026-10-22)
 
 La matriz de brechas precedente sigue siendo `PARTIAL/NOT_VERIFIED`, no está resuelta con los incrementos no visuales de #637/#849/#852/#854. No se modifica la autoridad Cg* ni CSS en este lote; las pruebas reales de viewport 360/390/430/768/1366/1920, zoom 200 %, temas, teclado y navegación de 58 rutas continúan pendientes de evidencia exact-SHA. #773 permanece OPEN. No confundir la existencia del contrato de componentes con una convergencia demostrada.
+
+## Incremento de componente único Cg* — 2026-10-22
+
+Se reforzó `CgSelect`: etiqueta persistente, control de error/required/disabled, helperId accesible y estado vacío sin opciones que no ofrece elección fantasma. `CgDialog` distingue botones type=button y confirmDisabled para formularios/dialogs de confirmación asíncrona. `CgDataTable` añade nombre accesible y región navegable para scroll de tablas amplias. La capa visual canónica amplía `:focus-visible` a roles combobox/menuitem y MUI ButtonBase y usa color de sistema `Highlight` en forced-colors, conservando reduced-motion. **No se creó CSS por vertical**. Pendiente: verificación real en Chromium/Firefox/WebKit, 200% zoom y todos los anchos, evitando declarar AA por tests de fuente únicamente.
