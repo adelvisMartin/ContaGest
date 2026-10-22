@@ -38,7 +38,7 @@ export type LedgerLifecycleSnapshot = {
 
 type AccountingDb = Pick<Prisma.TransactionClient, 'closingPeriod' | 'ledgerEntry' | '$queryRaw'>;
 
-const PERIOD_CODE = /^\\d{4}-(0[1-9]|1[0-2])$/;
+const PERIOD_CODE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /**
  * Every accounting posting/close writer must acquire this same PostgreSQL

@@ -34,3 +34,13 @@ test('#637 no db-root mutex is mistakenly claimed to survive a write', () => {
   assert.match(service, /if \(db !== prisma\)/);
   assert.match(service, /all.*posting.*close|Every accounting posting\/close writer/i);
 });
+
+test('#637 period format accepts valid months, rejects malformed month and slash escapes', () => {
+  const regexLiteral=service.match(/const PERIOD_CODE = (\/[^\n]+\/);/)?.[1];
+  assert.ok(regexLiteral,'accounting period grammar absent');
+  const format = new Function('return '+regexLiteral)();
+  assert.ok(format.test('2026-10'));
+  assert.ok(format.test('2099-01'));
+  for(const input of ['2026-00','2026-13','2026-1','2026-10junk','\\d{4}-10'])
+    assert.equal(format.test(input),false,input);
+});
