@@ -412,7 +412,7 @@ function TaxesWorkspace({state,context}){
         formal exigido por SENIAT; no habilitar su uso como documento de retención.
       </Typography>
       {ivaApplicationError?<CgState severity="error" title="Operación no autorizada">{ivaApplicationError}</CgState>:null}
-      {governance.capabilities?.manageDocuments?
+      {governance.capabilities?.postWithholding?
         <Box component="form" onSubmit={applyIvaWithholding} sx={{display:'grid',gap:1}}>
           <CgTextField fullWidth required label="ID UUID de la factura de compra contabilizada"
             value={ivaApplication.purchaseInvoiceId}
@@ -442,11 +442,11 @@ function TaxesWorkspace({state,context}){
         {key:'withheldMinor',label:'Retenido (céntimos)'},
         {key:'status',label:'Estado',render:r=><CgStatusChip size="small"
           label={r.status} tone={r.status==='REVERSED'?'warning':'success'}/>},
-        {key:'action',label:'Reverso auditado',render:r=>governance.capabilities?.manageDocuments&&r.status==='POSTED'?
+        {key:'action',label:'Reverso auditado',render:r=>governance.capabilities?.reverseWithholding&&r.status==='POSTED'?
           <CgButton disabled={Boolean(ivaApplicationBusy)||ivaApplication.reversalReason.trim().length<15}
             onClick={()=>reverseIvaWithholding(r.id)}>Reversar</CgButton>:'—'}
       ]} rows={ivaApplications} empty="No hay aplicaciones internas registradas"/>
-      {governance.capabilities?.manageDocuments?
+      {governance.capabilities?.reverseWithholding?
         <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'1fr 2fr'},gap:1,mt:1}}>
           <CgTextField label="Período del reverso (AAAA-MM)" value={ivaApplication.reversalPeriod}
             onChange={event=>setIvaApplication(x=>({...x,reversalPeriod:event.target.value}))}/>
