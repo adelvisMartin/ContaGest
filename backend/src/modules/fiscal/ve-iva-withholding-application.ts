@@ -13,6 +13,11 @@ export type PostedPurchaseEvidence = Readonly<{
   iva:AppliedRatio; retention:AppliedRatio;
 }>;
 const denied=():never=>{throw new Error('VE_IVA_WITHHOLDING_APPLICATION_REJECTED');};
+/** No implicit enablement from NODE_ENV, role or existence of an approved rule. */
+export function isInternalRetivaPostingEnabled(value:unknown):boolean {
+  return value==='true';
+}
+
 const integer=(n:unknown):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0;
 export function exactMinor(value:string):number {
   if(typeof value!=='string'||!/^\d{1,14}\.\d{2}$/.test(value)) denied();
