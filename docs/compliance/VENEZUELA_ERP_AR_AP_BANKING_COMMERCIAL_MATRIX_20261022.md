@@ -44,3 +44,11 @@ Investigación jurídico-funcional completada como insumo de ingeniería; **impl
 - **Código de Comercio:** documento estatal reproducido en https://docs.venezuela.justia.com/federales/codigos/codigo-de-comercio.pdf ; informe público OEA (https://www.oas.org/juridico/spanish/mesicic_iii_inf_ven.pdf) también identifica artículos 37 (corrección por asiento distinto) y 44 (10 años para libros/comprobantes). Aplicación: reverso append-only, retención y cadena de evidencias.
 - **Calidad de fuentes:** se consultaron referencias reproducidas, análisis profesionales y copia institucional de OEA, no se ha obtenido desde el SENIAT un texto oficial íntegro con certificación de vigencia y aplicabilidad específica. **LEGAL_VALIDATION_PENDING** hasta esa comprobación por asesor tributario para cada perfil.
 - **#743:** el importador no equipara dos movimientos sin identificador bancario por coincidir importe/fecha/texto; identidad de fuente+ordinal documentada en [BANK_IMPORT_LINE_IDENTITY_V743_20261022](../architecture/BANK_IMPORT_LINE_IDENTITY_V743_20261022.md). Es política de integridad de datos, no regla tributaria nueva.
+
+
+## Reposición persistente #756 y NIIF inventarios · revisión adicional 2026-10-22
+
+- IFRS Foundation, IAS 2 Inventories (fuente primaria): https://www.ifrs.org/issued-standards/list-of-standards/ias-2-inventories/ . Inventarios se valoran al menor entre costo y valor neto realizable; el costeo puede usar identificación específica, FIFO o costo promedio ponderado según la naturaleza y uso. **Regla contable de valoración distinta a política operativa FEFO**, reorder threshold, lote, reserva y forecast.
+- Implementación `InventoryReorderPolicy` guarda **sólo cantidades operativas**. No modifica `InventoryMovement`/GL, fiscal documents, impairment ni método contable. El producto necesita una configuración contable aparte para eventuales ajustes de valuación.
+- Código de Comercio, art. 44: referencia jurídica adicional de WIPO Lex https://www.wipo.int/wipolex/es/legislation/details/4008 . Auditoría de cambios de política se guarda mediante `AuditLog` transaccional; la política de retención legal general del sistema sigue pendiente de prueba y revisión jurídica.
+- Ver [autoridad y contrato #756](../architecture/ERP_REORDER_POLICY_PERSISTENCE_V756_20261022.md). **Legal validation y producción pendientes**.
