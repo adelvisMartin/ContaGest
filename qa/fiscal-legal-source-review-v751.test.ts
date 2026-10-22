@@ -52,4 +52,17 @@ test('#751 PostgreSQL17 review requires a second authorized actor and preserves 
   assert.notEqual(rows[0].createdBy, rows[0].reviewedBy);
   const audit = await h.prisma.auditLog.findMany({ where: { tenantId: h.tenant.id, entity: 'FiscalLegalSource', entityId: created.id, action: 'fiscal.legal_source.reviewed' } });
   assert.equal(audit.length, 1, 'one committed review must have one atomic audit');
+  // The reviewed capture cannot be mutated through SQL even if a DB sidecar
+  // inadvertently broadens privileges. Run only on the disposable fixture.
+  await assert.rejects(
+    h.prisma.$executeRaw`UPDATE public."FiscalLegalSource" SET "contentSha256"=${'0'.repeat(64)}
+      WHERE "tenantId"=${h.tenant.id} AND "id"=${created.id}::uuid`,
+    /FISCAL_LEGAL_SOURCE_IMMUTABLE/i
+  );
+  await assert.rejects(
+    h.prisma.$executeRaw`DELETE FROM public."FiscalLegalSource"
+      WHERE "tenantId"=${h.tenant.id} AND "id"=${created.id}::uuid`,
+    /FISCAL_LEGAL_SOURCE_IMMUTABLE/i
+  );
+
 });
