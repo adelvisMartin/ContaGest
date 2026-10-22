@@ -10,6 +10,7 @@ import { runFinancialIdempotentMutation } from '../../shared/services/financial-
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
 import fiscalComplianceWorkflowRoutes from './fiscal-compliance-workflow.routes.js';
+import { assertFiscalEffectivePeriod } from './fiscal-effective-period-policy.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts } from './taxpayer-profile.repository.js';
 import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
 import { createFiscalLegalSourceDraft, listFiscalLegalSources, reviewFiscalLegalSource } from './fiscal-legal-source.repository.js';
@@ -296,7 +297,8 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     const effectiveAt: Date = req.body.effectiveAt || new Date();
     // The effective rule must correspond to the actual fiscal-document period,
     // never to a conveniently selected different month.
-    if (effectiveAt.toISOString().slice(0, 7) !== req.body.period) {
+    try { assertFiscalEffectivePeriod(req.body.period, effectiveAt); }
+    catch {
       throw new HttpError(422, 'La fecha del hecho fiscal no corresponde al período del documento.', {
         code: 'FISCAL_EVENT_PERIOD_MISMATCH',
       });
