@@ -39,7 +39,7 @@ function TaxesWorkspace({state,context}){
     effectiveFrom:new Date().toISOString().slice(0,10),effectiveTo:'',jurisdiction:'',
     taxpayerCategory:'',activityCodes:'',sourceReference:'',sourceContentSha256:''
   });
-  const [form,setForm]=useState({kind:FISCAL_DOCUMENT_KINDS[0]?.value||'invoice',number:'',period:currentPeriod(),module:FISCAL_MODULES[0]?.value||'fiscal',payloadJson:'{}'});
+  const [form,setForm]=useState({kind:'supporting_document',number:'',period:currentPeriod(),module:FISCAL_MODULES[0]?.value||'fiscal',payloadJson:'{}'});
   const notify=(message,tone='success')=>Toast?.show?.(message,tone);
 
   function saveTaxes(){
@@ -174,7 +174,7 @@ function TaxesWorkspace({state,context}){
       if(!payload||Array.isArray(payload)||typeof payload!=='object')throw new Error('El payload debe ser un objeto JSON.');
       await FiscalService.createDocument({kind:form.kind,number:form.number,period:form.period,module:form.module,payload});
       notify('Documento fiscal registrado y auditado.','success');
-      setForm({kind:FISCAL_DOCUMENT_KINDS[0]?.value||'invoice',number:'',period:currentPeriod(),module:FISCAL_MODULES[0]?.value||'fiscal',payloadJson:'{}'});
+      setForm({kind:'supporting_document',number:'',period:currentPeriod(),module:FISCAL_MODULES[0]?.value||'fiscal',payloadJson:'{}'});
       await loadFiscal({silent:true});
     }catch(cause){notify(`No se registró el documento: ${cause?.message||'Error'}`,'error');}
     finally{setSaving(false);}
@@ -342,15 +342,15 @@ function TaxesWorkspace({state,context}){
 
     <Paper variant="outlined" sx={{p:1.5}}>
       <Typography variant="h6">Documentos fiscales</Typography>
-      <Typography variant="caption" color="text.secondary">Registro tenant-scoped con hash, RBAC y bloqueo por período fiscal cerrado. Esta ingeniería no constituye certificación regulatoria SENIAT.</Typography>
+      <Typography variant="caption" color="text.secondary">El registro manual admite únicamente soportes externos, sin emitir facturas ni comprobantes tributarios. Para documentos regulados se requiere el flujo de reglas y perfil ACTIVE; no constituye certificación SENIAT.</Typography>
       <Box mt={1.2}>
         {governance.capabilities?.manageDocuments?
           <Box component="form" onSubmit={submitDocument}>
             <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(2,minmax(0,1fr))',lg:'repeat(4,minmax(0,1fr))'},gap:1}}>
-              <CgSelect label="Tipo documento" value={form.kind} onChange={(e)=>setForm({...form,kind:e.target.value})} options={FISCAL_DOCUMENT_KINDS}/>
+              <CgSelect label="Tipo documento externo" value={form.kind} onChange={(e)=>setForm({...form,kind:e.target.value})} options={FISCAL_DOCUMENT_KINDS.filter(x=>['supporting_document','other'].includes(x.value))}/>
               <CgTextField label="Número" required value={form.number} onChange={(e)=>setForm({...form,number:e.target.value})}/>
               <CgTextField label="Período" required inputProps={{pattern:'\\d{4}-\\d{2}'}} value={form.period} onChange={(e)=>setForm({...form,period:e.target.value})}/>
-              <CgSelect label="Módulo fiscal" value={form.module} onChange={(e)=>setForm({...form,module:e.target.value})} options={FISCAL_MODULES}/>
+              <CgSelect label="Registro externo (no comprobante SENIAT)" value="fiscal" onChange={()=>{}} options={FISCAL_MODULES.filter(x=>x.value==='fiscal')}/>
             </Box>
             <CgTextField sx={{mt:1}} fullWidth label="Payload JSON opcional" multiline minRows={2} value={form.payloadJson} onChange={(e)=>setForm({...form,payloadJson:e.target.value})}/>
             <CgButton type="submit" disabled={saving} sx={{mt:1}}>{saving?'Registrando…':'Registrar documento fiscal'}</CgButton>
