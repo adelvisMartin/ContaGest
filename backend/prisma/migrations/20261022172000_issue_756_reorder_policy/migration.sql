@@ -32,9 +32,15 @@ CREATE INDEX "InventoryReorderPolicy_tenant_enabled_idx"
   ON public."InventoryReorderPolicy" ("tenantId", "enabled");
 
 -- Deny publicly exposed Supabase roles; all operations require backend runtime and tenant RLS.
-REVOKE ALL ON public."InventoryReorderPolicy" FROM PUBLIC, anon, authenticated;
-DO $$
+REVOKE ALL ON public."InventoryReorderPolicy" FROM PUBLIC;
+DO $
 BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
+    REVOKE ALL ON public."InventoryReorderPolicy" FROM anon;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN
+    REVOKE ALL ON public."InventoryReorderPolicy" FROM authenticated;
+  END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='contagest_runtime') THEN
     GRANT SELECT, INSERT, UPDATE ON public."InventoryReorderPolicy" TO contagest_runtime;
   END IF;
