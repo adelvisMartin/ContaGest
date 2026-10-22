@@ -29,16 +29,27 @@ export function buildFiscalLedgerCoverage(
         (row.reversedById !== null && typeof row.reversedById !== 'string')) reject();
     seen.add(row.id);
     const balances = new Map<string, { debit: bigint; credit: bigint }>();
+    // A balance-only digest is unsafe: moving the same debit to an unrelated
+    // account would leave the supposed documentary evidence hash unchanged.
+    const lineFacts: Array<Readonly<{
+      accountCode: string; currency: string; debitExact: string; creditExact: string;
+    }>> = [];
     for (const line of row.lines) {
       if (!line || !CURRENCY.test(line.currency) || !line.accountCode?.trim()) reject();
       const debit = parseRecordedMinor(line.debitExact);
       const credit = parseRecordedMinor(line.creditExact);
       if (debit < 0n || credit < 0n || (debit > 0n && credit > 0n)) reject();
+      lineFacts.push(Object.freeze({
+        accountCode: line.accountCode, currency: line.currency,
+        debitExact: formatRecordedMinor(debit), creditExact: formatRecordedMinor(credit),
+      }));
       const aggregate = balances.get(line.currency) || { debit: 0n, credit: 0n };
       aggregate.debit += debit;
       aggregate.credit += credit;
       balances.set(line.currency, aggregate);
     }
+    lineFacts.sort((a, b) => byteOrder(JSON.stringify(a), JSON.stringify(b)));
+    const ledgerLinesSha256 = createHash('sha256').update(JSON.stringify(lineFacts), 'utf8').digest('hex');
     const currencyBalances = [...balances.entries()].sort(([a], [b]) => byteOrder(a, b))
       .map(([currency, value]) => Object.freeze({
         currency, debitExact: formatRecordedMinor(value.debit),
@@ -52,7 +63,8 @@ export function buildFiscalLedgerCoverage(
       ...(!currencyBalances.length || currencyBalances.some(b => !b.balanced) ? ['GL_NOT_BALANCED'] : []),
     ];
     return Object.freeze({ entryId: row.id, posted: row.posted, fiscalPeriod: row.fiscalPeriod,
-      currencyBalances: Object.freeze(currencyBalances), blockers: Object.freeze(blockers) });
+      currencyBalances: Object.freeze(currencyBalances),
+      ledgerLinesSha256, blockers: Object.freeze(blockers) });
   }).sort((a, b) => byteOrder(a.entryId, b.entryId));
   const blockers = entries.length === 0
     ? ['GL_NOT_LINKED'] : [...new Set(entries.flatMap(entry => entry.blockers))].sort(byteOrder);
