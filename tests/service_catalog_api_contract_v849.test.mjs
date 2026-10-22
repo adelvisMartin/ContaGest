@@ -24,8 +24,8 @@ test('#849 service command owns auditable writes and historical snapshots',()=>{
 });
 test('#849 categories, services and staff/location use server scoped relation reads',()=>{
   assert.match(service,/tx\.product\.findFirst\(\{where:\{tenantId,id:productId,active:true\}/);
-  assert.match(service,/tx\.employee\.findFirst\(\{where:\{tenantId:ctx\.tenantId,id:employeeId,active:true\}/);
-  assert.match(service,/tx\.businessLocation\.findFirst\(\{where:\{tenantId:ctx\.tenantId,id:locationId,status:'active'\}/);
+  assert.match(service,/tx\.employee\.findFirst\(\{\s*where:\{tenantId:ctx\.tenantId,id:employeeId,\.\.\.\(enabled\?\{active:true\}:\{\}\)/);
+  assert.match(service,/tx\.businessLocation\.findFirst\(\{\s*where:\{tenantId:ctx\.tenantId,id:locationId,\.\.\.\(enabled\?\{status:'active'\}:\{\}\)/);
   for(const path of ['/services/:id/steps','/services/:id/staff/:employeeId','/services/:id/locations/:locationId','/staff/:employeeId/services']){
     assert.ok(routes.includes(path),'missing endpoint '+path);
   }
