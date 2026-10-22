@@ -64,3 +64,30 @@ https://tributos.ivecofi.net/informacion/legislacion/providencias/pa-2025-54
 El nuevo módulo `fiscal-document-authority-policy.ts` prohíbe que el endpoint manual cree facturas, notas de crédito/débito, certificados, declaraciones o documentos clasificados IVA/ISLR/RETIVA/IGTF/MUNICIPAL. Prohíbe asimismo insertar desde el cliente campos `_fiscalModule`, `_ruleKeys`, `_taxpayerProfileHash` u otros metadatos con prefijo reservado. Tests: `tests/fiscal_document_authority_v751.test.mjs`.
 
 **No confundir investigación con revisión legal humana:** ninguna descarga/web page se ha insertado ni marcado `REVIEWED` en la base de datos de una empresa. El cierre de #775/#776 continúa bloqueado mientras los cálculos comerciales históricos tomen `taxRate` desde el request y no existan certificados y reversos contables completos.
+
+
+## Actualización normativa posterior — Gaceta 43.435 del 12-08-2026
+
+Comprobada la publicación de **SNAT/2026/00080**, Providencia RIF, en la Gaceta Oficial N.º **43.435** del **12 de agosto de 2026**. La reforma sustituye reglas anteriores de la providencia de RIF **SNAT/2013/0048**, se centra en inscripción, modificación y verificación electrónica, dispone reflejar el RIF en facturas/documentos/libros y **elimina la vigencia automática de tres años**. La categoría fiscal de un perfil validada dentro del ERP no demuestra que el RIF esté verificado contra el portal SENIAT. Fuentes para cotejo con gaceta primaria:
+- Texto de la providencia transcrita: https://tributos.ivecofi.net/informacion/legislacion/providencias/pa-2026-80
+- Comentario jurídico con fecha y alcance: https://ttpn.com.ve/?p=5673
+- Gaceta 43.435 (sumario): https://mail.gacetaoficial.org/2026-08-12-gaceta-oficial-venezuela-43435
+
+En el **sumario de la misma Gaceta 43.435** figura también una providencia que **deroga la SNAT/2024/000121**, que regulaba requisitos de proveedores de sistemas informáticos utilizados para emitir facturas y otros documentos fiscales. **No extrapolar** esta derogación a la normativa de contenido de factura, obligación tributaria ni a la SNAT/2025/000054 (retención IVA). Tampoco deducir que ContaGest quedó automáticamente certificado para emitir comprobantes. Fuente: https://vlexvenezuela.com/vid/gaceta-oficial-republica-bolivariana-1132827271
+
+### Consecuencias para #774/#775/#776
+
+1. El perfil `TaxpayerProfileVersion` conserva RIF del `Tenant` y su fecha de captura, pero **no integra verificación electrónica SENIAT**, vigencia/actualización de datos de RIF por cambios relevantes ni prueba de notificación de sujeto especial. Por tanto **la clasificación manual `special_notified` NO equivale a notificación comprobada**.
+2. La aplicación contable `FiscalWithholdingApplication` conserva factura, proveedor, perfil, regla IVA/RETIVA y asiento con copia de fórmulas exactas, pero es **registro interno**, no comprobante legal ni declaración. Permanece deshabilitada por defecto con `VE_FISCAL_INTERNAL_RETIVA_POSTING_ENABLED`.
+3. Antes de habilitar certificados legales, obtener la Gaceta primaria del 12-08-2026 y el texto vigente de las normas de facturación electrónica, determinar requisitos aún aplicables, comprobar estatus y RIF vía procesos SENIAT autorizados, y documentar revisión independiente/hashes en la base por tenant. Se requiere revisión jurídica y auditoría humana; fuentes de internet no activan reglas.
+
+### Verificación documental de retenciones IVA
+
+Se inspeccionaron visualmente páginas de la **Gaceta 43.171, 16-07-2025**, con texto de la SNAT/2025/000054 (reproducción de gaceta):
+https://www.marambio-hlb.com/wp-content/uploads/2025/07/PROVIDENCIA-000054-Ret.-IVA.-G.O.-43.171-16-07-2025.pdf
+
+Artículos observados:
+- **1 y 3:** designación de agentes SPE notificados y exclusiones con condiciones legales (operaciones exentas/exoneradas, contribuyentes formales y otros casos), no inferibles sólo del campo `retentionProfile`.
+- **4 y 5:** 75% usual, 100% en los supuestos de la providencia; **estos porcentajes no se precargan**: cada regla productiva exige fuente/review/fecha.
+- **13 y 14:** evento cuando ocurre pago o abono en cuenta, lo primero; períodos quincenales con plazo según calendario del contribuyente.
+- **16:** comprobante propio, numeración de catorce caracteres y obligaciones de emisión/entrega. El asiento interno de retención de este PR no suple el comprobante.
