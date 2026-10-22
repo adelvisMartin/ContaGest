@@ -62,10 +62,10 @@ test('#979 redaction protects personal identifiers in free text and URL query wi
   });
   const serialized = JSON.stringify(actual);
   assert.doesNotMatch(serialized, /ana\.qa|bob\+ops|04121234567|J12345678|%40example\.test/);
-  assert.match(serialized, /\\[REDACTED_EMAIL\\]/);
-  assert.match(serialized, /email=\\[REDACTED\\]|email=\\[REDACTED_EMAIL\\]/);
-  assert.match(serialized, /phone=\\[REDACTED\\]/);
-  assert.match(serialized, /rif=\\[REDACTED\\]/);
+  assert.match(serialized, /\[REDACTED_EMAIL\]/);
+  assert.match(serialized, /email=\[REDACTED\]|email=\[REDACTED_EMAIL\]/);
+  assert.match(serialized, /phone=\[REDACTED\]/);
+  assert.match(serialized, /rif=\[REDACTED\]/);
   assert.match(serialized, /mode=summary&page=2/);
 });
 
