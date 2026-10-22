@@ -44,15 +44,16 @@ router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(a
   const body = z.object({ order: z.record(z.string(), z.unknown()), message: z.string().min(1) }).parse(req.body || {});
   const order: any = body.order || {};
   const result = await sendWhatsAppCloud(String(order.phone || ''), body.message);
-  await prisma.moduleRecord.create({
+  // #854: write to the same tenant-scoped authority read by /delivery-evidence.
+  // This is an attempt/acknowledgement, never verified delivery.
+  await prisma.notificationLog.create({
     data: {
       tenantId: ctx.tenantId,
-      moduleSlug: 'notification-log',
-      title: 'Notificación WhatsApp',
-      // A provider HTTP acknowledgement does not prove delivery to the recipient.
+      channel: 'whatsapp',
+      provider: 'whatsapp-cloud',
       status: result.ok ? 'provider_accepted' : result.status==='provider_unverified' ? 'provider_unverified' : 'skipped',
       // Never store phone, arbitrary order fields, message body or raw provider JSON.
-      payload: { channel: 'whatsapp', provider: 'whatsapp-cloud', providerAccepted: result.ok, deliveryConfirmed: false }
+      payload: { providerAccepted: result.ok, deliveryConfirmed: false }
     }
   });
   ok(res, result.ok ? { ok: true, provider: 'whatsapp-cloud', status: 'provider_accepted', delivered: false } : result);

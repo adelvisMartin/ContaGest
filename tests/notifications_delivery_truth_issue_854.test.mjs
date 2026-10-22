@@ -42,7 +42,9 @@ test('#854 persisted audit data excludes raw private order/message and provider 
   assert.ok(payload, 'expected minimal metadata payload');
   assert.match(payload, /providerAccepted: result\.ok/);
   assert.doesNotMatch(payload, /\border\b|\bmessage\b|\bresult\b(?!\.ok)|\bphone\b|\btoken\b|\bdata\b/);
-  assert.match(route, /title: 'Notificación WhatsApp'/);
+  assert.match(route, /prisma\.notificationLog\.create\(/);
+  assert.match(route, /channel: 'whatsapp'/);
+  assert.doesNotMatch(route, /moduleRecord\.create\(/);
   assert.doesNotMatch(route, /title:.*order\.number/);
 });
 

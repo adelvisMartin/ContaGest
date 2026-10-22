@@ -5,3 +5,7 @@ El proveedor WhatsApp Cloud responde HTTP 2xx a una petición, pero eso no demue
 `notifications.routes.ts` aplica el clasificador al retorno Meta, registra el estado de forma mínima y mantiene `delivered:false`. El endpoint general `/send` sigue 503 sin outbox; no se introduce cola ni adaptador obligatorio, se excluye Hípico SOURCE.
 
 Pruebas: `node --test tests/notification_provider_ack_v854.test.mjs`. Pendientes: PostgreSQL17, canal real consentido, webhooks verificados, integración #853/#772, tenant A/B, browser. #854 continúa OPEN; este incremento no autoriza envíos ni certifica delivery. Rollback: revert 3 files, sin migración.
+
+## Unificación de evidencia de intento (2026-10-22)
+
+`POST /notifications/whatsapp/order` registra metadatos mínimos en `NotificationLog` en vez del legacy `ModuleRecord(moduleSlug=notification-log)`, para que `GET /notifications/delivery-evidence` vea **nuevos intentos**. Se admite `provider_unverified` en la proyección como estado incierto, `receiptVerified=false`. Los registros históricos de ModuleRecord no se migran ni se muestran en este timeline; requieren reconciliación explícita para no duplicar ni mentir sobre cobertura. Esta corrección no garantiza atomicidad provider↔DB, webhook ni retries #853/#772; mantener #854 OPEN.

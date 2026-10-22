@@ -34,3 +34,7 @@
 4. `#643` reconciliación del dataset transversal; evidencia de `main` exact-SHA, build/typecheck y gates locales. Mantener #637 abierto mientras existan estas brechas.
 
 El incremento actual **solo** cubre atomicidad de reverso, regresión estructural y este mapa. No convertir `MERGED`, mocks o código revisado en `PASS` de contabilidad real.
+
+## Incremento de cierre contable 2026-10-22 (branch multi-ticket)
+
+`POST /closing-periods/:id/close` delega a `closeAccountingPeriod` en `accounting.service.ts`. La transición de la fila `ClosingPeriod` está bajo `FOR UPDATE` por tenant/ID, update condicionado a `open` y auditoría dentro de la misma transacción. Un actor ausente falla cerrado. **No certifica** serialización cierre↔post: los writers de asientos aún deben coordinar bloqueo de período y necesitan PostgreSQL17 dos sesiones, prueba multi-tenant/RLS y contrato API ejecutado. El alta de períodos y otros comandos siguen en rutas. No cerrar #637.

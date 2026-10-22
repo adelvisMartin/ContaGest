@@ -10,6 +10,7 @@ import { add, serializeDecimal, serializeLegacyNumber, subtract, ZERO } from '..
 import { projectOpenItemCoverage } from './open-item-coverage.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import {
+  closeAccountingPeriod,
   createLedgerEntry,
   deleteDraftLedgerEntry,
   postLedgerEntry,
@@ -213,14 +214,13 @@ router.post('/closing-periods', requirePermission('accounting.post'), validateBo
 
 router.post('/closing-periods/:id/close', requirePermission('accounting.post'), validateBody(closeSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const existing = await prisma.closingPeriod.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId, module: 'accounting' } });
-  if (!existing) throw new HttpError(404, 'Período contable no encontrado.');
-  if (existing.status === 'closed') throw new HttpError(409, 'El período ya está cerrado.');
-  const updated = await prisma.closingPeriod.update({
-    where: { id: existing.id },
-    data: { status: 'closed', closedAt: new Date(), closedBy: ctx.userId || 'session-user', note: req.body.note || existing.note || null }
+  const updated = await closeAccountingPeriod({
+    tenantId: ctx.tenantId,
+    periodId: req.params.id,
+    note: req.body.note,
+    actorId: ctx.userId,
+    audit: { userId: ctx.userId, ipAddress: ctx.ip, userAgent: ctx.userAgent }
   });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'accounting.period-close', entity: 'ClosingPeriod', entityId: updated.id, before: existing, after: updated, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, updated);
 }));
 

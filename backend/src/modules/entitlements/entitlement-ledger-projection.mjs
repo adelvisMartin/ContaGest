@@ -44,7 +44,8 @@ export function projectEntitlementLedger(input) {
     const eventId=uuid(row.id,'EVENT');
     if(eventIds.has(eventId))throw new EntitlementProjectionError('DUPLICATE_EVENT');
     eventIds.add(eventId);
-    if(!Number.isSafeInteger(row.sequence)||row.sequence<=previous)throw new EntitlementProjectionError('INVALID_SEQUENCE');
+    // A missing intermediate event could hide CONSUME/REVOKE and overstate rights.
+    if(!Number.isSafeInteger(row.sequence)||row.sequence!==previous+1)throw new EntitlementProjectionError('INVALID_SEQUENCE');
     previous=row.sequence;
     if(typeof row.effectKey!=='string'||!(/^[A-Za-z0-9:_-]{8,128}$/).test(row.effectKey)||effects.has(row.effectKey))
       throw new EntitlementProjectionError('DUPLICATE_OR_INVALID_EFFECT');

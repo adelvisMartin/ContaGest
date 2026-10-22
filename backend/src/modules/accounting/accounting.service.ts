@@ -83,6 +83,52 @@ export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string, d
   if (closed) throw new HttpError(409, `El período ${fiscalPeriod} está cerrado para contabilidad. Registra la corrección en un período abierto mediante reverso o ajuste autorizado.`);
 }
 
+
+/**
+ * #637 Incremental command owner for an accounting period close.
+ * Serializes competing closes for the same tenant row and commits audit with
+ * the transition. Other posting paths must also coordinate period locks before
+ * claiming close-vs-post serializability; this alone is not the final gate.
+ */
+export async function closeAccountingPeriod(input: {
+  tenantId: string; periodId: string; note?: string;
+  actorId?: string; audit?: LedgerAuditContext;
+}) {
+  const actorId = requirePostingActor(input.actorId || input.audit?.userId);
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM public."ClosingPeriod"
+      WHERE "id" = ${input.periodId} AND "tenantId" = ${input.tenantId} AND "module" = 'accounting'
+      FOR UPDATE
+    `;
+    if (locked.length !== 1) throw new HttpError(404, 'Período contable no encontrado.');
+    const existing = await tx.closingPeriod.findFirst({
+      where: { id: input.periodId, tenantId: input.tenantId, module: 'accounting' }
+    });
+    if (!existing) throw new HttpError(404, 'Período contable no encontrado.');
+    if (existing.status === 'closed') throw new HttpError(409, 'El período ya está cerrado.');
+    const now = new Date();
+    const updated = await tx.closingPeriod.updateMany({
+      where: { id: existing.id, tenantId: input.tenantId, module: 'accounting', status: 'open' },
+      data: { status: 'closed', closedAt: now, closedBy: actorId, note: input.note || existing.note || null }
+    });
+    if (updated.count !== 1) throw new HttpError(409, 'El período no está abierto.');
+    const period = await tx.closingPeriod.findFirstOrThrow({
+      where: { id: existing.id, tenantId: input.tenantId, module: 'accounting' }
+    });
+    await tx.auditLog.create({
+      data: {
+        tenantId: input.tenantId, userId: actorId,
+        action: 'accounting.period-close', entity: 'ClosingPeriod', entityId: period.id,
+        before: { status: existing.status, period: existing.period },
+        after: { status: period.status, period: period.period, closedAt: now.toISOString() },
+        ipAddress: input.audit?.ipAddress || null, userAgent: input.audit?.userAgent || null
+      }
+    });
+    return period;
+  });
+}
+
 function normalizeLedgerLines(lines: LedgerLineInput[]) {
   return lines.map((line) => ({
     ...line,

@@ -45,3 +45,7 @@ npm run test:browser:a11y
 The PR-scoped `ux-touch-focus-v773.yml` workflow runs the two targeted checks on a checked-out candidate SHA; status is unverified until its jobs finish. P1 independent review should confirm no CSS precedence regression and no product-wide overflow on touch devices.
 
 **Rollback:** revert the CSS extension and its test/docs/CI additions; no migration or production data touched. Do not merge this partial scope as if all #773 criteria were satisfied. The owner's final physical QA stays deferred.
+
+## Revisión de alcance del lote multi-ticket (2026-10-22)
+
+La matriz de brechas precedente sigue siendo `PARTIAL/NOT_VERIFIED`, no está resuelta con los incrementos no visuales de #637/#849/#852/#854. No se modifica la autoridad Cg* ni CSS en este lote; las pruebas reales de viewport 360/390/430/768/1366/1920, zoom 200 %, temas, teclado y navegación de 58 rutas continúan pendientes de evidencia exact-SHA. #773 permanece OPEN. No confundir la existencia del contrato de componentes con una convergencia demostrada.

@@ -11,3 +11,7 @@ QA: `node --test tests/entitlement_ledger_projection_v852.test.mjs` (regresiones
 `RELEASE` sólo puede recuperar cantidad previamente consumida por eventos `CONSUME` del mismo entitlement. Un `REFUND_REVOKE` o `EXPIRE` reduce derechos **irreversiblemente para esta proyección**: nunca habilita `RELEASE`. Un segundo release del mismo consumo también se rechaza. Los saldos siguen derivados de eventos inmutables, BigInt con precisión de tres decimales; no se crea un contador mutable ni se modifica el contrato de salida.
 
 Esta protección **no** resuelve por sí sola la vinculación causal entre cada release y su consumo de origen: la futura autoridad transaccional debe almacenar y verificar referencias/effect keys, fechas de expiración, política de cancelación/reembolso y el commit atómico con booking/check-in bajo PostgreSQL 17. Los tests focalizados no prueban esa integración.
+
+## Integridad de historial parcial (2026-10-22)
+
+La proyección exige ahora secuencias **contiguas** desde el evento GRANT (1), además de orden creciente. El antiguo chequeo monotónico permitía recibir 1 y 3 sin 2: una consulta incompleta podía ocultar un CONSUME y sobrestimar el saldo. Se rechaza con `ENTITLEMENT_INVALID_SEQUENCE` y regresiones; no se reconstruye ni suple un evento faltante. Pendiente integración DB/worker/booking bajo transacción.
