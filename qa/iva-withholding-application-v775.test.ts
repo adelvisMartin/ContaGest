@@ -124,6 +124,12 @@ test('#775 invoice -> reviewed rule -> AP tax posting -> idempotent reversal wit
   }});
   assert.equal(issuedAudit.length,1);
 
+  // The original purchase may not be cancelled while a posted withholding
+  // liability remains. Purchase and withholding routes share an invoice row lock.
+  await h.status(`/purchases/${purchase.id}/cancel`,409,{
+    method:'PATCH',headers:{'Idempotency-Key':`${RUN}-cancel-too-early`},
+    body:JSON.stringify({reason:'Must reverse the tax withholding application first.'})
+  });
   const cancellation={fiscalPeriod:period,reason:'QA synthetic correction of withholding.'};
   const reversed=await h.ok(`/fiscal/withholding-applications/${first.id}/reverse`,
     post(cancellation,`${RUN}-reverse`));
@@ -140,6 +146,15 @@ test('#775 invoice -> reviewed rule -> AP tax posting -> idempotent reversal wit
   const historicalAfter=await h.ok(`/fiscal/withholding-applications/${first.id}`);
   assert.equal(historicalAfter.evidenceSha256,first.evidenceSha256);
   assert.equal(historicalAfter.status,'REVERSED');
+  const cancelledPurchase=await h.ok(`/purchases/${purchase.id}/cancel`,{
+    method:'PATCH',headers:{'Idempotency-Key':`${RUN}-cancel-after-ret-reversal`},
+    body:JSON.stringify({reason:'Fixture original purchase cancellation after fiscal reversal.'})
+  });
+  assert.equal(cancelledPurchase.purchase.status,'cancelled');
+  const historicalCancelled=await h.ok(`/fiscal/withholding-applications/${first.id}`);
+  assert.equal(historicalCancelled.evidenceSha256,first.evidenceSha256,
+    'historical provenance must survive reversal of original purchase');
+
   await assert.rejects(
     h.prisma.$executeRaw`UPDATE public."FiscalWithholdingApplication"
       SET "withheldMinor"=1 WHERE "id"=${first.id}::uuid AND "tenantId"=${h.tenant.id}`,
