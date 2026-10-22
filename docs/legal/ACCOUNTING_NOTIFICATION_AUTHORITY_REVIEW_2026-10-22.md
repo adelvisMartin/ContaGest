@@ -38,3 +38,7 @@
 - Clasificación obligatoria exact-SHA: PASS/FAIL/BLOCKED/NOT_EXECUTED; discrepancias antiguas de QA no se silencian y un merge no es aprobación legal.
 
 **Rollback:** revertir commits del PR 1282 con revisiones por ámbito. No se modificó schema ni datos productivos ni se habilitaron métodos alternativos de autenticación.
+
+## Matrix de tests de caracterización incorporada al backend test (último incremento)
+
+El script `backend npm test` ahora incluye las regresiones nativas de #637 (servicio/reverso), #773 (touch/focus CSS), #849 (pasos ordenados), #852 (eventos contiguos) y #854 (redacción, estado no verificado y respuesta del proveedor). Se ejecutan con el Node 22 de CI y **no** sustituyen PG17/API/browser ni demuestran la Definition of Done. Los contratos de nuevos intentos permanecen scope limitado; ninguna suite se deshabilitó.
