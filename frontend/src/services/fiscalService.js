@@ -20,6 +20,11 @@ export const FISCAL_DOCUMENT_KINDS=[
 ];
 
 export const FiscalService={
+  legalSources(){return BackendApi.get('/fiscal/legal-sources');},
+  rules(){return BackendApi.get('/fiscal/rules');},
+  reviewLegalSource(id,approved,reason){return BackendApi.post(`/fiscal/legal-sources/${encodeURIComponent(id)}/review`,{approved,reason});},
+  reviewRule(id,reason){return BackendApi.post(`/fiscal/rules/${encodeURIComponent(id)}/review`,{reason});},
+  activateRule(id,reason){return BackendApi.post(`/fiscal/rules/${encodeURIComponent(id)}/activate`,{reason});},
   taxpayerProfiles(){return BackendApi.get('/fiscal/taxpayer-profiles');},
   captureTaxpayerProfileDraft(data){return BackendApi.post('/fiscal/taxpayer-profiles',data);},
   periods(){return BackendApi.get('/fiscal/periods');},
