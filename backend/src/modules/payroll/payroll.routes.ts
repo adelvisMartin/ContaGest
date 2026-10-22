@@ -8,6 +8,7 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { serializeDecimal, serializeLegacyNumber, ZERO } from '../../shared/financial/decimal.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
+import { assertPayrollReceiptArithmetic } from './payroll-receipt-arithmetic.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('payroll.manage'));
@@ -92,6 +93,8 @@ router.post('/periods', validateBody(periodSchema), asyncHandler(async (req, res
 router.post('/receipts', validateBody(receiptSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const input = req.body as z.infer<typeof receiptSchema>;
+  try { assertPayrollReceiptArithmetic(input); }
+  catch { throw new HttpError(422, 'El recibo no cuadra: bruto debe ser exactamente deducciones más neto.', { code: 'PAYROLL_RECEIPT_NOT_BALANCED' }); }
   const employee = await prisma.employee.findFirst({ where: { id: input.employeeId, tenantId: ctx.tenantId, active: true } });
   if (!employee) throw new HttpError(404, 'Empleado no encontrado para el tenant activo.');
   let period = input.periodId
