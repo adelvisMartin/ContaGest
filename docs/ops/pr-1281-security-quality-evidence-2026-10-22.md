@@ -70,3 +70,12 @@ The following fixes were made in this same PR without weakening runtime authenti
 **Execution blocker:** Native shell checkout using \`git ls-remote https://github.com/adelvisMartin/ContaGest.git HEAD\` could not resolve \`github.com\` from the isolated local container, so native local lint/typecheck/full Node/PostgreSQL/Playwright could not be executed there. Actual native Node assertions were executed only in exact-SHA Vercel source-qa previews as stated. The repository's GitHub Actions checks for recent candidate commits remained overwhelmingly queued/skipped at inspection; no local/CI green is claimed.
 
 **Closure rule:** A preview build must reach READY for its own SHA and GitHub must complete required checks; only then can runtime production readiness for #688 and #720 be evaluated. #985 restore/rollback and #638/#979 security acceptance still require their independent executable gates. Do not merge or close the five tickets on a source-only repair.
+
+
+### Password recovery #267: deterministic security regression
+
+- Exact-SHA Preview \`dpl_FmjpJZpR7LtjNFuUbAF7jJjSVyM1\` for \`d435c28feab46250573bb3839d023878d194f64e\` failed \`hipico-root-contracts\` in \`tests/hipico_password_recovery_single_flight_v267.test.mjs\` (1/9 failure; exit 210).
+- The failing test asserted an empty in-memory recovery token after only three \`Promise.resolve()\` turns. Those turns are not a contractual completion signal for the real async \`signOut → PUT → optional RPC\` sequence. The production source already sets \`recoveryAccessToken = ''\` **after the successful PUT and before** \`await markCredentialChanged(token)\`; provider 401/403 responses also invalidate the token.
+- The updated test uses a deferred signal at the first attempted optional profile RPC as a deterministic barrier, then asserts consumed token, in-flight state, and inability to replay the recovery operation. No production credential code, provider error redaction, rate limiting, session semantics or control flow was changed; no \`waitForTimeout\`, sleeps or test skips were introduced.
+- The earlier \`dpl_6eWi3dHjAHr6j6e19Ys1J2jpZx9H\` Preview failed \`tests/hipico_operational_copy_center_277.test.mjs\`, exit 202, due to stale physical \`app.css\` assertions for legacy-imported responsive CSS. This was source-contract drift, not a proven runtime copy leak. The guard still requires manual copying and forbids automatic send.
+- This is **not** a native test PASS on the latest SHA until a new exact-SHA build executes. QA status remains PARTIAL / NOT_READY.
