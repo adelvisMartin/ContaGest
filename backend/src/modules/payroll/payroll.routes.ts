@@ -148,27 +148,61 @@ router.post('/receipts', validateBody(receiptSchema), asyncHandler(async (req, r
 
 router.patch('/periods/:id/status', validateBody(statusSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const existing = await prisma.payrollPeriod.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { receipts: true } });
-  if (!existing) throw new HttpError(404, 'Período de nómina no encontrado.');
-  const nextStatus = String(req.body.status);
-  if (!allowedStatusTransitions[String(existing.status)]?.includes(nextStatus)) {
-    throw new HttpError(409, `Transición de nómina no permitida: ${existing.status} → ${nextStatus}. Los períodos pagados o cancelados son terminales.`);
-  }
-  if (nextStatus === 'approved' && !existing.receipts.length) throw new HttpError(409, 'No se puede aprobar un período sin recibos.');
-  const updated = await prisma.payrollPeriod.update({ where: { id: existing.id }, data: { status: nextStatus as any }, include: { receipts: { include: { employee: true } } } });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: `payroll.period-${nextStatus}`, entity: 'PayrollPeriod', entityId: updated.id, before: serializePeriod(existing), after: serializePeriod(updated), ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  const nextStatus = statusSchema.parse(req.body).status as PayrollStatus;
+  const updated = await prisma.$transaction(async tx => {
+    await lockPayrollPeriod(tx, ctx.tenantId, req.params.id);
+    const existing = await tx.payrollPeriod.findFirst({
+      where: { id: req.params.id, tenantId: ctx.tenantId }, include: { receipts: true },
+    });
+    if (!existing) throw new HttpError(404, 'Período de nómina no encontrado.');
+    if (!allowedStatusTransitions[existing.status]?.includes(nextStatus)) {
+      throw new HttpError(409, `Transición de nómina no permitida: ${existing.status} → ${nextStatus}. Los períodos pagados o cancelados son terminales.`);
+    }
+    if (nextStatus === 'approved' && !existing.receipts.length)
+      throw new HttpError(409, 'No se puede aprobar un período sin recibos.');
+    const period = await tx.payrollPeriod.update({
+      where: { id: existing.id }, data: { status: nextStatus },
+      include: { receipts: { include: { employee: true } } },
+    });
+    await tx.auditLog.create({ data: {
+      tenantId: ctx.tenantId, userId: ctx.userId || null,
+      action: `payroll.period-${nextStatus}`, entity: 'PayrollPeriod', entityId: period.id,
+      before: toJson(serializePeriod(existing)), after: toJson(serializePeriod(period)),
+      ipAddress: ctx.ip || null, userAgent: ctx.userAgent || null,
+    } });
+    return period;
+  });
   ok(res, serializePeriod(updated));
 }));
 
 router.delete('/receipts/:id', asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const existing = await prisma.payrollReceipt.findFirst({ where: { id: req.params.id, period: { tenantId: ctx.tenantId } }, include: { period: true, employee: true } });
-  if (!existing) throw new HttpError(404, 'Recibo de nómina no encontrado.');
-  if (existing.period.status !== 'draft') throw new HttpError(409, 'Solo se eliminan recibos de períodos en borrador.');
-  await prisma.payrollReceipt.delete({ where: { id: existing.id } });
-  const period = await recalculatePeriod(existing.periodId);
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'payroll.delete-receipt', entity: 'PayrollReceipt', entityId: existing.id, before: serializeReceipt(existing), ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  ok(res, { deleted: true, id: existing.id, period: serializePeriod(period) });
+  const result = await prisma.$transaction(async tx => {
+    // Read only the identifier first, then lock and re-read the complete parent.
+    const initial = await tx.payrollReceipt.findFirst({
+      where: { id: req.params.id, period: { tenantId: ctx.tenantId } },
+      select: { periodId: true },
+    });
+    if (!initial) throw new HttpError(404, 'Recibo de nómina no encontrado.');
+    await lockPayrollPeriod(tx, ctx.tenantId, initial.periodId);
+    const existing = await tx.payrollReceipt.findFirst({
+      where: { id: req.params.id, period: { tenantId: ctx.tenantId } },
+      include: { period: true, employee: true },
+    });
+    if (!existing) throw new HttpError(404, 'Recibo de nómina no encontrado.');
+    if (existing.period.status !== 'draft')
+      throw new HttpError(409, 'Solo se eliminan recibos de períodos en borrador.');
+    await tx.payrollReceipt.delete({ where: { id: existing.id } });
+    const period = await recalculatePeriod(existing.periodId, tx);
+    await tx.auditLog.create({ data: {
+      tenantId: ctx.tenantId, userId: ctx.userId || null,
+      action: 'payroll.delete-receipt', entity: 'PayrollReceipt', entityId: existing.id,
+      before: toJson(serializeReceipt(existing)),
+      ipAddress: ctx.ip || null, userAgent: ctx.userAgent || null,
+    } });
+    return { deleted: true, id: existing.id, period: serializePeriod(period) };
+  });
+  ok(res, result);
 }));
 
 export default router;
