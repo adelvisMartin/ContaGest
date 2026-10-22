@@ -37,7 +37,8 @@ export function projectOpenItemCoverage(input:OpenItemEvidenceInput) {
        !ISO.test(row.issueDate) || !Number.isFinite(Date.parse(row.issueDate)) ||
        new Date(row.issueDate).toISOString()!==row.issueDate ||
        row.issueDate.slice(0,10)>input.asOf ||
-       !CURRENCY.test(row.currency) || !MONEY.test(row.totalExact))fail();
+       typeof row.currency!=='string' || !CURRENCY.test(row.currency) ||
+       typeof row.totalExact!=='string' || !MONEY.test(row.totalExact))fail();
     seen.add(row.id);
     return Object.freeze({
       sourceId:row.id,invoiceNumber:row.number,sourceStatus:row.status,
