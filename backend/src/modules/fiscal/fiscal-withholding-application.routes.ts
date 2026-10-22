@@ -55,6 +55,15 @@ function verifyApplication(row:ApplicationRow,tenantId:string){
     throw new HttpError(409,'El historial de retención no conserva evidencia íntegra.',{code:'FISCAL_WITHHOLDING_EVIDENCE_INTEGRITY'});
   return row;
 }
+const publicApplication=(row:ApplicationRow,tenantId:string)=>{
+  const checked=verifyApplication(row,tenantId);
+  return {
+    ...checked,
+    taxableMinor:checked.taxableMinor.toString(),
+    vatMinor:checked.vatMinor.toString(),
+    withheldMinor:checked.withheldMinor.toString()
+  };
+};
 const asMoney=(minor:number)=>{
   const n=BigInt(minor);
   return (n/100n).toString()+'.'+(n%100n).toString().padStart(2,'0');
@@ -67,7 +76,7 @@ router.get('/',requirePermission('fiscal.read'),asyncHandler(async(req,res)=>{
     SELECT * FROM public."FiscalWithholdingApplication"
     WHERE "tenantId"=${ctx.tenantId} ORDER BY "createdAt" DESC LIMIT 100
   `);
-  ok(res,rows.map(row=>verifyApplication(row,ctx.tenantId)));
+  ok(res,rows.map(row=>publicApplication(row,ctx.tenantId)));
 }));
 router.get('/:id',requirePermission('fiscal.read'),asyncHandler(async(req,res)=>{
   const ctx=context(req),id=z.string().uuid().parse(req.params.id);
@@ -76,7 +85,7 @@ router.get('/:id',requirePermission('fiscal.read'),asyncHandler(async(req,res)=>
     WHERE "tenantId"=${ctx.tenantId} AND "id"=${id}::uuid
   `);
   if(rows.length!==1)throw new HttpError(404,'Aplicación no encontrada.');
-  ok(res,verifyApplication(rows[0],ctx.tenantId));
+  ok(res,publicApplication(rows[0],ctx.tenantId));
 }));
 
 /** AP recognized posting -> withholding payable. Does NOT issue a statutory voucher. */
