@@ -7,7 +7,11 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 const guardSource = await read('../frontend/public/hipico-control/assets/js/operational-access-guard.js');
 const centerSource = await read('../frontend/public/hipico-control/assets/js/operational-copy-center.js');
 const indexSource = await read('../frontend/public/hipico-control/index.html');
-const cssSource = await read('../frontend/public/hipico-control/assets/css/app.css');
+const entryCss = await read('../frontend/public/hipico-control/assets/css/app.css');
+assert.match(entryCss, /@import url\("\.\/ui-system-v3-compat\.css"\) layer\(legacy\)/);
+// The fail-closed .ops-root display policy remains in the imported compatibility
+// layer; app.css is now the v4 entrypoint, not a monolithic stylesheet.
+const cssSource = await read('../frontend/public/hipico-control/assets/css/ui-system-v3-compat.css');
 const serviceWorkerSource = await read('../frontend/public/hipico-control/sw.js');
 
 test('operational center fails closed without an authenticated application shell', () => {
@@ -87,5 +91,7 @@ test('self-access UI delegates to the canonical authenticated cloud client', asy
 });
 
 test('PWA rotates its cache-first shell when access bootstrap JS changes', () => {
-  assert.match(serviceWorkerSource, /shell-r26-access-bootstrap-local-group-recovery/);
+  assert.match(serviceWorkerSource, /shell-r38-consolidator-v4-1-3/);
+  assert.match(serviceWorkerSource, /key\.startsWith\('hipico-control-'\) && key !== SHELL_CACHE/);
+  assert.doesNotMatch(serviceWorkerSource, /shell-r26-access-bootstrap-local-group-recovery/);
 });
