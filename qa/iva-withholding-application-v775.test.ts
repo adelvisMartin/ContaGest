@@ -110,6 +110,11 @@ test('#775 invoice -> reviewed rule -> AP tax posting -> idempotent reversal wit
   const historical=await h.ok(`/fiscal/withholding-applications/${first.id}`);
   assert.equal(historical.evidence.purchaseInvoiceId,purchase.id);
   assert.equal(historical.evidenceSha256,first.evidenceSha256);
+  assert.equal(historical.evidence.vatRuleSnapshot.id,ivaRule.id);
+  assert.equal(historical.evidence.retentionRuleSnapshot.id,retRule.id);
+  assert.equal(historical.evidence.buyerProfileSnapshot.id,profile.id);
+  assert.equal(historical.evidence.vatRuleSnapshot.definition.numerator,16);
+  assert.equal(historical.evidence.retentionRuleSnapshot.definition.numerator,75);
   const internalBefore=await h.ok(`/fiscal/withholding-applications/reconciliation?period=${period}`);
   assert.equal(internalBefore.status,'RECONCILED_INTERNAL_ONLY');
   assert.equal(internalBefore.netOutstandingMinor,'1200');
@@ -157,6 +162,8 @@ test('#775 invoice -> reviewed rule -> AP tax posting -> idempotent reversal wit
   });
   assert.equal(cancelledPurchase.purchase.status,'cancelled');
   const historicalCancelled=await h.ok(`/fiscal/withholding-applications/${first.id}`);
+  assert.equal(historicalCancelled.evidence.vatRuleSnapshot.hash,historical.evidence.vatRuleSnapshot.hash);
+  assert.equal(historicalCancelled.evidence.retentionRuleSnapshot.hash,historical.evidence.retentionRuleSnapshot.hash);
   assert.equal(historicalCancelled.evidenceSha256,first.evidenceSha256,
     'historical provenance must survive reversal of original purchase');
   const internalAfter=await h.ok(`/fiscal/withholding-applications/reconciliation?period=${period}`);
