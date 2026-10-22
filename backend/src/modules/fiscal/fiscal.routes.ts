@@ -9,6 +9,7 @@ import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
+import fiscalComplianceWorkflowRoutes from './fiscal-compliance-workflow.routes.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts } from './taxpayer-profile.repository.js';
 import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
 import { createFiscalLegalSourceDraft, listFiscalLegalSources, reviewFiscalLegalSource } from './fiscal-legal-source.repository.js';
@@ -30,6 +31,7 @@ const router = Router();
 router.use(requireTenant);
 router.use('/books', fiscalBookReadinessRoutes);
 router.use('/compliance', fiscalComplianceReadinessRoutes);
+router.use('/compliance', fiscalComplianceWorkflowRoutes);
 
 const periodSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Usa formato AAAA-MM.');
 const moduleSchema = z.enum(['fiscal', 'iva', 'islr', 'igtf', 'retiva', 'municipal']);
