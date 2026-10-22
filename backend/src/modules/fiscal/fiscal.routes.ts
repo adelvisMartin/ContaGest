@@ -9,7 +9,7 @@ import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
-import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts } from './taxpayer-profile.repository.js';
+import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts, transitionTaxpayerProfile, getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
 import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
 import { createFiscalLegalSourceDraft, listFiscalLegalSources, reviewFiscalLegalSource } from './fiscal-legal-source.repository.js';
 import {
@@ -116,14 +116,15 @@ async function hasPermission(tenantId: string, userId: string | undefined, key: 
 }
 
 async function capabilities(ctx: RequestContext) {
-  const [read, manageDocuments, close, reopen, activateRules] = await Promise.all([
+  const [read, manageDocuments, close, reopen, activateRules, activateProfiles] = await Promise.all([
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.read'),
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.manage_documents'),
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.close'),
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.reopen'),
-    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.activate_rules')
+    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.activate_rules'),
+    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.activate_profiles')
   ]);
-  return { read, manageDocuments, close, reopen, activateRules };
+  return { read, manageDocuments, close, reopen, activateRules, activateProfiles };
 }
 
 function stable(value: unknown): unknown {
@@ -335,21 +336,44 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     const effectiveAt = req.body.effectiveAt || new Date();
     const ruleKeys: string[] = [...new Set(req.body.ruleKeys as string[])].sort();
     const rules = await resolveFiscalRules(tx, { tenantId: ctx.tenantId, ruleKeys, effectiveAt });
+    const requiresProfile = ['iva','islr','retiva'].includes(req.body.module) ||
+      req.body.kind === 'withholding';
+    const profile = requiresProfile
+      ? await getEffectiveTaxpayerProfile(tx, ctx.tenantId, effectiveAt)
+      : null;
+    const profileSnapshot = profile ? {
+      id:profile.id,tenantId:profile.tenantId,version:profile.version,rifSnapshot:profile.rifSnapshot,
+      effectiveFrom:profile.effectiveFrom.toISOString(),
+      effectiveTo:profile.effectiveTo?.toISOString()||null,
+      jurisdiction:profile.jurisdiction,taxpayerCategory:profile.taxpayerCategory,
+      activityCodes:profile.activityCodes,sourceReference:profile.sourceReference,
+      sourceContentSha256:profile.sourceContentSha256,legalSourceId:profile.legalSourceId
+    } : null;
+    const profileHash = profileSnapshot ? fiscalEvidenceHash(profileSnapshot) : null;
     const number = await allocateFiscalNumber(tx, {
       tenantId: ctx.tenantId,
       kind: req.body.kind,
       prefix: req.body.prefix || defaultSequencePrefix(req.body.kind),
       width: req.body.width
     });
-    const controlledPayload = { ...req.body.payload, _fiscalModule: req.body.module, _effectiveAt: effectiveAt.toISOString(), _ruleKeys: ruleKeys };
+    const controlledPayload = { ...req.body.payload, _fiscalModule: req.body.module, _effectiveAt: effectiveAt.toISOString(), _ruleKeys: ruleKeys, ...(profileHash?{_taxpayerProfileHash:profileHash}:{}) };
     const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind, number, period: req.body.period, module: req.body.module, payload: controlledPayload });
     const record = await tx.fiscalDocument.create({ data: { tenantId: ctx.tenantId, kind: req.body.kind, number, period: req.body.period, status: 'issued', payload: controlledPayload, hash } });
+    if (profileSnapshot && profileHash) {
+      await tx.$executeRaw`
+        UPDATE public."FiscalDocument" SET
+          "taxpayerProfileSnapshot"=${JSON.stringify(profileSnapshot)}::jsonb,
+          "taxpayerProfileHash"=${profileHash}
+        WHERE "id"=${record.id} AND "tenantId"=${ctx.tenantId}
+          AND "taxpayerProfileHash" IS NULL
+      `;
+    }
     await recordDocumentRuleSnapshots(tx, { tenantId: ctx.tenantId, fiscalDocumentId: record.id, rules });
     const snapshots = await tx.$queryRaw<Array<{ ruleKey: string; ruleVersion: number; ruleHash: string }>>`
       SELECT "ruleKey", "ruleVersion", "ruleHash" FROM public."FiscalDocumentRuleSnapshot"
       WHERE "tenantId"=${ctx.tenantId} AND "fiscalDocumentId"=${record.id} ORDER BY "ruleKey"
     `;
-    return { data: { ...record, module: req.body.module, appliedRules: snapshots }, responseCode: 201, resourceType: 'FiscalDocument', resourceId: record.id };
+    return { data: { ...record, module: req.body.module, appliedRules: snapshots, taxpayerProfileHash: profileHash }, responseCode: 201, resourceType: 'FiscalDocument', resourceId: record.id };
   });
 
   await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.document.issued', entity: 'FiscalDocument', entityId: execution.resourceId || undefined, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
@@ -387,6 +411,23 @@ router.get('/documents/:id/rules', requirePermission('fiscal.read'), asyncHandle
   if (!document) throw new HttpError(404, 'Documento fiscal no encontrado.', { code: 'FISCAL_DOCUMENT_NOT_FOUND' });
   ok(res, await getDocumentRuleSnapshots(ctx.tenantId, document.id));
 }));
+
+router.post('/taxpayer-profiles/:id/review', requirePermission('fiscal.close'),
+  validateBody(fiscalRuleDecisionSchema), asyncHandler(async (req,res) => {
+    const ctx=context(req);
+    if(!ctx.userId)throw new HttpError(401,'Revisión sin identidad.');
+    const id=z.string().uuid().parse(req.params.id);
+    ok(res,await transitionTaxpayerProfile({tenantId:ctx.tenantId,profileId:id,actorId:ctx.userId,
+      action:'REVIEW',reason:req.body.reason}));
+  }));
+router.post('/taxpayer-profiles/:id/activate', requirePermission('fiscal.activate_profiles'),
+  validateBody(fiscalRuleDecisionSchema), asyncHandler(async (req,res) => {
+    const ctx=context(req);
+    if(!ctx.userId)throw new HttpError(401,'Activación sin identidad.');
+    const id=z.string().uuid().parse(req.params.id);
+    ok(res,await transitionTaxpayerProfile({tenantId:ctx.tenantId,profileId:id,actorId:ctx.userId,
+      action:'ACTIVATE',reason:req.body.reason}));
+  }));
 
 router.get('/taxpayer-profiles', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
   ok(res, await listTaxpayerProfileDrafts(context(req).tenantId));
