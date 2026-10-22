@@ -40,7 +40,7 @@ test('production boundaries remain fail-closed after implementation phase', () =
   assert.equal(policy.eligible, false);
   assert.equal(policy.policyCode, SOURCE_AUTO_REPLY_POLICY_NO_GO);
   assert.ok(policy.reasons.includes('MESSENGER_AUTOMATED_MESSAGING_NOT_AUTHORIZED'));
-  assert.match(bridge, /const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH\.active/);
+  assert.match(bridge, /const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED[\s\S]*evaluateSourceAutoReplyPolicy\(config\)\.eligible/);
   assert.match(bridge, /if \(!SOURCE_AUTO_REPLY_ACTIVE\) \{\s*const error = new Error\('SOURCE_AUTO_REPLY_DISABLED'\)/);
   assert.match(promotion, /shadow/i);
   assert.match(compliance, /NO_GO|NO-GO|no_go/i);
