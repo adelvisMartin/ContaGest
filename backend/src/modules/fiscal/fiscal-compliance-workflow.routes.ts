@@ -171,7 +171,8 @@ router.post('/declarations/:id/transition', requirePermission('fiscal.close'), v
     await tx.auditLog.create({ data: {
       tenantId: ctx.tenantId, userId: ctx.userId,
       action: 'fiscal.compliance.' + action.toLowerCase(), entity: 'TaxDeclaration', entityId: row.id,
-      before: { status: row.status }, after: { status: updated.status, change },
+      before: { status: row.status },
+      after: JSON.parse(JSON.stringify({ status: updated.status, change })) as Prisma.InputJsonValue,
       ipAddress: ctx.ip || null, userAgent: ctx.userAgent || null,
     } });
     return { data: { id: updated.id, period: row.period.period, kind: updated.kind,
