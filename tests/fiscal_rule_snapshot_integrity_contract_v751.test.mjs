@@ -11,13 +11,13 @@ test('#751 does not conceal overlapping rules or trust unchecked document snapsh
     load('qa/fiscal-authority-v561.test.ts'),
     load('.github/workflows/fiscal-authority-v561.yml'),
   ]);
-  assert.doesNotMatch(repository, /SELECT DISTINCT ON \\("ruleKey"\\)/i);
-  assert.match(repository, /FISCAL_RULE_AMBIGUOUS/);
-  assert.match(repository, /assertFiscalRuleVersionIntegrity\\(rule, input\\.tenantId/);
-  assert.match(repository, /assertFiscalRuleSnapshotIntegrity\\(snapshot, tenantId\\)/);
-  assert.match(repository, /SELECT "tenantId", "ruleKey", "ruleVersion"/);
-  assert.match(migration, /BEFORE UPDATE OR DELETE ON public\\."FiscalDocumentRuleSnapshot"/);
-  assert.match(migration, /ERRCODE = '55000'/);
-  assert.match(qa, /FISCAL_RULE_SNAPSHOT_IMMUTABLE/);
-  assert.match(workflow, /fiscal_rule_snapshot_integrity_v751\\.test\\.mjs/);
+  assert.equal(repository.includes('SELECT DISTINCT ON ("ruleKey")'), false);
+  assert.ok(repository.includes('FISCAL_RULE_AMBIGUOUS'));
+  assert.ok(repository.includes('assertFiscalRuleVersionIntegrity(rule, input.tenantId'));
+  assert.ok(repository.includes('assertFiscalRuleSnapshotIntegrity(snapshot, tenantId)'));
+  assert.ok(repository.includes('SELECT "tenantId", "ruleKey", "ruleVersion"'));
+  assert.ok(migration.includes('BEFORE UPDATE OR DELETE ON public."FiscalDocumentRuleSnapshot"'));
+  assert.ok(migration.includes("ERRCODE = '55000'"));
+  assert.ok(qa.includes('FISCAL_RULE_SNAPSHOT_IMMUTABLE'));
+  assert.ok(workflow.includes('fiscal_rule_snapshot_integrity_v751.test.mjs'));
 });
