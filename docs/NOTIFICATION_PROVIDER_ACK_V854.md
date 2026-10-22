@@ -9,3 +9,7 @@ Pruebas: `node --test tests/notification_provider_ack_v854.test.mjs`. Pendientes
 ## Unificación de evidencia de intento (2026-10-22)
 
 `POST /notifications/whatsapp/order` registra metadatos mínimos en `NotificationLog` en vez del legacy `ModuleRecord(moduleSlug=notification-log)`, para que `GET /notifications/delivery-evidence` vea **nuevos intentos**. Se admite `provider_unverified` en la proyección como estado incierto, `receiptVerified=false`. Los registros históricos de ModuleRecord no se migran ni se muestran en este timeline; requieren reconciliación explícita para no duplicar ni mentir sobre cobertura. Esta corrección no garantiza atomicidad provider↔DB, webhook ni retries #853/#772; mantener #854 OPEN.
+
+## Hardened transport validation — 2026-10-22
+
+El adaptador directo heredado ahora valida destino internacional, acepta únicamente el campo `phone` dentro de `order`, limita el texto, rechaza campos inesperados fuera de `order` y valida versión/identificador de API Graph antes de construir la URL. Establece un timeout de 10 s. No registra teléfonos ni mensajes. **Esto no prueba consentimiento, delivery, outbox, idempotencia de proveedor ni un teléfono asociado a un pedido persistido**; producción automatizada sigue NO-GO hasta integrar #853/#772 y resolver esas referencias server-side. El enlace manual `wa.me` del frontend no usa este envío automático.

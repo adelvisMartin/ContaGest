@@ -16,15 +16,29 @@ const messageSchema = z.object({
   order: z.record(z.string(), z.unknown()).optional()
 });
 
+// #854 Transport boundary: the order object is not a trusted server record.
+// Only the destination needed by this legacy adapter can cross the boundary.
+// Unknown outer fields fail; unrelated order fields are discarded, never logged.
+const whatsappOrderSchema = z.object({
+  order: z.object({
+    phone: z.string().regex(/^\+?[1-9]\d{7,14}$/)
+  }).strip(),
+  message: z.string().trim().min(1).max(4000)
+    .refine(value => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(value))
+}).strict();
+
 async function sendWhatsAppCloud(to: string, message: string) {
   const token = process.env.WHATSAPP_CLOUD_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const version = process.env.WHATSAPP_GRAPH_VERSION || 'v23.0';
-  if (!token || !phoneNumberId) {
-    return { ok: false, provider: 'whatsapp-cloud', skipped: true, reason: 'WHATSAPP_CLOUD_TOKEN o WHATSAPP_PHONE_NUMBER_ID no configurado' };
+  // Never interpolate arbitrary environment input into a provider URL.
+  if (!token || !phoneNumberId || !/^\d{6,20}$/.test(phoneNumberId) ||
+      !/^v[1-9]\d{0,2}\.\d{1,2}$/.test(version)) {
+    return { ok: false, provider: 'whatsapp-cloud', skipped: true, reason: 'Proveedor WhatsApp no configurado de forma válida.' };
   }
   const response = await fetch(`https://graph.facebook.com/${version}/${phoneNumberId}/messages`, {
     method: 'POST',
+    signal: AbortSignal.timeout(10000),
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
@@ -41,9 +55,8 @@ async function sendWhatsAppCloud(to: string, message: string) {
 
 router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
   const ctx = (req as any).context;
-  const body = z.object({ order: z.record(z.string(), z.unknown()), message: z.string().min(1) }).parse(req.body || {});
-  const order: any = body.order || {};
-  const result = await sendWhatsAppCloud(String(order.phone || ''), body.message);
+  const body = whatsappOrderSchema.parse(req.body || {});
+  const result = await sendWhatsAppCloud(body.order.phone, body.message);
   // #854: write to the same tenant-scoped authority read by /delivery-evidence.
   // This is an attempt/acknowledgement, never verified delivery.
   await prisma.notificationLog.create({
