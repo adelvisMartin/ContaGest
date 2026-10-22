@@ -12,7 +12,7 @@ export type FiscalDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw
 export async function lockFiscalPeriodMutation(
   db: FiscalDb, tenantId: string, period: string,
 ): Promise<void> {
-  if (!tenantId || !/^\\d{4}-(0[1-9]|1[0-2])$/.test(period))
+  if (!tenantId || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period))
     throw new HttpError(422, 'Período o tenant inválido para mutación fiscal.',
       { code: 'FISCAL_PERIOD_LOCK_SCOPE_INVALID' });
   await db.$queryRaw<Array<{ locked: unknown }>>(Prisma.sql`
