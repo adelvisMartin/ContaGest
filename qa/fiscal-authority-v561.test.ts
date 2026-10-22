@@ -80,7 +80,7 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
     await h.status('/fiscal/documents/issue', 422, { method: 'POST',
       headers: { 'Idempotency-Key': `${RUN}-draft-rejected-${rule.version}` },
       body: JSON.stringify({ kind: 'invoice', period: PERIOD, module: 'fiscal',
-        ruleKeys: [rule.ruleKey], effectiveAt: definition.effectiveFrom, payload: { synthetic: true } })
+        ruleKeys: [rule.ruleKey], effectiveAt: definition.supersedesId ? '2099-07-01T00:00:00.000Z' : definition.effectiveFrom, payload: { synthetic: true } })
     });
     await h.status(`/fiscal/rules/${rule.id}/review`, 409, { method: 'POST',
       body: JSON.stringify({ reason: 'Creator cannot approve the same rule version.' }) });
