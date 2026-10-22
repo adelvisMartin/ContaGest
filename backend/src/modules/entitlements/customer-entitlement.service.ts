@@ -184,12 +184,33 @@ export async function consumeCustomerRightInBookingTransaction(
     where:{tenantId:ctx.tenantId,id:input.entitlementId}
   });
   if(!right)denied(404,'Derecho no encontrado.','ENTITLEMENT_NOT_FOUND');
+  // A concurrent cancellation/status update must not invalidate the booking
+  // between eligibility and the committed CONSUME event.
+  const bookingLocks=await tx.$queryRaw<Array<{id:string}>>`
+    SELECT "id" FROM public."SchedulingBooking"
+    WHERE "tenantId"=${ctx.tenantId} AND "id"=${input.bookingId}
+      AND "status"='confirmed' AND "sourceType"='client'
+      AND "sourceId"=${right.beneficiaryId}
+    FOR SHARE
+  `;
+  if(bookingLocks.length!==1)
+    denied(409,'Reserva sin identidad de beneficiario verificada.','ENTITLEMENT_BOOKING_NOT_AUTHORIZED');
   const booking=await tx.schedulingBooking.findFirst({
     where:{id:input.bookingId,tenantId:ctx.tenantId,status:'confirmed',
       sourceType:'client',sourceId:right.beneficiaryId},
     select:{id:true,locationId:true,startsAtUtc:true,status:true}
   });
   if(!booking)denied(409,'Reserva sin identidad de beneficiario verificada.','ENTITLEMENT_BOOKING_NOT_AUTHORIZED');
+  // Protect active resource ownership from a concurrent release as well.
+  // FOR SHARE conflicts with updates that would change status to released.
+  const allocationLocks=await tx.$queryRaw<Array<{id:string}>>`
+    SELECT "id" FROM public."SchedulingResourceAllocation"
+    WHERE "tenantId"=${ctx.tenantId} AND "bookingId"=${booking.id}
+      AND "locationId"=${booking.locationId} AND "status"='active'
+    ORDER BY "id" FOR SHARE
+  `;
+  if(allocationLocks.length===0)
+    denied(409,'La reserva no tiene recurso autorizado.','ENTITLEMENT_RESOURCE_NOT_RESERVED');
   const allocation=await tx.schedulingResourceAllocation.findFirst({
     where:{tenantId:ctx.tenantId,bookingId:booking.id,locationId:booking.locationId,status:'active'},
     select:{id:true}

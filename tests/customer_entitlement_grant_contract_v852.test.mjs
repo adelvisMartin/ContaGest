@@ -57,3 +57,12 @@ test('#852 only integer-milli amounts authorize consumption, never float math',(
   assert.match(consume,/if\(milli\(quantity\)>milli\(projected\.remaining\)\)/);
   assert.doesNotMatch(consume,/Number\(quantity\)/);
 });
+
+test('#852 consume prevents booking cancel/allocation release races with SQL row locks',()=>{
+  const consume=svc.split('export async function consumeCustomerRightInBookingTransaction(')[1];
+  assert.match(consume,/SELECT "id" FROM public\."SchedulingBooking"/);
+  assert.match(consume,/SELECT "id" FROM public\."SchedulingResourceAllocation"/);
+  assert.match(consume,/FOR SHARE/);
+  assert.ok(consume.indexOf('const bookingLocks=')<consume.indexOf('const existing=await tx.entitlementLedgerEvent.findFirst'));
+  assert.ok(consume.indexOf('const allocationLocks=')<consume.indexOf('const existing=await tx.entitlementLedgerEvent.findFirst'));
+});
