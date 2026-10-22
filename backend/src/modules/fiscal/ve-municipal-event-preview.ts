@@ -76,6 +76,10 @@ export function previewReviewedMunicipalPeriodFromCatalog(
         seen.has(event.eventId) || typeof event.eventDate !== 'string' ||
         event.eventDate.slice(0, 7) !== input.period) blocked();
     seen.add(event.eventId);
+    // A monthly aggregate has one municipal jurisdiction and activity scope.
+    // Separate scopes must be evaluated independently, never silently merged.
+    if (event.municipalityCode !== input.events[0].municipalityCode ||
+        event.activityCode !== input.events[0].activityCode) blocked();
     const preview = previewReviewedMunicipalEventFromCatalog(event, catalog);
     base += BigInt(preview.baseMinor); tax += BigInt(preview.taxMinor);
     if (base > BigInt(Number.MAX_SAFE_INTEGER) || tax > BigInt(Number.MAX_SAFE_INTEGER)) blocked();
@@ -87,7 +91,9 @@ export function previewReviewedMunicipalPeriodFromCatalog(
     tenantId: input.tenantId, period: input.period, events,
   }), 'utf8').digest('hex');
   return Object.freeze({
-    tenantId: input.tenantId, period: input.period, eventCount: events.length,
+    tenantId: input.tenantId, period: input.period,
+    municipalityCode: input.events[0].municipalityCode, activityCode: input.events[0].activityCode,
+    eventCount: events.length,
     baseMinor: Number(base), taxMinor: Number(tax), evidenceSha256,
     events: Object.freeze(events), mode: 'NON_POSTING_PREVIEW' as const,
   });
