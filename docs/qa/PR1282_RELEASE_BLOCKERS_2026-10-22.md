@@ -60,3 +60,7 @@ Las fuentes son documentación pública; **no** prueba de aprobación/validació
 ## Rollback/seguridad operativa
 
 Mantener PR DRAFT mientras haya bloqueadores. Revertir cambios por commit y dominio si aparecen regresiones. Este lote no ejecutó migraciones SQL, no llamó proveedores externos ni alteró datos comerciales de clientes. Conservar issues #637, #773, #849, #852 y #854 en backlog hasta que se cumpla la DoD verificable. No cerrar a causa de que un PR exista.
+
+### Errata fiscal obligatoria (2026-10-22)
+
+La providencia 000121 de 2024 fue **derogada por la SNAT/2026/00084 (G.O. 43.435, 12/08/2026)**. No implementar homologación de software obligatoria por 000121 ni confundirla con autorización de emisión de facturas digitales bajo 000102. Evidencia y fuentes en `docs/legal/ACCOUNTING_NOTIFICATION_AUTHORITY_REVIEW_2026-10-22.md`. Estado fiscal NO CERTIFICADO; comprobar aplicabilidad/sujeto y vigencia antes de invocar requisitos actuales.

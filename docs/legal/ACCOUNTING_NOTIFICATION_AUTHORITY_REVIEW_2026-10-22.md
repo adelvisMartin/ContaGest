@@ -55,3 +55,18 @@ La ley venezolana de protección de privacidad de las comunicaciones (G.O. 34.86
 - **PostgreSQL 17, bloqueos advisory:** los locks de transacción se liberan al finalizar commit/rollback y sólo protegen a escritores que los adquieran: https://www.postgresql.org/docs/17/explicit-locking.html y https://www.postgresql.org/docs/17/functions-admin.html . No deben tratarse como barreras SQL universales para clientes que las omitan.
 
 Antes de declarar cumplimiento: contraste de textos consolidados vigentes con asesora contable/jurídica venezolana para el perfil fiscal de cada contribuyente; escenarios facturación (máquina fiscal vs medios digitales autorizados), registros/providencias y trazabilidad/retenibilidad conforme al caso. Estado normativo de producto: **NO CERTIFICADO**.
+
+## FE DE ERRATAS NORMATIVA — vigencia verificada el 2026-10-22 (lectura obligatoria)
+
+**SNAT/2024/000121 ESTÁ DEROGADA**, no vigente. La **SNAT/2026/00084** publicada en G.O. N° **43.435 del 12/08/2026** la derogó expresamente (arts. 1 y 2; vigencia el día de publicación). Por tanto, **NO** exigir homologación o autorización previa del *proveedor de software* invocando la providencia 000121 derogada. Tampoco declarar a ContaGest "homologado" o "certificado" sobre esa norma.
+
+El régimen distinto de **emisión digital de facturas** de la providencia **SNAT/2024/000102**, G.O. 43.032 (19/12/2024), se analiza separadamente: art. 17 (solicitud de autorización de ciertos emisores) y art. 18 (integridad, trazabilidad, imprenta digital autorizada, conservación/consulta de hasta 10 años y contingencias en el supuesto regulado). La derogatoria de la 000121 **no deroga por sí misma** la 000102, ni la 0071/2011, ni sustituye el análisis por tipo de contribuyente y canal de emisión.
+
+**Implicación de arquitectura:** desagregar `providerAuthorizationRequired=false_for_repealed_000121` de las validaciones **por contribuyente/documento** bajo normativa fiscal aplicable. **No** emitir numeraciones fiscales ni recibos presentados como facturas por defecto. **No** bloquear todos los módulos contables en nombre de 000121: el registro contable no equivale a emisión de documento fiscal. No introducir tasas ni reglas fiscalmente vinculantes sin provenance/effective-date. Esta revisión no es asesoría tributaria individual y exige verificar texto consolidado/gaceta oficial antes del despliegue fiscal.
+
+**Fuentes corroboradas (22-10-2026):**
+- G.O. 43.435 (sumario, 12/08/2026): https://www.gacetaoficial.org/2026-08-12-gaceta-oficial-venezuela-43435
+- Texto SNAT/2026/00084 (art. 1 derogatoria y art. 2 vigencia): https://tugacetaoficial.com/leyes/providencia-administrativa-snat-2026-00084-derogatoria-de-normas-deproveedores-de-sistemas-informaticos-utilizados-para-la-emision-de-facturas-y-otros-documentos-fiscales/
+- Revisión jurídica Acceso a la Justicia (31/08/2026): https://accesoalajusticia.org/seniat-permite-el-uso-de-cualquier-sistema-contable/
+- Análisis Victum Legal (vigencia, distinción): https://victum.legal/seniat-deroga-el-regimen-de-homologacion-y-autorizacion-de-los-proveedores-de-sistemas-informaticos-de-facturacion/
+- Texto independiente SNAT/2024/000102, arts. 17-18: https://tributos.ivecofi.net/informacion/legislacion/providencias/pa-2024-102
