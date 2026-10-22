@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { statementImportLineHash } from '../backend/src/modules/bank-reconciliation/statement-line-identity.ts';
+import { statementImportLineHash, assertBankLineReplayIdentity } from '../backend/src/modules/bank-reconciliation/statement-line-identity.ts';
 
 const A='a'.repeat(64), B='b'.repeat(64), C='c'.repeat(64);
 const base={canonicalLineHash:A, sourceHash:B, rowIndex:0, bankLineId:null};
@@ -28,4 +28,15 @@ test('#743 invalid source fingerprints, ordinals and bank IDs fail closed',()=>{
                   {bankLineId:{toString:()=> 'x'}}]) {
     assert.throws(()=>hash(p),{message:'BANK_STATEMENT_LINE_IDENTITY_INVALID'});
   }
+});
+
+
+// A conflict on the unique bank ID cannot be accepted as a benign repeat.
+test('#743 unchanged replay with bank-provided ID is allowed only for exact same payload',()=>{
+  assert.doesNotThrow(()=>assertBankLineReplayIdentity({lineHash:A,bankLineId:'FITID-1'},{lineHash:A,bankLineId:'FITID-1'}));
+});
+test('#743 reused ID with a changed fingerprint is a hard conflict',()=>{
+  assert.throws(()=>assertBankLineReplayIdentity({lineHash:B,bankLineId:'FITID-1'},{lineHash:A,bankLineId:'FITID-1'}),/BANK_STATEMENT_IDENTITY_CONFLICT/);
+  assert.throws(()=>assertBankLineReplayIdentity(null,{lineHash:A,bankLineId:'FITID-1'}),/BANK_STATEMENT_IDENTITY_CONFLICT/);
+  assert.throws(()=>assertBankLineReplayIdentity({lineHash:A,bankLineId:'FITID-2'},{lineHash:A,bankLineId:'FITID-1'}),/BANK_STATEMENT_IDENTITY_CONFLICT/);
 });
