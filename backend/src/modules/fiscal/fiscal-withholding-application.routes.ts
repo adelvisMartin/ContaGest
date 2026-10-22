@@ -276,6 +276,35 @@ router.post('/',requirePermission('fiscal.manage_documents'),validateBody(applic
       vatSourceSha256:vatAtInvoice[0].legalSourceSha256,
       retentionRuleId:retAtRecognition[0].id,retentionRuleHash:retAtRecognition[0].hash,
       retentionSourceSha256:retAtRecognition[0].legalSourceSha256,
+      // Historical replay uses exact reviewed rule versions and the applied
+      // profile, never whichever rate or taxpayer category is active later.
+      vatRuleSnapshot:{
+        id:vatAtInvoice[0].id,ruleKey:vatAtInvoice[0].ruleKey,
+        version:vatAtInvoice[0].version,hash:vatAtInvoice[0].hash,
+        effectiveFrom:vatAtInvoice[0].effectiveFrom.toISOString(),
+        effectiveTo:vatAtInvoice[0].effectiveTo?.toISOString()||null,
+        source:vatAtInvoice[0].source,documentation:vatAtInvoice[0].documentation,
+        definition:vatAtInvoice[0].definition,
+        legalSourceId:vatAtInvoice[0].legalSourceId,
+        legalSourceSha256:vatAtInvoice[0].legalSourceSha256
+      },
+      retentionRuleSnapshot:{
+        id:retAtRecognition[0].id,ruleKey:retAtRecognition[0].ruleKey,
+        version:retAtRecognition[0].version,hash:retAtRecognition[0].hash,
+        effectiveFrom:retAtRecognition[0].effectiveFrom.toISOString(),
+        effectiveTo:retAtRecognition[0].effectiveTo?.toISOString()||null,
+        source:retAtRecognition[0].source,documentation:retAtRecognition[0].documentation,
+        definition:retAtRecognition[0].definition,
+        legalSourceId:retAtRecognition[0].legalSourceId,
+        legalSourceSha256:retAtRecognition[0].legalSourceSha256
+      },
+      buyerProfileSnapshot:{
+        id:buyer.id,version:buyer.version,rifSnapshot:buyer.rifSnapshot,
+        taxpayerCategory:buyer.taxpayerCategory,jurisdiction:buyer.jurisdiction,
+        activityCodes:buyer.activityCodes,sourceReference:buyer.sourceReference,
+        sourceContentSha256:buyer.sourceContentSha256,
+        legalSourceId:buyer.legalSourceId
+      },
       taxableMinor:plan.taxableMinor,vatMinor:plan.vatMinor,withheldMinor:plan.withheldMinor,
       ledgerEntryId:newEntry.id,accounts:lines.map(l=>l.accountCode)
     };
