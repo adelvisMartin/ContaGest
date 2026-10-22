@@ -84,3 +84,53 @@ SHA Git verificados (comparando `git hash-object` local con `fetch_file` remoto)
 5. Reconciliar rama con `main` (avanzó durante ejecución), volver a ejecutar los gates en **nuevo SHA exacto** y resolver conflictos si aparecen; el estado `mergeable=true` de GitHub no demuestra calidad ni DoD.
 
 **Decisión: PR DRAFT / NOT_READY** hasta resolver bloqueo funcional #775/#776 y pruebas integrales. Nada tocó producción. No cerrar #751 #785 #774 #775 #776 ni quitar del backlog #661.
+
+
+## Reingeniería de controles documentales — incremento posterior #1279
+
+### Defectos de seguridad y atomicidad confirmados por revisión
+
+1. **BYPASS-P0:** la ruta legacy `POST /fiscal/documents` permitía crear documentos tipo `invoice`/`withholding`/`tax_return` sin pasar por las autoridades `FiscalLegalSource`, `FiscalRuleVersion` ni `TaxpayerProfileVersion`.
+   - **Corregido en código:** se limita a `module=fiscal` y `kind=supporting_document|other` con estado `external`, no `issued`; el frontend sólo ofrece esos valores. Intentos regulados → HTTP 422.
+2. **SPOOF-P0:** los campos especiales `_taxpayerProfileHash`, `_ruleKeys`, `_effectiveAt`, `_fiscalModule` podían llegar desde un `payload` del usuario.
+   - **Corregido en código:** una validación compartida falla ante campos reservados en los endpoints de soporte y de emisión; HTTP 422 con error determinista.
+3. **CERT-P0:** la ruta genérica `/fiscal/documents/issue` admitía documentos `kind=withholding` con numeración `WITHHOLDING-` no homologada con la serie de 14 dígitos del artículo 16 de la Providencia SNAT/2025/000054, y sin modelo real de certificado.
+   - **Corregido en código (fail closed):** se deniegan `withholding`, `tax_return`, `credit_note` y `debit_note` por esa ruta hasta que exista workflow específico con factura original, proveedor, acuse, auditoría contable y reverso. **No implica que el certificado esté implementado.**
+4. **AUDIT-P1:** después de la confirmación de la transacción financiera se ejecutaba un `writeAudit` externo; su fallo podía producir HTTP 500 con documento ya emitido y duplicar evidencia en replays idempotentes.
+   - **Corregido en código:** `tx.auditLog.create` participa en **la misma transacción** de secuencia, documento y snapshots; replay no genera segunda emisión. La captura de reglas ya auditaba dentro de la transacción, por lo que se retiró el audit duplicado del router. Soportes externos también registran documento+audit en una sola transacción.
+
+### Evidencia técnica y pruebas
+
+Prueba focal, sobre los trece archivos verificados por hash Git contra la rama remota en la misma sesión:
+
+```sh
+node --experimental-strip-types --test \
+  tests/fiscal_rule_governance_policy_v751.test.mjs \
+  tests/fiscal_rule_snapshot_integrity_v751.test.mjs \
+  tests/fiscal_rule_snapshot_integrity_contract_v751.test.mjs \
+  tests/taxpayer_profile_activation_v774.test.mjs \
+  tests/ve_tax_posting_plan_v775_v776.test.mjs \
+  tests/fiscal_event_rule_family_v775_v776.test.mjs \
+  tests/fiscal_document_authority_v751.test.mjs
+```
+
+**Resultado PASS 28/28; fallos 0; Node v22.16.0** en copia aislada; el import `.js` del módulo TS de cálculo usa una equivalencia local como se documentó en la sección anterior. No afirmar que esto reemplaza `tsx` real o el backend completo.
+
+TypeScript puro, con `--strict --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --skipLibCheck --typeRoots /usr/local/slides_js/node_modules/@types --types node` sobre seis módulos de política: **PASS**.
+
+Hashes focales nuevos:
+- `fiscal-document-authority-policy.ts`: **031cffc30c677ad30d26f3ebbd2a3e07e0b0d266**
+- `fiscal_document_authority_v751.test.mjs`: **033896acc3a9731b9fd9156af82ce7266933c794**
+
+**QA real pendiente (NOT_EXECUTED):**
+- PG17: `qa/fiscal-authority-v561.test.ts` incluye pruebas para soporte externo, intento de emisión falsa, fuente/tenant, auditoría atómica del soporte y **exactamente un evento `fiscal.document.issued`** después de reintento idempotente. Son casos incorporados, **no ejecutados contra PostgreSQL**.
+- No se pudo ejecutar `npm ci`, `npm run typecheck`, `npm run build:backend`, `npm run build:frontend`, DB from-zero/upgrade ni Playwright del proyecto; checkout de GitHub con DNS inaccesible y no hay servidor PostgreSQL en este entorno.
+- La rama sigue con divergencia respecto a `main`; rebase/merge debe ser seguido de nueva prueba exact-SHA.
+
+### Normativa contrastada
+
+- **IVA SNAT/2025/000054**, Gaceta 43.171 del 16-07-2025, aplicable desde 01-08-2025: artículo 13 oportunidad pago/abono; art. 14 quincenas y calendario; art. 16 número AAAAMMSSSSSSSS y datos/formalidades del comprobante. Fuente transcrita secundariamente: https://tributos.ivecofi.net/informacion/legislacion/providencias/pa-2025-54 ; revisión del instrumento: https://ttpn.com.ve/?p=3498 . **Sin tasa automática ni aprobación de fuente en DB.**
+- **SNAT/2025/000091**, calendario SPE/agentes para 2026 publicado inicialmente G.O. 43.273 y **reimpreso por error material en G.O. 43.283 del 23-12-2025**: https://accesoalajusticia.org/reimpresion-de-la-providencia-administrativa-que-establece-el-calendario-tributario-del-2026/ . No se deben generar fechas de vencimiento mediante reglas fijas o desde la primera edición.
+- **ISLR Decreto 1.808** y modificaciones: los conceptos, UT, mínimos, sustraendos y condiciones del beneficiario siguen requiriendo mapeo legal humano. No simular que el ratio simple es suficiente.
+
+**Definición de salida del lote:** no alcanzada. La contabilización comercial sigue tomando porcentajes del cliente; no hay certificados legales reales con unicidad, entrega y reverso; falta PG17 A/B y E2E. **BLOCK_MAIN=yes; conservar PR DRAFT y cinco issues abiertos**.
