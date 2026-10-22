@@ -92,7 +92,7 @@ function TaxesWorkspace({state,context}){
       if(String(form.payloadJson||'').trim())payload=JSON.parse(form.payloadJson);
       if(!payload||Array.isArray(payload)||typeof payload!=='object')throw new Error('El payload debe ser un objeto JSON.');
       await FiscalService.createDocument({kind:form.kind,number:form.number,period:form.period,module:form.module,payload});
-      notify('Documento fiscal registrado y auditado.','success');
+      notify('Documento externo registrado como NO VERIFICADO. No equivale a una factura fiscal certificada ni a una declaración ante el SENIAT.','info');
       setForm({kind:FISCAL_DOCUMENT_KINDS[0]?.value||'invoice',number:'',period:currentPeriod(),module:FISCAL_MODULES[0]?.value||'fiscal',payloadJson:'{}'});
       await loadFiscal({silent:true});
     }catch(cause){notify(`No se registró el documento: ${cause?.message||'Error'}`,'error');}
@@ -102,7 +102,13 @@ function TaxesWorkspace({state,context}){
   const columns=[
     {key:'createdAt',label:'Fecha',render:(doc)=>doc.createdAt?new Date(doc.createdAt).toLocaleString('es-VE'):'—'},
     {key:'kind',label:'Tipo'},{key:'number',label:'Número'},{key:'period',label:'Período'},{key:'module',label:'Módulo'},
-    {key:'status',label:'Estado',render:(doc)=><CgStatusChip size="small" label={String(doc.status||'issued').toUpperCase()} tone="success"/>},
+    {key:'status',label:'Estado',render:(doc)=>{
+      const external = doc.status === 'external_unverified' ||
+        doc.payload?._legalProvenance === 'UNVERIFIED_EXTERNAL';
+      return <CgStatusChip size="small"
+        label={external ? 'EXTERNO · SIN VERIFICAR' : 'REGISTRADO · REVISAR SOPORTE'}
+        tone="warning"/>;
+    }},
     {key:'hash',label:'Hash',render:(doc)=><Typography variant="caption" sx={{fontFamily:'monospace'}} title={doc.hash}>{String(doc.hash||'').slice(0,12)}{doc.hash?'…':''}</Typography>}
   ];
   const profileColumns=[
@@ -159,7 +165,7 @@ function TaxesWorkspace({state,context}){
 
     <Paper variant="outlined" sx={{p:1.5}}>
       <Typography variant="h6">Documentos fiscales</Typography>
-      <Typography variant="caption" color="text.secondary">Registro tenant-scoped con hash, RBAC y bloqueo por período fiscal cerrado. Esta ingeniería no constituye certificación regulatoria SENIAT.</Typography>
+      <Typography variant="caption" color="text.secondary">Registro externo/manual sujeto a verificación de origen, reglas fiscales y numeración. Un hash de registro NO certifica su validez tributaria, ni equivale a una presentación ante SENIAT.</Typography>
       <Box mt={1.2}>
         {governance.capabilities?.manageDocuments?
           <Box component="form" onSubmit={submitDocument}>
@@ -170,7 +176,7 @@ function TaxesWorkspace({state,context}){
               <CgSelect label="Módulo fiscal" value={form.module} onChange={(e)=>setForm({...form,module:e.target.value})} options={FISCAL_MODULES}/>
             </Box>
             <CgTextField sx={{mt:1}} fullWidth label="Payload JSON opcional" multiline minRows={2} value={form.payloadJson} onChange={(e)=>setForm({...form,payloadJson:e.target.value})}/>
-            <CgButton type="submit" disabled={saving} sx={{mt:1}}>{saving?'Registrando…':'Registrar documento fiscal'}</CgButton>
+            <CgButton type="submit" disabled={saving} sx={{mt:1}}>{saving?'Registrando…':'Registrar soporte externo (sin verificar)'}</CgButton>
           </Box>
           :<CgState severity={governance.denied?'error':'info'} title={governance.denied?'PERMISSION DENIED':'SOLO LECTURA'}>El servidor no habilitó <code>fiscal.manage_documents</code> para esta sesión.</CgState>}
       </Box>
