@@ -36,7 +36,29 @@ export type LedgerLifecycleSnapshot = {
   reversedBy?: { id?: string } | null;
 };
 
-type AccountingDb = Pick<Prisma.TransactionClient, 'closingPeriod' | 'ledgerEntry'>;
+type AccountingDb = Pick<Prisma.TransactionClient, 'closingPeriod' | 'ledgerEntry' | '$queryRaw'>;
+
+const PERIOD_CODE = /^\\d{4}-(0[1-9]|1[0-2])$/;
+
+/**
+ * Every accounting posting/close writer must acquire this same PostgreSQL
+ * transaction-scoped mutex BEFORE its period-open check and mutation.
+ * The lock also covers periods not yet represented by a ClosingPeriod row.
+ * A standalone Prisma client is not an ownership boundary; only transaction
+ * clients retain this lock until COMMIT/ROLLBACK.
+ */
+async function lockAccountingPeriodMutation(
+  tenantId: string, fiscalPeriod: string, tx: Prisma.TransactionClient
+): Promise<void> {
+  if (typeof tenantId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(tenantId) ||
+      typeof fiscalPeriod !== 'string' || !PERIOD_CODE.test(fiscalPeriod)) {
+    throw new HttpError(422, 'Identidad o período contable inválido.');
+  }
+  const lockKey = `cg:ledger-period:v1:${tenantId}:${fiscalPeriod}`;
+  await tx.$queryRaw<Array<{ locked: string | null }>>`
+    SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked
+  `;
+}
 
 export function assertLedgerActionAllowed(entry: LedgerLifecycleSnapshot, action: LedgerLifecycleAction) {
   if (action === 'post') {
@@ -71,6 +93,9 @@ export function assertBalanced(lines: LedgerLineInput[]) {
 }
 
 export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string, db: AccountingDb = prisma) {
+  // The root Prisma client can perform a read-only precheck; writers MUST pass
+  // their active transaction so the advisory lock survives to the ledger write.
+  if (db !== prisma) await lockAccountingPeriodMutation(tenantId, fiscalPeriod, db as Prisma.TransactionClient);
   const closed = await db.closingPeriod.findFirst({
     where: {
       tenantId,
@@ -84,6 +109,37 @@ export async function assertPeriodOpen(tenantId: string, fiscalPeriod: string, d
 }
 
 
+
+/**
+ * Single command authority for opening a period.
+ * The lock must match posting and close, including when no row exists yet.
+ * Audit creation is committed/rolled back with the period, never best effort.
+ */
+export async function createAccountingPeriod(input: {
+  tenantId: string; period: string; note?: string;
+  actorId?: string; audit?: LedgerAuditContext;
+}) {
+  const actorId = requirePostingActor(input.actorId || input.audit?.userId);
+  return prisma.$transaction(async tx => {
+    await lockAccountingPeriodMutation(input.tenantId, input.period, tx);
+    const existing = await tx.closingPeriod.findFirst({
+      where: { tenantId: input.tenantId, period: input.period, module: 'accounting' }
+    });
+    if (existing) throw new HttpError(409, 'El período contable ya está registrado.');
+    const period = await tx.closingPeriod.create({
+      data: { tenantId: input.tenantId, period: input.period,
+        module: 'accounting', status: 'open', note: input.note || null }
+    });
+    await tx.auditLog.create({
+      data: { tenantId: input.tenantId, userId: actorId,
+        action: 'accounting.period-create', entity: 'ClosingPeriod', entityId: period.id,
+        after: { period: period.period, module: 'accounting', status: 'open' },
+        ipAddress: input.audit?.ipAddress || null, userAgent: input.audit?.userAgent || null }
+    });
+    return period;
+  });
+}
+
 /**
  * #637 Incremental command owner for an accounting period close.
  * Serializes competing closes for the same tenant row and commits audit with
@@ -96,6 +152,12 @@ export async function closeAccountingPeriod(input: {
 }) {
   const actorId = requirePostingActor(input.actorId || input.audit?.userId);
   return prisma.$transaction(async (tx) => {
+    const candidate = await tx.closingPeriod.findFirst({
+      where: { id: input.periodId, tenantId: input.tenantId, module: 'accounting' },
+      select: { period: true }
+    });
+    if (!candidate) throw new HttpError(404, 'Período contable no encontrado.');
+    await lockAccountingPeriodMutation(input.tenantId, candidate.period, tx);
     const locked = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM public."ClosingPeriod"
       WHERE "id" = ${input.periodId} AND "tenantId" = ${input.tenantId} AND "module" = 'accounting'

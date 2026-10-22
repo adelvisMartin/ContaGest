@@ -11,6 +11,7 @@ import { projectOpenItemCoverage } from './open-item-coverage.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import {
   closeAccountingPeriod,
+  createAccountingPeriod,
   createLedgerEntry,
   deleteDraftLedgerEntry,
   postLedgerEntry,
@@ -205,10 +206,11 @@ router.get('/closing-periods', requirePermission('accounting.view'), asyncHandle
 
 router.post('/closing-periods', requirePermission('accounting.post'), validateBody(closingPeriodSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const existing = await prisma.closingPeriod.findFirst({ where: { tenantId: ctx.tenantId, period: req.body.period, module: 'accounting' } });
-  if (existing) throw new HttpError(409, 'El período contable ya está registrado.');
-  const created = await prisma.closingPeriod.create({ data: { tenantId: ctx.tenantId, period: req.body.period, module: 'accounting', status: 'open', note: req.body.note || null } });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'accounting.period-create', entity: 'ClosingPeriod', entityId: created.id, after: created, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  const created = await createAccountingPeriod({
+    tenantId: ctx.tenantId, period: req.body.period, note: req.body.note,
+    actorId: ctx.userId,
+    audit: { userId: ctx.userId, ipAddress: ctx.ip, userAgent: ctx.userAgent }
+  });
   ok(res, created);
 }));
 

@@ -1,0 +1,36 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const service = readFileSync(new URL('../backend/src/modules/accounting/accounting.service.ts', import.meta.url), 'utf8');
+const routes = readFileSync(new URL('../backend/src/modules/accounting/accounting.routes.ts', import.meta.url), 'utf8');
+
+test('#637 period writes and close use one transaction-scoped advisory lock key', () => {
+  assert.match(service, /pg_advisory_xact_lock\(hashtextextended\(/);
+  assert.match(service, /cg:ledger-period:v1:\$\{tenantId\}:\$\{fiscalPeriod\}/);
+  assert.match(service, /if \(db !== prisma\) await lockAccountingPeriodMutation\(tenantId, fiscalPeriod,/);
+  const post = service.split('export async function postLedgerEntry(')[1].split('export async function reverseLedgerEntry(')[0];
+  assert.match(post, /await assertPeriodOpen\(input\.tenantId, entry\.fiscalPeriod, tx\)/);
+  const reversal = service.split('export async function reverseLedgerEntry(')[1].split('type PostingAccounts')[0];
+  assert.match(reversal, /await assertPeriodOpen\(input\.tenantId, input\.fiscalPeriod, tx\)/);
+  const close = service.split('export async function closeAccountingPeriod(')[1].split('function normalizeLedgerLines')[0];
+  assert.match(close, /await lockAccountingPeriodMutation\(input\.tenantId, candidate\.period, tx\)/);
+  assert.ok(close.indexOf('await lockAccountingPeriodMutation') < close.indexOf('FOR UPDATE'));
+});
+
+test('#637 create period and its audit now belong to one domain transaction', () => {
+  const command = service.split('export async function createAccountingPeriod(')[1].split('export async function closeAccountingPeriod(')[0];
+  assert.match(command, /requirePostingActor/);
+  assert.match(command, /prisma\.\$transaction\(async tx/);
+  assert.match(command, /await lockAccountingPeriodMutation/);
+  assert.match(command, /tx\.closingPeriod\.create/);
+  assert.match(command, /tx\.auditLog\.create/);
+  const route = routes.split("router.post('/closing-periods'")[1].split("\n}));")[0];
+  assert.match(route, /await createAccountingPeriod/);
+  assert.doesNotMatch(route, /prisma\.closingPeriod\.(create|update)/);
+});
+
+test('#637 no db-root mutex is mistakenly claimed to survive a write', () => {
+  assert.match(service, /if \(db !== prisma\)/);
+  assert.match(service, /all.*posting.*close|Every accounting posting\/close writer/i);
+});

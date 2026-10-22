@@ -38,3 +38,7 @@ El incremento actual **solo** cubre atomicidad de reverso, regresión estructura
 ## Incremento de cierre contable 2026-10-22 (branch multi-ticket)
 
 `POST /closing-periods/:id/close` delega a `closeAccountingPeriod` en `accounting.service.ts`. La transición de la fila `ClosingPeriod` está bajo `FOR UPDATE` por tenant/ID, update condicionado a `open` y auditoría dentro de la misma transacción. Un actor ausente falla cerrado. **No certifica** serialización cierre↔post: los writers de asientos aún deben coordinar bloqueo de período y necesitan PostgreSQL17 dos sesiones, prueba multi-tenant/RLS y contrato API ejecutado. El alta de períodos y otros comandos siguen en rutas. No cerrar #637.
+
+## Close/post advisory serialization — 2026-10-22
+
+Se unificó el lock transaccional `pg_advisory_xact_lock(hashtextextended('cg:ledger-period:v1:<tenant>:<period>',0))` para el `createAccountingPeriod`, `closeAccountingPeriod` y `assertPeriodOpen(...,tx)` usado por contabilizaciones manuales y flujos sales/purchases. El lock cubre período aún sin fila y se mantiene hasta COMMIT/ROLLBACK. `assertPeriodOpen(...,prisma)` permanece sólo como lectura informativa: **ningún escritor puede interpretarla como barrera transaccional**. La creación y auditoría del período también son atómicas. Atención: otros escritores no cubiertos y cierres de módulo `all` podrían requerir locks equivalentes; hace falta test real PG17 con dos sesiones y dos tenants para cerrar DoD.
