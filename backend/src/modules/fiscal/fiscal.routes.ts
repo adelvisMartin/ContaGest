@@ -45,10 +45,18 @@ const fiscalSchema = z.object({
   module: moduleSchema,
   payload: z.record(z.string(), z.unknown()).default({})
 }).strict();
+// Uniform UTC contract: no locale parsing or implicit timezone on legal effectivity.
+const utcInstantSchema = z.string().refine((value) => {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) return false;
+  const at = new Date(value);
+  return Number.isFinite(at.getTime()) &&
+    at.toISOString().slice(0, 19) === value.slice(0, 19);
+}, 'Requiere instante UTC ISO-8601 con Z, sin fechas normalizadas.').transform(value => new Date(value));
+
 const fiscalRuleSchema = z.object({
   ruleKey: z.string().trim().regex(/^[a-z0-9][a-z0-9._:-]{1,79}$/i),
-  effectiveFrom: z.coerce.date(),
-  effectiveTo: z.coerce.date().nullable().optional(),
+  effectiveFrom: utcInstantSchema,
+  effectiveTo: utcInstantSchema.nullable().optional(),
   source: z.string().trim().min(3).max(240),
   documentation: z.string().trim().min(3).max(1000),
   definition: z.record(z.string(), z.unknown()),
@@ -94,7 +102,7 @@ const issueDocumentSchema = z.object({
   module: moduleSchema,
   payload: z.record(z.string(), z.unknown()).default({}),
   ruleKeys: z.array(z.string().trim().min(2).max(80)).min(1).max(20),
-  effectiveAt: z.coerce.date().optional(),
+  effectiveAt: utcInstantSchema.optional(),
   prefix: z.string().trim().max(20).optional(),
   width: z.number().int().min(1).max(18).default(8)
 }).strict();
