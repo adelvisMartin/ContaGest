@@ -55,6 +55,20 @@ test('#650 recursively redacts nested secrets, DSNs and signed URLs', () => {
   assert.doesNotThrow(() => JSON.parse(serialized));
 });
 
+test('#979 redaction protects personal identifiers in free text and URL query without damaging safe metadata', () => {
+  const actual = redactionModule.redactTelemetryValue({
+    description: 'Cliente ana.qa@example.test no encontrado; https://app.example.test/report?email=ana.qa%40example.test&phone=04121234567&rif=J12345678&mode=summary&page=2',
+    nested: ['Comunicación desde bob+ops@example.test']
+  });
+  const serialized = JSON.stringify(actual);
+  assert.doesNotMatch(serialized, /ana\.qa|bob\+ops|04121234567|J12345678|%40example\.test/);
+  assert.match(serialized, /\\[REDACTED_EMAIL\\]/);
+  assert.match(serialized, /email=\\[REDACTED\\]|email=\\[REDACTED_EMAIL\\]/);
+  assert.match(serialized, /phone=\\[REDACTED\\]/);
+  assert.match(serialized, /rif=\\[REDACTED\\]/);
+  assert.match(serialized, /mode=summary&page=2/);
+});
+
 test('#650 normalizes 4xx, dependency and unhandled errors into stable safe envelopes', () => {
   assert.ok(contractModule, '#650 missing contract module');
   const normalizeOperationalError = requireFunction(contractModule, 'normalizeOperationalError');
