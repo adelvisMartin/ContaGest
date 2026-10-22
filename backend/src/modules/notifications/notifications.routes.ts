@@ -71,10 +71,11 @@ router.post('/templates/preview', requirePermission('sales.manage'), asyncHandle
   }
 }));
 
-router.post('/send', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
+router.post('/send', requirePermission('sales.manage'), asyncHandler(async (req, _res) => {
   messageSchema.parse(req.body || {});
-  // No #853 transactional outbox/worker exists behind this endpoint yet.
-  // Never report queued=true or echo a private message when nothing was persisted.
+  // The #853 AsyncJobIntent foundation exists, but this route has no reviewed
+  // notification handler, consent store or provider delivery worker connected.
+  // Never report queued=true or echo private data before a durable intent exists.
   throw new HttpError(503, 'La cola de notificaciones no está disponible; no se programó ningún envío.');
 }));
 
