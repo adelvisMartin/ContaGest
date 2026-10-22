@@ -66,7 +66,7 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
       method: 'POST', body: JSON.stringify({ approved: true, reason: 'Independent source review for synthetic test only.' })
     }, reviewerToken);
     const rule = await h.ok('/fiscal/rules', { method: 'POST', body: JSON.stringify({
-      ruleKey: `${RUN.toLowerCase()}.iva`,
+      ruleKey: `iva.${RUN.toLowerCase()}`,
       effectiveFrom: definition.effectiveFrom,
       effectiveTo: definition.effectiveTo || null,
       source: definition.reference,
@@ -153,7 +153,7 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
       period: PERIOD,
       module: 'fiscal',
       payload: { run: RUN, concurrent: index },
-      ruleKeys: [`${RUN.toLowerCase()}.iva`],
+      ruleKeys: [`iva.${RUN.toLowerCase()}`],
       effectiveAt: '2099-06-15T12:00:00.000Z',
       prefix: `${RUN}-`,
       width: 4
@@ -165,7 +165,7 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   const retryKey = `${RUN}-retry-Idempotency-Key`;
   const retryBody = {
     kind: 'invoice', period: PERIOD, module: 'fiscal', payload: { run: RUN, retry: true },
-    ruleKeys: [`${RUN.toLowerCase()}.iva`], effectiveAt: '2099-06-20T12:00:00.000Z', prefix: `${RUN}-`, width: 4
+    ruleKeys: [`iva.${RUN.toLowerCase()}`], effectiveAt: '2099-06-20T12:00:00.000Z', prefix: `${RUN}-`, width: 4
   };
   const first = await h.ok('/fiscal/documents/issue', { method: 'POST', headers: { 'Idempotency-Key': retryKey }, body: JSON.stringify(retryBody) });
   const replay = await h.ok('/fiscal/documents/issue', { method: 'POST', headers: { 'Idempotency-Key': retryKey }, body: JSON.stringify(retryBody) });
@@ -219,7 +219,7 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   const tenantA = h.tenant.id;
   const tenantB = randomUUID();
   assert.notEqual(tenantA, tenantB);
-  assert.deepEqual(await listFiscalRuleVersions(tenantB, `${RUN.toLowerCase()}.iva`), [], 'tenant A rules must be invisible to tenant B');
+  assert.deepEqual(await listFiscalRuleVersions(tenantB, `iva.${RUN.toLowerCase()}`), [], 'tenant A rules must be invisible to tenant B');
 
   const draft = await h.prisma.salesInvoice.create({
     data: { tenantId: h.tenant.id, number: `${RUN}-DRAFT`, fiscalPeriod: PERIOD, status: 'draft' }
