@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertSecurityClosureCheckout } from './security-closure-checkout-v651.mjs';
 
 const EXPECTED = Object.freeze([
   'media-bola', 'health-disclosure', 'runtime-tenant-rls', 'auth-sessions',
@@ -126,6 +127,7 @@ async function main(args) {
   const inputPath=option('--input');
   if (!SHA.test(sha || '') || (inputPath && !/^artifacts\/[a-zA-Z0-9._/-]+$/.test(inputPath))) err('CLI_ARGUMENT_INVALID');
   const root=resolve(fileURLToPath(new URL('..', import.meta.url)));
+  assertSecurityClosureCheckout(sha, root);
   const catalog=JSON.parse(readFileSync(resolve(root, 'config/security-closure-v651.json'), 'utf8'));
   let input={schemaVersion:651,candidateSha:sha,controls:{}};
   if (inputPath) input=JSON.parse(artifactLoader(root)(inputPath).toString('utf8'));
