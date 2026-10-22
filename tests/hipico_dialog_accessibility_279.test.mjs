@@ -13,7 +13,10 @@ test('all application modal surfaces expose modal dialog semantics', () => {
 });
 
 test('dialog guard provides initial focus, Escape close, tab trap and focus restoration', () => {
-  assert.match(guard, /DIALOG_SELECTOR\s*=\s*'\[role="dialog"\]\[aria-modal="true"\]'/);
+  // Native <dialog open> must receive the same focus trap and Escape handling
+  // as the legacy role=dialog/aria-modal overlay.
+  assert.match(guard, /DIALOG_SELECTOR\s*=\s*'\[role="dialog"\]\[aria-modal="true"\], dialog\[open\]'/);
+  assert.match(guard, /activeDialog instanceof HTMLDialogElement && activeDialog\.open/);
   assert.match(guard, /target\.focus\(\{ preventScroll: true \}\)/);
   assert.match(guard, /event\.key === 'Escape'/);
   assert.match(guard, /event\.key === 'Tab'/);
