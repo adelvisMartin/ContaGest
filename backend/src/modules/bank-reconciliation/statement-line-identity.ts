@@ -32,3 +32,14 @@ export function statementImportLineHash(input: Readonly<{
     }), 'utf8')
     .digest('hex');
 }
+
+/** Detects conflicting bank IDs after a uniqueness collision; never trusts ON CONFLICT DO NOTHING alone. */
+export function assertBankLineReplayIdentity(
+  existing: Readonly<{ lineHash: string; bankLineId: string | null }> | null,
+  incoming: Readonly<{ lineHash: string; bankLineId: string | null }>
+): void {
+  if (!existing || !incoming || existing.lineHash !== incoming.lineHash ||
+      existing.bankLineId !== incoming.bankLineId) {
+    throw new TypeError('BANK_STATEMENT_IDENTITY_CONFLICT');
+  }
+}
