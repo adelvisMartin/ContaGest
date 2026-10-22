@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
 import { listFiscalRuleVersions } from '../backend/src/modules/fiscal/fiscal.repository.ts';
 
@@ -25,16 +25,80 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   await h.prisma.closingPeriod.deleteMany({ where: { tenantId: h.tenant.id, period: PERIOD, module: 'fiscal' } });
   await h.ok('/fiscal/periods', { method: 'POST', body: JSON.stringify({ period: PERIOD, module: 'fiscal', note: `${RUN} exact SHA ${sha}` }) });
 
-  const ruleV1 = await h.ok('/fiscal/rules', {
-    method: 'POST',
-    body: JSON.stringify({
+
+  // The review flow uses real session-bound users with independent fiscal roles.
+  // All data stays in the disposable *_fiscal_v561_e2e test database.
+  const actorSuffix = randomUUID().slice(0, 8);
+  const roles = await h.prisma.userRole.findMany({ where: { userId: h.admin.id }, select: { roleId: true } });
+  const reviewer = await h.prisma.userProfile.create({ data: {
+    tenantId: h.tenant.id, email: `qa-rule-review-${actorSuffix}@example.invalid`,
+    fullName: 'Synthetic fiscal rule reviewer'
+  } });
+  const activator = await h.prisma.userProfile.create({ data: {
+    tenantId: h.tenant.id, email: `qa-rule-activate-${actorSuffix}@example.invalid`,
+    fullName: 'Synthetic fiscal rule activator'
+  } });
+  await h.prisma.userRole.createMany({ data: [
+    ...roles.map(({ roleId }) => ({ userId: reviewer.id, roleId })),
+    ...roles.map(({ roleId }) => ({ userId: activator.id, roleId }))
+  ] });
+  const reviewerToken = await h.issueSessionTokenFor(reviewer);
+  const activatorToken = await h.issueSessionTokenFor(activator);
+  t.after(async () => {
+    await h.prisma.userRole.deleteMany({ where: { userId: { in: [reviewer.id, activator.id] } } });
+    await h.prisma.userProfile.deleteMany({ where: { id: { in: [reviewer.id, activator.id] } } });
+  });
+
+  async function createReviewedRule(definition: {
+    reference: string; effectiveFrom: string; effectiveTo?: string | null;
+    numerator: number; supersedesId?: string;
+  }) {
+    const digest = createHash('sha256').update(`fixture-${actorSuffix}-${definition.reference}`).digest('hex');
+    const source = await h.ok('/fiscal/legal-sources', { method: 'POST', body: JSON.stringify({
+      sourceType: 'official_gazette', reference: definition.reference,
+      title: 'Synthetic source - no legal effect',
+      sourceUrl: 'https://example.org/synthetic-only', contentSha256: digest
+    }) });
+    await h.status(`/fiscal/legal-sources/${source.id}/review`, 409, {
+      method: 'POST', body: JSON.stringify({ approved: true, reason: 'Creator may not review own legal capture.' })
+    });
+    await h.ok(`/fiscal/legal-sources/${source.id}/review`, {
+      method: 'POST', body: JSON.stringify({ approved: true, reason: 'Independent source review for synthetic test only.' })
+    }, reviewerToken);
+    const rule = await h.ok('/fiscal/rules', { method: 'POST', body: JSON.stringify({
       ruleKey: `${RUN.toLowerCase()}.iva`,
-      effectiveFrom: '2099-01-01T00:00:00.000Z',
-      effectiveTo: '2099-07-01T00:00:00.000Z',
-      source: 'QA Gazette v1',
-      documentation: 'QA provenance fixture for historical rule v1',
-      definition: { rate: '16.00', basis: 'net' }
-    })
+      effectiveFrom: definition.effectiveFrom,
+      effectiveTo: definition.effectiveTo || null,
+      source: definition.reference,
+      documentation: 'Synthetic fixture; not statutory law or an approved rate.',
+      legalSourceId: source.id,
+      ...(definition.supersedesId ? { supersedesId: definition.supersedesId } : {}),
+      definition: { formula: 'RATIO_MINOR_UNITS', numerator: definition.numerator,
+        denominator: 100, basis: 'taxable_minor' }
+    }) });
+    assert.equal(rule.status, 'DRAFT');
+    await h.status('/fiscal/documents/issue', 422, { method: 'POST',
+      headers: { 'Idempotency-Key': `${RUN}-draft-rejected-${rule.version}` },
+      body: JSON.stringify({ kind: 'invoice', period: PERIOD, module: 'fiscal',
+        ruleKeys: [rule.ruleKey], effectiveAt: definition.effectiveFrom, payload: { synthetic: true } })
+    });
+    await h.status(`/fiscal/rules/${rule.id}/review`, 409, { method: 'POST',
+      body: JSON.stringify({ reason: 'Creator cannot approve the same rule version.' }) });
+    await h.ok(`/fiscal/rules/${rule.id}/review`, { method: 'POST',
+      body: JSON.stringify({ reason: 'Reviewed synthetic ratio DSL and source digest.' }) }, reviewerToken);
+    await h.status(`/fiscal/rules/${rule.id}/activate`, 409, { method: 'POST',
+      body: JSON.stringify({ reason: 'Same reviewer cannot activate fiscal rule.' }) }, reviewerToken);
+    const active = await h.ok(`/fiscal/rules/${rule.id}/activate`, { method: 'POST',
+      body: JSON.stringify({ reason: 'Third actor validates synthetic activation.' }) }, activatorToken);
+    assert.equal(active.status, 'ACTIVE');
+    return { ...active, legalSourceSha256: digest, sourceId: source.id };
+  }
+
+  const ruleV1 = await createReviewedRule({
+    reference: `QA-GAZETTE-V1-${actorSuffix}`,
+    effectiveFrom: '2099-01-01T00:00:00.000Z',
+    effectiveTo: '2099-07-01T00:00:00.000Z',
+    numerator: 16
   });
   assert.equal(ruleV1.version, 1);
 
@@ -68,17 +132,13 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
 
   const historicalBefore = await h.ok(`/fiscal/documents/${first.id}/rules`);
   assert.equal(historicalBefore[0].ruleVersion, 1);
-  assert.equal(historicalBefore[0].source, 'QA Gazette v1');
+  assert.equal(historicalBefore[0].source, ruleV1.source);
+  assert.equal(historicalBefore[0].legalSourceId, ruleV1.sourceId);
+  assert.equal(historicalBefore[0].legalSourceSha256, ruleV1.legalSourceSha256);
 
-  const ruleV2 = await h.ok('/fiscal/rules', {
-    method: 'POST',
-    body: JSON.stringify({
-      ruleKey: `${RUN.toLowerCase()}.iva`,
-      effectiveFrom: '2099-07-01T00:00:00.000Z',
-      source: 'QA Gazette v2',
-      documentation: 'QA provenance fixture for rule v2; historical documents must keep v1',
-      definition: { rate: '17.00', basis: 'net' }
-    })
+  const ruleV2 = await createReviewedRule({
+    reference: `QA-GAZETTE-V2-${actorSuffix}`,
+    effectiveFrom: '2099-07-01T00:00:00.000Z', numerator: 17
   });
   assert.equal(ruleV2.version, 2);
   const historicalAfter = await h.ok(`/fiscal/documents/${first.id}/rules`);
