@@ -42,6 +42,16 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
     method:'POST',body:JSON.stringify(externalBase)
   });
   assert.equal(external.status,'external','manual supports must not impersonate issued tax documents');
+  const supportAudits = await h.prisma.auditLog.findMany({where:{
+    tenantId:h.tenant.id,entity:'FiscalDocument',entityId:external.id,
+    action:'fiscal.document.created.external'
+  }});
+  assert.equal(supportAudits.length,1,'external support and audit must commit together');
+  await h.status('/fiscal/documents/issue',422,{method:'POST',
+    body:JSON.stringify({kind:'withholding',period:PERIOD,module:'retiva',
+      payload:{synthetic:true},ruleKeys:['ret_iva.synthetic'],
+      effectiveAt:'2099-06-15T12:00:00.000Z'})});
+
 
   await h.ok('/fiscal/periods', { method: 'POST', body: JSON.stringify({ period: PERIOD, module: 'fiscal', note: `${RUN} exact SHA ${sha}` }) });
 
