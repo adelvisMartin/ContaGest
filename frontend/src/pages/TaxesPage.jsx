@@ -107,6 +107,21 @@ function TaxesWorkspace({state,context}){
     finally{setDecisionBusy('');}
   }
 
+  async function decideProfile(profileId,action){
+    if(decisionBusy)return;
+    if(decisionReason.trim().length<15)return notify('Justifica la decisión con al menos 15 caracteres.','error');
+    setDecisionBusy(`${action}:${profileId}`);
+    try{
+      if(action==='review')await FiscalService.reviewTaxpayerProfile(profileId,decisionReason.trim());
+      else if(action==='activate')await FiscalService.activateTaxpayerProfile(profileId,decisionReason.trim());
+      else throw new Error('Acción inválida');
+      setDecisionReason('');
+      await loadProfiles();
+      notify('Perfil tributario actualizado con auditoría del servidor.','success');
+    }catch(cause){notify(cause?.message||'Perfil rechazado por el servidor.','error');}
+    finally{setDecisionBusy('');}
+  }
+
   async function submitProfileDraft(event){
     event.preventDefault();
     if(!governance.capabilities?.close)return notify('El servidor no habilitó fiscal.close.','error');
@@ -169,8 +184,17 @@ function TaxesWorkspace({state,context}){
     {key:'taxpayerCategory',label:'Categoría propuesta'},
     {key:'activityCodes',label:'Actividades',render:(record)=>Array.isArray(record.activityCodes)?record.activityCodes.join(', '):'—'},
     {key:'effectiveFrom',label:'Vigente desde (propuesto)',render:(record)=>String(record.effectiveFrom||'').slice(0,10)},
-    {key:'status',label:'Estado',render:(record)=><CgStatusChip size="small" label={String(record.status||'DRAFT')} tone="warning"/>},
-    {key:'sourceReference',label:'Referencia de origen'}
+    {key:'status',label:'Estado',render:(record)=><CgStatusChip size="small" label={String(record.status||'DRAFT')} tone={record.status==='ACTIVE'?'success':'warning'}/>},
+    {key:'sourceReference',label:'Referencia de origen'},
+    {key:'action',label:'Decisión',render:(record)=>{
+      if(record.status==='DRAFT'&&governance.capabilities?.close)
+        return <CgButton disabled={Boolean(decisionBusy)||decisionReason.trim().length<15}
+          onClick={()=>decideProfile(record.id,'review')}>Revisar perfil</CgButton>;
+      if(record.status==='REVIEWED'&&governance.capabilities?.activateProfiles)
+        return <CgButton disabled={Boolean(decisionBusy)||decisionReason.trim().length<15}
+          onClick={()=>decideProfile(record.id,'activate')}>Activar perfil</CgButton>;
+      return '—';
+    }}
   ];
   const updateProfile=(key)=>(event)=>setProfileDraft((current)=>({...current,[key]:event.target.value}));
 
@@ -180,7 +204,7 @@ function TaxesWorkspace({state,context}){
     {loading?<CgState severity="info" title="Actualizando">Cargando documentos fiscales.</CgState>:null}
 
     <Paper variant="outlined" sx={{p:1.5}}>
-      <Typography variant="h6">Perfil tributario · BORRADOR</Typography>
+      <Typography variant="h6">Perfil tributario · Versiones y revisión</Typography>
       <Typography variant="body2" color="text.secondary" sx={{mb:1}}>
         Sólo candidatos versionados y auditados para el tenant. El registro de un borrador no activa reglas fiscales, ni determina por sí solo la clasificación legal del contribuyente.
       </Typography>
