@@ -35,3 +35,7 @@ Se incorporó `consumeCustomerRightInBookingTransaction(tx, ctx, input)` como **
 ### Carrera con cancelación concurrente
 
 El comando de consumo ahora toma locks PostgreSQL `FOR SHARE` sobre la `SchedulingBooking` confirmada (tenant+cliente) y su `SchedulingResourceAllocation` activa, dentro de la misma transacción. Una cancelación/release concurrente debe esperar, o gana y se rechaza el consumo. **Eso no reemplaza el handler de cancelación que debe restaurar el derecho con RELEASE idempotente y causal; sigue pendiente y no es un flujo completo.** La estrategia se validará con dos conexiones PG17 y race scheduling/entitlement/refund.
+
+## PG17 real QA contract, no production data
+
+`qa/entitlement-booking-real-v852.test.ts` exige `CG_ENTITLEMENT_QA_ISOLATED=true`, PostgreSQL17, DB `*_v852`, sin Vercel/production y seed QA. Ejercita vía API beneficio/GRANT/replay/mismatch, lectura ledger, crea `SchedulingBooking + SchedulingResourceAllocation + CONSUME` dentro de una sola `prisma.$transaction`, reintento sin doble débito, rollback explícito y negativo tenant B. Requiere GiST #848 y RLS #845 montados. **NOT_EXECUTED** en entorno actual; estos requisitos no se reemplazan por tests de fuente. No usa un handler de cancelación/refund ni frontend Gym — DoD #852 continúa abierta.
