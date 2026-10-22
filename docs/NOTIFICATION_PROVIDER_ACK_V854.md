@@ -27,3 +27,7 @@ Se añade `NotificationChannelPreference` con `tenantId,userId,channel='in_app'`
 ## QA PG17 de consentimiento (opt-in)
 
 `CG_NOTIFICATION_PREF_QA_ISOLATED=true npm run test:backend:notification-preferences:real` verifica en DB `*_v854` PostgreSQL 17 y seed/sidecar RLS la preferencia propia `in_app` concedida/revocada, quiet hours, persistencia al refrescar, auditoría, rechazo de tenant spoofing y no envío WhatsApp (503), sin token negativo. No se ejecutó en este entorno; preparar una DB exclusiva. No valida provider/webhook/worker; #854 sigue pendiente.
+
+## Fix de validación de preferencias de horario (2026-10-22)
+
+Se corrigió el regex de quiet-hours para aceptar `HH:mm` real (00:00–23:59) y rechazar horas inválidas. Anteriormente había una barra adicional que convertía `\\d` en un literal dentro de la expresión regular. Se añadió `tests/notification_preferences_time_validation_v854.test.mjs` al test nativo. Las reglas de zona horaria, consent, user+tenant y auditoría no se relajan; hasta ejecución de integración no se afirma QA total.

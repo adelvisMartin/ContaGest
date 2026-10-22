@@ -44,8 +44,8 @@ const preferenceSchema=z.object({
   consent:z.enum(['granted','denied']),
   quietHours:z.object({
     timeZone:z.string().trim().min(1).max(120),
-    start:z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/),
-    end:z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/)
+    start:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    end:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
   }).strict().nullish()
 }).strict().superRefine((row,c)=>{
   if(row.enabled && row.consent!=='granted')
