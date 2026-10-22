@@ -56,11 +56,21 @@ test('backend authority cannot be weakened by user metadata or missing RPC', asy
 });
 
 test('SOURCE remains read-only and LAB identity guard is explicit', async () => {
-  const [bridge, identity] = await Promise.all([
+  const [bridge, identity, policy, backend, preflight] = await Promise.all([
     read('tools/hipico-whatsapp-web-bridge/src/index.mjs'),
-    read('tools/hipico-whatsapp-web-bridge/src/group-identity.mjs')
+    read('tools/hipico-whatsapp-web-bridge/src/group-identity.mjs'),
+    read('tools/hipico-whatsapp-web-bridge/src/source-policy-gate.mjs'),
+    read('backend/src/modules/hipico-bot/hipico-bridge.routes.ts'),
+    read('tools/hipico-whatsapp-web-bridge/src/preflight.mjs')
   ]);
-  assert.match(bridge, /sourceSendPossible:\s*false/);
+  // SOURCE transport helpers can exist for inspection, but both backend and
+  // Bridge must deny an automated SOURCE send under the provider NO_GO policy.
+  assert.match(bridge, /const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH\.active/);
+  assert.match(policy, /status:\s*'NO_GO'/);
+  assert.match(policy, /eligible:\s*false/);
+  assert.match(backend, /sourceSendPossible:false/);
+  assert.match(backend, /const autoReplyConfigured=sourceAutoReplySendAuthorized\(\);/);
+  assert.match(preflight, /!diagnostic\.sourcePolicy\.eligible && body\?\.sourceSendPossible !== false/);
   assert.doesNotMatch(bridge, /send(?:Message|Text|Payload)ToSource\s*\(/i);
   assert.match(bridge, /assertCurrentLabIdentity\(\)/);
   assert.match(identity, /assertPinnedGroupIdentity/);
