@@ -1,7 +1,9 @@
-import crypto, { randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
+import { assertFiscalRuleSnapshotIntegrity, fiscalEvidenceHash } from './fiscal-rule-snapshot-integrity.js';
+export { fiscalEvidenceHash } from './fiscal-rule-snapshot-integrity.js';
 
 export type FiscalDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
 
@@ -22,20 +24,6 @@ export type FiscalRuleVersionRow = {
 
 type FiscalSequenceRow = { prefix: string; width: number; value: bigint };
 type CountRow = { count: bigint };
-
-function canonicalize(value: unknown): unknown {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return value;
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    return Object.fromEntries(Object.keys(record).sort().map((key) => [key, canonicalize(record[key])]));
-  }
-  return String(value);
-}
-
-export function fiscalEvidenceHash(value: unknown) {
-  return crypto.createHash('sha256').update(JSON.stringify(canonicalize(value)), 'utf8').digest('hex');
-}
 
 export async function createFiscalRuleVersion(input: {
   tenantId: string;
@@ -158,7 +146,7 @@ export async function recordDocumentRuleSnapshots(db: FiscalDb, input: { tenantI
 }
 
 export async function getDocumentRuleSnapshots(tenantId: string, fiscalDocumentId: string) {
-  return prisma.$queryRaw<Array<{
+  const snapshots = await prisma.$queryRaw<Array<{
     ruleKey: string; ruleVersion: number; ruleHash: string; effectiveFrom: Date; effectiveTo: Date | null;
     source: string; documentation: string; definition: unknown; capturedAt: Date;
   }>>(Prisma.sql`
@@ -167,6 +155,12 @@ export async function getDocumentRuleSnapshots(tenantId: string, fiscalDocumentI
     WHERE "tenantId" = ${tenantId} AND "fiscalDocumentId" = ${fiscalDocumentId}
     ORDER BY "ruleKey" ASC
   `);
+  try {
+    for (const snapshot of snapshots) assertFiscalRuleSnapshotIntegrity({ tenantId, ...snapshot }, tenantId);
+  } catch {
+    throw new HttpError(409, 'La evidencia histórica de la regla fiscal no coincide con su hash original.', { code: 'FISCAL_RULE_SNAPSHOT_INTEGRITY' });
+  }
+  return snapshots;
 }
 
 export async function buildCloseEvidence(db: FiscalDb, input: { tenantId: string; period: string; module: string }) {
