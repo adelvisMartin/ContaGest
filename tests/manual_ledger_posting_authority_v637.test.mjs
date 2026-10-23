@@ -55,3 +55,24 @@ test('#637 concurrent reversal cannot read original outside the locked transacti
   assert.doesNotMatch(outside,/assertLedgerActionAllowed\(|inverseLedgerLines\(|ledgerEntry\.(?:findFirst|create|update)/);
   assert.match(inside,/await tx\.auditLog\.create\(/);
 });
+
+// #637 characterization: period-close transport cannot write money-changing state.
+test('#637 accounting period close is a tenant-scoped transactional domain command',()=>{
+  const routes=readFileSync(new URL('../backend/src/modules/accounting/accounting.routes.ts',import.meta.url),'utf8');
+  const endpoint=routes.split("router.post('/closing-periods/:id/close'")[1]?.split('\n}));')[0];
+  assert.ok(endpoint);
+  assert.match(endpoint,/requirePermission\('accounting\.post'\)/);
+  assert.match(endpoint,/await closeAccountingPeriod\(/);
+  assert.doesNotMatch(endpoint,/prisma\.closingPeriod|writeAudit\(/);
+  const source=readFileSync(new URL('../backend/src/modules/accounting/accounting.service.ts',import.meta.url),'utf8');
+  const body=source.split('export async function closeAccountingPeriod(')[1]?.split('function normalizeLedgerLines')[0];
+  assert.ok(body);
+  const gates=['requirePostingActor(', 'prisma.$transaction(async (tx)', 'FOR UPDATE',
+    'tx.closingPeriod.findFirst({', "existing.status === 'closed'",
+    'tx.closingPeriod.updateMany({', 'updated.count !== 1',
+    'tx.auditLog.create({'];
+  let prev=-1;
+  for(const gate of gates){const next=body.indexOf(gate);assert.ok(next>prev,gate);prev=next;}
+  assert.match(body,/WHERE "id" = \$\{input\.periodId\} AND "tenantId" = \$\{input\.tenantId\}/);
+  assert.match(body,/status: 'open'/);
+});

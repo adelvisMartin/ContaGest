@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { randomBytes, randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../../backend/src/app.ts';
 import { prisma } from '../../backend/src/database/prisma.ts';

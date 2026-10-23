@@ -32,3 +32,10 @@ test('#854 bounds rows and accepts empty result with no false success',()=>{
   assert.equal(empty.verifiedDeliveries,0);assert.equal(empty.records.length,0);
   fail(()=>projectNotificationDeliveryEvidence('A',Array.from({length:101},(_,i)=>row('queued',String(i)))));
 });
+
+test('#854 uncertain provider acknowledgement remains unverified in canonical timeline',()=>{
+  const result=projectNotificationDeliveryEvidence('A',[row('provider_unverified')]);
+  assert.equal(result.records[0].stateRecorded,'provider_unverified');
+  assert.equal(result.records[0].receiptVerified,false);
+  assert.equal(result.verifiedDeliveries,0);
+});

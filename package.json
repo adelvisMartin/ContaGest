@@ -133,7 +133,11 @@
     "hipico:report-links": "node tools/hipico-cli/report-shares.mjs",
     "test:hipico:share:offline": "node --test tests/hipico_report_share_schema_contract.test.mjs tests/hipico_report_share_cli_contract.test.mjs tests/hipico_report_share_rls_guard_v1000.test.mjs",
     "test:hipico:share:postgres": "node backend/scripts/hipico-report-share-rls-v1000.mjs",
-    "test:hipico:ledger:reconcile": "node --test tests/hipico_money_ledger_orphan_reconciliation_v1018.test.mjs"
+    "test:hipico:ledger:reconcile": "node --test tests/hipico_money_ledger_orphan_reconciliation_v1018.test.mjs",
+    "test:backend:accounting:period:real": "npm --workspace backend exec -- tsx --test ../qa/accounting-period-concurrency-v637.test.ts",
+    "test:backend:service-catalog:real": "npm --workspace backend exec -- tsx --test ../qa/service-catalog-real-v849.test.ts",
+    "test:backend:entitlement:real": "npm --workspace backend exec -- tsx --test ../qa/entitlement-booking-real-v852.test.ts",
+    "test:backend:notification-preferences:real": "npm --workspace backend exec -- tsx --test ../qa/notification-preferences-real-v854.test.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1"

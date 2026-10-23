@@ -5,7 +5,6 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { NotificationTemplateError, renderNotificationTemplate, evaluateNotificationQuietHours, listNotificationTemplateDescriptors } from './notification-template-catalog.js';
 import { projectNotificationDeliveryEvidence } from './notification-delivery-evidence.js';
-import { classifyWhatsAppProviderAck } from './notification-provider-ack.mjs';
 
 const router = Router();
 router.use(requireTenant);
@@ -16,46 +15,103 @@ const messageSchema = z.object({
   order: z.record(z.string(), z.unknown()).optional()
 });
 
-async function sendWhatsAppCloud(to: string, message: string) {
-  const token = process.env.WHATSAPP_CLOUD_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const version = process.env.WHATSAPP_GRAPH_VERSION || 'v23.0';
-  if (!token || !phoneNumberId) {
-    return { ok: false, provider: 'whatsapp-cloud', skipped: true, reason: 'WHATSAPP_CLOUD_TOKEN o WHATSAPP_PHONE_NUMBER_ID no configurado' };
-  }
-  const response = await fetch(`https://graph.facebook.com/${version}/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to: to.replace(/[^\d]/g, ''),
-      type: 'text',
-      text: { preview_url: false, body: message }
-    })
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new HttpError(response.status, 'WhatsApp Cloud API rechazó la solicitud.');
-  const acknowledgement=classifyWhatsAppProviderAck(response.ok,data);
-  return { ok:acknowledgement.providerAccepted, provider:'whatsapp-cloud', status:acknowledgement.status, delivered:false };
-}
+// #854 Transport boundary: the order object is not a trusted server record.
+// Only the destination needed by this legacy adapter can cross the boundary.
+// Unknown outer fields fail; unrelated order fields are discarded, never logged.
+const whatsappOrderSchema = z.object({
+  order: z.object({
+    phone: z.string().regex(/^\+?[1-9]\d{7,14}$/)
+  }).strip(),
+  message: z.string().trim().min(1).max(4000)
+    .refine(value => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(value))
+}).strict();
 
-router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
-  const ctx = (req as any).context;
-  const body = z.object({ order: z.record(z.string(), z.unknown()), message: z.string().min(1) }).parse(req.body || {});
-  const order: any = body.order || {};
-  const result = await sendWhatsAppCloud(String(order.phone || ''), body.message);
-  await prisma.moduleRecord.create({
-    data: {
-      tenantId: ctx.tenantId,
-      moduleSlug: 'notification-log',
-      title: 'Notificación WhatsApp',
-      // A provider HTTP acknowledgement does not prove delivery to the recipient.
-      status: result.ok ? 'provider_accepted' : result.status==='provider_unverified' ? 'provider_unverified' : 'skipped',
-      // Never store phone, arbitrary order fields, message body or raw provider JSON.
-      payload: { channel: 'whatsapp', provider: 'whatsapp-cloud', providerAccepted: result.ok, deliveryConfirmed: false }
-    }
+// Automated WhatsApp dispatch is prohibited until the server can prove recipient
+// consent, original order ownership and a durable #853 intent + #772 adapter.
+// An operator's sales.manage permission is not the recipient's opt-in, nor is
+// order.phone in request.body a trusted destination. The manual wa.me link in
+// the frontend remains a deliberate human action, not a delivery receipt.
+router.post('/whatsapp/order', requirePermission('sales.manage'), asyncHandler(async (req, _res) => {
+  whatsappOrderSchema.parse(req.body || {});
+  throw new HttpError(503, 'El envío automático de WhatsApp no está habilitado sin consentimiento verificable y entrega durable.');
+}));
+
+
+// Internal self-service consent is not a provider opt-in. The only supported
+// channel here is in_app; external transport remains disabled.
+const preferenceSchema=z.object({
+  enabled:z.boolean(),
+  consent:z.enum(['granted','denied']),
+  quietHours:z.object({
+    timeZone:z.string().trim().min(1).max(120),
+    start:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    end:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+  }).strict().nullish()
+}).strict().superRefine((row,c)=>{
+  if(row.enabled && row.consent!=='granted')
+    c.addIssue({code:'custom',message:'La habilitación requiere consentimiento explícito.'});
+  if(row.quietHours?.start===row.quietHours?.end&&row.quietHours)
+    c.addIssue({code:'custom',message:'Las horas de silencio deben delimitar un intervalo.'});
+});
+const authenticatedSelf=(req:any)=>{
+  const context=req.context as {tenantId:string;userId?:string};
+  if(!context.userId)throw new HttpError(401,'Sesión requerida.');
+  return {tenantId:context.tenantId,userId:context.userId};
+};
+router.get('/preferences/me',asyncHandler(async(req,res)=>{
+  const {tenantId,userId}=authenticatedSelf(req);
+  const pref=await prisma.notificationChannelPreference.findUnique({
+    where:{tenantId_userId_channel:{tenantId,userId,channel:'in_app'}},
+    select:{channel:true,enabled:true,consent:true,verifiedAt:true,
+      timeZone:true,quietStart:true,quietEnd:true,updatedAt:true}
   });
-  ok(res, result.ok ? { ok: true, provider: 'whatsapp-cloud', status: 'provider_accepted', delivered: false } : result);
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,pref||{channel:'in_app',enabled:false,consent:'unknown',verifiedAt:null,
+    timeZone:null,quietStart:null,quietEnd:null});
+}));
+router.put('/preferences/me',asyncHandler(async(req,res)=>{
+  const {tenantId,userId}=authenticatedSelf(req);
+  const input=preferenceSchema.parse(req.body||{});
+  if(input.quietHours){
+    try{
+      new Intl.DateTimeFormat('en-US',{timeZone:input.quietHours.timeZone}).format(new Date());
+    }catch{throw new HttpError(422,'Zona horaria inválida.');}
+  }
+  const saved=await prisma.$transaction(async tx=>{
+    const active=await tx.userProfile.findFirst({
+      where:{id:userId,tenantId,status:'active'},select:{id:true}
+    });
+    if(!active)throw new HttpError(403,'Usuario no disponible.');
+    const key={tenantId,userId,channel:'in_app'};
+    const old=await tx.notificationChannelPreference.findUnique({
+      where:{tenantId_userId_channel:key}
+    });
+    const now=new Date();
+    const data={
+      enabled:input.enabled,consent:input.consent,
+      verifiedAt:input.consent==='granted'?now:null,
+      verifiedSource:input.consent==='granted'?'authenticated-self-service':null,
+      timeZone:input.quietHours?.timeZone||null,
+      quietStart:input.quietHours?.start||null,
+      quietEnd:input.quietHours?.end||null,
+      updatedBy:userId
+    };
+    const current=await tx.notificationChannelPreference.upsert({
+      where:{tenantId_userId_channel:key},
+      create:{...key,...data},update:data
+    });
+    await tx.auditLog.create({data:{
+      tenantId,userId,action:'notification.preference.self-updated',
+      entity:'NotificationChannelPreference',entityId:current.id,
+      before:old?{enabled:old.enabled,consent:old.consent}:null,
+      after:{channel:'in_app',enabled:current.enabled,consent:current.consent},
+    }});
+    return current;
+  });
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,{channel:'in_app',enabled:saved.enabled,consent:saved.consent,
+    verifiedAt:saved.verifiedAt,timeZone:saved.timeZone,
+    quietStart:saved.quietStart,quietEnd:saved.quietEnd});
 }));
 
 // Tenant-scoped, permission-guarded PREVIEW ONLY; never delivers or persists data.
@@ -93,10 +149,11 @@ router.post('/templates/preview', requirePermission('sales.manage'), asyncHandle
   }
 }));
 
-router.post('/send', requirePermission('sales.manage'), asyncHandler(async (req, res) => {
+router.post('/send', requirePermission('sales.manage'), asyncHandler(async (req, _res) => {
   messageSchema.parse(req.body || {});
-  // No #853 transactional outbox/worker exists behind this endpoint yet.
-  // Never report queued=true or echo a private message when nothing was persisted.
+  // The #853 AsyncJobIntent foundation exists, but this route has no reviewed
+  // notification handler, consent store or provider delivery worker connected.
+  // Never report queued=true or echo private data before a durable intent exists.
   throw new HttpError(503, 'La cola de notificaciones no está disponible; no se programó ningún envío.');
 }));
 

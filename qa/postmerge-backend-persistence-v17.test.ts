@@ -1,9 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { AddressInfo } from 'node:net';
-import { createApp } from '../backend/src/app.ts';
 import { prisma } from '../backend/src/database/prisma.ts';
-import { signAccessToken } from '../backend/src/shared/auth/jwt.ts';
+import { createRealBackendHarness } from './support/real-backend-harness.ts';
 
 const QA_TENANT_RIF='00000000';
 const ADMIN_EMAIL='admin@erp.local';
@@ -38,48 +36,76 @@ async function expectStatus(base:string,token:string,path:string,status:number,o
   return result;
 }
 
-async function assertCrud({base,token,path,create,update,identity}:{base:string;token:string;path:string;create:Record<string,unknown>;update:Record<string,unknown>;identity:(row:any)=>boolean}){
+type CrudFixture = {
+  base: string;
+  token: string;
+  path: '/clients' | '/suppliers' | '/products' | '/bank-accounts' | '/tax-periods';
+  create: Record<string, unknown>;
+  update?: Record<string, unknown>;
+  identity: (row: any) => boolean;
+  immutable?: boolean;
+  nonDeletable?: boolean;
+};
+
+async function assertCrud({base,token,path,create,update,identity,immutable=false,nonDeletable=false}: CrudFixture) {
   let id='';
-  try{
-    const created=await expectOk(base,token,path,{method:'POST',body:JSON.stringify({...create,tenantId:'demo-tenant'})});
+  try {
+    // Generic CRUD rejects mass-assignment, even when the caller's token is valid.
+    await expectStatus(base,token,path,422,{
+      method:'POST',body:JSON.stringify({...create,tenantId:'demo-tenant'})
+    });
+    const created=await expectOk(base,token,path,{method:'POST',body:JSON.stringify(create)});
     id=String(created.id||'');
     assert.ok(id,`${path}: create did not return id`);
-    assert.notEqual(created.tenantId,'demo-tenant',`${path}: accepted attacker-supplied tenantId`);
-
+    assert.ok(created.tenantId && created.tenantId!=='demo-tenant',`${path}: create resolved an untrusted tenant`);
     const byId=await expectOk(base,token,`${path}/${encodeURIComponent(id)}`);
     assert.equal(String(byId.id),id,`${path}: read-after-create mismatch`);
     assert.ok(identity(byId),`${path}: persisted identity fields do not match create`);
 
-    const updated=await expectOk(base,token,`${path}/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify(update)});
-    assert.equal(String(updated.id),id,`${path}: update changed identity`);
-    for(const [key,value] of Object.entries(update))assert.deepEqual(updated[key],value,`${path}: update field ${key} not persisted in response`);
-
-    const refreshed=await expectOk(base,token,`${path}/${encodeURIComponent(id)}`);
-    for(const [key,value] of Object.entries(update))assert.deepEqual(refreshed[key],value,`${path}: refresh lost field ${key}`);
+    if (immutable) {
+      await expectStatus(base,token,`${path}/${encodeURIComponent(id)}`,405,{
+        method:'PUT',body:JSON.stringify({status:'review'})
+      });
+    } else if (update) {
+      const updated=await expectOk(base,token,`${path}/${encodeURIComponent(id)}`,{
+        method:'PUT',body:JSON.stringify(update)
+      });
+      assert.equal(String(updated.id),id,`${path}: update changed identity`);
+      for(const [key,value] of Object.entries(update))
+        assert.deepEqual(updated[key],value,`${path}: update field ${key} not persisted in response`);
+      const refreshed=await expectOk(base,token,`${path}/${encodeURIComponent(id)}`);
+      for(const [key,value] of Object.entries(update))
+        assert.deepEqual(refreshed[key],value,`${path}: refresh lost field ${key}`);
+    }
 
     const list=await expectOk(base,token,`${path}?take=100`);
     assert.ok(Array.isArray(list),`${path}: list is not array`);
     assert.ok(list.some((row:any)=>String(row.id)===id),`${path}: created row missing after refresh/list`);
-
     const audit=await prisma.auditLog.findMany({where:{entityId:id},orderBy:{createdAt:'asc'}});
-    assert.ok(audit.some((row)=>row.action==='create'),`${path}: create audit missing`);
-    assert.ok(audit.some((row)=>row.action==='update'),`${path}: update audit missing`);
+    assert.ok(audit.some(row=>row.action==='create'),`${path}: create audit missing`);
+    if(update&&!immutable)assert.ok(audit.some(row=>row.action==='update'),`${path}: update audit missing`);
 
-    await expectOk(base,token,`${path}/${encodeURIComponent(id)}`,{method:'DELETE'});
-    await expectStatus(base,token,`${path}/${encodeURIComponent(id)}`,404);
-    const deletedAudit=await prisma.auditLog.findMany({where:{entityId:id}});
-    assert.ok(deletedAudit.some((row)=>row.action==='delete'),`${path}: delete audit missing`);
-    return{id,auditCount:deletedAudit.length};
+    if (nonDeletable) {
+      await expectStatus(base,token,`${path}/${encodeURIComponent(id)}`,405,{method:'DELETE'});
+      const retained=await expectOk(base,token,`${path}/${encodeURIComponent(id)}`);
+      assert.equal(retained.id,id,`${path}: protected record was removed`);
+    } else {
+      await expectOk(base,token,`${path}/${encodeURIComponent(id)}`,{method:'DELETE'});
+      await expectStatus(base,token,`${path}/${encodeURIComponent(id)}`,404);
+      const deletedAudit=await prisma.auditLog.findMany({where:{entityId:id}});
+      assert.ok(deletedAudit.some(row=>row.action==='delete'),`${path}: delete audit missing`);
+    }
+    return {id,auditCount:audit.length};
   } finally {
-    if(id){
+    if(id) {
+      // This suite only runs against disposable CI PostgreSQL. Protected models
+      // cannot be hard-deleted through the HTTP API as a fixture-cleanup shortcut.
       const delegateByPath:Record<string,any>={
-        '/clients':prisma.client,
-        '/suppliers':prisma.supplier,
-        '/products':prisma.product,
-        '/bank-accounts':prisma.bankAccount,
+        '/clients':prisma.client, '/suppliers':prisma.supplier,
+        '/products':prisma.product, '/bank-accounts':prisma.bankAccount,
         '/tax-periods':prisma.taxPeriod
       };
-      await delegateByPath[path]?.deleteMany({where:{id}}).catch(()=>undefined);
+      if(!nonDeletable)await delegateByPath[path]?.deleteMany({where:{id}}).catch(()=>undefined);
       await prisma.auditLog.deleteMany({where:{entityId:id}}).catch(()=>undefined);
     }
   }
@@ -92,7 +118,10 @@ test('post-merge real persistence: CRUD, audit, licensing and tenant isolation',
   assert.ok(admin,`QA admin ${ADMIN_EMAIL} not found`);
   const platformPermission=await prisma.userRole.count({where:{userId:admin.id,role:{tenantId:tenant.id,permissions:{some:{permission:{key:'platform.manage'}}}}}});
   assert.ok(platformPermission>0,'Admin used by persistence E2E does not have platform.manage');
-  const token=signAccessToken({id:admin.id,email:admin.email},tenant.id);
+  // Production auth requires a live UserSession sid. Never bypass this in QA.
+  const harness=await createRealBackendHarness();
+  t.after(async()=>{await harness.close();});
+  const token=harness.token;
 
   const qaUser=await prisma.userProfile.upsert({
     where:{tenantId_email:{tenantId:tenant.id,email:QA_USER_EMAIL}},
@@ -103,14 +132,9 @@ test('post-merge real persistence: CRUD, audit, licensing and tenant isolation',
     await prisma.userRole.deleteMany({where:{userId:qaUser.id}}).catch(()=>undefined);
     await prisma.userProfile.deleteMany({where:{id:qaUser.id,email:QA_USER_EMAIL}}).catch(()=>undefined);
   });
-  const restrictedToken=signAccessToken({id:qaUser.id,email:qaUser.email},tenant.id);
+  const restrictedToken=await harness.issueSessionTokenFor(qaUser);
 
-  const app=createApp();
-  const server=app.listen(0,'127.0.0.1');
-  await new Promise<void>((resolve,reject)=>{server.once('listening',()=>resolve());server.once('error',reject);});
-  t.after(async()=>{await new Promise<void>((resolve)=>server.close(()=>resolve()));});
-  const address=server.address() as AddressInfo;
-  const base=`http://127.0.0.1:${address.port}`;
+  const base=harness.base;
 
   await t.test('real DB health and auth middleware',async()=>{
     const health=await expectOk(base,token,'/health/db');
@@ -128,7 +152,7 @@ test('post-merge real persistence: CRUD, audit, licensing and tenant isolation',
   });
 
   await t.test('productos CRUD persists and foreign tenant sentinel is invisible',async()=>{
-    await assertCrud({base,token,path:'/products',create:{sku:`${RUN}-SKU`,name:`${RUN} Producto`,cost:7.25,price:11.5,stock:3,minStock:1,taxRate:16},update:{name:`${RUN} Producto Editado`,stock:9,price:12.75},identity:(row)=>row.sku===`${RUN}-SKU`});
+    await assertCrud({base,token,path:'/products',create:{sku:`${RUN}-SKU`,name:`${RUN} Producto`,cost:7.25,price:11.5,minStock:1,taxRate:16},update:{name:`${RUN} Producto Editado`,price:12.75},identity:(row)=>row.sku===`${RUN}-SKU`});
     const sentinel=await prisma.product.findFirst({where:{sku:OTHER_TENANT_SENTINEL_SKU}});
     assert.ok(sentinel,'Cross-tenant sentinel product is missing');
     assert.notEqual(sentinel.tenantId,tenant.id,'Cross-tenant sentinel accidentally belongs to QA tenant');
@@ -140,11 +164,11 @@ test('post-merge real persistence: CRUD, audit, licensing and tenant isolation',
   });
 
   await t.test('cuentas bancarias CRUD persists across refresh',async()=>{
-    await assertCrud({base,token,path:'/bank-accounts',create:{bankName:'Banco QA',accountNo:`${RUN}-0001`,currency:'USD',balance:100},update:{bankName:'Banco QA Editado',balance:125.5},identity:(row)=>row.accountNo===`${RUN}-0001`});
+    await assertCrud({base,token,path:'/bank-accounts',create:{bankName:'Banco QA',accountNo:`${RUN}-0001`,currency:'USD'},update:{bankName:'Banco QA Editado'},nonDeletable:true,identity:(row)=>row.accountNo===`${RUN}-0001`});
   });
 
   await t.test('periodos fiscales CRUD persists across refresh',async()=>{
     const period=`2099-${String((Date.now()%9)+1).padStart(2,'0')}`;
-    await assertCrud({base,token,path:'/tax-periods',create:{period,status:'open',ivaDebit:10,ivaCredit:4,igtfPaid:1},update:{status:'review',ivaDebit:12},identity:(row)=>row.period===period});
+    await assertCrud({base,token,path:'/tax-periods',create:{period},immutable:true,nonDeletable:true,identity:(row)=>row.period===period});
   });
 });
