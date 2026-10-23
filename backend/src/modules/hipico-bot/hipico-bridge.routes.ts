@@ -20,7 +20,8 @@ import { bridgePersistenceReady, ensureGroupShadowOutbox, ensureSourceReplyOutbo
 import { bridgeTokenConfigured, bridgeTokenValid } from './hipico-bridge-security.js';
 import { operatorActorRef, operatorTokenConfigured, operatorTokenValid } from './hipico-operator-security.js';
 import { configuredOutboxOwnerId } from './hipico-outbox.store.js';
-import { AutonomousReplyService, sourceAutoReplyEnabled } from '../hipico/autonomous-reply.service.js';
+import { AutonomousReplyService } from '../hipico/autonomous-reply.service.js';
+import { sourceAutoReplySendAuthorized } from '../hipico/autonomous-reply.policy.js';
 
 const router = Router();
 const autonomousReplyService = new AutonomousReplyService();
@@ -80,7 +81,7 @@ function validatePinnedChannel(input:z.infer<typeof bridgeEventSchema>){
 router.use((_req,res,next)=>{res.setHeader('Cache-Control','no-store, max-age=0');next();});
 router.get('/bridge/health',async(req,res)=>{
   if(!bridgeTokenValid(req.header('x-hipico-bridge-token')||undefined))return res.status(401).json({ok:false,ready:false,error:'Token del Bridge Hipico invalido.'});
-  const autoReplyConfigured=sourceAutoReplyEnabled();
+  const autoReplyConfigured=sourceAutoReplySendAuthorized();
   const base={mode:autoReplyConfigured?'safe-auto':'shadow',sourceSendPossible:false,sourceChannelKey:OFFICIAL_SOURCE_CHANNEL_KEY,labChannelKey:DEFAULT_LAB_CHANNEL_KEY,buildCommit:String(process.env.VERCEL_GIT_COMMIT_SHA||process.env.GIT_SHA||'unknown')};
   try{
     const[transportReady,canonical,responseSafety,sourceReplyReady]=await Promise.all([
@@ -122,6 +123,9 @@ router.post('/bridge/handoff',async(req,res)=>{
 });
 router.post('/bridge/replies/:id/receipt',async(req,res)=>{
   if(!bridgeTokenValid(req.header('x-hipico-bridge-token')||undefined))return res.status(401).json({ok:false,error:'Token del Bridge Hipico invalido.'});
+  // Deny reporting a SOURCE delivery while provider policy disallows SOURCE
+  // sending, including stale commands written by earlier builds.
+  if(!sourceAutoReplySendAuthorized())return res.status(403).json({ok:false,retryable:false,error:'SOURCE_AUTO_REPLY_POLICY_NO_GO'});
   const parsed=sourceReplyReceiptSchema.safeParse(req.body);
   const commandId=String(req.params.id||'').trim();
   if(!parsed.success||!/^hsr_[0-9a-f-]{36}$/i.test(commandId))return res.status(400).json({ok:false,retryable:false,error:'Recibo de source reply inválido.'});
@@ -314,7 +318,7 @@ router.post('/bridge/events',async(req,res)=>{
           intent:'NONE',reason:recovery.reason};
       }
     }
-    const autoReplyConfigured=sourceAutoReplyEnabled();
+    const autoReplyConfigured=sourceAutoReplySendAuthorized();
     const ownerId=configuredOutboxOwnerId();
     let sourceReplyCommand:any=null;
     if(input.channelRole==='source'&&autoReplyConfigured){

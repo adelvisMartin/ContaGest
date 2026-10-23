@@ -4,7 +4,7 @@
 **Runtime/PWA canónico:** `frontend/public/hipico-control`  
 **Wrapper Android:** `android/hipico-control-v1130`  
 **Versión app:** `1.13.0-rc3`  
-**Bridge WhatsApp Web:** `1.4.2`  
+**Bridge WhatsApp Web:** `1.6.0`  
 **Estado de código:** `RELEASE CANDIDATE / PENDING EXACT-SHA REVERIFY`
 
 Control Hípico es un producto independiente de ContaGest ERP aunque comparta temporalmente repositorio, backend y PostgreSQL. Mantiene ruta, PWA, almacenamiento, contratos, migraciones, wrapper Android y ciclo de release propios.
@@ -64,7 +64,13 @@ artifacts/APK_BADGING.txt   # cuando aapt está disponible
 
 No se versionan APK, keystores, `key.properties`, `local.properties` ni secretos de firma.
 
-## Bridge WhatsApp Web v1.4.2
+## Política SOURCE — no automatizar envíos sin autorización
+
+**NO_GO (22 de octubre de 2026):** WhatsApp Messenger normal no cuenta con autorización acreditada para autoenvíos SOURCE. El flag \`HIPICO_SOURCE_AUTO_REPLY_ENABLED=true\` habilita sólo la evaluación interna de decisiones, **no** una autorización de envío. El backend aplica adicionalmente \`sourceAutoReplySendAuthorized()\` y bloquea comandos, respuestas y recibos SOURCE mientras \`SOURCE_REPLY_SEND_POLICY.status === 'NO_GO'\`. El Bridge \`source-policy-gate.mjs\` y su preflight deben rechazar cualquier backend que declare \`sourceSendPossible: true\` bajo la misma política. En LAB subsiste su puerta de autorización separada, de forma predeterminada cerrada.
+
+La actualización de la versión del paquete Bridge desde la referencia obsoleta \`1.4.2\` hacia \`1.6.0\` alinea el paquete, el lockfile, el runtime y la política de release; **no** aprueba cambios de canal ni suprime revisión legal. Fuente oficial: https://www.whatsapp.com/legal/terms-of-service?lang=es. Mantener las comprobaciones de Seguridad, QA y Física pendientes hasta evidencia exact-SHA.
+
+## Bridge WhatsApp Web v1.6.0
 
 El grupo existente usa WhatsApp normal mediante un dispositivo vinculado en WhatsApp Web. Este Bridge es la vía prevista para observar el grupo real; WhatsApp Cloud no sustituye ese flujo de grupo.
 

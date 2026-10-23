@@ -89,7 +89,11 @@ test('copy center is manual-only, responsive, guarded, and cached offline under 
   const root=process.cwd();
   const center=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/js/operational-copy-center.js'),'utf8');
   const guard=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/js/operational-access-guard.js'),'utf8');
-  const css=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/css/app.css'),'utf8');
+  const entry=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/css/app.css'),'utf8');
+  assert.match(entry,/@import url\("\.\/ui-system-v3-compat\.css"\) layer\(legacy\)/);
+  // Responsive touch and reduced-motion rules remain owned by the imported
+  // compatibility layer until verified equivalent canonical v4 declarations.
+  const css=fs.readFileSync(path.join(root,'frontend/public/hipico-control/assets/css/ui-system-v3-compat.css'),'utf8');
   const html=fs.readFileSync(path.join(root,'frontend/public/hipico-control/index.html'),'utf8');
   const sw=fs.readFileSync(path.join(root,'frontend/public/hipico-control/sw.js'),'utf8');
   assert.match(center,/Copiar es manual\. Este panel nunca envía mensajes por sí solo\./);

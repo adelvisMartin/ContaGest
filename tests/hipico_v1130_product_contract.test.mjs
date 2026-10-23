@@ -77,7 +77,10 @@ test('android wrapper synchronizes only the canonical Hipico web product',()=>{
   const pkg=read('android/hipico-control-v1130/package.json');
   assert.match(sync,/frontend\/public\/hipico-control/);
   assert.match(sync,/['"]assets\/css\/app\.css['"]/);
-  assert.match(sync,/cssFiles\.length !== 1 \|\| cssFiles\[0\] !== 'app\.css'/);
+  // v4 parity verifies the full canonical graph rather than a retired one-file CSS gate.
+  assert.match(sync,/verifyHipicoCssGraph\(root, index\)/);
+  assert.match(sync,/verifyParity\(sourceFiles, targetFiles\)/);
+  assert.match(sync,/sourceHash !== targetHash/);
   assert.match(sync,/mobile-accessibility\.css/);
   assert.match(sync,/operational-copy-center\.css/);
   assert.match(sync,/operational-access-guard\.css/);

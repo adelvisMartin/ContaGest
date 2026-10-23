@@ -78,7 +78,10 @@ export function assertCrudRouterAuthority(model: CrudModel, entity: string, perm
 }
 
 export function parseCrudRouteId(value: unknown): string {
-  if (typeof value !== 'string' || value.length === 0) {
+  // Preserve legacy TEXT identifiers while rejecting control bytes, whitespace-only
+  // segments and oversized paths before they reach Prisma or audit/error output.
+  if (typeof value !== 'string' || value.length === 0 || value.length > 255 ||
+      value !== value.trim() || /[\u0000-\u001F\u007F]/.test(value)) {
     throw new CrudPolicyError('Identificador de ruta inválido.');
   }
   return value;
@@ -129,9 +132,16 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
   if (typeof value !== 'string' && typeof value !== 'number') {
     throw new CrudPolicyError('Parámetros de paginación inválidos.');
   }
+  // Only truly absent pagination values take the default. Explicit malformed
+  // values must fail closed, never change a caller's query window silently.
+  if (typeof value === 'string' && !/^-?\d+$/.test(value)) {
+    throw new CrudPolicyError('Parámetros de paginación inválidos.');
+  }
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(Math.max(Math.trunc(parsed), min), max);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new CrudPolicyError('Parámetros de paginación inválidos.');
+  }
+  return Math.min(Math.max(parsed, min), max);
 }
 
 export function parseCrudListWindow(query: Record<string, unknown>): { take: number; skip: number } {

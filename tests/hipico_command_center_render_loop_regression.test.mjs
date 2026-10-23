@@ -46,10 +46,13 @@ test('Control Hípico invalidates the cached shell that contained the render loo
     /r26-access-bootstrap-local-group-recovery/,
     'existing PWA clients must not keep the cache that contains the looping command-center shell'
   );
-  assert.match(
-    code,
-    /r29-auto-update-reload/,
-    'the current service worker revision must continue invalidating the render-loop shell while delivering automatic updates'
-  );
+  // Current v4.1.3 shell has superseded the historic r29 repair.
+  // Verify new cache identity plus removal of all prior Hípico shell caches,
+  // not a stale literal revision that would freeze offline upgrades.
+  assert.doesNotMatch(code, /r29-auto-update-reload/);
+  assert.match(code, /shell-r38-consolidator-v4-1-3/);
+  assert.match(code, /key\.startsWith\('hipico-control-'\)\s*&&\s*key\s*!==\s*SHELL_CACHE/);
+  assert.match(code, /await self\.skipWaiting\(\)/);
+  assert.match(code, /await self\.clients\.claim\(\)/);
   assert.match(code, /command-center-shell\.js/);
 });

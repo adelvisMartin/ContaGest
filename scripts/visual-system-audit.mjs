@@ -280,13 +280,20 @@ function auditTheme() {
   const catalog = read(path.join(root, 'frontend', 'src', 'data', 'themeCatalog.js'));
   const app = read(path.join(root, 'frontend', 'src', 'app.js'));
   const store = read(path.join(root, 'frontend', 'src', 'state', 'store.js'));
+  const themeAuthority = read(path.join(root, 'frontend', 'src', 'design-system', 'uxContract.v1.js'));
   const catalogKeys = [...catalog.matchAll(/\{\s*key:'([^']+)'/g)].map((m) => m[1]);
   return {
     catalogKeys,
     retiredCatalog:RETIRED_THEME_NAMES.filter((name) => new RegExp(`key:'${name}'`).test(catalog)),
     retiredApp:RETIRED_THEME_NAMES.filter((name) => new RegExp(`['"]${name}['"]`).test(app)),
-    storeOfficialBinary:/OFFICIAL_THEMES\s*=\s*new Set\(\['light','dark'\]\)/.test(store),
-    appBinary:/function applyTheme\(theme\)\{const normalized=theme==='dark'\?'dark':'light'/.test(app)
+    // Three persisted preferences are valid; the resolved CSS mode remains binary.
+    // Inspect the authoritative resolver, not obsolete inline app/store snippets.
+    storePreferenceContract:/normalizeThemePreference\(partial\.settings\.theme\)/.test(store)
+      && /const THEME_PREFERENCES=Object\.freeze\(\['light','dark','system'\]\)/.test(themeAuthority),
+    appResolvesMode:/normalizeThemePreference\(theme\)/.test(app)
+      && /resolveThemeMode\(normalized,Boolean\(systemThemeQuery\?\.matches\)\)/.test(app)
+      && /document\.documentElement\.dataset\.resolvedTheme=mode/.test(app)
+      && /return normalized==='system'\?\(systemDark\?'dark':'light'\):normalized/.test(themeAuthority)
   };
 }
 
@@ -394,8 +401,8 @@ const structural =
   (css.runtimeOrderOk ? 0 : 1) +
   theme.retiredCatalog.length +
   theme.retiredApp.length +
-  (theme.storeOfficialBinary ? 0 : 1) +
-  (theme.appBinary ? 0 : 1) +
+  (theme.storePreferenceContract ? 0 : 1) +
+  (theme.appResolvesMode ? 0 : 1) +
   (parity.ok ? 0 : 1) +
   Object.values(shell).filter((value) => typeof value === 'boolean' && !value).length +
   Object.values(criticalMigrations).filter((value) => !value).length;

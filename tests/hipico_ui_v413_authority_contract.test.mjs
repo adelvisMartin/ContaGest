@@ -30,11 +30,20 @@ test('convergence authority owns overlays icons floating utilities and reduced m
 
 test('visual baseline manifest matches the reviewed Playwright contract', () => {
   assert.equal(HIPICO_VISUAL_BASELINES.length, 10);
-  for (const baseline of HIPICO_VISUAL_BASELINES) assert.match(visualSpec, new RegExp(baseline.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  // The Playwright suite generates desktop baselines from a reviewed 4-view loop.
+  // Prove the exact 8 desktop + 2 mobile cases, not ten hard-coded source literals.
+  const views = ['dashboard', 'race', 'reports', 'settings'];
+  assert.deepEqual(HIPICO_VISUAL_BASELINES.slice(0, 8), views.flatMap(view => [view + '-desktop-1366-light', view + '-desktop-1366-dark']));
+  assert.deepEqual(HIPICO_VISUAL_BASELINES.slice(8), ['dashboard-mobile-390-light', 'dashboard-mobile-390-dark']);
+  assert.match(visualSpec, /for \(const view of \['dashboard', 'race', 'reports', 'settings'\]\)/);
+  assert.match(visualSpec, /assertVisualGolden\(page, .*desktop-1366-light/);
+  assert.match(visualSpec, /assertVisualGolden\(page, .*desktop-1366-dark/);
+  assert.match(visualSpec, /assertVisualGolden\(page, 'dashboard-mobile-390-light'\)/);
+  assert.match(visualSpec, /assertVisualGolden\(page, 'dashboard-mobile-390-dark'\)/);
 });
 
 test('baseline updater refuses CI and reports missing baselines instead of fabricating green', () => {
-  assert.match(baselineGate, /if \(process\.env\.CI\)/);
+  assert.match(baselineGate, /if \(env\.CI\)/);
   assert.match(baselineGate, /REFUSED: visual baselines are review artifacts and cannot be updated in CI/);
   assert.match(baselineGate, /BASELINE_REQUIRED/);
   assert.match(baselineGate, /--update-snapshots/);
@@ -42,6 +51,6 @@ test('baseline updater refuses CI and reports missing baselines instead of fabri
 });
 
 test('PWA caches v4.1.3 convergence authority under a rotated shell', () => {
-  assert.match(sw, /shell-r34-ui-v4-1-3-authority/);
+  assert.match(sw, /shell-r38-consolidator-v4-1-3/);
   assert.match(sw, /ui-system-v4-convergence\.css/);
 });

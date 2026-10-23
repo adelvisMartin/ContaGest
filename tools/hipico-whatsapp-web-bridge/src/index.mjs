@@ -40,6 +40,7 @@ import { createLabQuotedRaceJournal } from './lab-quoted-race-journal.mjs';
 import { createLabQueryBackoff } from './lab-query-backoff.mjs';
 import { createLabPendingQueryInbox, reconcileLabPendingObservation } from './lab-pending-query-inbox.mjs';
 import { assertSourceAutoReadDenied } from './source-read-policy-gate.mjs';
+import { evaluateSourceAutoReplyPolicy } from './source-policy-gate.mjs';
 
 // #1011: evaluate before local data directories, spools, network or Chromium.
 assertSourceAutoReadDenied();
@@ -76,7 +77,11 @@ const {
   labAssistantName: LAB_ASSISTANT_NAME
 } = config;
 const SOURCE_REPLY_KILL_SWITCH = localKillSwitchState();
-const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active;
+// Transport writes require an independently reviewed legal/provider GO. An
+// operator env flag and a cleared kill switch cannot authorize SOURCE writes.
+const SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED
+  && !SOURCE_REPLY_KILL_SWITCH.active
+  && evaluateSourceAutoReplyPolicy(config).eligible;
 const PROFILE_DIR = path.join(DATA_DIR, 'chrome-profile');
 const LEGACY_EVENT_SPOOL_DIR = path.join(DATA_DIR, 'spool-events');
 const LEGACY_MIRROR_SPOOL_DIR = path.join(DATA_DIR, 'spool-lab-mirror');

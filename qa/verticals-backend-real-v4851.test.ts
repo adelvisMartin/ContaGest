@@ -47,8 +47,13 @@ test('48/51 real PostgreSQL: dentistry + veterinary + gym lifecycle, isolation, 
       }
     });
     restrictedUserId=restricted.id;
-    const restrictedToken=signAccessToken({id:restricted.id,email:restricted.email},harness.tenant.id);
+    // An unsigned-session JWT must still fail at the authentication boundary.
+    const missingSessionToken=signAccessToken({id:restricted.id,email:restricted.email},harness.tenant.id);
+    await harness.status('/verticals/health/patients?kind=human',401,{},missingSessionToken);
 
+    // Permission denial is meaningful only for a real server-bound session.
+    // Reuse the harness session fixture and its guaranteed cleanup.
+    const restrictedToken=await harness.issueSessionTokenFor(restricted);
     await harness.status('/verticals/health/patients?kind=human',403,{},restrictedToken);
     await harness.status('/verticals/veterinary/hospitalizations',403,{},restrictedToken);
     await harness.status('/verticals/gym/members',403,{},restrictedToken);

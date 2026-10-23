@@ -70,13 +70,26 @@ test('#267 duplicate submission during pending Supabase PUT is rejected without 
 
 test('#267 successful reset consumes in-memory token before optional profile RPC', async()=>{
   const pause=deferred();
-  const h=harness({fetch:async url=>url.includes('/hipico_mark_password_changed')?pause.promise:{ok:true,status:200}});
+  const rpcStarted=deferred();
+  const h=harness({fetch:async url=>{
+    if (url.includes('/hipico_mark_password_changed')) {
+      rpcStarted.resolve();
+      return pause.promise;
+    }
+    return {ok:true,status:200};
+  }});
   const first=h.api.update(PASSWORD);
-  await Promise.resolve();await Promise.resolve();await Promise.resolve();
+  // Wait for the actual RPC boundary, not an arbitrary number of microtasks.
+  // If the RPC was accidentally removed, the first operation must settle,
+  // making this assertion fail instead of hanging on an unobserved request.
+  await Promise.race([
+    rpcStarted.promise,
+    first.then(()=>{throw new Error('RECOVERY_RPC_NOT_INVOKED')})
+  ]);
   assert.equal(h.api.get().token,'');
   assert.equal(h.api.get().inFlight,true);
   pause.resolve({ok:true,status:200});
-  await first;
+  assert.equal(await first,true);
   await assert.rejects(h.api.update(PASSWORD),/enlace de recuperación no es válido/);
 });
 
