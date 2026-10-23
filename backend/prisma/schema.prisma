@@ -71,8 +71,12 @@ model Tenant {
   users       UserProfile[]
   roles       Role[]
   clients     Client[]
+  benefitDefinitions BenefitDefinition[]
+  customerEntitlements CustomerEntitlement[]
   suppliers   Supplier[]
   products    Product[]
+  serviceCatalogCategories ServiceCatalogCategory[]
+  serviceDefinitions ServiceDefinition[]
   sales       SalesInvoice[]
   purchases   PurchaseInvoice[]
   ledger      LedgerEntry[]
@@ -90,6 +94,7 @@ model Tenant {
   analyticsEvents AnalyticsEvent[]
   productCodes ProductCode[]
   notificationLogs NotificationLog[]
+  channelPreferences NotificationChannelPreference[]
   demoAccesses DemoAccess[]
   aiConversations AiConversation[]
   licenseKeys LicenseKey[]
@@ -163,9 +168,11 @@ model UserProfile {
   userRoles   UserRole[]
   auditLogs   AuditLog[]
   notificationLogs NotificationLog[]
+  channelPreferences NotificationChannelPreference[]
   aiConversations AiConversation[]
   licenseKeys LicenseKey[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, email])
   @@index([tenantId])
   @@index([accessExpiresAt])
@@ -229,7 +236,9 @@ model Client {
 
   tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sales       SalesInvoice[]
+  customerEntitlements CustomerEntitlement[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, rif])
   @@index([tenantId, name])
 }
@@ -282,7 +291,10 @@ model Product {
   saleLines   SalesInvoiceLine[]
   purchaseLines PurchaseInvoiceLine[]
   reorderPolicy InventoryReorderPolicy?
+  serviceDefinitions ServiceDefinition[]
+  benefitDefinitions BenefitDefinition[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, sku])
   @@unique([tenantId, barcode])
   @@index([tenantId, name])
@@ -545,7 +557,9 @@ model Employee {
 
   tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   receipts    PayrollReceipt[]
+  serviceCapabilities ServiceStaffCapability[]
 
+  @@unique([tenantId, id])
   @@unique([tenantId, idNumber])
   @@index([tenantId, department])
   @@index([tenantId, hiredAt])
@@ -855,6 +869,8 @@ model BusinessLocation {
   addressGeocode AddressGeocode? @relation(fields: [addressGeocodeId], references: [id], onDelete: SetNull)
   schedulingResources SchedulingResource[]
   schedulingBookings SchedulingBooking[]
+  serviceEligibilities ServiceLocationEligibility[]
+  customerEntitlements CustomerEntitlement[]
 
   @@unique([tenantId, code])
   @@unique([tenantId, id])
@@ -1064,7 +1080,225 @@ model SchedulingResourceAllocation {
   @@index([tenantId, bookingId])
 }
 
-// #756: persisted operational policy only; Product.stock/reserved + InventoryMovement remain the stock authority.
+
+/**
+ * #849 Shared commercial service catalog. Product/price book owns all prices
+ * and taxes, scheduling owns allocations, entitlements owns remaining uses.
+ * Published/used revisions are append-only snapshots.
+ */
+model ServiceCatalogCategory {
+  id           String   @id @default(uuid())
+  tenantId     String
+  slug         String
+  name         String
+  status       String   @default("active")
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  services     ServiceDefinition[]
+  benefitDefinitions BenefitDefinition[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, slug])
+  @@index([tenantId, status, displayOrder])
+}
+
+model ServiceDefinition {
+  id              String   @id @default(uuid())
+  tenantId        String
+  categoryId      String?
+  productId       String?
+  name            String
+  description     String?
+  status          String   @default("draft")
+  visibility      String   @default("internal")
+  modality        String   @default("onsite")
+  durationMinutes Int
+  version         Int      @default(1)
+  createdBy       String
+  updatedBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  category        ServiceCatalogCategory? @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
+  product         Product? @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
+  steps           ServiceStep[]
+  revisions       ServiceDefinitionRevision[]
+  staff           ServiceStaffCapability[]
+  locations       ServiceLocationEligibility[]
+  benefitDefinitions BenefitDefinition[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, status, visibility, name])
+  @@index([tenantId, categoryId])
+  @@index([tenantId, productId])
+}
+
+model ServiceStep {
+  id              String @id @default(uuid())
+  tenantId        String
+  serviceId       String
+  position        Int
+  label           String
+  durationMinutes Int
+  gapAfterMinutes Int @default(0)
+
+  service         ServiceDefinition @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, serviceId, id])
+  @@unique([tenantId, serviceId, position])
+}
+
+model ServiceDefinitionRevision {
+  id          String   @id @default(uuid())
+  tenantId    String
+  serviceId   String
+  version     Int
+  snapshot    Json
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  service     ServiceDefinition @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, serviceId, version])
+  @@index([tenantId, createdAt])
+}
+
+model ServiceStaffCapability {
+  id           String @id @default(uuid())
+  tenantId     String
+  serviceId    String
+  employeeId   String
+  createdAt    DateTime @default(now())
+  createdBy    String
+
+  service      ServiceDefinition @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+  employee     Employee @relation(fields: [tenantId, employeeId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, serviceId, employeeId])
+  @@index([tenantId, employeeId, serviceId])
+}
+
+model ServiceLocationEligibility {
+  id           String @id @default(uuid())
+  tenantId     String
+  serviceId    String
+  locationId   String
+  createdAt    DateTime @default(now())
+  createdBy    String
+
+  service      ServiceDefinition @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+  location     BusinessLocation @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, serviceId, locationId])
+  @@index([tenantId, locationId, serviceId])
+}
+
+
+/**
+ * #852 Customer benefits are not SaaS LicenseKey and not financial ledger.
+ * Grant+events are append-only and tenant-reference-safe. Only finite rights
+ * are enabled in this foundation; do not infer purchase or booking authority.
+ */
+model BenefitDefinition {
+  id              String  @id @default(uuid())
+  tenantId        String
+  productId       String
+  name            String
+  scope           String   @default("ALL")
+  serviceId       String?
+  categoryId      String?
+  quantity        Decimal  @db.Decimal(18,3)
+  status          String   @default("active")
+  version         Int      @default(1)
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  product         Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict)
+  service         ServiceDefinition? @relation(fields: [tenantId, serviceId], references: [tenantId, id], onDelete: Restrict)
+  category        ServiceCatalogCategory? @relation(fields: [tenantId, categoryId], references: [tenantId, id], onDelete: Restrict)
+  entitlements    CustomerEntitlement[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, productId, status])
+}
+
+model CustomerEntitlement {
+  id              String   @id @default(uuid())
+  tenantId        String
+  benefitId       String
+  beneficiaryId   String
+  sourceType      String
+  sourceId        String
+  snapshot        Json
+  grantedQuantity Decimal  @db.Decimal(18,3)
+  validFrom       DateTime @db.Timestamptz(3)
+  validUntil      DateTime @db.Timestamptz(3)
+  priority        Int      @default(0)
+  locationId      String?
+  grantedBy       String
+  createdAt       DateTime @default(now())
+
+  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  benefit         BenefitDefinition @relation(fields: [tenantId, benefitId], references: [tenantId, id], onDelete: Restrict)
+  beneficiary     Client @relation(fields: [tenantId, beneficiaryId], references: [tenantId, id], onDelete: Restrict)
+  location        BusinessLocation? @relation(fields: [tenantId, locationId], references: [tenantId, id], onDelete: Restrict)
+  events          EntitlementLedgerEvent[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, sourceType, sourceId, beneficiaryId, benefitId])
+  @@index([tenantId, beneficiaryId, validUntil])
+}
+
+model EntitlementLedgerEvent {
+  id             String   @id @default(uuid())
+  tenantId       String
+  entitlementId  String
+  sequence       Int
+  type           String
+  quantity       Decimal  @db.Decimal(18,3)
+  effectKey      String
+  bookingId      String?
+  actorId        String
+  reason         String?
+  createdAt      DateTime @default(now())
+
+  entitlement    CustomerEntitlement @relation(fields: [tenantId, entitlementId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, entitlementId, sequence])
+  @@unique([tenantId, effectKey])
+  @@index([tenantId, entitlementId, createdAt])
+}
+
+model NotificationChannelPreference {
+  id             String   @id @default(uuid())
+  tenantId       String
+  userId         String
+  channel        String
+  enabled        Boolean  @default(false)
+  consent        String   @default("unknown")
+  verifiedAt     DateTime? @db.Timestamptz(3)
+  verifiedSource String?
+  timeZone       String?
+  quietStart     String?
+  quietEnd       String?
+  updatedBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user           UserProfile @relation(fields: [tenantId, userId], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, userId, channel])
+  @@index([tenantId, channel, consent])
+}
+
+// #756: derived purchasing policy; stock authority stays in Product and InventoryMovement.
 model InventoryReorderPolicy {
   tenantId       String
   productId      String
@@ -1079,9 +1313,9 @@ model InventoryReorderPolicy {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  product        Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  tenant         Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  product        Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict, map: "InventoryReorderPolicy_product_tenant_fkey")
 
   @@id([tenantId, productId])
-  @@index([tenantId, enabled])
+  @@index([tenantId, enabled], map: "InventoryReorderPolicy_tenant_enabled_idx")
 }

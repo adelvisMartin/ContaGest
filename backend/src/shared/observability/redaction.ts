@@ -6,7 +6,7 @@ const SENSITIVE_FIELD = /(authorization|cookie|password|passphrase|secret|token|
 // Hípico report links use an opaque bearer capability named exactly "?t=".
 // Keep the single-letter exception anchored, unlike the generic secret names:
 // masking every parameter containing "t" would also destroy normal telemetry.
-const SIGNED_QUERY_PARAM = /^(?:t|.*(?:token|access_token|refresh_token|api_?key|key|secret|sig|signature|x-amz-signature|x-amz-credential|x-goog-signature|x-goog-credential).*)$/i;
+const SIGNED_QUERY_PARAM = /^(?:t|.*(?:token|access_token|refresh_token|api_?key|key|secret|sig|signature|x-amz-signature|x-amz-credential|x-goog-signature|x-goog-credential|email|phone|rif|patient|medical|client_id|user_id|tenant_id).*)$/i;
 
 export function sanitizeLogValue(value: unknown, maxLength = 240) {
   return String(value ?? '')
@@ -19,6 +19,9 @@ export function sanitizeLogValue(value: unknown, maxLength = 240) {
 function redactSensitiveString(value: string) {
   const sanitized = sanitizeLogValue(value, 2_000)
     .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
+    // Some third-party errors interpolate personal addresses into free text;
+    // nested field-name redaction alone cannot protect these messages.
+    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[REDACTED_EMAIL]')
     .replace(/([a-z][a-z0-9+.-]*:\/\/[^:\s/@]+:)[^@\s/]+@/gi, '$1[REDACTED]@')
     .replace(/\b(password|passphrase|secret|token|api[-_]?key)\s*[:=]\s*[^\s,;&]+/gi, '$1=[REDACTED]')
     // A standalone Hípico URL parameter can also appear in a parsed

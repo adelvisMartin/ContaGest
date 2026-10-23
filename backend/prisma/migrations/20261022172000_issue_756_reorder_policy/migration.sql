@@ -16,8 +16,6 @@ CREATE TABLE public."InventoryReorderPolicy" (
   CONSTRAINT "InventoryReorderPolicy_pkey" PRIMARY KEY ("tenantId","productId"),
   CONSTRAINT "InventoryReorderPolicy_tenantId_fkey"
     FOREIGN KEY ("tenantId") REFERENCES public."Tenant"("id") ON DELETE RESTRICT,
-  CONSTRAINT "InventoryReorderPolicy_productId_fkey"
-    FOREIGN KEY ("productId") REFERENCES public."Product"("id") ON DELETE RESTRICT,
   -- The composite unique Product index is owned by #634 and prevents cross-tenant references.
   CONSTRAINT "InventoryReorderPolicy_product_tenant_fkey"
     FOREIGN KEY ("tenantId","productId") REFERENCES public."Product"("tenantId","id") ON DELETE RESTRICT,
@@ -33,7 +31,7 @@ CREATE INDEX "InventoryReorderPolicy_tenant_enabled_idx"
 
 -- Deny publicly exposed Supabase roles; all operations require backend runtime and tenant RLS.
 REVOKE ALL ON public."InventoryReorderPolicy" FROM PUBLIC;
-DO $
+DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
     REVOKE ALL ON public."InventoryReorderPolicy" FROM anon;

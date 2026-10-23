@@ -37,11 +37,22 @@ test('production LAB writes require two distinct pinned group IDs',()=>{
 
 test('runtime exposes no SOURCE compose route and LAB send revalidates identity before write',async()=>{
   const source=await readFile(new URL('../tools/hipico-whatsapp-web-bridge/src/index.mjs',import.meta.url),'utf8');
-  assert.match(source,/sourceSendPossible:\s*false/);
-  assert.match(source,/async function sendMirrorToLab\(/);
-  assert.match(source,/await assertCurrentLabIdentity\(\)/);
-  assert.doesNotMatch(source,/function\s+send(?:Message|Text|Mirror)ToSource\s*\(/i);
-  assert.match(source,/FUENTE: SOLO LECTURA/);
+  const [policy, backend, preflight] = await Promise.all([
+    readFile(new URL('../tools/hipico-whatsapp-web-bridge/src/source-policy-gate.mjs', import.meta.url), 'utf8'),
+    readFile(new URL('../backend/src/modules/hipico-bot/hipico-bridge.routes.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../tools/hipico-whatsapp-web-bridge/src/preflight.mjs', import.meta.url), 'utf8')
+  ]);
+  // A literal UI message is not a security boundary. Verify the effective
+  // provider NO_GO at the Bridge, backend command and receipt, and preflight.
+  assert.match(policy, /status:\s*'NO_GO'/);
+  assert.match(policy, /eligible:\s*false/);
+  assert.match(backend, /sourceSendPossible:false/);
+  assert.match(backend, /sourceAutoReplySendAuthorized\(\)/);
+  assert.match(backend, /error:'SOURCE_AUTO_REPLY_POLICY_NO_GO'/);
+  assert.match(preflight, /!diagnostic\.sourcePolicy\.eligible && body\?\.sourceSendPossible !== false/);
+  assert.match(source, /async function sendMirrorToLab\(/);
+  assert.match(source, /await assertCurrentLabIdentity\(\)/);
+  assert.doesNotMatch(source, /function\s+send(?:Message|Text|Mirror)ToSource\s*\(/i);
 });
 
 test('group identifiers are redacted for diagnostics',()=>{

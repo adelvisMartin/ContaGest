@@ -26,6 +26,11 @@ Los ADR financieros existentes incluyen, entre otros:
 - [`ADR_INVENTORY_DERIVED_BALANCES_V94.md`](ADR_INVENTORY_DERIVED_BALANCES_V94.md) — balances derivados de inventario.
 - [`ADR_TRANSACTIONAL_IMPORT_V95.md`](ADR_TRANSACTIONAL_IMPORT_V95.md) — importaciones transaccionales.
 - [`ADR_FISCAL_GOVERNANCE_V96.md`](ADR_FISCAL_GOVERNANCE_V96.md) — gobernanza fiscal.
+- [`architecture/FISCAL_SNAPSHOT_INTEGRITY_V751.md`](architecture/FISCAL_SNAPSHOT_INTEGRITY_V751.md) — seguridad de snapshots fiscales, regresiones, despliegue y bloqueos legales.
+- [`architecture/FISCAL_RULE_GOVERNANCE_V751.md`](architecture/FISCAL_RULE_GOVERNANCE_V751.md) — revisión independiente, autorización de reglas fiscales y catálogo normativo candidato sin tasas automáticas.
+- [`architecture/VE_TAX_LEGAL_MATRIX_2026.md`](architecture/VE_TAX_LEGAL_MATRIX_2026.md) — referencias legales 2025/2026, límites de ISLR y criterio de evidencia primaria.
+- [`architecture/VE_IVA_WITHHOLDING_AP_LEDGER_V775.md`](architecture/VE_IVA_WITHHOLDING_AP_LEDGER_V775.md) — reconocimiento RET_IVA por compra/ledger, reverso, auditoría transaccional y restricciones normativas.
+- [`qa/VE_FISCAL_5_TICKET_GAP_REPORT_2026-10-22.md`](qa/VE_FISCAL_5_TICKET_GAP_REPORT_2026-10-22.md) — QA exact-SHA, blockers de producción y matriz de cierre de cinco tickets.
 
 Nuevas decisiones estructurales deben documentar contexto, decisión, alternativas, invariantes, migración y rollback; no deben ocultarse dentro de un PR grande.
 

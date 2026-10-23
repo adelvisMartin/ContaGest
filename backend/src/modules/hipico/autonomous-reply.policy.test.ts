@@ -5,7 +5,9 @@ import {
   providerRequiresSafetyDowngrade,
   safeConversationalIntent,
   safeQueryIntent,
-  sourceAutoReplyEnabled
+  sourceAutoReplyEnabled,
+  sourceAutoReplySendAuthorized,
+  SOURCE_REPLY_SEND_POLICY
 } from './autonomous-reply.policy.js';
 
 const readiness={
@@ -46,9 +48,15 @@ function observation(overrides:Record<string,unknown>={}){
   } as any;
 }
 
-test('autonomous source replies remain explicit opt-in',()=>{
-  assert.equal(sourceAutoReplyEnabled({}),false);
-  assert.equal(sourceAutoReplyEnabled({HIPICO_SOURCE_AUTO_REPLY_ENABLED:'TRUE'}),true);
+test('SOURCE auto-send must remain NO_GO even with env opt-in',()=>{
+  const disabled={};
+  const requested={HIPICO_SOURCE_AUTO_REPLY_ENABLED:'TRUE'};
+  assert.equal(sourceAutoReplyEnabled(disabled),false);
+  assert.equal(sourceAutoReplyEnabled(requested),true,'shadow decision engine can still exercise an explicit opt-in');
+  assert.equal(SOURCE_REPLY_SEND_POLICY.status,'NO_GO');
+  assert.equal(SOURCE_REPLY_SEND_POLICY.reason,'MESSENGER_AUTOMATED_MESSAGING_NOT_AUTHORIZED');
+  assert.equal(sourceAutoReplySendAuthorized(disabled),false);
+  assert.equal(sourceAutoReplySendAuthorized(requested),false,'an environment variable must never authorize source sends');
 });
 
 test('intent helpers keep autonomous scope intentionally narrow',()=>{

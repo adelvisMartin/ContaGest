@@ -20,12 +20,31 @@ export const FISCAL_DOCUMENT_KINDS=[
 ];
 
 export const FiscalService={
+  legalSources(){return BackendApi.get('/fiscal/legal-sources');},
+  rules(){return BackendApi.get('/fiscal/rules');},
+  previewReviewedTaxEvent(data){return BackendApi.post('/fiscal/tax-events/preview',data);},
+  vatWithholdingApplications(){return BackendApi.get('/fiscal/withholding-applications');},
+  reconcileVatWithholding(period){return BackendApi.get(`/fiscal/withholding-applications/reconciliation?period=${encodeURIComponent(period)}`);},
+  applyVatWithholding(data){return BackendApi.post('/fiscal/withholding-applications',data);},
+  reverseVatWithholding(id,data){return BackendApi.post(`/fiscal/withholding-applications/${encodeURIComponent(id)}/reverse`,data);},
+  reviewLegalSource(id,approved,reason){return BackendApi.post(`/fiscal/legal-sources/${encodeURIComponent(id)}/review`,{approved,reason});},
+  reviewRule(id,reason){return BackendApi.post(`/fiscal/rules/${encodeURIComponent(id)}/review`,{reason});},
+  activateRule(id,reason){return BackendApi.post(`/fiscal/rules/${encodeURIComponent(id)}/activate`,{reason});},
   taxpayerProfiles(){return BackendApi.get('/fiscal/taxpayer-profiles');},
   captureTaxpayerProfileDraft(data){return BackendApi.post('/fiscal/taxpayer-profiles',data);},
+  reviewTaxpayerProfile(id,reason){return BackendApi.post(`/fiscal/taxpayer-profiles/${encodeURIComponent(id)}/review`,{reason});},
+  activateTaxpayerProfile(id,reason){return BackendApi.post(`/fiscal/taxpayer-profiles/${encodeURIComponent(id)}/activate`,{reason});},
   periods(){return BackendApi.get('/fiscal/periods');},
   createPeriod(data){return BackendApi.post('/fiscal/periods',data);},
   closePeriod(data){return BackendApi.post('/fiscal/close-period',data);},
   reopenPeriod(data){return BackendApi.post('/fiscal/reopen-period',data);},
   documents(period=''){return BackendApi.get(`/fiscal/documents${period?`?period=${encodeURIComponent(period)}`:''}`);},
-  createDocument(data){return BackendApi.post('/fiscal/documents',data);}
+  createDocument(data){return BackendApi.post('/fiscal/documents',data);},
+  issueReviewedDocument(data){return BackendApi.post('/fiscal/documents/issue',data);},
+  captureLegalSource(data){return BackendApi.post('/fiscal/legal-sources',data);},
+  createRule(data){return BackendApi.post('/fiscal/rules',data);},
+  bookReadiness(book,period){return BackendApi.get(`/fiscal/books/readiness?book=${encodeURIComponent(book)}&period=${encodeURIComponent(period)}`);},
+  complianceReadiness(period){return BackendApi.get(`/fiscal/compliance/readiness?period=${encodeURIComponent(period)}`);},
+  transitionDeclaration(id,data){return BackendApi.post(`/fiscal/compliance/declarations/${encodeURIComponent(id)}/transition`,data);},
+  closeEvidence(period,module){return BackendApi.get(`/fiscal/close-period/evidence?period=${encodeURIComponent(period)}&module=${encodeURIComponent(module)}`);}
 };

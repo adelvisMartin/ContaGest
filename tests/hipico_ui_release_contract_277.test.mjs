@@ -4,7 +4,13 @@ import { readFileSync, readdirSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const html = read('../frontend/public/hipico-control/index.html');
-const css = read('../frontend/public/hipico-control/assets/css/app.css');
+const entryCss = read('../frontend/public/hipico-control/assets/css/app.css');
+// The canonical v4 stylesheet authority is an ordered local graph; responsive
+// and theme assertions apply across imports, not to the tiny entrypoint alone.
+const css = [
+  'platform-tokens-v1.css', 'ui-system-v3-compat.css',
+  'ui-system-v4.css', 'ui-system-v4-convergence.css'
+].map(file => read('../frontend/public/hipico-control/assets/css/' + file)).join('\n');
 const notice = read('../frontend/public/hipico-control/assets/js/notice-bridge.js');
 const sw = read('../frontend/public/hipico-control/sw.js');
 const config = read('../frontend/public/hipico-control/assets/js/config.js');
@@ -21,12 +27,16 @@ function jsFiles(url, prefix = '') {
   return files.sort();
 }
 
-test('release shell mounts canonical logo, notice bridge and exactly one visual authority', () => {
-  assert.match(html, /logo-control-hipico\.png/);
+test('release shell mounts canonical brand, notice bridge and reviewed v4 visual graph', () => {
+  assert.match(html, /data-v4-brand/);
+  assert.match(html, /icons\/icon-192\.png/);
+  assert.match(entryCss, /@import url\("\.\/ui-system-v3-compat\.css"\) layer\(legacy\)/);
+  assert.match(entryCss, /@import url\("\.\/ui-system-v4\.css"\)/);
+  assert.match(entryCss, /@import url\("\.\/ui-system-v4-convergence\.css"\)/);
   assert.match(html, /assets\/js\/notice-bridge\.js/);
   assert.match(html, /id="toast-region"/);
   const stylesheets = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(stylesheets, ['./assets/css/app.css']);
+  assert.deepEqual(stylesheets, ['./assets/css/app.css', './assets/css/platform-tokens-v1.css']);
 });
 
 test('operational notices are routed into accessible app feedback instead of being silently dropped', () => {

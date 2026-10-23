@@ -51,3 +51,7 @@ No se enviaron mensajes ni se usaron credenciales reales durante la implementaci
 ## Rollback / interoperabilidad
 
 Se trata de una reducción de afirmaciones y datos privados expuestos. Si un consumer exige el contrato anterior, adaptar al nuevo estado de error/accepted con manejo explícito; **no restaurar `queued:true` sin cola, ni `sent` sin receipt, ni payload privado en DB**. No se cambia schema Prisma ni RLS. La decisión operativa de envío masivo/productivo sigue aparte.
+
+## Cierre de vector de envío sin autorización (2026-10-22)
+
+Al comprobarse ausencia de consentimiento persistente y vinculación segura `FoodOrder → recipient`, `POST /notifications/whatsapp/order` no puede seguir emitiendo mensajes a cualquier teléfono aportado en el cuerpo. Responde 503 sin proveedor ni escritura; no borra la evidencia histórica existente. Esto evita transformar `sales.manage` en permiso para mensajes a terceros. La infraestructura #853 está presente (issue cerrado), pero falta wiring de intents de notificación, y #772/consentiente de canal todavía no son una autoridad integrada. Los tests de regresión ahora verifican esta negación por defecto en vez de certificar un ACK no entregado. Este cambio intencional requiere actualización de la UX cuando se ofrezca envío automático formal.

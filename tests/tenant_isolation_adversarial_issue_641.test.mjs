@@ -28,11 +28,22 @@ test('every surface expands to A→B and B→A without silent one-way coverage',
 
 test('CRUD factory scopes list/read/update/delete by authenticated tenant and overrides tenant on create',()=>{
   const source=read('backend/src/modules/crud.factory.ts');
-  assert.match(source,/const where: any = options\.tenantScoped === false \? \{\} : \{ tenantId \}/);
-  assert.match(source,/findFirst\(\{ where: options\.tenantScoped === false \? where : \{ \.\.\.where, tenantId \} \}\)/);
-  assert.match(source,/findFirst\(\{ where: options\.tenantScoped === false \? \{ id: req\.params\.id \} : \{ id: req\.params\.id, tenantId: ctx\.tenantId \} \}\)/);
-  assert.match(source,/\{ \.\.\.req\.body, tenantId: ctx\.tenantId \}/);
+  // #688 / #638: enforce tenant ownership against the current typed CRUD implementation,
+  // not obsolete tenantScoped=false / 'any' branches.
+  assert.match(source,/router\.use\(requireTenant,\s*requirePermission\(options\.permission\)\)/);
+  assert.match(source,/const where:\s*Record<string,\s*unknown>\s*=\s*\{\s*tenantId:\s*ctx\.tenantId\s*\}/);
+  assert.match(source,/delegate\.findMany\(\{\s*where,/);
+  assert.match(source,/delegate\.findFirst\(\{\s*where:\s*\{\s*id:\s*parseCrudRouteId\(req\.params\.id\),\s*tenantId:\s*ctx\.tenantId\s*\}\s*\}\)/);
+  const scopedMutations=source.match(/const where = \{\s*id:\s*parseCrudRouteId\(req\.params\.id\),\s*tenantId:\s*ctx\.tenantId\s*\};/g)||[];
+  assert.equal(scopedMutations.length,2,'both update and delete must use a server-scoped tenant predicate');
+  assert.match(source,/delegate\.findFirst\(\{\s*where\s*\}\)/);
+  assert.match(source,/delegate\.update\(\{\s*where,\s*data:\s*req\.body\s*\}\)/);
+  assert.match(source,/delegate\.delete\(\{\s*where\s*\}\)/);
+  assert.match(source,/delegate\.create\(\{\s*data:\s*\{\s*\.\.\.req\.body,\s*tenantId:\s*ctx\.tenantId\s*\}\s*\}\)/);
+  assert.match(source,/mutationGate\(options\.model,\s*'create'\),\s*validateBody\(options\.schema\.strict\(\)\)/);
+  assert.match(source,/mutationGate\(options\.model,\s*'update'\),\s*validateBody\(options\.schema\.partial\(\)\.strict\(\)\)/);
   assert.doesNotMatch(source,/tenantId\s*:\s*req\.body\.tenantId/);
+  assert.doesNotMatch(source,/tenantScoped\s*:\s*false/);
 });
 
 test('cross-tenant relation guard fails closed for sales, purchases and fiscal references',()=>{
@@ -42,7 +53,20 @@ test('cross-tenant relation guard fails closed for sales, purchases and fiscal r
   assert.match(source,/where: \{ tenantId, id: \{ in: productIds \} \}/);
   assert.match(source,/findFirst\(\{ where: \{ id: periodId, tenantId \}/);
   assert.match(source,/code: 'CROSS_TENANT_REFERENCE'/);
-  assert.doesNotMatch(source,/crossTenantReference\([^)]*(tenantId|clientId|supplierId|periodId)/);
+
+  // A safe field LABEL (e.g. ['clientId']) does not disclose the foreign ID.
+  // Check every thrown reference error uses a fixed label, never a value from the request.
+  const callSites=[...source.matchAll(/\bthrow\s+crossTenantReference\(([^)]*)\)/g)];
+  assert.equal(callSites.length,4,'all four protected relation checks must remain present');
+  const labels=callSites.map((match)=>{
+    const argument=match[1].trim();
+    assert.match(argument,/^\['(?:clientId|supplierId|productId|periodId)'\]$/,'only fixed field labels are safe');
+    return argument;
+  });
+  assert.deepEqual(new Set(labels),new Set(["['clientId']","['supplierId']","['productId']","['periodId']"]));
+  const helper=source.slice(source.indexOf('function crossTenantReference('),source.indexOf('async function assertProducts('));
+  assert.match(helper,/new HttpError\(409,\s*'Una o más referencias no están disponibles para el tenant autenticado\.'/);
+  assert.doesNotMatch(helper,/req\.body|rawBody|tenantId|resourceId/);
 });
 
 test('real PostgreSQL/API adversarial suite and local verification integration are present',()=>{

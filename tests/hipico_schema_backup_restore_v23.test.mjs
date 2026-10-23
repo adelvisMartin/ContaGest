@@ -72,7 +72,9 @@ test('v23 evidence fails closed on count mismatch, orphan FK, invalid SHA or wro
 test('v23 backup script is dedicated-role, SELECT-only, inventory-driven and encrypts before off-site copy',async()=>{
   const source=await read('ops/backup/hipico-backup-postgres.sh');
   assert.match(source,/HIPICO_BACKUP_DATABASE_URL/);
-  assert.match(source,/HIPICO_BACKUP_EXPECTED_ROLE:-hipico_backup/);
+  // The backup authority has been hardened: callers cannot override this role.
+  assert.match(source,/EXPECTED_ROLE="hipico_backup"/);
+  assert.doesNotMatch(source,/HIPICO_BACKUP_EXPECTED_ROLE/);
   assert.match(source,/rolbypassrls/);
   assert.match(source,/rolsuper/);
   assert.match(source,/rolcreatedb/);

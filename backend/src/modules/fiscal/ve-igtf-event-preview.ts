@@ -1,6 +1,7 @@
 import {
   assertReviewedVeRule,
   calculateReviewedVeTaxPreview,
+  resolveReviewedVeRule,
   type VeReviewedRule,
 } from './ve-reviewed-rule-policy.js';
 
@@ -42,4 +43,18 @@ export function previewReviewedIgtfEvent(event: IgtfEvent, rule: VeReviewedRule)
     baseMinor: event.baseMinor, taxMinor: snapshot.taxMinor,
     snapshot, mode: 'NON_POSTING_PREVIEW' as const,
   });
+}
+
+/** Resolve a unique effective, reviewed IGTF rule from a trusted tenant catalog.
+ * A preview never charges, posts or establishes a legally binding tax. */
+export function previewReviewedIgtfEventFromCatalog(
+  event: IgtfEvent, catalog: readonly VeReviewedRule[],
+) {
+  if (!event || typeof event.tenantId !== 'string' || !event.tenantId.trim() ||
+      !Array.isArray(catalog)) fail();
+  const selector = igtfEventSelector(event);
+  const rule = resolveReviewedVeRule(catalog, {
+    tenantId: event.tenantId, family: 'IGTF', selector, eventDate: event.eventDate,
+  });
+  return previewReviewedIgtfEvent(event, rule);
 }

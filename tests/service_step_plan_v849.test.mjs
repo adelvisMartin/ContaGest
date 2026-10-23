@@ -98,3 +98,11 @@ test('#849 never mutates caller arrays or returns references usable for history 
   const next = buildServiceStepPlan({ ...valid(), version: 2 });
   assert.notDeepEqual(result, next);
 });
+
+// Sparse arrays are not valid historical or scheduling snapshots.
+test('#849 rejects missing step slots without TypeError or partial duration', () => {
+  const withHole = valid();
+  withHole.steps = [step(1), , step(3)];
+  reject(withHole);
+  reject(valid({ steps: new Array(2) }));
+});

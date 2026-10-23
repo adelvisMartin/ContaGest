@@ -85,3 +85,18 @@ Never use `skip`, `only`, forced interaction, arbitrary sleeps or fabricated evi
 
 ## PWA
 When presentation assets change, update the shell cache revision and include all canonical v4 CSS/JS files required for offline rendering. Design updates must not clear IndexedDB/domain data.
+
+
+## Responsive and failure-state QA reference
+
+The supported reference viewports for browser and visual review are **360**, **390/393**, **430**, **768**, **1024** and **1440** CSS pixels. Also verify **200%** browser zoom and narrow layouts without horizontal scroll. These values are QA targets; they are not license to hard-code per-viewport styles. Responsive fixes belong in the canonical CSS stack.
+
+For keyboard access, verify visible **focus** and **teclado** navigation on dialogs, the sidebar and Command Center controls. Preserve **WCAG AA** contrast in light/dark/system themes and respect **reduced-motion**. Keep status semantics accessible in **loading**, **unavailable**, offline, empty, error and success states; stale data must not appear fresh.
+
+**SOURCE** is an operational read-only boundary and must not reveal external group identifiers. **LAB** is explicitly non-authoritative synthetic evidence. Do not show raw credentials, provider signed URLs or SOURCE identifiers in UI, logs or screenshot artifacts. Verify keyboard interactions and safe error displays under both themes.
+
+### CSS ownership for v4.1
+
+The production HTML intentionally loads exactly two same-origin stylesheets in order: \`assets/css/app.css\`, followed by \`assets/css/platform-tokens-v1.css\`. The app entrypoint imports \`ui-system-v3-compat.css\` inside \`@layer legacy\`, then the canonical \`ui-system-v4.css\`, then \`ui-system-v4-convergence.css\`. This is an **ordered multi-file CSS architecture**, not a single physical CSS file. Do not delete the platform token adapter or compatibility layer to satisfy a legacy v2 source test.
+
+The service worker and Android parity packaging must retain the same locally available canonical assets. Every change to this stack needs a checked browser render (360/393/768/1440, keyboard, contrast, offline), not only string-based source-contract PASS.

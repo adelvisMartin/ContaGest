@@ -43,3 +43,10 @@ test('fractional consumption can be restored exactly but never twice',()=>{
   assert.equal(project([...events,row(4,'RELEASE','0.001')]).remaining,'1.003');
   fail([...events,row(4,'RELEASE','0.002')],'EXCEEDS_GRANT');
 });
+
+// A paginated/partial event history could otherwise overstate available rights.
+test('#852 requires contiguous server sequence from GRANT to last event',()=>{
+  fail([row(1,'GRANT','5'),row(3,'CONSUME','2')],'INVALID_SEQUENCE');
+  fail([row(2,'GRANT','5')],'INVALID_SEQUENCE');
+  assert.equal(project([row(1,'GRANT','5'),row(2,'CONSUME','2')]).remaining,'3.000');
+});

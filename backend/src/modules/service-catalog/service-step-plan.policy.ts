@@ -47,6 +47,10 @@ export function buildServiceStepPlan(input: ServiceStepPlanInput) {
       !positive(input.version, Number.MAX_SAFE_INTEGER) ||
       !Array.isArray(input.steps) || input.steps.length < 1 || input.steps.length > 24) denied();
 
+  // Array.map skips holes: an incomplete server snapshot must never yield a valid plan.
+  if (Array.from({ length: input.steps.length }, (_, index) => index)
+    .some(index => !Object.hasOwn(input.steps, index))) denied();
+
   const ids = new Set<string>();
   const positions = new Set<number>();
   const steps = input.steps.map(step => {
