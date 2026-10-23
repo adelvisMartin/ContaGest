@@ -51,6 +51,10 @@ function needsFinancialIdempotency(method, path, body) {
   const normalizedMethod = String(method || 'GET').toUpperCase();
   const normalized = normalizedFinancialPath(path);
   if (normalizedMethod === 'POST') {
+    // Preserve the same key on explicit retries for these durable fiscal mutations.
+    if (['/fiscal/close-period', '/fiscal/reopen-period',
+      '/fiscal/documents', '/fiscal/documents/issue'].includes(normalized) ||
+      /^\/fiscal\/compliance\/declarations\/[^/]+\/transition$/.test(normalized)) return true;
     if (normalized === '/banking/movements' || normalized === '/accounting/entries' ||
         normalized === '/fiscal/withholding-applications' ||
         /^\/fiscal\/withholding-applications\/[^/]+\/reverse$/.test(normalized)) return true;

@@ -35,7 +35,8 @@ export function previewReviewedPayrollContributions(
 ) {
   if (!event || typeof event.tenantId !== 'string' || !event.tenantId.trim() ||
       typeof event.employeeId !== 'string' || !event.employeeId.trim() ||
-      !PERIOD.test(event.payrollPeriod) || !safe(event.grossMinor) ||
+      !PERIOD.test(event.payrollPeriod) || typeof event.eventDate !== 'string' ||
+      event.eventDate.slice(0, 7) !== event.payrollPeriod || !safe(event.grossMinor) ||
       !Array.isArray(components) || components.length < 1 || components.length > 6) failed();
   const snapshots: Array<Readonly<{ side: ParafiscalSide; family: string; baseMinor: number; taxMinor: number; ruleSnapshot: ReturnType<typeof calculateReviewedVeTaxPreview> }>> = [];
   const used = new Set<string>();

@@ -137,7 +137,8 @@
     "test:backend:accounting:period:real": "npm --workspace backend exec -- tsx --test ../qa/accounting-period-concurrency-v637.test.ts",
     "test:backend:service-catalog:real": "npm --workspace backend exec -- tsx --test ../qa/service-catalog-real-v849.test.ts",
     "test:backend:entitlement:real": "npm --workspace backend exec -- tsx --test ../qa/entitlement-booking-real-v852.test.ts",
-    "test:backend:notification-preferences:real": "npm --workspace backend exec -- tsx --test ../qa/notification-preferences-real-v854.test.ts"
+    "test:backend:notification-preferences:real": "npm --workspace backend exec -- tsx --test ../qa/notification-preferences-real-v854.test.ts",
+    "test:ve-tax": "npm --workspace backend exec -- tsx --test ../tests/ve_fiscal_book_ledger_coverage_782.test.mjs ../tests/ve_fiscal_compliance_workflow_783.test.mjs ../tests/ve_fiscal_effective_period_778_782.test.mjs ../tests/ve_fiscal_frontend_contract_778_782_783.test.mjs ../tests/ve_fiscal_period_lifecycle_source_contract_778_782.test.mjs ../tests/ve_fiscal_readiness_recorded_evidence_782_783.test.mjs ../tests/ve_fiscal_recorded_money_v782.test.mjs ../tests/ve_fiscal_rule_authority_751_778_780_781.test.mjs ../tests/ve_payroll_receipt_arithmetic_781.test.mjs ../tests/ve_payroll_atomicity_source_contract_781.test.mjs ../tests/ve_tax_period_scope_778_780_781.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1"

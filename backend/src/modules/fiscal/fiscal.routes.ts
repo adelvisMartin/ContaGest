@@ -6,7 +6,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
-import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
+import { runFinancialIdempotentMutation, normalizeIdempotencyKey } from '../../shared/services/financial-idempotency.service.js';
 import { assertBalanced } from '../accounting/accounting.service.js';
 import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.repository.js';
 import { planReviewedTaxEvent, type AppliedRatio } from './ve-tax-posting-plan.js';
@@ -15,6 +15,8 @@ import { assertUntrustedFiscalPayload, assertExternalFiscalRecordAllowed, assert
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
 import fiscalWithholdingApplicationRoutes from './fiscal-withholding-application.routes.js';
+import fiscalComplianceWorkflowRoutes from './fiscal-compliance-workflow.routes.js';
+import { assertFiscalEffectivePeriod } from './fiscal-effective-period-policy.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts, transitionTaxpayerProfile, getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
 import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
 import { createFiscalLegalSourceDraft, listFiscalLegalSources, reviewFiscalLegalSource } from './fiscal-legal-source.repository.js';
@@ -28,6 +30,7 @@ import {
   getCloseEvidence,
   getDocumentRuleSnapshots,
   listFiscalRuleVersions,
+  lockFiscalPeriodMutation,
   persistCloseEvidence,
   recordDocumentRuleSnapshots,
   resolveFiscalRules
@@ -36,6 +39,7 @@ import {
 const router = Router();
 router.use(requireTenant);
 router.use('/books', fiscalBookReadinessRoutes);
+router.use('/compliance', fiscalComplianceWorkflowRoutes);
 router.use('/compliance', fiscalComplianceReadinessRoutes);
 router.use('/withholding-applications', fiscalWithholdingApplicationRoutes);
 
@@ -267,13 +271,22 @@ router.post('/rules/:id/activate', requirePermission('fiscal.activate_rules'),
 
 router.post('/close-period', requirePermission('fiscal.close'), validateBody(closeSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
+  const key = normalizeIdempotencyKey(req.header('Idempotency-Key'));
+  if (!key) throw new HttpError(428, 'Idempotency-Key obligatorio para cerrar el período.', { code: 'FISCAL_IDEMPOTENCY_REQUIRED' });
   const execution = await runFinancialIdempotentMutation({
     tenantId: ctx.tenantId,
     scope: `fiscal.close.${req.body.module}`,
-    key: req.header('Idempotency-Key'),
+    key,
     request: req.body,
     requestId: ctx.requestId || null
   }, async (tx) => {
+    await lockFiscalPeriodMutation(tx, ctx.tenantId, req.body.period);
+    const lock = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM public."ClosingPeriod"
+      WHERE "tenantId"=${ctx.tenantId} AND "period"=${req.body.period} AND "module"=${req.body.module}
+      FOR UPDATE
+    `;
+    if (lock.length !== 1) throw new HttpError(404, 'Período fiscal no encontrado; créalo abierto antes de cerrar.', { code: 'FISCAL_PERIOD_NOT_FOUND' });
     const existing = await tx.closingPeriod.findFirst({ where: { tenantId: ctx.tenantId, period: req.body.period, module: req.body.module } });
     if (!existing) throw new HttpError(404, 'Período fiscal no encontrado; créalo abierto antes de cerrar.', { code: 'FISCAL_PERIOD_NOT_FOUND' });
     if (existing.status !== 'open') throw new HttpError(409, 'Transición fiscal inválida: sólo un período abierto puede cerrarse.', { code: 'FISCAL_INVALID_TRANSITION', from: existing.status, to: 'closed' });
@@ -302,10 +315,18 @@ router.post('/close-period', requirePermission('fiscal.close'), validateBody(clo
       postCloseHash,
       closedBy: ctx.userId || null
     });
+    // The close state, immutable evidence and actor audit must commit together.
+    // Idempotent replays skip this callback and cannot duplicate the audit.
+    await tx.auditLog.create({ data: {
+      tenantId: ctx.tenantId, userId: ctx.userId || null,
+      action: 'fiscal.period.closed', entity: 'ClosingPeriod', entityId: updated.id,
+      before: { status: existing.status, period: existing.period, module: existing.module },
+      after: { status: updated.status, postCloseHash, evidenceId: evidence.id,
+        closedBy: updated.closedBy, period: updated.period, module: updated.module },
+      ipAddress: ctx.ip || null, userAgent: ctx.userAgent || null,
+    } });
     return { data: { ...updated, prechecks, postCloseReport, postCloseHash, evidenceId: evidence.id }, resourceType: 'ClosingPeriod', resourceId: updated.id };
   });
-
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.period.closed', entity: 'ClosingPeriod', entityId: execution.resourceId || undefined, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   res.status(execution.responseCode).json({ ok: true, data: execution.data, meta: { replayed: execution.replayed } });
 }));
 
@@ -320,12 +341,47 @@ router.get('/close-period/evidence', requirePermission('fiscal.read'), asyncHand
 
 router.post('/reopen-period', requirePermission('fiscal.reopen'), validateBody(reopenSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const existing = await prisma.closingPeriod.findFirst({ where: { tenantId: ctx.tenantId, period: req.body.period, module: req.body.module } });
-  if (!existing) throw new HttpError(404, 'Período fiscal no encontrado.', { code: 'FISCAL_PERIOD_NOT_FOUND' });
-  if (existing.status !== 'closed') throw new HttpError(409, 'Transición fiscal inválida: sólo un período cerrado puede reabrirse.', { code: 'FISCAL_INVALID_TRANSITION', from: existing.status, to: 'open' });
-  const updated = await prisma.closingPeriod.update({ where: { id: existing.id }, data: { status: 'open', closedAt: null, closedBy: null, note: req.body.reason } });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.period.reopened', entity: 'ClosingPeriod', entityId: updated.id, before: existing, after: { ...updated, reopenReason: req.body.reason, workflowCapability: 'fiscal.reopen' }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  ok(res, { ...updated, reopenReason: req.body.reason, workflowCapability: 'fiscal.reopen' });
+  const key = normalizeIdempotencyKey(req.header('Idempotency-Key'));
+  if (!key) throw new HttpError(428, 'Idempotency-Key obligatorio para reabrir un período fiscal.', { code: 'FISCAL_IDEMPOTENCY_REQUIRED' });
+  const execution = await runFinancialIdempotentMutation({
+    tenantId: ctx.tenantId,
+    scope: `fiscal.reopen.${req.body.module}`,
+    key, request: req.body, requestId: ctx.requestId || null,
+  }, async tx => {
+    await lockFiscalPeriodMutation(tx, ctx.tenantId, req.body.period);
+    // Close and reopen lock the same period. Different retry keys cannot
+    // race a second transition or erase historical close evidence.
+    const lock = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM public."ClosingPeriod"
+      WHERE "tenantId"=${ctx.tenantId} AND "period"=${req.body.period} AND "module"=${req.body.module}
+      FOR UPDATE
+    `;
+    if (lock.length !== 1) throw new HttpError(404, 'Período fiscal no encontrado.', { code: 'FISCAL_PERIOD_NOT_FOUND' });
+    const existing = await tx.closingPeriod.findFirst({
+      where: { tenantId: ctx.tenantId, period: req.body.period, module: req.body.module },
+    });
+    if (!existing) throw new HttpError(404, 'Período fiscal no encontrado.', { code: 'FISCAL_PERIOD_NOT_FOUND' });
+    if (existing.status !== 'closed')
+      throw new HttpError(409, 'Transición fiscal inválida: sólo un período cerrado puede reabrirse.', {
+        code: 'FISCAL_INVALID_TRANSITION', from: existing.status, to: 'open',
+      });
+    const updated = await tx.closingPeriod.update({
+      where: { id: existing.id },
+      data: { status: 'open', closedAt: null, closedBy: null, note: req.body.reason },
+    });
+    const result = { ...updated, reopenReason: req.body.reason, workflowCapability: 'fiscal.reopen' };
+    await tx.auditLog.create({ data: {
+      tenantId: ctx.tenantId, userId: ctx.userId || null, action: 'fiscal.period.reopened',
+      entity: 'ClosingPeriod', entityId: existing.id,
+      before: { status: existing.status, closedAt: existing.closedAt?.toISOString() || null,
+        closedBy: existing.closedBy, note: existing.note },
+      after: { status: updated.status, reopenReason: req.body.reason, capability: 'fiscal.reopen' },
+      ipAddress: ctx.ip || null, userAgent: ctx.userAgent || null,
+    } });
+    return { data: result, resourceType: 'ClosingPeriod', resourceId: existing.id };
+  });
+  res.status(execution.responseCode).json({ ok: true, data: execution.data,
+    meta: { replayed: execution.replayed } });
 }));
 
 // NON-POSTING tax estimate. Values supplied by the caller never create a ledger,
@@ -394,12 +450,15 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     request: req.body,
     requestId: ctx.requestId || null
   }, async (tx) => {
+    await lockFiscalPeriodMutation(tx, ctx.tenantId, req.body.period);
     const closedPeriod = await tx.closingPeriod.findFirst({
       where: { tenantId: ctx.tenantId, period: req.body.period, module: { in: req.body.module === 'fiscal' ? ['fiscal'] : [req.body.module, 'fiscal'] }, status: 'closed' }
     });
     if (closedPeriod) throw new HttpError(409, `El período ${req.body.period} está cerrado para ${closedPeriod.module}.`, { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: closedPeriod.module });
 
     const effectiveAt = req.body.effectiveAt || new Date();
+    try { assertFiscalEffectivePeriod(req.body.period, effectiveAt); }
+    catch { throw new HttpError(422,'Fecha fuera del período fiscal declarado.',{code:'FISCAL_EVENT_PERIOD_MISMATCH'}); }
     try {
       assertFiscalDocumentRuleFamily({
         module:req.body.module,kind:req.body.kind,period:req.body.period,
@@ -472,42 +531,61 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
 router.post('/documents', requirePermission('fiscal.manage_documents'), validateBody(fiscalSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   try { assertExternalFiscalRecordAllowed(req.body); }
-  catch { throw new HttpError(422,
-    'Los documentos tributarios regulados deben emitirse con regla y perfil fiscal verificados.',
-    { code: 'FISCAL_EXTERNAL_DOCUMENT_DENIED' }); }
+  catch { throw new HttpError(422,'Documento regulado: requiere workflow fiscal autorizado.',{code:'FISCAL_EXTERNAL_DOCUMENT_DENIED'}); }
+  try { assertUntrustedFiscalPayload(req.body.payload); }
+  catch { throw new HttpError(422,'Campos fiscales reservados al servidor.',{code:'FISCAL_PAYLOAD_RESERVED_FIELD'}); }
   assertPayloadSize(req.body.payload);
-  const record = await prisma.$transaction(async tx => {
-    const period = await tx.closingPeriod.findFirst({ where: {
-      tenantId: ctx.tenantId, period: req.body.period,
-      module: { in: ['fiscal'] }, status: 'closed'
-    } });
-    if (period) throw new HttpError(409, `El período ${req.body.period} está cerrado.`,
-      { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: period.module });
-    const existing = await tx.fiscalDocument.findUnique({ where: { tenantId_kind_number: {
-      tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number
-    } } });
-    if (existing) throw new HttpError(409, 'Documento fiscal duplicado.', {
-      code: 'FISCAL_DOCUMENT_DUPLICATE'
-    });
-    const controlledPayload = { ...req.body.payload,
-      _fiscalModule: 'fiscal', _numberingAuthority: 'external/manual' };
-    const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind,
-      number: req.body.number, period: req.body.period,
-      module: 'fiscal', payload: controlledPayload });
-    const created = await tx.fiscalDocument.create({ data: {
-      tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number,
-      period: req.body.period, status: 'external', payload: controlledPayload, hash
-    } });
-    await tx.auditLog.create({data:{
-      tenantId:ctx.tenantId,userId:ctx.userId || null,action:'fiscal.document.created.external',
-      entity:'FiscalDocument',entityId:created.id,
-      after:{id:created.id,kind:created.kind,number:created.number,
-        period:created.period,module:'fiscal',status:'external',hash:created.hash},
-      ipAddress:ctx.ip || null,userAgent:ctx.userAgent || null
-    }});
-    return created;
+  const key = normalizeIdempotencyKey(req.header('Idempotency-Key'));
+  if (!key) throw new HttpError(428, 'Idempotency-Key obligatorio para registrar documentos fiscales externos.', {
+    code: 'FISCAL_IDEMPOTENCY_REQUIRED',
   });
-  res.status(201).json({ ok: true, data: { ...record, module: req.body.module } });
+  // External/manual references are provenance UNVERIFIED and never grant an
+  // authoritative FiscalDocumentRuleSnapshot or a certified tax/book status.
+  let execution;
+  try {
+    execution = await runFinancialIdempotentMutation({
+      tenantId: ctx.tenantId, scope: 'fiscal.document.register_external',
+      key, request: req.body, requestId: ctx.requestId || null,
+    }, async tx => {
+      await lockFiscalPeriodMutation(tx, ctx.tenantId, req.body.period);
+      const closed = await tx.closingPeriod.findFirst({
+        where: { tenantId: ctx.tenantId, period: req.body.period,
+          module: { in: req.body.module === 'fiscal' ? ['fiscal'] : [req.body.module, 'fiscal'] },
+          status: 'closed' },
+      });
+      if (closed) throw new HttpError(409, 'El período está cerrado para nuevos documentos fiscales.', {
+        code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: closed.module,
+      });
+      const existing = await tx.fiscalDocument.findUnique({
+        where: { tenantId_kind_number: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number } },
+      });
+      if (existing) throw new HttpError(409, 'Documento fiscal duplicado.', { code: 'FISCAL_DOCUMENT_DUPLICATE' });
+      const controlledPayload = { ...req.body.payload, _fiscalModule: 'fiscal',
+        _numberingAuthority: 'external/manual', _legalProvenance: 'UNVERIFIED_EXTERNAL' };
+      const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind,
+        number: req.body.number, period: req.body.period, module: 'fiscal', payload: controlledPayload });
+      const record = await tx.fiscalDocument.create({
+        data: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number,
+          period: req.body.period, status: 'external', payload: controlledPayload, hash },
+      });
+      await tx.auditLog.create({ data: {
+        tenantId: ctx.tenantId, userId: ctx.userId || null,
+        action: 'fiscal.document.created.external',
+        entity: 'FiscalDocument', entityId: record.id,
+        after: { id: record.id, kind: record.kind, number: record.number, period: record.period,
+          status: record.status, hash: record.hash, legalProvenance: 'UNVERIFIED_EXTERNAL' },
+        ipAddress: ctx.ip || null, userAgent: ctx.userAgent || null,
+      } });
+      return { data: { ...record, module: req.body.module, legalProvenance: 'UNVERIFIED_EXTERNAL' },
+        responseCode: 201, resourceType: 'FiscalDocument', resourceId: record.id };
+    });
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002')
+      throw new HttpError(409, 'Documento fiscal duplicado.', { code: 'FISCAL_DOCUMENT_DUPLICATE' });
+    throw error;
+  }
+  res.status(execution.responseCode).json({ ok: true, data: execution.data,
+    meta: { replayed: execution.replayed } });
 }));
 
 router.get('/documents', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {

@@ -39,5 +39,12 @@ export const FiscalService={
   closePeriod(data){return BackendApi.post('/fiscal/close-period',data);},
   reopenPeriod(data){return BackendApi.post('/fiscal/reopen-period',data);},
   documents(period=''){return BackendApi.get(`/fiscal/documents${period?`?period=${encodeURIComponent(period)}`:''}`);},
-  createDocument(data){return BackendApi.post('/fiscal/documents',data);}
+  createDocument(data){return BackendApi.post('/fiscal/documents',data);},
+  issueReviewedDocument(data){return BackendApi.post('/fiscal/documents/issue',data);},
+  captureLegalSource(data){return BackendApi.post('/fiscal/legal-sources',data);},
+  createRule(data){return BackendApi.post('/fiscal/rules',data);},
+  bookReadiness(book,period){return BackendApi.get(`/fiscal/books/readiness?book=${encodeURIComponent(book)}&period=${encodeURIComponent(period)}`);},
+  complianceReadiness(period){return BackendApi.get(`/fiscal/compliance/readiness?period=${encodeURIComponent(period)}`);},
+  transitionDeclaration(id,data){return BackendApi.post(`/fiscal/compliance/declarations/${encodeURIComponent(id)}/transition`,data);},
+  closeEvidence(period,module){return BackendApi.get(`/fiscal/close-period/evidence?period=${encodeURIComponent(period)}&module=${encodeURIComponent(module)}`);}
 };

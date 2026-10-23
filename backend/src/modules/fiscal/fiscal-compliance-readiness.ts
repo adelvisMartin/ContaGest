@@ -2,11 +2,14 @@ import { createHash } from 'node:crypto';
 
 // #783: deterministic reconciliation readiness over EXISTING tenant data.
 // Internal TaxDeclaration statuses cannot prove external filing.
-export type ComplianceDeclaration = Readonly<{ id: string; kind: string; status: string; amountExact: string }>;
+export type ComplianceDeclaration = Readonly<{ id: string; kind: string; status: string; amountExact: string;
+  workflowEvidence?: Readonly<{ review: boolean; filing: boolean; payment: boolean; reconciliation: boolean }> }>;
 export type ComplianceClosing = Readonly<{ module: string; status: string }>;
 export type CompliancePeriodInput = Readonly<{
   tenantId: string; period: string;
-  taxPeriod: Readonly<{ id: string; status: string }> | null;
+  taxPeriod: Readonly<{ id: string; status: string; recordedBalancesExact?: Readonly<{
+    ivaDebit: string; ivaCredit: string; igtfPaid: string;
+  }> }> | null;
   declarations: readonly ComplianceDeclaration[];
   closings: readonly ComplianceClosing[];
   fiscalDocumentCount: number;
@@ -29,14 +32,29 @@ export function buildCompliancePeriodReadiness(input: CompliancePeriodInput) {
       (input.taxPeriod !== null && (!input.taxPeriod || !id(input.taxPeriod.id) ||
         !id(input.taxPeriod.status)))) failed();
   if (input.taxPeriod === null && input.declarations.length) failed();
+  const balances = input.taxPeriod?.recordedBalancesExact;
+  if (balances !== undefined && (
+      !balances || typeof balances !== 'object' || Array.isArray(balances) ||
+      Object.keys(balances).length !== 3 ||
+      ![balances.ivaDebit, balances.ivaCredit, balances.igtfPaid].every(value =>
+        typeof value === 'string' && AMOUNT.test(value))
+  )) failed();
   const seen = new Set<string>();
   const declarations = input.declarations.map((row) => {
     if (!row || !id(row.id) || seen.has(row.id) || !KINDS.has(row.kind) ||
         !id(row.status) || !AMOUNT.test(row.amountExact)) failed();
     seen.add(row.id);
+    const flags = row.workflowEvidence;
+    if (flags && (
+      Object.keys(flags).sort().join('|') !== 'filing|payment|reconciliation|review' ||
+      [flags.review, flags.filing, flags.payment, flags.reconciliation].some(v => typeof v !== 'boolean') ||
+      (flags.filing && !flags.review) || (flags.payment && !flags.filing) ||
+      (flags.reconciliation && !flags.payment)
+    )) failed();
     return Object.freeze({
       id: row.id, kind: row.kind, internalStatus: row.status, amountExact: row.amountExact,
-      externalFiling: 'NOT_VERIFIED' as const,
+      manualWorkflowEvidence: flags ? Object.freeze({ ...flags }) : null,
+      externalFiling: flags?.filing ? 'OPERATOR_RECORDED_NOT_AUTHORITY_VERIFIED' as const : 'NOT_VERIFIED' as const,
       bankReconciliation: 'NOT_VERIFIED' as const,
     });
   }).sort((a, b) => byteOrder(a.id, b.id));
@@ -55,7 +73,8 @@ export function buildCompliancePeriodReadiness(input: CompliancePeriodInput) {
   ];
   const evidence = {
     tenantId: input.tenantId, period: input.period,
-    taxPeriod: input.taxPeriod ? { id: input.taxPeriod.id, internalStatus: input.taxPeriod.status } : null,
+    taxPeriod: input.taxPeriod ? { id: input.taxPeriod.id, internalStatus: input.taxPeriod.status,
+      recordedBalancesExact: balances ? Object.freeze({ ...balances }) : null } : null,
     fiscalDocumentCount: input.fiscalDocumentCount, declarations, closings,
   };
   const evidenceSha256 = createHash('sha256').update(JSON.stringify(evidence), 'utf8').digest('hex');
