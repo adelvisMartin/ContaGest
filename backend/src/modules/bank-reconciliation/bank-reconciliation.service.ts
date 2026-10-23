@@ -7,6 +7,7 @@ import { canonicalRequestHash, normalizeIdempotencyKey } from '../../shared/serv
 import { createLedgerEntry, postLedgerEntry, reverseLedgerEntry } from '../accounting/accounting.service.js';
 import { claimApproval, finishApprovalClaim, releaseApprovalClaim } from '../approvals/approvals.service.js';
 import { parseBankStatement, statementLineHash, statementSourceHash } from './statement-parser.js';
+import { assertBankLineReplayIdentity, statementImportLineHash } from './statement-line-identity.js';
 import { evaluateBankClosingReadiness } from './bank-closing-readiness.mjs';
 import { projectBankReconciliationExceptions } from './bank-exception-window.js';
 
@@ -168,13 +169,41 @@ export async function importBankStatement(input:{tenantId:string;userId?:string;
       return {duplicate:true,importId:existing[0].id,inserted:0,deduplicated:parsed.lines.length,parserVersion:parsed.parserVersion};
     }
     let inserted=0;
-    for(const line of parsed.lines){
-      const id=randomUUID();const lineHash=statementLineHash(line);
+    for(const [rowIndex,line] of parsed.lines.entries()){
+      const id=randomUUID();
+      const lineHash=statementImportLineHash({
+        canonicalLineHash:statementLineHash(line),
+        sourceHash,
+        rowIndex,
+        bankLineId:line.bankLineId
+      });
       const normalized={bankLineId:line.bankLineId,bookedAt:line.bookedAt.toISOString(),valueDate:line.valueDate?.toISOString()||null,amount:line.amount,currency:line.currency,reference:line.reference,memo:line.memo,counterparty:line.counterparty,parserVersion:parsed.parserVersion};
       const changed=await tx.$executeRaw(Prisma.sql`
         INSERT INTO "BankStatementLine" ("id","tenantId","importId","accountId","bankLineId","lineHash","bookedAt","valueDate","amount","currency","reference","memo","counterparty","raw","normalized","status")
         VALUES (${id},${input.tenantId},${importId},${input.accountId},${line.bankLineId},${lineHash},${line.bookedAt},${line.valueDate},${money(line.amount)},${line.currency},${line.reference},${line.memo},${line.counterparty},${safeJson(line.raw)}::jsonb,${safeJson(normalized)}::jsonb,'unmatched') ON CONFLICT DO NOTHING
       `);
+      if (Number(changed) === 0) {
+        // A bank-assigned ID reused with changed money/date/reference is a
+        // conflict, not a duplicate that may silently disappear from the import.
+        const identityFilter = line.bankLineId
+          ? Prisma.sql`AND ("lineHash"=${lineHash} OR "bankLineId"=${line.bankLineId})`
+          : Prisma.sql`AND "lineHash"=${lineHash}`;
+        const existing = await tx.$queryRaw<Array<{lineHash:string;bankLineId:string|null}>>(Prisma.sql`
+          SELECT "lineHash","bankLineId" FROM "BankStatementLine"
+          WHERE "tenantId"=${input.tenantId} AND "accountId"=${input.accountId} ${identityFilter}
+          LIMIT 1
+        `);
+        try {
+          assertBankLineReplayIdentity(existing[0] ?? null, {
+            lineHash,
+            bankLineId:line.bankLineId
+          });
+        } catch {
+          throw new HttpError(409,'Una línea bancaria con identidad existente cambió sus datos.',{
+            code:'BANK_STATEMENT_IDENTITY_CONFLICT'
+          });
+        }
+      }
       inserted+=Number(changed);
     }
     await auditTx(tx,{tenantId:input.tenantId,userId:input.userId,action:'bank-reconciliation.statement.imported',entity:'BankStatementImport',entityId:importId,after:{sourceHash,format:parsed.format,parserVersion:parsed.parserVersion,inserted,deduplicated:parsed.lines.length-inserted}});

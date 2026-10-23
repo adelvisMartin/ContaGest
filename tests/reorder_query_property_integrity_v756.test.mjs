@@ -28,3 +28,12 @@ test('#756 plain empty query keeps canonical pagination defaults',()=>{
   const r=parseReorderScanQuery({});
   assert.ok(r.take>0);assert.equal(r.skip,0);assert.equal(r.onlyNeedsReorder,false);
 });
+
+test('#756 rejects nonenumerable and symbol request keys rather than silently ignoring their authority',()=>{
+  const hidden={take:'10'};
+  Object.defineProperty(hidden,'tenantId',{value:'foreign-tenant',enumerable:false});
+  assert.throws(()=>parseReorderScanQuery(hidden),/REORDER_SCAN_QUERY_INVALID/);
+  const withSymbol={take:'10'};
+  Object.defineProperty(withSymbol,Symbol('skip'),{value:'900',enumerable:false});
+  assert.throws(()=>parseReorderScanQuery(withSymbol),/REORDER_SCAN_QUERY_INVALID/);
+});

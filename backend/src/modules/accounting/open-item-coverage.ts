@@ -12,7 +12,8 @@ export type OpenItemEvidenceInput = Readonly<{
 }>;
 const DATE = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/;
 const ISO = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
-const MONEY = /^-?\d{1,18}(?:\.\d{1,2})?$/;
+// Canonical SalesInvoice/PurchaseInvoice.total: nonnegative Decimal(18,2), max 16 integer digits.
+const MONEY = /^(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
 const CURRENCY = /^[A-Z]{3}$/;
 const STATES = new Set(['draft','issued','paid','overdue','cancelled']);
 const fail=():never=>{throw new Error('SUBLEDGER_COVERAGE_EVIDENCE_INVALID');};
@@ -36,7 +37,8 @@ export function projectOpenItemCoverage(input:OpenItemEvidenceInput) {
        !ISO.test(row.issueDate) || !Number.isFinite(Date.parse(row.issueDate)) ||
        new Date(row.issueDate).toISOString()!==row.issueDate ||
        row.issueDate.slice(0,10)>input.asOf ||
-       !CURRENCY.test(row.currency) || !MONEY.test(row.totalExact))fail();
+       typeof row.currency!=='string' || !CURRENCY.test(row.currency) ||
+       typeof row.totalExact!=='string' || !MONEY.test(row.totalExact))fail();
     seen.add(row.id);
     return Object.freeze({
       sourceId:row.id,invoiceNumber:row.number,sourceStatus:row.status,

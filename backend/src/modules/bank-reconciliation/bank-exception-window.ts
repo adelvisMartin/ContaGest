@@ -7,6 +7,7 @@ const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const MONEY=/^-?(?:0|[1-9]\d{0,15})(?:\.\d{1,2})?$/;
 const STATUS=new Set(['unmatched','suggested','partial','reconciled','conflict']);
 const fail=():never=>{throw new Error('BANK_EXCEPTION_EVIDENCE_INVALID');};
+const validId=(value:unknown):value is string=>typeof value==='string'&&ID.test(value);
 function cents(s:string):bigint{
   if(typeof s!=='string'||!MONEY.test(s))fail();
   const neg=s.startsWith('-');const [major,dec='']=(neg?s.slice(1):s).split('.');
@@ -17,7 +18,7 @@ function fixed(value:bigint){const neg=value<0n,positive=neg?-value:value;return
 export function projectBankReconciliationExceptions(input:{
   tenantId:string;accountId:string;lines:readonly BankExceptionLine[];
 }) {
-  if(!input||!ID.test(input.tenantId)||!ID.test(input.accountId)||
+  if(!input||!validId(input.tenantId)||!validId(input.accountId)||
      !Array.isArray(input.lines)||input.lines.length>100)fail();
   const seen=new Set<string>();const rows=[] as Array<Readonly<{
     lineId:string;status:string;bookedAt:string;absoluteAmountExact:string;
@@ -25,7 +26,7 @@ export function projectBankReconciliationExceptions(input:{
   }>>;
   let pending=0,overallocated=0;
   for(const row of input.lines){
-    if(!row||!ID.test(row.id)||seen.has(row.id)||row.tenantId!==input.tenantId||
+    if(!row||!validId(row.id)||seen.has(row.id)||row.tenantId!==input.tenantId||
       row.accountId!==input.accountId||!STATUS.has(row.status)||
       !(row.bookedAt instanceof Date)||!Number.isFinite(row.bookedAt.getTime()))fail();
     seen.add(row.id);

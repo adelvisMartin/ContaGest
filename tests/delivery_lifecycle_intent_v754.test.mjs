@@ -34,3 +34,15 @@ test('#754 no actions directly authorize stock, ledger or invoice',()=>{
  assert.equal(a.persisted,false);assert.equal(a.stockConsumed,false);assert.equal(a.ledgerAuthorized,false);assert.equal(a.invoiceAuthorized,false);
  assert.ok(Object.isFrozen(a));
 });
+
+// Runtime callers can supply inherited methods even where TypeScript unions compile.
+test('#754 denies inherited actions and non-string runtime identities',()=>{
+  for(const action of ['constructor','toString','__proto__'])fail(()=>go({action}));
+  const forged=value=>({toString:()=>value});
+  const tenant=forged('A');
+  fail(()=>go({tenantId:tenant,actorTenantId:tenant}));
+  fail(()=>go({deliveryId:forged('delivery-1')}));
+  fail(()=>go({orderId:forged('order-1')}));
+  fail(()=>go({currentStatus:forged('draft')}));
+  fail(()=>go({action:forged('allocate')}));
+});

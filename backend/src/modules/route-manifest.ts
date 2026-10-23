@@ -50,6 +50,7 @@ import priceBookRoutes from './pricing/price-books.routes.js';
 import serviceCatalogRoutes from './service-catalog/service-catalog.routes.js';
 import customerEntitlementRoutes from './entitlements/customer-entitlement.routes.js';
 import crmClientPreflightRoutes from './crm/crm.routes.js';
+import reorderPolicyRoutes from './reports/reorder-policy.routes.js';
 
 const clientRouter = createCrudRouter({ model:'client', entity:'client', permission:'clients.manage', schema:clientSchema });
 clientRouter.use(crmClientPreflightRoutes);
@@ -82,6 +83,7 @@ export const MODULE_ROUTE_MANIFEST: readonly RouteManifestEntry[] = Object.freez
   { id: 'approvals', domain: 'platform', path: '/approvals', router: approvalsRoutes },
   { id: 'accounting', domain: 'financial', path: '/accounting', router: accountingRoutes },
   { id: 'reports', domain: 'financial', path: '/reports', router: reportsRoutes },
+  { id: 'reorder-policies', domain: 'operations', path: '/reorder-policies', router: reorderPolicyRoutes },
   { id: 'modules', domain: 'platform', path: '/modules', router: moduleRoutes },
   { id: 'currency', domain: 'financial', path: '/currency', router: currencyRoutes },
   { id: 'exports', domain: 'platform', path: '/exports', router: exportRoutes },

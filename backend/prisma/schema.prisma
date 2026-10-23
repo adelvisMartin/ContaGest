@@ -103,6 +103,7 @@ model Tenant {
   importBatches ImportBatch[]
   regulatoryFeeds RegulatoryFeed[]
   idempotencyRecords IdempotencyRecord[]
+  reorderPolicies InventoryReorderPolicy[]
   documentSequences DocumentSequence[]
   asyncJobIntents AsyncJobIntent[]
   businessLocations BusinessLocation[]
@@ -289,6 +290,7 @@ model Product {
   productCodes ProductCode[]
   saleLines   SalesInvoiceLine[]
   purchaseLines PurchaseInvoiceLine[]
+  reorderPolicy InventoryReorderPolicy?
   serviceDefinitions ServiceDefinition[]
   benefitDefinitions BenefitDefinition[]
 
@@ -1294,4 +1296,26 @@ model NotificationChannelPreference {
 
   @@unique([tenantId, userId, channel])
   @@index([tenantId, channel, consent])
+}
+
+// #756: derived purchasing policy; stock authority stays in Product and InventoryMovement.
+model InventoryReorderPolicy {
+  tenantId       String
+  productId      String
+  enabled        Boolean  @default(true)
+  reorderPoint   Decimal  @db.Decimal(18,3)
+  targetStock    Decimal  @db.Decimal(18,3)
+  safetyStock    Decimal  @default(0) @db.Decimal(18,3)
+  orderMultiple  Decimal  @default(1) @db.Decimal(18,3)
+  leadTimeDays   Int      @default(0)
+  revision       Int      @default(1)
+  updatedBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  product        Product @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict, map: "InventoryReorderPolicy_product_tenant_fkey")
+
+  @@id([tenantId, productId])
+  @@index([tenantId, enabled], map: "InventoryReorderPolicy_tenant_enabled_idx")
 }

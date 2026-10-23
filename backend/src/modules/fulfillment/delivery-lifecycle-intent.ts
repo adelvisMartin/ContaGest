@@ -10,19 +10,21 @@ const TRANSITIONS={
   cancelled:{},
 } as const;
 const ID=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
+const validId=(value:unknown):value is string=>typeof value==='string'&&ID.test(value);
 const fail=():never=>{throw new Error('DELIVERY_LIFECYCLE_TRANSITION_INVALID');};
 export function prepareDeliveryTransition(input:{
   tenantId:string;actorTenantId:string;deliveryId:string;orderId:string;
   currentStatus:DeliveryStatus;action:DeliveryAction;expectedRevision:number;
 }) {
-  if(!input||!ID.test(input.tenantId)||input.actorTenantId!==input.tenantId||
-    !ID.test(input.deliveryId)||!ID.test(input.orderId)||
+  if(!input||!validId(input.tenantId)||input.actorTenantId!==input.tenantId||
+    !validId(input.deliveryId)||!validId(input.orderId)||
     !Number.isSafeInteger(input.expectedRevision)||input.expectedRevision<1||
     input.expectedRevision>=Number.MAX_SAFE_INTEGER||
-    !Object.hasOwn(TRANSITIONS,input.currentStatus))fail();
+    typeof input.currentStatus!=='string'||!Object.hasOwn(TRANSITIONS,input.currentStatus)||
+    typeof input.action!=='string')fail();
   const actions=TRANSITIONS[input.currentStatus] as Partial<Record<DeliveryAction,DeliveryStatus>>;
-  const target=actions[input.action];
-  if(!target)fail();
+  const target=Object.hasOwn(actions,input.action)?actions[input.action]:undefined;
+  if(typeof target!=='string')fail();
   return Object.freeze({
     tenantId:input.tenantId,deliveryId:input.deliveryId,orderId:input.orderId,
     from:input.currentStatus,to:target,action:input.action,

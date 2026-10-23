@@ -20,7 +20,9 @@ export function prepareFefoAllocation(input:{tenantId:string;productId:string;lo
   if(typeof lot.active!=='boolean'||typeof lot.receivedAtUtc!=='string'||!TIME.test(lot.receivedAtUtc)||!Number.isFinite(Date.parse(lot.receivedAtUtc))||new Date(lot.receivedAtUtc).toISOString()!==lot.receivedAtUtc)throw new TypeError('FEFO_LOT_METADATA_INVALID');
   if(lot.expiresOn!==null)isoDate(lot.expiresOn);
   const available=units(lot.availableExact);
-  if(lot.active&&available>0n&&(lot.expiresOn===null||lot.expiresOn>=input.asOfDate))eligible.push({lot,available});
+  // A proposal as-of a UTC day cannot select inventory received on a later day.
+  if(lot.active&&available>0n&&lot.receivedAtUtc.slice(0,10)<=input.asOfDate&&
+     (lot.expiresOn===null||lot.expiresOn>=input.asOfDate))eligible.push({lot,available});
  }
  eligible.sort((a,b)=>(a.lot.expiresOn??'9999-12-31').localeCompare(b.lot.expiresOn??'9999-12-31')||a.lot.receivedAtUtc.localeCompare(b.lot.receivedAtUtc)||a.lot.id.localeCompare(b.lot.id));
  let remaining=quantity;const selections=[] as {lotId:string;quantityExact:string}[];
