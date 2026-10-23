@@ -93,6 +93,27 @@ export function auditDependencyGovernance({ rootPackage, workspacePackages, lock
       add('P2', 'OVERLAP_REVIEW_STALE', review.packages.join(','), 'Overlap review is stale or has no justification');
     }
   }
+  // Lock v3 includes all resolved packages, including transitive and nested installs.
+  // Exclude direct resolutions (whose ownership is audited above) to avoid double-counting.
+  const directPaths = new Set(direct.map((item) => item.resolutionPath).filter(Boolean));
+  const transitive = [];
+  for (const [location, metadata] of Object.entries(lock.packages).sort(([a], [b]) => sortBy(a, b))) {
+    if (!location.includes('node_modules/') || directPaths.has(location) || !metadata || metadata.link || typeof metadata.version !== 'string') continue;
+    const license = clean(metadata.license) || 'NOASSERTION';
+    const devOnly = metadata.dev === true;
+    if (license === 'NOASSERTION') {
+      add('P2', 'TRANSITIVE_LICENSE_NOT_IN_LOCK', location, 'Review package/source license; lock metadata is not legal evidence');
+    } else if (RESTRICTED_LICENSE.test(license)) {
+      add(devOnly ? 'P2' : 'P1', 'TRANSITIVE_LICENSE_REVIEW_REQUIRED', location, `Potential restrictive license ${license}; legal applicability and production reachability are not established`);
+    }
+    transitive.push({
+      resolutionPath: location,
+      resolvedVersion: metadata.version,
+      license,
+      classification: devOnly ? 'dev-only-lock-entry' : 'runtime-or-mixed-lock-entry',
+      optional: metadata.optional === true,
+    });
+  }
   const high = findings.filter((item) => item.severity === 'P1').length;
   findings.sort((a, b) => sortBy(`${a.code}|${a.subject}`, `${b.code}|${b.subject}`));
   direct.sort((a, b) => sortBy(`${a.workspace}|${a.name}|${a.classification}`, `${b.workspace}|${b.name}|${b.classification}`));
@@ -101,6 +122,8 @@ export function auditDependencyGovernance({ rootPackage, workspacePackages, lock
     status: high ? 'FAIL' : findings.length ? 'REVIEW_REQUIRED' : 'PASS',
     directCount: direct.length,
     direct,
+    transitiveCount: transitive.length,
+    transitive,
     overlapReviews,
     findings,
     externalEvidence: { advisoryAudit: 'NOT_EXECUTED', cleanInstall: 'NOT_EXECUTED', build: 'NOT_EXECUTED', runtime: 'NOT_EXECUTED', legalCompliance: 'NOT_VERIFIED' },
@@ -127,7 +150,7 @@ function cli() {
   const dir = path.join(base, 'artifacts/dependency-governance-v656', sha);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'manifest.json'), `${JSON.stringify(report, null, 2)}\n`);
-  process.stdout.write(`${JSON.stringify({ candidateSha: sha, status: result.status, directCount: result.directCount, findings: result.findings.length, artifact: path.relative(base, path.join(dir, 'manifest.json')) })}\n`);
+  process.stdout.write(`${JSON.stringify({ candidateSha: sha, status: result.status, directCount: result.directCount, transitiveCount: result.transitiveCount, findings: result.findings.length, artifact: path.relative(base, path.join(dir, 'manifest.json')) })}\n`);
   if (args.includes('--check') && result.status === 'FAIL') process.exitCode = 1;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
