@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
+  FormHelperText,
   IconButton,
   InputLabel,
   MenuItem,
@@ -87,17 +88,35 @@ export function CgTextField({
   return <TextField label={label} error={error} helperText={errorText || helperText} slotProps={normalizedSlotProps} {...props} />;
 }
 
-export function CgSelect({ label, value, options = [], onChange, id, ...props }) {
+export function CgSelect({
+  label, value, options = [], onChange, id, helperText = '',
+  error = false, required = false, disabled = false, ...props
+}) {
   const generatedId = React.useId().replace(/:/g, '');
   if (!String(label || '').trim()) throw new Error('CgSelect requires a persistent label.');
   const selectId = id || `cg-select-${generatedId}`;
   const labelId = `${selectId}-label`;
+  const helperId = `${selectId}-helper`;
+  const noOptions = options.length === 0;
   return (
-    <FormControl fullWidth size="small">
+    <FormControl fullWidth size="small" error={Boolean(error)} required={required} disabled={disabled || noOptions}>
       <InputLabel id={labelId}>{label}</InputLabel>
-      <Select id={selectId} labelId={labelId} label={label} value={value} onChange={onChange} {...props}>
-        {options.map((option) => <MenuItem key={String(option.value)} value={option.value}>{option.label}</MenuItem>)}
+      <Select
+        id={selectId}
+        labelId={labelId}
+        label={label}
+        value={value ?? ''}
+        onChange={onChange}
+        aria-describedby={helperText ? helperId : undefined}
+        {...props}
+      >
+        {noOptions
+          ? <MenuItem disabled value="">Sin opciones disponibles</MenuItem>
+          : options.map((option) => (
+              <MenuItem key={String(option.value)} value={option.value}>{option.label}</MenuItem>
+            ))}
       </Select>
+      {helperText ? <FormHelperText id={helperId}>{helperText}</FormHelperText> : null}
     </FormControl>
   );
 }
@@ -136,7 +155,10 @@ export function CgState({ severity = 'info', title, children }) {
   return <Alert severity={severity}><strong>{title}</strong>{children ? <> — {children}</> : null}</Alert>;
 }
 
-export function CgDialog({ open, title, children, onClose, confirmLabel = 'Confirmar', onConfirm, destructive = false }) {
+export function CgDialog({
+  open, title, children, onClose, confirmLabel = 'Confirmar', onConfirm,
+  destructive = false, confirmDisabled = false
+}) {
   const generatedId = React.useId().replace(/:/g, '');
   if (!String(title || '').trim()) throw new Error('CgDialog requires an accessible title.');
   const titleId = `cg-dialog-title-${generatedId}`;
@@ -145,8 +167,8 @@ export function CgDialog({ open, title, children, onClose, confirmLabel = 'Confi
       <DialogTitle id={titleId}>{title}</DialogTitle>
       <DialogContent>{children}</DialogContent>
       <DialogActions>
-        <CgButton variant="text" onClick={onClose}>Cancelar</CgButton>
-        <CgButton color={destructive ? 'error' : 'primary'} onClick={onConfirm}>{confirmLabel}</CgButton>
+        <CgButton type="button" variant="text" onClick={onClose}>Cancelar</CgButton>
+        <CgButton type="button" disabled={confirmDisabled} color={destructive ? 'error' : 'primary'} onClick={onConfirm}>{confirmLabel}</CgButton>
       </DialogActions>
     </Dialog>
   );
@@ -157,11 +179,11 @@ export function CgMoney({ value, currency = 'USD', locale = 'es-VE' }) {
   return <Box component="span" sx={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{output}</Box>;
 }
 
-export function CgDataTable({ columns = [], rows = [], getRowId = (row, index) => row.id ?? index, empty = 'Sin datos' }) {
+export function CgDataTable({ columns = [], rows = [], getRowId = (row, index) => row.id ?? index, empty = 'Sin datos', label = 'Tabla de datos' }) {
   if (!rows.length) return <CgEmptyState title={empty} description="No hay registros representativos para esta vista." />;
   return (
-    <TableContainer component={Paper} variant="outlined">
-      <Table size="small">
+    <TableContainer component={Paper} variant="outlined" role="region" aria-label={label} tabIndex={0}>
+      <Table size="small" aria-label={label}>
         <TableHead><TableRow>{columns.map((column) => <TableCell key={column.key} scope="col" align={column.align || 'left'}>{column.label}</TableCell>)}</TableRow></TableHead>
         <TableBody>
           {rows.map((row, index) => (

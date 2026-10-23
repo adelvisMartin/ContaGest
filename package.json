@@ -52,7 +52,6 @@
     "test:visual": "node --test tests/visual_system_v12_contract.test.mjs tests/visual_module_catalog_contract.test.mjs tests/visual_module_adapter_contract.test.mjs tests/visual_consolidation_v13_contract.test.mjs tests/erp_ux_v14_contract.test.mjs tests/design_system_single_owner_v6975.test.mjs",
     "test:visual:v15": "node --test tests/visual_system_v12_contract.test.mjs tests/visual_module_adapter_contract.test.mjs tests/erp_ux_v14_contract.test.mjs",
     "test:visual:v14": "npm run test:visual:v15",
-    "test:ve-tax": "npm --workspace backend exec -- tsx --test ../tests/ve_fiscal_book_ledger_coverage_782.test.mjs ../tests/ve_fiscal_compliance_workflow_783.test.mjs ../tests/ve_fiscal_effective_period_778_782.test.mjs ../tests/ve_fiscal_frontend_contract_778_782_783.test.mjs ../tests/ve_fiscal_period_lifecycle_source_contract_778_782.test.mjs ../tests/ve_fiscal_readiness_recorded_evidence_782_783.test.mjs ../tests/ve_fiscal_recorded_money_v782.test.mjs ../tests/ve_fiscal_rule_authority_751_778_780_781.test.mjs ../tests/ve_payroll_receipt_arithmetic_781.test.mjs ../tests/ve_payroll_atomicity_source_contract_781.test.mjs ../tests/ve_tax_period_scope_778_780_781.test.mjs",
     "test:financial:decimal": "npm --workspace backend exec -- tsx --test ../qa/financial-decimal-v90.test.ts",
     "test:ledger:unit": "npm --workspace backend exec -- tsx --test ../qa/ledger-posting-v91.test.ts",
     "test:backend:ledger:real": "npm --workspace backend exec -- tsx --test ../qa/ledger-posting-real-v91.test.ts ../qa/ledger-posting-authz-v91.test.ts",
@@ -134,7 +133,12 @@
     "hipico:report-links": "node tools/hipico-cli/report-shares.mjs",
     "test:hipico:share:offline": "node --test tests/hipico_report_share_schema_contract.test.mjs tests/hipico_report_share_cli_contract.test.mjs tests/hipico_report_share_rls_guard_v1000.test.mjs",
     "test:hipico:share:postgres": "node backend/scripts/hipico-report-share-rls-v1000.mjs",
-    "test:hipico:ledger:reconcile": "node --test tests/hipico_money_ledger_orphan_reconciliation_v1018.test.mjs"
+    "test:hipico:ledger:reconcile": "node --test tests/hipico_money_ledger_orphan_reconciliation_v1018.test.mjs",
+    "test:backend:accounting:period:real": "npm --workspace backend exec -- tsx --test ../qa/accounting-period-concurrency-v637.test.ts",
+    "test:backend:service-catalog:real": "npm --workspace backend exec -- tsx --test ../qa/service-catalog-real-v849.test.ts",
+    "test:backend:entitlement:real": "npm --workspace backend exec -- tsx --test ../qa/entitlement-booking-real-v852.test.ts",
+    "test:backend:notification-preferences:real": "npm --workspace backend exec -- tsx --test ../qa/notification-preferences-real-v854.test.ts",
+    "test:ve-tax": "npm --workspace backend exec -- tsx --test ../tests/ve_fiscal_book_ledger_coverage_782.test.mjs ../tests/ve_fiscal_compliance_workflow_783.test.mjs ../tests/ve_fiscal_effective_period_778_782.test.mjs ../tests/ve_fiscal_frontend_contract_778_782_783.test.mjs ../tests/ve_fiscal_period_lifecycle_source_contract_778_782.test.mjs ../tests/ve_fiscal_readiness_recorded_evidence_782_783.test.mjs ../tests/ve_fiscal_recorded_money_v782.test.mjs ../tests/ve_fiscal_rule_authority_751_778_780_781.test.mjs ../tests/ve_payroll_receipt_arithmetic_781.test.mjs ../tests/ve_payroll_atomicity_source_contract_781.test.mjs ../tests/ve_tax_period_scope_778_780_781.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1"

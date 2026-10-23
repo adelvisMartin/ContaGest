@@ -1,8 +1,10 @@
-import crypto, { randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
-import { addRuleAuthority, assertFiscalRuleAuthority, createFiscalRuleAuthority, type ReviewedFiscalLegalSource } from './fiscal-rule-authority-policy.js';
+import { assertFiscalRuleSnapshotIntegrity, assertFiscalRuleVersionIntegrity, fiscalEvidenceHash } from './fiscal-rule-snapshot-integrity.js';
+import { assertRuleReview, assertRuleActivation, assertSupersession, assertFiscalRatioDefinition, type LegalEvidence, type VersionEvidence } from './fiscal-rule-governance-policy.js';
+export { fiscalEvidenceHash } from './fiscal-rule-snapshot-integrity.js';
 
 export type FiscalDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
 
@@ -35,56 +37,30 @@ export type FiscalRuleVersionRow = {
   hash: string;
   createdBy: string | null;
   createdAt: Date;
+  legalSourceId: string | null;
+  legalSourceSha256: string | null;
+  status: 'DRAFT' | 'REVIEWED' | 'ACTIVE' | 'SUPERSEDED';
+  reviewedBy: string | null;
+  activatedBy: string | null;
+  supersedesId: string | null;
 };
 
 type FiscalSequenceRow = { prefix: string; width: number; value: bigint };
 type CountRow = { count: bigint };
-
-function canonicalize(value: unknown): unknown {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return value;
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    return Object.fromEntries(Object.keys(record).sort().map((key) => [key, canonicalize(record[key])]));
-  }
-  return String(value);
-}
-
-export function fiscalEvidenceHash(value: unknown) {
-  return crypto.createHash('sha256').update(JSON.stringify(canonicalize(value)), 'utf8').digest('hex');
-}
 
 export async function createFiscalRuleVersion(input: {
   tenantId: string;
   ruleKey: string;
   effectiveFrom: Date;
   effectiveTo?: Date | null;
-  legalSourceId: string;
+  source: string;
   documentation: string;
   definition: Record<string, unknown>;
   createdBy?: string | null;
+  legalSourceId?: string | null;
+  supersedesId?: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
-    // Provenance must come from a tenant-scoped REVIEWED primary source, not
-    // a caller-provided string, boolean or rate. A second actor reviewed it.
-    const sources = await tx.$queryRaw<ReviewedFiscalLegalSource[]>(Prisma.sql`
-      SELECT "id", "tenantId", "reference", "contentSha256", "status",
-             "reviewedBy", "reviewedAt", "createdBy"
-      FROM public."FiscalLegalSource"
-      WHERE "id" = ${input.legalSourceId}::uuid
-        AND "tenantId" = ${input.tenantId} AND "status" = 'REVIEWED'
-      FOR SHARE
-    `);
-    if (sources.length !== 1) throw new HttpError(422, 'Falta fuente legal revisada para la regla fiscal.', { code: 'FISCAL_RULE_SOURCE_NOT_AUTHORIZED' });
-    let definition: Record<string, unknown>;
-    let source: string;
-    try {
-      const authority = createFiscalRuleAuthority(sources[0], input.tenantId);
-      definition = addRuleAuthority(input.definition, authority);
-      source = authority.legalSourceReference;
-    } catch {
-      throw new HttpError(422, 'La procedencia legal de la regla no es verificable.', { code: 'FISCAL_RULE_SOURCE_NOT_AUTHORIZED' });
-    }
     // A transaction-scoped advisory lock serializes version allocation and the
     // overlap check for one tenant/ruleKey without requiring privileged DB extensions.
     await tx.$queryRaw<Array<{ locked: unknown }>>(Prisma.sql`
@@ -96,6 +72,9 @@ export async function createFiscalRuleVersion(input: {
       FROM public."FiscalRuleVersion"
       WHERE "tenantId" = ${input.tenantId}
         AND "ruleKey" = ${input.ruleKey}
+        -- A staged replacement may overlap exactly its own predecessor.
+        -- Only ACTIVE candidates participate in productive rule resolution.
+        AND ("id" <> ${input.supersedesId || null}::uuid OR ${input.supersedesId || null}::uuid IS NULL)
         AND tstzrange("effectiveFrom", COALESCE("effectiveTo", 'infinity'::timestamptz), '[)')
             && tstzrange(${input.effectiveFrom}, COALESCE(${input.effectiveTo || null}::timestamptz, 'infinity'::timestamptz), '[)')
       LIMIT 1
@@ -110,6 +89,35 @@ export async function createFiscalRuleVersion(input: {
       WHERE "tenantId" = ${input.tenantId} AND "ruleKey" = ${input.ruleKey}
     `);
     const version = Number(versions[0]?.version || 0) + 1;
+    // Legacy drafts are permitted for audit, but cannot be activated without
+    // an independently reviewed legal source and its captured content digest.
+    let legalSourceSha256: string | null = null;
+    if (input.legalSourceId) {
+      const sources = await tx.$queryRaw<LegalEvidence[]>(Prisma.sql`
+        SELECT "id", "tenantId", "status", "reference",
+               "contentSha256", "reviewedBy", "reviewedAt"
+        FROM public."FiscalLegalSource"
+        WHERE "tenantId"=${input.tenantId} AND "id"=${input.legalSourceId}::uuid FOR SHARE
+      `);
+      if (sources[0]?.status !== 'REVIEWED' || sources[0].reviewedBy === null) {
+        throw new HttpError(422, 'La fuente legal debe existir y estar revisada antes de vincularla.', { code: 'FISCAL_RULE_SOURCE_NOT_REVIEWED' });
+      }
+      legalSourceSha256 = sources[0].contentSha256;
+      // Source reference is derived from the reviewed capture, not trusted
+      // independently as a substitute for legal provenance.
+      if (sources[0].reference !== input.source) {
+        throw new HttpError(422, 'La referencia debe coincidir con la fuente legal capturada.', { code: 'FISCAL_RULE_SOURCE_REFERENCE_MISMATCH' });
+      }
+    }
+    if (input.supersedesId) {
+      const parents = await tx.$queryRaw<FiscalRuleVersionRow[]>(Prisma.sql`
+        SELECT * FROM public."FiscalRuleVersion"
+        WHERE "tenantId"=${input.tenantId} AND "id"=${input.supersedesId}::uuid
+      `);
+      if (!parents[0] || parents[0].ruleKey !== input.ruleKey) {
+        throw new HttpError(422, 'Supersession debe mantener la misma familia y tenant.', { code: 'FISCAL_RULE_SUPERSESSION_INVALID' });
+      }
+    }
     const id = randomUUID();
     const hash = fiscalEvidenceHash({
       tenantId: input.tenantId,
@@ -117,21 +125,99 @@ export async function createFiscalRuleVersion(input: {
       version,
       effectiveFrom: input.effectiveFrom.toISOString(),
       effectiveTo: input.effectiveTo?.toISOString() || null,
-      source,
+      source: input.source,
       documentation: input.documentation,
-      definition
+      definition: input.definition
     });
     const rows = await tx.$queryRaw<FiscalRuleVersionRow[]>(Prisma.sql`
       INSERT INTO public."FiscalRuleVersion" (
         "id", "tenantId", "ruleKey", "version", "effectiveFrom", "effectiveTo",
-        "source", "documentation", "definition", "hash", "createdBy"
+        "source", "documentation", "definition", "hash", "createdBy",
+        "legalSourceId", "legalSourceSha256", "supersedesId"
       ) VALUES (
         ${id}::uuid, ${input.tenantId}, ${input.ruleKey}, ${version}, ${input.effectiveFrom}, ${input.effectiveTo || null},
-        ${source}, ${input.documentation}, ${JSON.stringify(definition)}::jsonb, ${hash}, ${input.createdBy || null}
+        ${input.source}, ${input.documentation}, ${JSON.stringify(input.definition)}::jsonb, ${hash}, ${input.createdBy || null},
+        ${input.legalSourceId || null}::uuid, ${legalSourceSha256}, ${input.supersedesId || null}::uuid
       )
       RETURNING *
     `);
+    await tx.auditLog.create({data: {
+      tenantId: input.tenantId, userId: input.createdBy || null,
+      entity: 'FiscalRuleVersion', entityId: id, action: 'fiscal.rule.draft_captured',
+      after: { ruleKey: input.ruleKey, version, hash, legalSourceId: input.legalSourceId || null,
+        legalSourceSha256, status: 'DRAFT' }
+    }});
     return rows[0];
+  });
+}
+
+
+/** All review, activation and supersession updates commit with the audit trail. */
+export async function transitionFiscalRule(input: {
+  tenantId: string; ruleId: string; actorId: string;
+  action: 'REVIEW' | 'ACTIVATE'; reason: string;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<FiscalRuleVersionRow[]>(Prisma.sql`
+      SELECT * FROM public."FiscalRuleVersion"
+      WHERE "tenantId"=${input.tenantId} AND "id"=${input.ruleId}::uuid FOR UPDATE
+    `);
+    const rule = rows[0];
+    if (!rule) throw new HttpError(404, 'Versión fiscal no encontrada.', { code: 'FISCAL_RULE_NOT_FOUND' });
+    const sources = await tx.$queryRaw<LegalEvidence[]>(Prisma.sql`
+      SELECT "id", "tenantId", "status", "reference", "contentSha256", "reviewedBy", "reviewedAt"
+      FROM public."FiscalLegalSource"
+      WHERE "tenantId"=${input.tenantId} AND "id"=${rule.legalSourceId}::uuid FOR SHARE
+    `);
+    const source = sources[0];
+    try {
+      if (input.action === 'REVIEW') assertRuleReview(rule as VersionEvidence, input.actorId, source);
+      else assertRuleActivation(rule as VersionEvidence, input.actorId, source);
+      assertFiscalRatioDefinition(rule.definition);
+    } catch {
+      throw new HttpError(409, 'La revisión, fórmula o activación fiscal no satisface la autoridad requerida.', { code: 'FISCAL_RULE_GOVERNANCE_DENIED' });
+    }
+
+    if (input.action === 'ACTIVATE') {
+      // Same advisory key as version allocation and the DB trigger.
+      await tx.$queryRaw(Prisma.sql`
+        SELECT pg_advisory_xact_lock(hashtextextended(${input.tenantId + ':' + rule.ruleKey},561)) AS "locked"
+      `);
+      if (rule.supersedesId) {
+        const predecessors = await tx.$queryRaw<FiscalRuleVersionRow[]>(Prisma.sql`
+          SELECT * FROM public."FiscalRuleVersion"
+          WHERE "id"=${rule.supersedesId}::uuid AND "tenantId"=${input.tenantId} FOR UPDATE
+        `);
+        const old = predecessors[0];
+        try { assertSupersession(rule as VersionEvidence, old as VersionEvidence); }
+        catch { throw new HttpError(409, 'Supersession inválida o no acíclica.', { code: 'FISCAL_RULE_SUPERSESSION_INVALID' }); }
+        await tx.$executeRaw(Prisma.sql`
+          UPDATE public."FiscalRuleVersion" SET "status"='SUPERSEDED'
+          WHERE "id"=${old.id}::uuid AND "tenantId"=${input.tenantId} AND "status"='ACTIVE'
+        `);
+      }
+    }
+    const result = input.action === 'REVIEW'
+      ? await tx.$queryRaw<FiscalRuleVersionRow[]>(Prisma.sql`
+          UPDATE public."FiscalRuleVersion"
+          SET "status"='REVIEWED',"reviewedBy"=${input.actorId},"reviewedAt"=now()
+          WHERE "tenantId"=${input.tenantId} AND "id"=${rule.id}::uuid AND "status"='DRAFT'
+          RETURNING *
+        `)
+      : await tx.$queryRaw<FiscalRuleVersionRow[]>(Prisma.sql`
+          UPDATE public."FiscalRuleVersion"
+          SET "status"='ACTIVE',"activatedBy"=${input.actorId},"activatedAt"=now()
+          WHERE "tenantId"=${input.tenantId} AND "id"=${rule.id}::uuid AND "status"='REVIEWED'
+          RETURNING *
+        `);
+    if (!result[0]) throw new HttpError(409, 'Estado fiscal modificado concurrentemente.', { code: 'FISCAL_RULE_REVIEW_RACE' });
+    await tx.auditLog.create({data: {
+      tenantId: input.tenantId, userId: input.actorId, action: input.action === 'REVIEW' ? 'fiscal.rule.reviewed' : 'fiscal.rule.activated',
+      entity: 'FiscalRuleVersion', entityId: rule.id,
+      before: {status: rule.status, hash: rule.hash},
+      after: {status: result[0].status, legalSourceId: rule.legalSourceId, sourceSha256: rule.legalSourceSha256, reason: input.reason}
+    }});
+    return result[0];
   });
 }
 
@@ -149,63 +235,31 @@ export async function listFiscalRuleVersions(tenantId: string, ruleKey?: string)
 export async function resolveFiscalRules(db: FiscalDb, input: { tenantId: string; ruleKeys: string[]; effectiveAt: Date }) {
   if (!input.ruleKeys.length) return [];
   const rows = await db.$queryRaw<FiscalRuleVersionRow[]>(Prisma.sql`
-    SELECT DISTINCT ON ("ruleKey") *
-    FROM public."FiscalRuleVersion"
-    WHERE "tenantId" = ${input.tenantId}
-      AND "ruleKey" IN (${Prisma.join(input.ruleKeys)})
-      AND "effectiveFrom" <= ${input.effectiveAt}
-      AND ("effectiveTo" IS NULL OR "effectiveTo" > ${input.effectiveAt})
-    ORDER BY "ruleKey", "effectiveFrom" DESC, "version" DESC
+    SELECT r.*
+    FROM public."FiscalRuleVersion" r
+    JOIN public."FiscalLegalSource" s
+      ON s."tenantId"=r."tenantId" AND s."id"=r."legalSourceId"
+    WHERE r."tenantId" = ${input.tenantId}
+      AND r."ruleKey" IN (${Prisma.join(input.ruleKeys)})
+      AND r."status" = 'ACTIVE' AND s."status" = 'REVIEWED'
+      AND r."legalSourceSha256" = s."contentSha256"
+      AND r."effectiveFrom" <= ${input.effectiveAt}
+      AND (r."effectiveTo" IS NULL OR r."effectiveTo" > ${input.effectiveAt})
+    ORDER BY r."ruleKey", r."effectiveFrom" DESC, r."version" DESC
   `);
-  // Never reuse historical unreviewed/legacy rules for new document issues.
-  // Load only source IDs extracted from the server-issued immutable snapshot,
-  // then compare every byte of the authority record with current reviewed data.
-  const keys = rows.map(row => {
-    const def = row.definition as Record<string, unknown> | null;
-    const record = def?._legalSource;
-    return record && typeof record === 'object' && !Array.isArray(record)
-      ? (record as Record<string, unknown>).legalSourceId : null;
-  });
-  if (keys.some(id => typeof id !== 'string' || !/^[0-9a-f-]{36}$/i.test(id))) {
-    throw new HttpError(422, 'Hay reglas fiscales históricas sin procedencia revisada.', { code: 'FISCAL_RULE_SOURCE_NOT_AUTHORIZED' });
-  }
-  const sources = keys.length ? await db.$queryRaw<ReviewedFiscalLegalSource[]>(Prisma.sql`
-    SELECT "id", "tenantId", "reference", "contentSha256", "status",
-           "reviewedBy", "reviewedAt", "createdBy"
-    FROM public."FiscalLegalSource"
-    WHERE "tenantId" = ${input.tenantId}
-      AND "id" IN (${Prisma.join(keys as string[])})
-      AND "status" = 'REVIEWED'
-  `) : [];
-  const sourceById = new Map(sources.map(row => [row.id, row]));
-  for (const row of rows) {
-    const def = row.definition as Record<string, unknown>;
-    const embedded = def._legalSource as Record<string, unknown>;
-    const source = sourceById.get(embedded.legalSourceId as string);
-    try {
-      if (!source || row.source !== source.reference) throw new Error('mismatch');
-      assertFiscalRuleAuthority(embedded, source, input.tenantId);
-    } catch {
-      throw new HttpError(422, 'La versión fiscal no conserva autoridad legal revisada.', { code: 'FISCAL_RULE_SOURCE_NOT_AUTHORIZED' });
-    }
-  }
-  // Hash validation protects against changes to rate/definition after provenance review.
-  for (const row of rows) {
-    const expected = fiscalEvidenceHash({
-      tenantId: row.tenantId, ruleKey: row.ruleKey, version: row.version,
-      effectiveFrom: row.effectiveFrom.toISOString(),
-      effectiveTo: row.effectiveTo?.toISOString() || null,
-      source: row.source, documentation: row.documentation, definition: row.definition,
-    });
-    if (!/^[0-9a-f]{64}$/.test(row.hash) || expected !== row.hash)
-      throw new HttpError(409, 'Se detectó una versión fiscal alterada; se bloqueó la emisión.', {
-        code: 'FISCAL_RULE_VERSION_HASH_MISMATCH', ruleKey: row.ruleKey, version: row.version,
-      });
-  }
-  const found = new Set(rows.map((row) => row.ruleKey));
-  const missing = input.ruleKeys.filter((key) => !found.has(key));
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(row.ruleKey, (counts.get(row.ruleKey) ?? 0) + 1);
+  const missing = input.ruleKeys.filter(key => !counts.has(key));
   if (missing.length) {
     throw new HttpError(422, 'No existe una regla fiscal vigente para todos los ruleKeys solicitados.', { code: 'FISCAL_RULE_NOT_EFFECTIVE', missing });
+  }
+  if (input.ruleKeys.some(key => counts.get(key) !== 1)) {
+    throw new HttpError(409, 'Más de una regla fiscal vigente coincide con el selector.', { code: 'FISCAL_RULE_AMBIGUOUS' });
+  }
+  try {
+    for (const rule of rows) assertFiscalRuleVersionIntegrity(rule, input.tenantId, input.effectiveAt);
+  } catch {
+    throw new HttpError(409, 'La regla fiscal vigente no conserva evidencia íntegra.', { code: 'FISCAL_RULE_EVIDENCE_INTEGRITY' });
   }
   return rows;
 }
@@ -226,29 +280,40 @@ export async function allocateFiscalNumber(db: FiscalDb, input: { tenantId: stri
 
 export async function recordDocumentRuleSnapshots(db: FiscalDb, input: { tenantId: string; fiscalDocumentId: string; rules: FiscalRuleVersionRow[] }) {
   for (const rule of input.rules) {
+    try { assertFiscalRuleVersionIntegrity(rule, input.tenantId, rule.effectiveFrom); }
+    catch { throw new HttpError(409, 'La regla fiscal aplicada no conserva evidencia íntegra.', { code: 'FISCAL_RULE_EVIDENCE_INTEGRITY' }); }
     await db.$executeRaw(Prisma.sql`
       INSERT INTO public."FiscalDocumentRuleSnapshot" (
         "id", "tenantId", "fiscalDocumentId", "ruleKey", "ruleVersion", "ruleHash",
-        "effectiveFrom", "effectiveTo", "source", "documentation", "definition"
+        "effectiveFrom", "effectiveTo", "source", "documentation", "definition",
+        "legalSourceId", "legalSourceSha256"
       ) VALUES (
         ${randomUUID()}::uuid, ${input.tenantId}, ${input.fiscalDocumentId},
         ${rule.ruleKey}, ${rule.version}, ${rule.hash}, ${rule.effectiveFrom}, ${rule.effectiveTo},
-        ${rule.source}, ${rule.documentation}, ${JSON.stringify(rule.definition)}::jsonb
+        ${rule.source}, ${rule.documentation}, ${JSON.stringify(rule.definition)}::jsonb,
+        ${rule.legalSourceId}::uuid, ${rule.legalSourceSha256}
       )
     `);
   }
 }
 
 export async function getDocumentRuleSnapshots(tenantId: string, fiscalDocumentId: string) {
-  return prisma.$queryRaw<Array<{
-    ruleKey: string; ruleVersion: number; ruleHash: string; effectiveFrom: Date; effectiveTo: Date | null;
+  const snapshots = await prisma.$queryRaw<Array<{
+    tenantId: string; ruleKey: string; ruleVersion: number; ruleHash: string; effectiveFrom: Date; effectiveTo: Date | null;
     source: string; documentation: string; definition: unknown; capturedAt: Date;
+    legalSourceId: string | null; legalSourceSha256: string | null;
   }>>(Prisma.sql`
-    SELECT "ruleKey", "ruleVersion", "ruleHash", "effectiveFrom", "effectiveTo", "source", "documentation", "definition", "capturedAt"
+    SELECT "tenantId", "ruleKey", "ruleVersion", "ruleHash", "effectiveFrom", "effectiveTo", "source", "documentation", "definition", "capturedAt", "legalSourceId", "legalSourceSha256"
     FROM public."FiscalDocumentRuleSnapshot"
     WHERE "tenantId" = ${tenantId} AND "fiscalDocumentId" = ${fiscalDocumentId}
     ORDER BY "ruleKey" ASC
   `);
+  try {
+    for (const snapshot of snapshots) assertFiscalRuleSnapshotIntegrity(snapshot, tenantId);
+  } catch {
+    throw new HttpError(409, 'La evidencia histórica de la regla fiscal no coincide con su hash original.', { code: 'FISCAL_RULE_SNAPSHOT_INTEGRITY' });
+  }
+  return snapshots;
 }
 
 export async function buildCloseEvidence(db: FiscalDb, input: { tenantId: string; period: string; module: string }) {

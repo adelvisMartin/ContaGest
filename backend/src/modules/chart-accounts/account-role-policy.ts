@@ -1,7 +1,7 @@
 // #785: binding between tenant-owned chart account and a semantic role.
 // Posting is NOT enabled by a binding; the ledger remains its sole authority.
 export const SEMANTIC_ACCOUNT_ROLES = Object.freeze([
-  'ar', 'ap', 'vat_output', 'vat_input', 'withholding_payable',
+  'ar', 'ap', 'vat_output', 'vat_input', 'withholding_payable', 'withholding_receivable',
   'payroll_payable', 'tax_payable', 'cash', 'bank', 'revenue',
   'expense', 'inventory', 'asset', 'cost_of_sales',
 ] as const);

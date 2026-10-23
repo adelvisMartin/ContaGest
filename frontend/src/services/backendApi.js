@@ -51,12 +51,13 @@ function needsFinancialIdempotency(method, path, body) {
   const normalizedMethod = String(method || 'GET').toUpperCase();
   const normalized = normalizedFinancialPath(path);
   if (normalizedMethod === 'POST') {
-    // Fiscal mutations have durable DB idempotency and require the header.
-    // Reuse the same generated key on network/refresh retries.
+    // Preserve the same key on explicit retries for these durable fiscal mutations.
     if (['/fiscal/close-period', '/fiscal/reopen-period',
       '/fiscal/documents', '/fiscal/documents/issue'].includes(normalized) ||
       /^\/fiscal\/compliance\/declarations\/[^/]+\/transition$/.test(normalized)) return true;
-    if (normalized === '/banking/movements' || normalized === '/accounting/entries') return true;
+    if (normalized === '/banking/movements' || normalized === '/accounting/entries' ||
+        normalized === '/fiscal/withholding-applications' ||
+        /^\/fiscal\/withholding-applications\/[^/]+\/reverse$/.test(normalized)) return true;
     if (normalized === '/sales' || normalized === '/purchases') return String(body?.status || 'issued') !== 'draft';
   }
   if (normalizedMethod === 'PATCH' && /^\/(sales|purchases)\/[^/]+\/cancel$/.test(normalized)) return true;

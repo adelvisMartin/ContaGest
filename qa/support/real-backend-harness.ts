@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomBytes, randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { randomBytes, randomUUID } from 'node:crypto';
 import { createApp } from '../../backend/src/app.ts';
 import { prisma } from '../../backend/src/database/prisma.ts';
 import { signAccessToken } from '../../backend/src/shared/auth/jwt.ts';

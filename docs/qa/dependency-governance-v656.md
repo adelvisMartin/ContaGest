@@ -25,3 +25,15 @@ Because `package-lock.json` may retain a compatible but textually different pack
 `node --test tests/dependency_governance_v656.test.mjs` covers direct classifications, stale/missing catalog entries, missing resolutions, lock drift, exact pins, workspace links, restrictive/unknown license metadata and schema changes. The generator is read-only except for an ignored artifact manifest; rollback is reverting this isolated ticket's new source/catalog/tests/doc files. It does not change business code, IAM, tenant data, DB schema, runtime dependencies or CI protections.
 
 Integration with the #648 release artifact requires the #550 provenance step and a reviewed dependency governance manifest from the same SHA. An absent manifest must never be presented as passed evidence.
+
+
+## Transitive dependency review (follow-up #656)
+
+The same lockfile-v3 manifest now includes `transitiveCount` and `transitive[]` for non-direct, versioned `node_modules/` entries, including nested resolutions. Direct paths are excluded to avoid double-counting. The manifest records each resolved version, lockfile license, `optional` bit, and one of two **lockfile-only** classifications (`dev-only-lock-entry`, `runtime-or-mixed-lock-entry`). These classifications are **not proof** that an API image ships a package; #648 must verify the actual image and resolved runtime dependency graph.
+
+- Missing transitive license metadata produces `P2 TRANSITIVE_LICENSE_NOT_IN_LOCK`; do not treat `NOASSERTION` as a license grant.
+- Potentially restrictive transitive licenses produce `TRANSITIVE_LICENSE_REVIEW_REQUIRED`. They block this static gate at P1 unless marked dev-only in the lockfile, in which case they still require P2 review. This is a request for legal/owner verification, **not** a conclusion of legal incompatibility.
+- The existing CycloneDX authority (#550) must still generate the SBOM and vulnerability/provenance evidence for the **same SHA**; there is no second SBOM generator.
+- Full `npm ci`, `npm audit`, licenses/notices, container image contents, release gates and the benchmark/source-adoption firewall remain separately required and must not be inferred from this static inventory.
+
+Regression fixtures: `node --test tests/dependency_governance_v656.test.mjs`, including nested copyleft, dev-only license, missing metadata, link exclusions and deterministic output. No package versions, user data, DB schema or runtime code are changed in this slice.

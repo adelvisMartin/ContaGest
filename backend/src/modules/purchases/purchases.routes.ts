@@ -209,10 +209,25 @@ router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async
     const lockKey = `${scope}:${ctx.tenantId}:${purchaseId}`;
     await tx.$queryRaw<Array<{ locked: string | null }>>`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked`;
 
+    // Serialize purchase cancellation with VAT withholding application to
+    // prevent a payable tax journal whose original purchase is concurrently reversed.
+    await tx.$queryRaw`
+      SELECT "id" FROM public."PurchaseInvoice"
+      WHERE "id"=${purchaseId} AND "tenantId"=${ctx.tenantId} FOR UPDATE
+    `;
     const purchase = await tx.purchaseInvoice.findFirst({ where: { id: purchaseId, tenantId: ctx.tenantId }, include: { supplier: true, lines: true } });
     if (!purchase) throw new HttpError(404, 'Compra no encontrada.');
     beforePurchase = purchase;
     if (purchase.status === 'draft') throw new HttpError(409, 'Los borradores se eliminan; no se anulan.');
+    const activeRetentions=await tx.$queryRaw<Array<{id:string}>>`
+      SELECT "id" FROM public."FiscalWithholdingApplication"
+      WHERE "tenantId"=${ctx.tenantId} AND "purchaseInvoiceId"=${purchase.id}
+        AND "kind"='RET_IVA' AND "status"='POSTED'
+      LIMIT 1
+    `;
+    if(activeRetentions.length)throw new HttpError(409,
+      'Reversa primero la aplicación contable RET_IVA activa; de lo contrario quedaría una retención por pagar sin compra vigente.',
+      {code:'RETIVA_ACTIVE_APPLICATION_CANCEL_DENIED'});
 
     const originals = await tx.ledgerEntry.findMany({
       where: { tenantId: ctx.tenantId, reversalOfId: null, OR: [{ source: 'purchase', sourceId: purchase.id }, { source: 'purchase', purchaseInvoiceId: purchase.id }] },

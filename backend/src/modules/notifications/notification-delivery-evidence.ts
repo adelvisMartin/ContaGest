@@ -7,7 +7,7 @@ export type NotificationLogMetadata = Readonly<{
   id: string; tenantId: string; channel: string;
   status: string; createdAt: Date;
 }>;
-const STATES = new Set(['queued','pending','scheduled','sending','provider_accepted','delivered','failed_retryable','failed_permanent','failed','skipped','suppressed','cancelled']);
+const STATES = new Set(['queued','pending','scheduled','sending','provider_accepted','provider_unverified','delivered','failed_retryable','failed_permanent','failed','skipped','suppressed','cancelled']);
 const CHANNELS = new Set(['in_app','email','web_push','whatsapp','sms']);
 function denied():never { throw new Error('NOTIFICATION_TIMELINE_EVIDENCE_INVALID'); }
 export function projectNotificationDeliveryEvidence(

@@ -17,12 +17,12 @@ test('#751 PostgreSQL17 review requires a second authorized actor and preserves 
   t.after(async () => { await h.prisma.userProfile.delete({ where: { id: reviewer.id } }); });
   const adminRoles = await h.prisma.userRole.findMany({ where: { userId: h.admin.id }, select: { roleId: true } });
   await h.prisma.userRole.createMany({ data: adminRoles.map(({ roleId }) => ({ userId: reviewer.id, roleId })) });
-  const reviewerToken = await h.issueQaToken(reviewer);
+  const reviewerToken = await h.issueSessionTokenFor(reviewer);
   const unprivileged = await h.prisma.userProfile.create({ data: {
     tenantId: h.tenant.id, email: `qa751-denied-${suffix}@example.invalid`, fullName: 'QA fiscal read-only denial'
   } });
   t.after(async () => { await h.prisma.userProfile.delete({ where: { id: unprivileged.id } }); });
-  const unprivilegedToken = await h.issueQaToken(unprivileged);
+  const unprivilegedToken = await h.issueSessionTokenFor(unprivileged);
 
   const unboundToken = signAccessToken({ id: h.admin.id, email: h.admin.email }, h.tenant.id);
   await h.status('/fiscal/legal-sources', 401, {}, unboundToken);
@@ -52,4 +52,17 @@ test('#751 PostgreSQL17 review requires a second authorized actor and preserves 
   assert.notEqual(rows[0].createdBy, rows[0].reviewedBy);
   const audit = await h.prisma.auditLog.findMany({ where: { tenantId: h.tenant.id, entity: 'FiscalLegalSource', entityId: created.id, action: 'fiscal.legal_source.reviewed' } });
   assert.equal(audit.length, 1, 'one committed review must have one atomic audit');
+  // The reviewed capture cannot be mutated through SQL even if a DB sidecar
+  // inadvertently broadens privileges. Run only on the disposable fixture.
+  await assert.rejects(
+    h.prisma.$executeRaw`UPDATE public."FiscalLegalSource" SET "contentSha256"=${'0'.repeat(64)}
+      WHERE "tenantId"=${h.tenant.id} AND "id"=${created.id}::uuid`,
+    /FISCAL_LEGAL_SOURCE_IMMUTABLE/i
+  );
+  await assert.rejects(
+    h.prisma.$executeRaw`DELETE FROM public."FiscalLegalSource"
+      WHERE "tenantId"=${h.tenant.id} AND "id"=${created.id}::uuid`,
+    /FISCAL_LEGAL_SOURCE_IMMUTABLE/i
+  );
+
 });

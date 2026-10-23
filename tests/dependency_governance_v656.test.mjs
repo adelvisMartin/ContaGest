@@ -84,3 +84,37 @@ test('LGPL requires independent license review and permissive SPDX does not', ()
   const permissive = fixture(); permissive.lock.packages['node_modules/server'].license = 'Apache-2.0';
   assert.equal(auditDependencyGovernance(permissive).status, 'PASS');
 });
+
+test('transitive runtime restrictive licenses fail closed; dev-only cases require review', () => {
+  const f = fixture();
+  f.lock.packages['node_modules/nested/node_modules/copyleft'] = { version: '1.0.0', license: 'AGPL-3.0-only' };
+  f.lock.packages['node_modules/dev-copyleft'] = { version: '2.0.0', license: 'LGPL-2.1-only', dev: true };
+  const result = auditDependencyGovernance(f);
+  assert.equal(result.transitiveCount, 2);
+  assert.equal(result.status, 'FAIL');
+  assert.ok(result.findings.some((x) => x.code === 'TRANSITIVE_LICENSE_REVIEW_REQUIRED' && x.subject === 'node_modules/nested/node_modules/copyleft' && x.severity === 'P1'));
+  assert.ok(result.findings.some((x) => x.subject === 'node_modules/dev-copyleft' && x.severity === 'P2'));
+  assert.equal(result.transitive.find((x) => x.resolutionPath === 'node_modules/dev-copyleft').classification, 'dev-only-lock-entry');
+});
+
+test('unknown transitive license is explicitly review required, not compliant', () => {
+  const f = fixture();
+  f.lock.packages['node_modules/unknown'] = { version: '4.1.0', optional: true };
+  const result = auditDependencyGovernance(f);
+  assert.equal(result.status, 'REVIEW_REQUIRED');
+  assert.ok(result.findings.some((x) => x.code === 'TRANSITIVE_LICENSE_NOT_IN_LOCK'));
+  assert.equal(result.transitive[0].license, 'NOASSERTION');
+  assert.equal(result.transitive[0].optional, true);
+});
+
+test('permissive indirect dependencies are inventoried without duplicate direct findings', () => {
+  const f = fixture();
+  f.lock.packages['node_modules/indirect'] = { version: '1.0.0', license: 'Apache-2.0' };
+  f.lock.packages['node_modules/ignored-link'] = { link: true, resolved: 'frontend' };
+  const result = auditDependencyGovernance(f);
+  assert.equal(result.status, 'PASS');
+  assert.equal(result.directCount, 5);
+  assert.equal(result.transitiveCount, 1);
+  assert.deepEqual(result.transitive.map((x) => x.resolutionPath), ['node_modules/indirect']);
+  assert.deepEqual(result, auditDependencyGovernance(f));
+});

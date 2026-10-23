@@ -10,6 +10,17 @@ test('multiple ambiguous messages fail closed',()=>assert.equal(classifyWhatsApp
 test('invalid provider id never accepted',()=>{for(const id of ['x','abc xyz','***','a'.repeat(257),{},null])assert.equal(classifyWhatsAppProviderAck(true,{messages:[{id}]}).providerAccepted,false)});
 test('provider payload PII, id, and arbitrary data never copied',()=>{const r=classifyWhatsAppProviderAck(true,good);const s=JSON.stringify(r);for(const term of ['wamid.','123456789','do-not-retain'])assert.ok(!s.includes(term));});
 const route=readFileSync(new URL('../backend/src/modules/notifications/notifications.routes.ts',import.meta.url),'utf8');
-test('real Cloud adapter calls policy on HTTP result rather than treating 200 as delivered',()=>{assert.match(route,/classifyWhatsAppProviderAck\(response\.ok,data\)/);assert.doesNotMatch(route,/return \{ ok: true, provider: 'whatsapp-cloud', data \}/);});
-test('provider_unverified gets distinct log status, without recipient or raw receipt',()=>{assert.match(route,/status: result\.ok \? 'provider_accepted' : result\.status==='provider_unverified' \? 'provider_unverified' : 'skipped'/);assert.match(route,/deliveryConfirmed: false/);assert.doesNotMatch(route,/payload: \{[^\n]*data/);});
-test('no queued/delivered claim on the generic route',()=>{assert.match(route,/throw new HttpError\(503, 'La cola de notificaciones no está disponible/);assert.match(route,/delivered: false/);});
+test('provider acknowledgements remain pure; no live adapter is wired without consent',()=>{
+  assert.doesNotMatch(route,/classifyWhatsAppProviderAck\(response\.ok,data\)/);
+  assert.doesNotMatch(route,/graph\.facebook\.com|WHATSAPP_CLOUD_TOKEN/);
+  assert.match(route,/no está habilitado sin consentimiento verificable/);
+});
+test('legacy statuses remain read-only evidence, no new unverified provider side effect',()=>{
+  assert.match(route,/projectNotificationDeliveryEvidence/);
+  assert.match(route,/notificationLog\.findMany\(/);
+  assert.doesNotMatch(route,/notificationLog\.create\(/);
+});
+test('generic and WhatsApp routes remain fail-closed',()=>{
+  assert.match(route,/throw new HttpError\(503, 'La cola de notificaciones no está disponible/);
+  assert.match(route,/throw new HttpError\(503, 'El envío automático de WhatsApp no está habilitado/);
+});
