@@ -20,8 +20,20 @@ export const FISCAL_DOCUMENT_KINDS=[
 ];
 
 export const FiscalService={
+  legalSources(){return BackendApi.get('/fiscal/legal-sources');},
+  rules(){return BackendApi.get('/fiscal/rules');},
+  previewReviewedTaxEvent(data){return BackendApi.post('/fiscal/tax-events/preview',data);},
+  vatWithholdingApplications(){return BackendApi.get('/fiscal/withholding-applications');},
+  reconcileVatWithholding(period){return BackendApi.get(`/fiscal/withholding-applications/reconciliation?period=${encodeURIComponent(period)}`);},
+  applyVatWithholding(data){return BackendApi.post('/fiscal/withholding-applications',data);},
+  reverseVatWithholding(id,data){return BackendApi.post(`/fiscal/withholding-applications/${encodeURIComponent(id)}/reverse`,data);},
+  reviewLegalSource(id,approved,reason){return BackendApi.post(`/fiscal/legal-sources/${encodeURIComponent(id)}/review`,{approved,reason});},
+  reviewRule(id,reason){return BackendApi.post(`/fiscal/rules/${encodeURIComponent(id)}/review`,{reason});},
+  activateRule(id,reason){return BackendApi.post(`/fiscal/rules/${encodeURIComponent(id)}/activate`,{reason});},
   taxpayerProfiles(){return BackendApi.get('/fiscal/taxpayer-profiles');},
   captureTaxpayerProfileDraft(data){return BackendApi.post('/fiscal/taxpayer-profiles',data);},
+  reviewTaxpayerProfile(id,reason){return BackendApi.post(`/fiscal/taxpayer-profiles/${encodeURIComponent(id)}/review`,{reason});},
+  activateTaxpayerProfile(id,reason){return BackendApi.post(`/fiscal/taxpayer-profiles/${encodeURIComponent(id)}/activate`,{reason});},
   periods(){return BackendApi.get('/fiscal/periods');},
   createPeriod(data){return BackendApi.post('/fiscal/periods',data);},
   closePeriod(data){return BackendApi.post('/fiscal/close-period',data);},

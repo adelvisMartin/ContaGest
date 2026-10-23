@@ -4,7 +4,7 @@ import type { SemanticAccountRole } from './account-role-policy.js';
  * must retain the tenant's expected normal nature. No national chart codes. */
 export const SEMANTIC_POSTING_NATURE: Readonly<Record<SemanticAccountRole, 'debit' | 'credit'>> = Object.freeze({
   ar: 'debit', ap: 'credit', vat_output: 'credit', vat_input: 'debit',
-  withholding_payable: 'credit', payroll_payable: 'credit', tax_payable: 'credit',
+  withholding_payable: 'credit', withholding_receivable: 'debit', payroll_payable: 'credit', tax_payable: 'credit',
   cash: 'debit', bank: 'debit', revenue: 'credit', expense: 'debit',
   inventory: 'debit', asset: 'debit', cost_of_sales: 'debit',
 });

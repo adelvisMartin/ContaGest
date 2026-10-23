@@ -7,9 +7,15 @@ import { requirePermission, requireTenant } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
+import { assertBalanced } from '../accounting/accounting.service.js';
+import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.repository.js';
+import { planReviewedTaxEvent, type AppliedRatio } from './ve-tax-posting-plan.js';
+import { assertFiscalDocumentRuleFamily } from './fiscal-event-rule-family.js';
+import { assertUntrustedFiscalPayload, assertExternalFiscalRecordAllowed, assertReviewedIssueKindSupported } from './fiscal-document-authority-policy.js';
 import fiscalBookReadinessRoutes from './fiscal-book-readiness.routes.js';
 import fiscalComplianceReadinessRoutes from './fiscal-compliance-readiness.routes.js';
-import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts } from './taxpayer-profile.repository.js';
+import fiscalWithholdingApplicationRoutes from './fiscal-withholding-application.routes.js';
+import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts, transitionTaxpayerProfile, getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
 import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
 import { createFiscalLegalSourceDraft, listFiscalLegalSources, reviewFiscalLegalSource } from './fiscal-legal-source.repository.js';
 import {
@@ -17,6 +23,7 @@ import {
   assertFiscalClosePreconditions,
   buildCloseEvidence,
   createFiscalRuleVersion,
+  transitionFiscalRule,
   fiscalEvidenceHash,
   getCloseEvidence,
   getDocumentRuleSnapshots,
@@ -30,6 +37,7 @@ const router = Router();
 router.use(requireTenant);
 router.use('/books', fiscalBookReadinessRoutes);
 router.use('/compliance', fiscalComplianceReadinessRoutes);
+router.use('/withholding-applications', fiscalWithholdingApplicationRoutes);
 
 const periodSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Usa formato AAAA-MM.');
 const moduleSchema = z.enum(['fiscal', 'iva', 'islr', 'igtf', 'retiva', 'municipal']);
@@ -44,18 +52,43 @@ const fiscalSchema = z.object({
   module: moduleSchema,
   payload: z.record(z.string(), z.unknown()).default({})
 }).strict();
+// Uniform UTC contract: no locale parsing or implicit timezone on legal effectivity.
+const utcInstantSchema = z.string().refine((value) => {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) return false;
+  const at = new Date(value);
+  return Number.isFinite(at.getTime()) &&
+    at.toISOString().slice(0, 19) === value.slice(0, 19);
+}, 'Requiere instante UTC ISO-8601 con Z, sin fechas normalizadas.').transform(value => new Date(value));
+
 const fiscalRuleSchema = z.object({
   ruleKey: z.string().trim().regex(/^[a-z0-9][a-z0-9._:-]{1,79}$/i),
-  effectiveFrom: z.coerce.date(),
-  effectiveTo: z.coerce.date().nullable().optional(),
+  effectiveFrom: utcInstantSchema,
+  effectiveTo: utcInstantSchema.nullable().optional(),
   source: z.string().trim().min(3).max(240),
   documentation: z.string().trim().min(3).max(1000),
-  definition: z.record(z.string(), z.unknown())
+  definition: z.record(z.string(), z.unknown()),
+  legalSourceId: z.string().uuid().nullable().optional(),
+  supersedesId: z.string().uuid().nullable().optional()
 }).strict().superRefine((value, ctx) => {
   if (value.effectiveTo && value.effectiveTo <= value.effectiveFrom) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['effectiveTo'], message: 'effectiveTo debe ser posterior a effectiveFrom.' });
   }
 });
+const fiscalRuleDecisionSchema = z.object({
+  reason: z.string().trim().min(15).max(500)
+}).strict();
+
+const verifiedTaxPreviewSchema = z.object({
+  kind:z.enum(['sale','purchase']),
+  effectiveAt:utcInstantSchema,
+  taxableMinor:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  exemptMinor:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  notSubjectMinor:z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  vatRuleKey:z.string().regex(/^iva[.:][a-z0-9._:-]{1,60}$/i),
+  retainedVatRuleKey:z.string().regex(/^ret_iva[.:][a-z0-9._:-]{1,60}$/i).optional(),
+  retainedIslrRuleKey:z.string().regex(/^islr[.:][a-z0-9._:-]{1,60}$/i).optional()
+}).strict();
+
 const taxpayerProfileDraftSchema = z.object({
   effectiveFrom:z.string(),
   effectiveTo:z.string().nullable().optional(),
@@ -87,7 +120,7 @@ const issueDocumentSchema = z.object({
   module: moduleSchema,
   payload: z.record(z.string(), z.unknown()).default({}),
   ruleKeys: z.array(z.string().trim().min(2).max(80)).min(1).max(20),
-  effectiveAt: z.coerce.date().optional(),
+  effectiveAt: utcInstantSchema.optional(),
   prefix: z.string().trim().max(20).optional(),
   width: z.number().int().min(1).max(18).default(8)
 }).strict();
@@ -101,13 +134,17 @@ async function hasPermission(tenantId: string, userId: string | undefined, key: 
 }
 
 async function capabilities(ctx: RequestContext) {
-  const [read, manageDocuments, close, reopen] = await Promise.all([
+  const [read, manageDocuments, close, reopen, activateRules, activateProfiles, postWithholding, reverseWithholding] = await Promise.all([
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.read'),
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.manage_documents'),
     hasPermission(ctx.tenantId, ctx.userId, 'fiscal.close'),
-    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.reopen')
+    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.reopen'),
+    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.activate_rules'),
+    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.activate_profiles'),
+    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.post_withholding'),
+    hasPermission(ctx.tenantId, ctx.userId, 'fiscal.reverse_withholding')
   ]);
-  return { read, manageDocuments, close, reopen };
+  return { read, manageDocuments, close, reopen, activateRules, activateProfiles, postWithholding, reverseWithholding };
 }
 
 function stable(value: unknown): unknown {
@@ -190,6 +227,7 @@ router.get('/rules', requirePermission('fiscal.read'), asyncHandler(async (req, 
 
 router.post('/rules', requirePermission('fiscal.close'), validateBody(fiscalRuleSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
+  if (!ctx.userId) throw new HttpError(401, 'La captura de reglas fiscales requiere un operador autenticado.');
   const created = await createFiscalRuleVersion({
     tenantId: ctx.tenantId,
     ruleKey: req.body.ruleKey,
@@ -198,20 +236,34 @@ router.post('/rules', requirePermission('fiscal.close'), validateBody(fiscalRule
     source: req.body.source,
     documentation: req.body.documentation,
     definition: req.body.definition,
-    createdBy: ctx.userId || null
-  });
-  await writeAudit({
-    tenantId: ctx.tenantId,
-    userId: ctx.userId,
-    action: 'fiscal.rule.version.created',
-    entity: 'FiscalRuleVersion',
-    entityId: created.id,
-    after: { ruleKey: created.ruleKey, version: created.version, effectiveFrom: created.effectiveFrom, effectiveTo: created.effectiveTo, source: created.source, documentation: created.documentation, hash: created.hash },
-    ipAddress: ctx.ip,
-    userAgent: ctx.userAgent
+    createdBy: ctx.userId || null,
+    legalSourceId: req.body.legalSourceId || null,
+    supersedesId: req.body.supersedesId || null
   });
   res.status(201).json({ ok: true, data: created });
 }));
+
+router.post('/rules/:id/review', requirePermission('fiscal.close'),
+  validateBody(fiscalRuleDecisionSchema), asyncHandler(async (req, res) => {
+    const ctx = context(req);
+    if (!ctx.userId) throw new HttpError(401, 'La revisión requiere sesión de un usuario real.');
+    const ruleId = z.string().uuid().parse(req.params.id);
+    ok(res, await transitionFiscalRule({
+      tenantId: ctx.tenantId, ruleId, actorId: ctx.userId, action: 'REVIEW',
+      reason: req.body.reason
+    }));
+  }));
+
+router.post('/rules/:id/activate', requirePermission('fiscal.activate_rules'),
+  validateBody(fiscalRuleDecisionSchema), asyncHandler(async (req, res) => {
+    const ctx = context(req);
+    if (!ctx.userId) throw new HttpError(401, 'La activación requiere sesión de un usuario real.');
+    const ruleId = z.string().uuid().parse(req.params.id);
+    ok(res, await transitionFiscalRule({
+      tenantId: ctx.tenantId, ruleId, actorId: ctx.userId, action: 'ACTIVATE',
+      reason: req.body.reason
+    }));
+  }));
 
 router.post('/close-period', requirePermission('fiscal.close'), validateBody(closeSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
@@ -276,8 +328,64 @@ router.post('/reopen-period', requirePermission('fiscal.reopen'), validateBody(r
   ok(res, { ...updated, reopenReason: req.body.reason, workflowCapability: 'fiscal.reopen' });
 }));
 
+// NON-POSTING tax estimate. Values supplied by the caller never create a ledger,
+// a certificate or a statutory claim. Effective rules, profile and accounts are
+// resolved from the same authenticated, read-only transaction.
+router.post('/tax-events/preview', requirePermission('fiscal.read'),
+  validateBody(verifiedTaxPreviewSchema), asyncHandler(async (req,res) => {
+  const ctx=context(req);
+  const body=req.body as z.infer<typeof verifiedTaxPreviewSchema>;
+  const output=await prisma.$transaction(async tx=>{
+    const profile=await getEffectiveTaxpayerProfile(tx,ctx.tenantId,body.effectiveAt);
+    const keys=[body.vatRuleKey,body.retainedVatRuleKey,body.retainedIslrRuleKey].filter((x):x is string=>!!x);
+    const found=await resolveFiscalRules(tx,{tenantId:ctx.tenantId,ruleKeys:keys,effectiveAt:body.effectiveAt});
+    const map=new Map(found.map(rule=>[rule.ruleKey,rule]));
+    const applied=(key:string):AppliedRatio=>{
+      const row=map.get(key);
+      if(!row||!row.legalSourceId||!row.legalSourceSha256)
+        throw new HttpError(409,'Falta evidencia normativa efectiva.',{code:'FISCAL_TAX_RULE_UNVERIFIED'});
+      return {ruleId:row.id,ruleKey:row.ruleKey,ruleHash:row.hash,
+        legalSourceId:row.legalSourceId,legalSourceSha256:row.legalSourceSha256,
+        definition:row.definition as AppliedRatio['definition']};
+    };
+    let plan:ReturnType<typeof planReviewedTaxEvent>;
+    try{plan=planReviewedTaxEvent({
+      kind:body.kind,taxableMinor:body.taxableMinor,
+      exemptMinor:body.exemptMinor,notSubjectMinor:body.notSubjectMinor,
+      vat:applied(body.vatRuleKey),
+      retainedVat:body.retainedVatRuleKey?applied(body.retainedVatRuleKey):null,
+      retainedIslr:body.retainedIslrRuleKey?applied(body.retainedIslrRuleKey):null
+    });}catch{throw new HttpError(422,'La fórmula fiscal revisada no admite este evento.',{code:'VE_TAX_PREVIEW_REJECTED'});}
+    const roles=[...new Set(plan.lines.map(line=>line.accountRole))];
+    const accounts=await resolveSemanticPostingAccounts(tx,ctx.tenantId,roles);
+    const moneyFromMinor=(value:number)=>{
+      const n=BigInt(value);return (n/100n).toString()+'.'+(n%100n).toString().padStart(2,'0');
+    };
+    const lines=plan.lines.map(line=>({
+      accountCode:accounts[line.accountRole].accountCode,
+      accountName:accounts[line.accountRole].name,
+      role:line.accountRole,
+      debit:moneyFromMinor(line.debitMinor),
+      credit:moneyFromMinor(line.creditMinor)
+    }));
+    assertBalanced(lines);
+    return { ...plan, profileEvidence: {
+      profileId:profile.id,profileVersion:profile.version,
+      rifSnapshot:profile.rifSnapshot,sourceContentSha256:profile.sourceContentSha256
+    }, accountLines:lines, mode:'NON_POSTING_PREVIEW' };
+  });
+  ok(res,output);
+}));
+
 router.post('/documents/issue', requirePermission('fiscal.manage_documents'), validateBody(issueDocumentSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
+  try { assertReviewedIssueKindSupported(req.body.kind); }
+  catch { throw new HttpError(422,
+    'Comprobantes de retención, declaraciones y notas de ajuste requieren un workflow legal, contable y de certificados específico.',
+    { code: 'FISCAL_CERTIFICATE_WORKFLOW_NOT_READY' }); }
+  try { assertUntrustedFiscalPayload(req.body.payload); }
+  catch { throw new HttpError(422, 'El documento contiene campos fiscales reservados al servidor.',
+    { code: 'FISCAL_PAYLOAD_RESERVED_FIELD' }); }
   assertPayloadSize(req.body.payload);
   const execution = await runFinancialIdempotentMutation({
     tenantId: ctx.tenantId,
@@ -292,40 +400,113 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     if (closedPeriod) throw new HttpError(409, `El período ${req.body.period} está cerrado para ${closedPeriod.module}.`, { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: closedPeriod.module });
 
     const effectiveAt = req.body.effectiveAt || new Date();
+    try {
+      assertFiscalDocumentRuleFamily({
+        module:req.body.module,kind:req.body.kind,period:req.body.period,
+        effectiveAt,explicitEffectiveAt:Boolean(req.body.effectiveAt),
+        ruleKeys:req.body.ruleKeys as string[]
+      });
+    } catch {
+      throw new HttpError(422,'La regla, fecha UTC o módulo fiscal no corresponde al evento.',{
+        code:'FISCAL_EVENT_RULE_FAMILY_MISMATCH'
+      });
+    }
     const ruleKeys: string[] = [...new Set(req.body.ruleKeys as string[])].sort();
     const rules = await resolveFiscalRules(tx, { tenantId: ctx.tenantId, ruleKeys, effectiveAt });
+    const requiresProfile = ['iva','islr','retiva'].includes(req.body.module) ||
+      req.body.kind === 'withholding';
+    const profile = requiresProfile
+      ? await getEffectiveTaxpayerProfile(tx, ctx.tenantId, effectiveAt)
+      : null;
+    const profileSnapshot = profile ? {
+      id:profile.id,tenantId:profile.tenantId,version:profile.version,rifSnapshot:profile.rifSnapshot,
+      effectiveFrom:profile.effectiveFrom.toISOString(),
+      effectiveTo:profile.effectiveTo?.toISOString()||null,
+      jurisdiction:profile.jurisdiction,taxpayerCategory:profile.taxpayerCategory,
+      activityCodes:profile.activityCodes,sourceReference:profile.sourceReference,
+      sourceContentSha256:profile.sourceContentSha256,legalSourceId:profile.legalSourceId
+    } : null;
+    const profileHash = profileSnapshot ? fiscalEvidenceHash(profileSnapshot) : null;
     const number = await allocateFiscalNumber(tx, {
       tenantId: ctx.tenantId,
       kind: req.body.kind,
       prefix: req.body.prefix || defaultSequencePrefix(req.body.kind),
       width: req.body.width
     });
-    const controlledPayload = { ...req.body.payload, _fiscalModule: req.body.module, _effectiveAt: effectiveAt.toISOString(), _ruleKeys: ruleKeys };
+    const controlledPayload = { ...req.body.payload, _fiscalModule: req.body.module, _effectiveAt: effectiveAt.toISOString(), _ruleKeys: ruleKeys, ...(profileHash?{_taxpayerProfileHash:profileHash}:{}) };
     const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind, number, period: req.body.period, module: req.body.module, payload: controlledPayload });
     const record = await tx.fiscalDocument.create({ data: { tenantId: ctx.tenantId, kind: req.body.kind, number, period: req.body.period, status: 'issued', payload: controlledPayload, hash } });
+    if (profileSnapshot && profileHash) {
+      await tx.$executeRaw`
+        UPDATE public."FiscalDocument" SET
+          "taxpayerProfileSnapshot"=${JSON.stringify(profileSnapshot)}::jsonb,
+          "taxpayerProfileHash"=${profileHash}
+        WHERE "id"=${record.id} AND "tenantId"=${ctx.tenantId}
+          AND "taxpayerProfileHash" IS NULL
+      `;
+    }
     await recordDocumentRuleSnapshots(tx, { tenantId: ctx.tenantId, fiscalDocumentId: record.id, rules });
     const snapshots = await tx.$queryRaw<Array<{ ruleKey: string; ruleVersion: number; ruleHash: string }>>`
       SELECT "ruleKey", "ruleVersion", "ruleHash" FROM public."FiscalDocumentRuleSnapshot"
       WHERE "tenantId"=${ctx.tenantId} AND "fiscalDocumentId"=${record.id} ORDER BY "ruleKey"
     `;
-    return { data: { ...record, module: req.body.module, appliedRules: snapshots }, responseCode: 201, resourceType: 'FiscalDocument', resourceId: record.id };
+    // Fiscal audit must commit atomically with number allocation, document and
+    // immutable snapshots. Retrying a successful idempotency key must not write
+    // a second 'issued' event or return 500 after an already-committed issuance.
+    await tx.auditLog.create({data:{
+      tenantId:ctx.tenantId,userId:ctx.userId || null,action:'fiscal.document.issued',
+      entity:'FiscalDocument',entityId:record.id,
+      after:{
+        kind:record.kind,number:record.number,period:record.period,module:req.body.module,
+        hash:record.hash,ruleHashes:snapshots.map(r=>r.ruleHash),
+        taxpayerProfileHash:profileHash,
+        requestId:ctx.requestId || null,
+      },ipAddress:ctx.ip || null,userAgent:ctx.userAgent || null
+    }});
+    return { data: { ...record, module: req.body.module, appliedRules: snapshots, taxpayerProfileHash: profileHash }, responseCode: 201, resourceType: 'FiscalDocument', resourceId: record.id };
   });
 
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.document.issued', entity: 'FiscalDocument', entityId: execution.resourceId || undefined, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   res.status(execution.responseCode).json({ ok: true, data: execution.data, meta: { replayed: execution.replayed } });
 }));
 
 router.post('/documents', requirePermission('fiscal.manage_documents'), validateBody(fiscalSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
+  try { assertExternalFiscalRecordAllowed(req.body); }
+  catch { throw new HttpError(422,
+    'Los documentos tributarios regulados deben emitirse con regla y perfil fiscal verificados.',
+    { code: 'FISCAL_EXTERNAL_DOCUMENT_DENIED' }); }
   assertPayloadSize(req.body.payload);
-  const period = await prisma.closingPeriod.findFirst({ where: { tenantId: ctx.tenantId, period: req.body.period, module: { in: req.body.module === 'fiscal' ? ['fiscal'] : [req.body.module, 'fiscal'] }, status: 'closed' } });
-  if (period) throw new HttpError(409, `El período ${req.body.period} está cerrado para ${period.module}.`, { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: period.module });
-  const existing = await prisma.fiscalDocument.findUnique({ where: { tenantId_kind_number: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number } } });
-  if (existing) throw new HttpError(409, 'Documento fiscal duplicado.', { code: 'FISCAL_DOCUMENT_DUPLICATE' });
-  const controlledPayload = { ...req.body.payload, _fiscalModule: req.body.module, _numberingAuthority: 'external/manual' };
-  const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number, period: req.body.period, module: req.body.module, payload: controlledPayload });
-  const record = await prisma.fiscalDocument.create({ data: { tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number, period: req.body.period, status: 'issued', payload: controlledPayload, hash } });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'fiscal.document.created.external', entity: 'FiscalDocument', entityId: record.id, after: { id: record.id, kind: record.kind, number: record.number, period: record.period, module: req.body.module, status: record.status, hash: record.hash }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  const record = await prisma.$transaction(async tx => {
+    const period = await tx.closingPeriod.findFirst({ where: {
+      tenantId: ctx.tenantId, period: req.body.period,
+      module: { in: ['fiscal'] }, status: 'closed'
+    } });
+    if (period) throw new HttpError(409, `El período ${req.body.period} está cerrado.`,
+      { code: 'FISCAL_PERIOD_CLOSED', period: req.body.period, module: period.module });
+    const existing = await tx.fiscalDocument.findUnique({ where: { tenantId_kind_number: {
+      tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number
+    } } });
+    if (existing) throw new HttpError(409, 'Documento fiscal duplicado.', {
+      code: 'FISCAL_DOCUMENT_DUPLICATE'
+    });
+    const controlledPayload = { ...req.body.payload,
+      _fiscalModule: 'fiscal', _numberingAuthority: 'external/manual' };
+    const hash = documentHash({ tenantId: ctx.tenantId, kind: req.body.kind,
+      number: req.body.number, period: req.body.period,
+      module: 'fiscal', payload: controlledPayload });
+    const created = await tx.fiscalDocument.create({ data: {
+      tenantId: ctx.tenantId, kind: req.body.kind, number: req.body.number,
+      period: req.body.period, status: 'external', payload: controlledPayload, hash
+    } });
+    await tx.auditLog.create({data:{
+      tenantId:ctx.tenantId,userId:ctx.userId || null,action:'fiscal.document.created.external',
+      entity:'FiscalDocument',entityId:created.id,
+      after:{id:created.id,kind:created.kind,number:created.number,
+        period:created.period,module:'fiscal',status:'external',hash:created.hash},
+      ipAddress:ctx.ip || null,userAgent:ctx.userAgent || null
+    }});
+    return created;
+  });
   res.status(201).json({ ok: true, data: { ...record, module: req.body.module } });
 }));
 
@@ -340,12 +521,50 @@ router.get('/documents', requirePermission('fiscal.read'), asyncHandler(async (r
   }));
 }));
 
+router.get('/documents/:id/taxpayer-profile', requirePermission('fiscal.read'),
+  asyncHandler(async (req,res) => {
+    const ctx=context(req);
+    const rows=await prisma.$queryRaw<Array<{
+      taxpayerProfileSnapshot:unknown;taxpayerProfileHash:string|null;
+    }>>`
+      SELECT "taxpayerProfileSnapshot","taxpayerProfileHash"
+      FROM public."FiscalDocument"
+      WHERE "tenantId"=${ctx.tenantId} AND "id"=${req.params.id}
+      LIMIT 1
+    `;
+    if(!rows[0])throw new HttpError(404,'Documento fiscal no encontrado.',{code:'FISCAL_DOCUMENT_NOT_FOUND'});
+    const snapshot=rows[0].taxpayerProfileSnapshot;
+    const hash=rows[0].taxpayerProfileHash;
+    if(snapshot!==null && (typeof hash!=='string'||fiscalEvidenceHash(snapshot)!==hash))
+      throw new HttpError(409,'Evidencia del perfil tributario alterada.',{code:'TAXPAYER_PROFILE_SNAPSHOT_INTEGRITY'});
+    if(snapshot===null&&hash!==null)
+      throw new HttpError(409,'Evidencia del perfil tributario incompleta.',{code:'TAXPAYER_PROFILE_SNAPSHOT_INTEGRITY'});
+    ok(res,{taxpayerProfileSnapshot:snapshot,taxpayerProfileHash:hash});
+  }));
+
 router.get('/documents/:id/rules', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const document = await prisma.fiscalDocument.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, select: { id: true } });
   if (!document) throw new HttpError(404, 'Documento fiscal no encontrado.', { code: 'FISCAL_DOCUMENT_NOT_FOUND' });
   ok(res, await getDocumentRuleSnapshots(ctx.tenantId, document.id));
 }));
+
+router.post('/taxpayer-profiles/:id/review', requirePermission('fiscal.close'),
+  validateBody(fiscalRuleDecisionSchema), asyncHandler(async (req,res) => {
+    const ctx=context(req);
+    if(!ctx.userId)throw new HttpError(401,'Revisión sin identidad.');
+    const id=z.string().uuid().parse(req.params.id);
+    ok(res,await transitionTaxpayerProfile({tenantId:ctx.tenantId,profileId:id,actorId:ctx.userId,
+      action:'REVIEW',reason:req.body.reason}));
+  }));
+router.post('/taxpayer-profiles/:id/activate', requirePermission('fiscal.activate_profiles'),
+  validateBody(fiscalRuleDecisionSchema), asyncHandler(async (req,res) => {
+    const ctx=context(req);
+    if(!ctx.userId)throw new HttpError(401,'Activación sin identidad.');
+    const id=z.string().uuid().parse(req.params.id);
+    ok(res,await transitionTaxpayerProfile({tenantId:ctx.tenantId,profileId:id,actorId:ctx.userId,
+      action:'ACTIVATE',reason:req.body.reason}));
+  }));
 
 router.get('/taxpayer-profiles', requirePermission('fiscal.read'), asyncHandler(async (req, res) => {
   ok(res, await listTaxpayerProfileDrafts(context(req).tenantId));

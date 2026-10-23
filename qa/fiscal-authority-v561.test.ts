@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
 import { listFiscalRuleVersions } from '../backend/src/modules/fiscal/fiscal.repository.ts';
 
@@ -23,20 +23,156 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   assert.match(databaseRows[0]?.name || '', /fiscal_v561_e2e$/, 'issue #561 must run only on disposable *_fiscal_v561_e2e PostgreSQL');
 
   await h.prisma.closingPeriod.deleteMany({ where: { tenantId: h.tenant.id, period: PERIOD, module: 'fiscal' } });
+  // #751 / #775: an external/manual record cannot be used to bypass reviewed
+  // rules, the authenticated taxpayer profile, or immutable evidence.
+  const externalBase = {
+    number: `${RUN}-SUPPORT`,period:PERIOD,module:'fiscal',
+    kind:'supporting_document',payload:{evidence:'external, non-regulated QA'}
+  };
+  for(const body of [
+    {...externalBase,module:'iva'},
+    {...externalBase,kind:'invoice'},
+    {...externalBase,kind:'withholding'},
+    {...externalBase,kind:'tax_return'},
+    {...externalBase,payload:{_taxpayerProfileHash:'a'.repeat(64)}}
+  ]) {
+    await h.status('/fiscal/documents',422,{method:'POST',body:JSON.stringify(body)});
+  }
+  const external=await h.ok('/fiscal/documents',{
+    method:'POST',body:JSON.stringify(externalBase)
+  });
+  assert.equal(external.status,'external','manual supports must not impersonate issued tax documents');
+  const supportAudits = await h.prisma.auditLog.findMany({where:{
+    tenantId:h.tenant.id,entity:'FiscalDocument',entityId:external.id,
+    action:'fiscal.document.created.external'
+  }});
+  assert.equal(supportAudits.length,1,'external support and audit must commit together');
+  await h.status('/fiscal/documents/issue',422,{method:'POST',
+    body:JSON.stringify({kind:'withholding',period:PERIOD,module:'retiva',
+      payload:{synthetic:true},ruleKeys:['ret_iva.synthetic'],
+      effectiveAt:'2099-06-15T12:00:00.000Z'})});
+
+
   await h.ok('/fiscal/periods', { method: 'POST', body: JSON.stringify({ period: PERIOD, module: 'fiscal', note: `${RUN} exact SHA ${sha}` }) });
 
-  const ruleV1 = await h.ok('/fiscal/rules', {
-    method: 'POST',
-    body: JSON.stringify({
-      ruleKey: `${RUN.toLowerCase()}.iva`,
-      effectiveFrom: '2099-01-01T00:00:00.000Z',
-      effectiveTo: '2099-07-01T00:00:00.000Z',
-      source: 'QA Gazette v1',
-      documentation: 'QA provenance fixture for historical rule v1',
-      definition: { rate: '16.00', basis: 'net' }
-    })
+
+  // The review flow uses real session-bound users with independent fiscal roles.
+  // All data stays in the disposable *_fiscal_v561_e2e test database.
+  const actorSuffix = randomUUID().slice(0, 8);
+  const roles = await h.prisma.userRole.findMany({ where: { userId: h.admin.id }, select: { roleId: true } });
+  const reviewer = await h.prisma.userProfile.create({ data: {
+    tenantId: h.tenant.id, email: `qa-rule-review-${actorSuffix}@example.invalid`,
+    fullName: 'Synthetic fiscal rule reviewer'
+  } });
+  const activator = await h.prisma.userProfile.create({ data: {
+    tenantId: h.tenant.id, email: `qa-rule-activate-${actorSuffix}@example.invalid`,
+    fullName: 'Synthetic fiscal rule activator'
+  } });
+  await h.prisma.userRole.createMany({ data: [
+    ...roles.map(({ roleId }) => ({ userId: reviewer.id, roleId })),
+    ...roles.map(({ roleId }) => ({ userId: activator.id, roleId }))
+  ] });
+  const reviewerToken = await h.issueSessionTokenFor(reviewer);
+  const activatorToken = await h.issueSessionTokenFor(activator);
+  t.after(async () => {
+    await h.prisma.userRole.deleteMany({ where: { userId: { in: [reviewer.id, activator.id] } } });
+    await h.prisma.userProfile.deleteMany({ where: { id: { in: [reviewer.id, activator.id] } } });
+  });
+
+  async function createReviewedRule(definition: {
+    reference: string; effectiveFrom: string; effectiveTo?: string | null;
+    numerator: number; supersedesId?: string;
+  }) {
+    const digest = createHash('sha256').update(`fixture-${actorSuffix}-${definition.reference}`).digest('hex');
+    const source = await h.ok('/fiscal/legal-sources', { method: 'POST', body: JSON.stringify({
+      sourceType: 'official_gazette', reference: definition.reference,
+      title: 'Synthetic source - no legal effect',
+      sourceUrl: 'https://example.org/synthetic-only', contentSha256: digest
+    }) });
+    await h.status(`/fiscal/legal-sources/${source.id}/review`, 409, {
+      method: 'POST', body: JSON.stringify({ approved: true, reason: 'Creator may not review own legal capture.' })
+    });
+    await h.ok(`/fiscal/legal-sources/${source.id}/review`, {
+      method: 'POST', body: JSON.stringify({ approved: true, reason: 'Independent source review for synthetic test only.' })
+    }, reviewerToken);
+    const rule = await h.ok('/fiscal/rules', { method: 'POST', body: JSON.stringify({
+      ruleKey: `iva.${RUN.toLowerCase()}`,
+      effectiveFrom: definition.effectiveFrom,
+      effectiveTo: definition.effectiveTo || null,
+      source: definition.reference,
+      documentation: 'Synthetic fixture; not statutory law or an approved rate.',
+      legalSourceId: source.id,
+      ...(definition.supersedesId ? { supersedesId: definition.supersedesId } : {}),
+      definition: { formula: 'RATIO_MINOR_UNITS', numerator: definition.numerator,
+        denominator: 100, basis: 'taxable_minor' }
+    }) });
+    assert.equal(rule.status, 'DRAFT');
+    await h.status('/fiscal/documents/issue', 422, { method: 'POST',
+      headers: { 'Idempotency-Key': `${RUN}-draft-rejected-${rule.version}` },
+      body: JSON.stringify({ kind: 'invoice', period: PERIOD, module: 'fiscal',
+        ruleKeys: [rule.ruleKey], effectiveAt: definition.supersedesId ? '2099-07-01T00:00:00.000Z' : definition.effectiveFrom, payload: { synthetic: true } })
+    });
+    await h.status(`/fiscal/rules/${rule.id}/review`, 409, { method: 'POST',
+      body: JSON.stringify({ reason: 'Creator cannot approve the same rule version.' }) });
+    await h.ok(`/fiscal/rules/${rule.id}/review`, { method: 'POST',
+      body: JSON.stringify({ reason: 'Reviewed synthetic ratio DSL and source digest.' }) }, reviewerToken);
+    await h.status(`/fiscal/rules/${rule.id}/activate`, 409, { method: 'POST',
+      body: JSON.stringify({ reason: 'Same reviewer cannot activate fiscal rule.' }) }, reviewerToken);
+    const active = await h.ok(`/fiscal/rules/${rule.id}/activate`, { method: 'POST',
+      body: JSON.stringify({ reason: 'Third actor validates synthetic activation.' }) }, activatorToken);
+    assert.equal(active.status, 'ACTIVE');
+    return { ...active, legalSourceSha256: digest, sourceId: source.id };
+  }
+
+  const ruleV1 = await createReviewedRule({
+    reference: `QA-GAZETTE-V1-${actorSuffix}`,
+    effectiveFrom: '2099-01-01T00:00:00.000Z',
+    effectiveTo: '2099-07-01T00:00:00.000Z',
+    numerator: 16
   });
   assert.equal(ruleV1.version, 1);
+
+  // #774: only a profile with a matching independently reviewed source/RIF,
+  // reviewed by a second actor and activated by a third, may support IVA issue.
+  const profile = await h.ok('/fiscal/taxpayer-profiles', {
+    method:'POST', body:JSON.stringify({
+      effectiveFrom:'2099-01-01T00:00:00Z',effectiveTo:'2099-07-01T00:00:00Z',
+      jurisdiction:'Synthetic QA district',taxpayerCategory:'ordinary_test_only',
+      activityCodes:['ACT-QA'],sourceReference:ruleV1.source,
+      sourceContentSha256:ruleV1.legalSourceSha256
+    })
+  });
+  assert.equal(profile.status,'DRAFT');
+  await h.status(`/fiscal/taxpayer-profiles/${profile.id}/review`,409,{
+    method:'POST',body:JSON.stringify({reason:'Creator may not review own profile.'})
+  });
+  await h.ok(`/fiscal/taxpayer-profiles/${profile.id}/review`,{
+    method:'POST',body:JSON.stringify({reason:'Second actor reviews profile against legal evidence.'})
+  },reviewerToken);
+  await h.status(`/fiscal/taxpayer-profiles/${profile.id}/activate`,409,{
+    method:'POST',body:JSON.stringify({reason:'Reviewer may not activate own review.'})
+  },reviewerToken);
+  const approvedProfile=await h.ok(`/fiscal/taxpayer-profiles/${profile.id}/activate`,{
+    method:'POST',body:JSON.stringify({reason:'Third actor activates reviewed profile for QA.'})
+  },activatorToken);
+  assert.equal(approvedProfile.status,'ACTIVE');
+  const taxDocument=await h.ok('/fiscal/documents/issue',{
+    method:'POST',headers:{'Idempotency-Key':`${RUN}-profile-issue`},
+    body:JSON.stringify({kind:'invoice',period:PERIOD,module:'iva',
+      payload:{qa:'profile snapshot'},ruleKeys:[ruleV1.ruleKey],
+      effectiveAt:'2099-06-15T12:00:00.000Z',prefix:`${RUN}-`,width:4})
+  });
+  assert.match(taxDocument.taxpayerProfileHash,/^[a-f0-9]{64}$/);
+  const taxpayerEvidence=await h.ok(`/fiscal/documents/${taxDocument.id}/taxpayer-profile`);
+  assert.equal(taxpayerEvidence.taxpayerProfileSnapshot.id,profile.id);
+  assert.equal(taxpayerEvidence.taxpayerProfileHash,taxDocument.taxpayerProfileHash);
+  await assert.rejects(
+    h.prisma.$executeRaw`UPDATE public."FiscalDocument"
+      SET "taxpayerProfileHash"=${'f'.repeat(64)}
+      WHERE "tenantId"=${h.tenant.id} AND "id"=${taxDocument.id}`,
+    /TAXPAYER_DOCUMENT_PROFILE_IMMUTABLE/i
+  );
+
 
   const concurrent = 12;
   const issued = await Promise.all(Array.from({ length: concurrent }, (_, index) => h.ok('/fiscal/documents/issue', {
@@ -47,7 +183,7 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
       period: PERIOD,
       module: 'fiscal',
       payload: { run: RUN, concurrent: index },
-      ruleKeys: [`${RUN.toLowerCase()}.iva`],
+      ruleKeys: [`iva.${RUN.toLowerCase()}`],
       effectiveAt: '2099-06-15T12:00:00.000Z',
       prefix: `${RUN}-`,
       width: 4
@@ -59,36 +195,70 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   const retryKey = `${RUN}-retry-Idempotency-Key`;
   const retryBody = {
     kind: 'invoice', period: PERIOD, module: 'fiscal', payload: { run: RUN, retry: true },
-    ruleKeys: [`${RUN.toLowerCase()}.iva`], effectiveAt: '2099-06-20T12:00:00.000Z', prefix: `${RUN}-`, width: 4
+    ruleKeys: [`iva.${RUN.toLowerCase()}`], effectiveAt: '2099-06-20T12:00:00.000Z', prefix: `${RUN}-`, width: 4
   };
   const first = await h.ok('/fiscal/documents/issue', { method: 'POST', headers: { 'Idempotency-Key': retryKey }, body: JSON.stringify(retryBody) });
   const replay = await h.ok('/fiscal/documents/issue', { method: 'POST', headers: { 'Idempotency-Key': retryKey }, body: JSON.stringify(retryBody) });
   assert.equal(replay.id, first.id, 'Idempotency-Key retry must return the same document');
   assert.equal(replay.number, first.number, 'retry must not consume another fiscal sequence number');
+  const issueAudits = await h.prisma.auditLog.findMany({
+    where: { tenantId: h.tenant.id, entity: 'FiscalDocument',
+      entityId: first.id, action: 'fiscal.document.issued' }
+  });
+  assert.equal(issueAudits.length, 1,
+    'idempotent retry must produce exactly one committed fiscal issuance/audit effect');
+  assert.equal((issueAudits[0].after as { hash?: string })?.hash, first.hash,
+    'audit must reference the committed fiscal document hash');
+
 
   const historicalBefore = await h.ok(`/fiscal/documents/${first.id}/rules`);
   assert.equal(historicalBefore[0].ruleVersion, 1);
-  assert.equal(historicalBefore[0].source, 'QA Gazette v1');
+  assert.equal(historicalBefore[0].source, ruleV1.source);
+  assert.equal(historicalBefore[0].legalSourceId, ruleV1.sourceId);
+  assert.equal(historicalBefore[0].legalSourceSha256, ruleV1.legalSourceSha256);
 
-  const ruleV2 = await h.ok('/fiscal/rules', {
-    method: 'POST',
-    body: JSON.stringify({
-      ruleKey: `${RUN.toLowerCase()}.iva`,
-      effectiveFrom: '2099-07-01T00:00:00.000Z',
-      source: 'QA Gazette v2',
-      documentation: 'QA provenance fixture for rule v2; historical documents must keep v1',
-      definition: { rate: '17.00', basis: 'net' }
-    })
+  const ruleV2 = await createReviewedRule({
+    reference: `QA-GAZETTE-V2-${actorSuffix}`,
+    // This window overlaps v1 intentionally. Supersession is explicit and
+    // commits atomically; old documents continue to replay v1 snapshots.
+    effectiveFrom: '2099-06-25T00:00:00.000Z', numerator: 17,
+    supersedesId: ruleV1.id
   });
   assert.equal(ruleV2.version, 2);
+  const firstVersion = (await h.ok(`/fiscal/rules?ruleKey=${encodeURIComponent(ruleV1.ruleKey)}`))
+    .find((row: { id: string }) => row.id === ruleV1.id);
+  assert.equal(firstVersion?.status, 'SUPERSEDED');
+  const successorDocs = await h.ok('/fiscal/documents/issue', { method: 'POST',
+    headers: { 'Idempotency-Key': `${RUN}-successor-rule` },
+    body: JSON.stringify({ kind: 'invoice', period: PERIOD, module: 'fiscal',
+      payload: { syntheticSuccessor: true }, ruleKeys: [ruleV1.ruleKey],
+      effectiveAt: '2099-06-26T12:00:00.000Z', prefix: `${RUN}-`, width: 4 })
+  });
+  assert.equal(successorDocs.appliedRules[0].ruleVersion, 2);
+
   const historicalAfter = await h.ok(`/fiscal/documents/${first.id}/rules`);
   assert.equal(historicalAfter[0].ruleVersion, 1, 'historical snapshot must not be reinterpreted with a new rule');
   assert.equal(historicalAfter[0].ruleHash, historicalBefore[0].ruleHash);
+  // Regression on isolated PostgreSQL 17: historical rows must be immutable
+  // below the API boundary, including for a session with write capability.
+  await assert.rejects(
+    h.prisma.$executeRaw`UPDATE public."FiscalDocumentRuleSnapshot"
+      SET "source" = 'tampered QA source'
+      WHERE "tenantId" = ${h.tenant.id} AND "fiscalDocumentId" = ${first.id}`,
+    /FISCAL_RULE_SNAPSHOT_IMMUTABLE/i
+  );
+  await assert.rejects(
+    h.prisma.$executeRaw`DELETE FROM public."FiscalDocumentRuleSnapshot"
+      WHERE "tenantId" = ${h.tenant.id} AND "fiscalDocumentId" = ${first.id}`,
+    /FISCAL_RULE_SNAPSHOT_IMMUTABLE/i
+  );
+  assert.equal((await h.ok(`/fiscal/documents/${first.id}/rules`))[0].ruleHash, historicalBefore[0].ruleHash);
+
 
   const tenantA = h.tenant.id;
   const tenantB = randomUUID();
   assert.notEqual(tenantA, tenantB);
-  assert.deepEqual(await listFiscalRuleVersions(tenantB, `${RUN.toLowerCase()}.iva`), [], 'tenant A rules must be invisible to tenant B');
+  assert.deepEqual(await listFiscalRuleVersions(tenantB, `iva.${RUN.toLowerCase()}`), [], 'tenant A rules must be invisible to tenant B');
 
   const draft = await h.prisma.salesInvoice.create({
     data: { tenantId: h.tenant.id, number: `${RUN}-DRAFT`, fiscalPeriod: PERIOD, status: 'draft' }
