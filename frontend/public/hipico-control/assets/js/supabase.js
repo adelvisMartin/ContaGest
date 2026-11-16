@@ -196,16 +196,21 @@ export async function signUp(email, password) {
     return data;
 }
 export async function signOut() {
-    var _a;
-    const token = cachedSession === null || cachedSession === void 0 ? void 0 : cachedSession.access_token;
+    const token = cachedSession?.access_token;
+    // Local credentials must be cleared even when the cloud is unreachable.
+    // A failed local purge is an error, not a successful logout.
     await persistSession(null);
-    if (!token || ((_a = globalThis.navigator) === null || _a === void 0 ? void 0 : _a.onLine) === false)
-        return;
+    if (!token)
+        return { localCleared: true, remoteRevoked: true };
+    if (globalThis.navigator?.onLine === false)
+        return { localCleared: true, remoteRevoked: false };
     try {
         await request("/auth/v1/logout", { method: "POST", headers: authHeaders(token) });
+        return { localCleared: true, remoteRevoked: true };
     }
-    catch (_b) {
-        // La sesión local ya fue eliminada; un fallo remoto no debe impedir salir.
+    catch {
+        // Do not claim that the remote bearer was revoked on a failed request.
+        return { localCleared: true, remoteRevoked: false };
     }
 }
 export function isTransientCloudError(error) {
