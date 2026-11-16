@@ -1,7 +1,7 @@
 # ContaGest / Control Hípico — lote #778–#783 / #1011 / #1291 / #892 / #1018 / #1292
 Fecha de inspección: 2026-11-16 · Baseline público de `main`: `e7706f3dac3ae4c677fcdff05a662765fa6bdcc6`.
 
-> **Estado de este PR: PARTIAL / DRAFT.** Este documento es un registro de alcance y riesgos, no un certificado fiscal, una autorización de WhatsApp ni evidencia de pruebas que no corrieron. No cerrar los diez issues ni habilitar opciones de producción a partir de esta rama. Una sola rama/PR contiene el incremento acotado; no se falsea el DoD de cada issue.
+> **Estado de este PR: PARTIAL / DRAFT.** Este documento es un registro de alcance y riesgos, no un certificado fiscal, una autorización de WhatsApp ni evidencia de pruebas que no corrieron. No cerrar los diez issues ni habilitar opciones de producción a partir de esta rama. Una sola rama/PR contiene incrementos acotados de #1292 y #1291/#892; no se falsea el DoD de ningún issue.
 
 ## Autoridad, límites y claims
 
@@ -19,8 +19,8 @@ Hay dos PR **DRAFT** ajenos a este incremento sobre el mismo baseline: [#1287](h
 | [#782](https://github.com/adelvisMartin/ContaGest/issues/782) Libros | `fiscal-book-readiness.ts` devuelve `BLOCKED_NOT_CERTIFIED`, nunca pretende ser libro fiscal. | FK/provenance invoice→snapshot, notas/anulaciones, cierres inmutables, export y conciliación con subledger. |
 | [#783](https://github.com/adelvisMartin/ContaGest/issues/783) Compliance | Readiness y política de transiciones; evidencia de filing externo no representa presentación oficial. | Obligaciones/adjuntos con estado auditado persistido, banking, calendario, RBAC, PG17. |
 | [#1011](https://github.com/adelvisMartin/ContaGest/issues/1011) Messenger | `source-read-policy-gate.mjs` siempre rechaza lectura automática; autoenvío SOURCE es NO-GO. | Autorización oficial no existe: permanece cerrado el gate; sólo LAB sintético/sugerencia humana. |
-| [#1291](https://github.com/adelvisMartin/ContaGest/issues/1291) LAB AppSec | Consulta LAB conserva canal de lectura y contratos de respuesta restringidos. | Corpus adversarial completo, reproducción offline, aislamiento contextos y prueba de todos los arranques/errores. |
-| [#892](https://github.com/adelvisMartin/ContaGest/issues/892) LAB canónico | `lab-canonical-query.mjs` llama endpoint existente con identidad y propósito de sólo lectura, rechaza SOURCE y autoridad financiera. | E2E real LAB→API→estado→response→outbox/receipt, PG17, reboot/retry, Windows LAB físico y soak. |
+| [#1291](https://github.com/adelvisMartin/ContaGest/issues/1291) LAB AppSec | Consulta LAB conserva canal de lectura y contratos de respuesta restringidos; esta rama rechaza controles Unicode invisibles en preguntas. | Corpus adversarial completo, reproducción offline, aislamiento contextos y prueba de todos los arranques/errores. |
+| [#892](https://github.com/adelvisMartin/ContaGest/issues/892) LAB canónico | `lab-canonical-query.mjs` llama endpoint existente con identidad y propósito de sólo lectura, rechaza SOURCE y autoridad financiera; esta rama corta texto Unicode sospechoso antes del fetch. | E2E real LAB→API→estado→response→outbox/receipt, PG17, reboot/retry, Windows LAB físico y soak. |
 | [#1018](https://github.com/adelvisMartin/ContaGest/issues/1018) Shares | Política default-off y previos arreglos #1000/#1025/#1032/#1038. | RLS PostgreSQL17 de verdad, proxy/CDN token redaction, ledger vs PWA, consentimiento; NO activar shares. |
 | [#1292](https://github.com/adelvisMartin/ContaGest/issues/1292) PWA | Ambos service workers evitaban caché de rutas sensibles, pero clasificaban por path sin considerar nombres de parámetros de credenciales en URL. | **Incremento de este PR**: excluir consultas privadas del fetch/caché offline. Faltan revocación real, cross-user IndexedDB/Cache Storage, Android físico y E2E. |
 
@@ -35,6 +35,14 @@ Hay dos PR **DRAFT** ajenos a este incremento sobre el mismo baseline: [#1287](h
 
 **Alcance deliberadamente limitado:** la comprobación de nombres no elimina tokens del historial, analytics, CDN, proxies ni de la respuesta HTML, no soluciona fugas desde código ajeno al service worker y no es un sustituto de autenticación/RLS. El control raíz deja la petición fuera del SW; el control Hípico la envía a red con `no-store`. Se requieren comprobaciones E2E de URLs y navegación en navegador para verificarlo.
 
+## Cambio implementado — entrada adversarial LAB (#1291 y #892)
+
+5. `tools/hipico-whatsapp-web-bridge/src/lab-canonical-query.mjs`: filtro conservador de controles Unicode invisibles de separación/direccionalidad (por ejemplo U+200B, U+202E y U+2060) antes de clasificar la consulta o llamar el endpoint. Se preservan emojis legítimos con U+200D; se mantienen intactos el modo read-only, propósito, token, respuesta y NO-GO de SOURCE.
+6. `tools/hipico-whatsapp-web-bridge/tests/lab-obfuscated-query-v1291.test.mjs`: prueba que una consulta visualmente inocua con instrucción monetaria ofuscada no llega a la red y que un emoji con joiner se procesa normalmente.
+7. `.github/workflows/hipico-build-runtime.yml`: añade gate focal Node 22 para la regresión adversarial. El `npm test` propio del Bridge ya incluye `tests/*.test.mjs`.
+
+**Flujo LAB:** texto sintético → rechazo de formato invisible sospechoso (fail-closed) → clasificación segura de intención → envelope de lectura → backend canónico (sin authority de escritura o dinero) → orientación / respuesta controlada. Este cambio **no** supone protección integral de prompt injection, spoofing Unicode, errores de clasificación, ni acredita entrega real WhatsApp.
+
 ## Evidencia requerida y estado
 
 Estas etiquetas son hechos de esta ejecución; no son estados heredables entre commits.
@@ -43,7 +51,7 @@ Estas etiquetas son hechos de esta ejecución; no son estados heredables entre c
 | --- | --- | --- |
 | SOURCE_REVIEW | PASS (inspección delimitada) | GitHub tree/archivos/issue y baseline SHA comparados; no equivale a QA. |
 | LOCAL_STATIC / ROUTER | BLOCKED | Checkout completo para ejecutar router y diff/secret scan del SHA candidato. |
-| LOCAL_UNIT / CONTRACTS | NOT_EXECUTED | `node --test tests/pwa_private_query_guard_v1292.test.mjs tests/pwa_offline_v563_contract.test.mjs tests/hipico_offline_recovery_routing_297.test.mjs`. |
+| LOCAL_UNIT / CONTRACTS | NOT_EXECUTED | `node --test tests/pwa_private_query_guard_v1292.test.mjs tests/pwa_offline_v563_contract.test.mjs tests/hipico_offline_recovery_routing_297.test.mjs tools/hipico-whatsapp-web-bridge/tests/lab-obfuscated-query-v1291.test.mjs`. |
 | LOCAL_INTEGRATION | NOT_EXECUTED | `npm ci`, `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build`; ejecutar sobre SHA candidato. |
 | LOCAL_POSTGRES | BLOCKED | PostgreSQL17 efímero propio, migraciones from-zero/upgrade, fixtures tenant A/B, prueba RLS/ledger; no BD compartida. |
 | LOCAL_BROWSER_E2E | NOT_EXECUTED | Chromium PWA offline/private-navigation y flujos Hípico, accesibilidad, Firefox/WebKit donde aplique. |
