@@ -240,7 +240,11 @@ test('#1292 both PWA cache migrations evict pre-hardening data without crossing 
   const oldErp = 'contagest-ve-v563-2-assets';
   const oldErpSession = 'contagest-ve-v563-2-session-synthetic';
   const oldHipico = 'hipico-control-v1.13.0-rc3-shell-r38-consolidator-v4-1-3';
-  const erp = makeWorker(WORKERS[0], { existingCacheKeys: [oldErp, oldErpSession, oldHipico] });
+  const hipicoSession = 'hipico-control-session-neighbor';
+  const otherAppSession = 'another-product-session-neighbor';
+  const erp = makeWorker(WORKERS[0], {
+    existingCacheKeys: [oldErp, oldErpSession, oldHipico, hipicoSession, otherAppSession]
+  });
   const hipico = makeWorker(WORKERS[1], { existingCacheKeys: [oldErp, oldHipico, erp.cacheName] });
   assert.match(erp.cacheName, /v563-3-assets$/);
   assert.match(hipico.cacheName, /shell-r39-/);
@@ -249,6 +253,8 @@ test('#1292 both PWA cache migrations evict pre-hardening data without crossing 
   assert.ok(erp.deletedCacheNames.includes(oldErp));
   assert.ok(erp.deletedCacheNames.includes(oldErpSession));
   assert.ok(!erp.deletedCacheNames.includes(oldHipico), 'ERP activation must not delete Hipico caches');
+  assert.ok(!erp.deletedCacheNames.includes(hipicoSession), 'ERP must not delete Hipico session caches');
+  assert.ok(!erp.deletedCacheNames.includes(otherAppSession), 'ERP must not delete unrelated session caches');
   assert.ok(hipico.deletedCacheNames.includes(oldHipico));
   assert.ok(!hipico.deletedCacheNames.includes(oldErp), 'Hipico activation must not delete ERP caches');
   assert.ok(!hipico.deletedCacheNames.includes(erp.cacheName), 'Hipico activation must not delete active ERP cache');
