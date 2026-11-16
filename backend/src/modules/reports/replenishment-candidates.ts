@@ -98,8 +98,8 @@ export function inspectReorderStockRows(rows: readonly ReorderStockRow[]) {
  * Advisory candidates derived ONLY from canonical inventory stock-health rows.
  * Inconsistent stock or reservations require reconciliation, never replenishment.
  */
-export function deriveReorderCandidates(rows: readonly ReorderStockRow[]) {
-  return inspectReorderStockRows(rows).eligibleRows
+function projectValidatedReorderCandidates(eligibleRows: readonly ReorderStockRow[]) {
+  return eligibleRows
     .filter(row => row.needsReorder && row.status !== 'healthy')
     .map(row => ({
       productId: row.productId,
@@ -119,6 +119,9 @@ export function deriveReorderCandidates(rows: readonly ReorderStockRow[]) {
       a.sku.localeCompare(b.sku) || a.productId.localeCompare(b.productId));
 }
 
+export function deriveReorderCandidates(rows: readonly ReorderStockRow[]) {
+  return projectValidatedReorderCandidates(inspectReorderStockRows(rows).eligibleRows);
+}
 
 /**
  * Prepare one bounded catalog page from canonical stock health rows BEFORE
@@ -128,7 +131,8 @@ export function deriveReorderCandidates(rows: readonly ReorderStockRow[]) {
  */
 export function prepareReorderStockPage(rows: readonly ReorderStockRow[]) {
   const stockReview = inspectReorderStockRows(rows);
-  const reorderCandidates = deriveReorderCandidates(stockReview.eligibleRows);
+  // Already validated as an atomic page. Do not scan the same DB snapshot twice.
+  const reorderCandidates = projectValidatedReorderCandidates(stockReview.eligibleRows);
   return {
     rows,
     stockReview,
