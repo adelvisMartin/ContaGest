@@ -106,6 +106,8 @@ test('#637 manual DRAFT deletion requires atomic audit and cannot drop protected
   assert.match(migration,/OLD\."sourceId" IS NULL/);
   assert.match(migration,/a\."action" = 'ledger\.entry\.draft-deleted'/);
   assert.match(migration,/a\."userId" IS NOT NULL/);
+  assert.match(migration,/a\.xmin::text\s*=\s*\(pg_current_xact_id\(\)::text::numeric % 4294967296\)::text/,
+    'A previously committed deletion audit must never authorize a later transaction');
   assert.match(migration,/data_lifecycle_assert_not_held/);
   assert.match(migration,/OLD\."tenantId"::uuid/, 'UUID-typed legal hold must receive explicit cast from ledger tenant TEXT');
   assert.match(migration,/p\."tenantId" = OLD\."tenantId"::uuid/, 'Retention policy UUID comparison must use explicit cast');
