@@ -146,7 +146,8 @@ router.delete('/entries/:id', requirePermission('accounting.post'), asyncHandler
   const ctx = context(req);
   const deleted = await deleteDraftLedgerEntry({
     tenantId: ctx.tenantId, entryId: req.params.id, deletedBy: ctx.userId,
-    audit: { userId: ctx.userId, ipAddress: ctx.ip, userAgent: ctx.userAgent }
+    audit: { userId: ctx.userId, ipAddress: ctx.ip, userAgent: ctx.userAgent,
+      requestId: requestId(req) }
   });
   ok(res, { deleted: true, id: deleted.id });
 }));
