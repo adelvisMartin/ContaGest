@@ -28,6 +28,22 @@ BEGIN
        AND OLD."sourceId" IS NULL
        AND OLD."salesInvoiceId" IS NULL
        AND OLD."purchaseInvoiceId" IS NULL THEN
+      -- The API uses the same transaction-level period mutex. Enforce the
+      -- close/delete ordering at the database boundary for every caller,
+      -- including maintenance scripts with a valid in-transaction audit.
+      PERFORM pg_advisory_xact_lock(hashtextextended(
+        'cg:ledger-period:v1:' || OLD."tenantId" || ':' || OLD."fiscalPeriod", 0
+      ));
+      IF EXISTS (
+        SELECT 1 FROM public."ClosingPeriod" c
+        WHERE c."tenantId" = OLD."tenantId"
+          AND c."period" = OLD."fiscalPeriod"
+          AND c."module" IN ('accounting', 'all')
+          AND c."status" = 'closed'
+      ) THEN
+        RAISE EXCEPTION 'ACCOUNTING_PERIOD_CLOSED'
+          USING ERRCODE = '23514';
+      END IF;
       PERFORM public.data_lifecycle_assert_not_held(
         OLD."tenantId"::uuid, TG_TABLE_NAME, OLD."id"::text
       );
