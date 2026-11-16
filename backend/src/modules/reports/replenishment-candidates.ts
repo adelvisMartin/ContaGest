@@ -44,6 +44,27 @@ function exactUnits(text: string, signed: boolean): bigint {
 }
 
 /**
+ * Preserve one coherent set of source values for the whole projection.
+ * The public rows array remains untouched, while candidate/policy calculations
+ * must never re-read an object that could change after validation.
+ */
+function snapshotReorderRow(row: ReorderStockRow): Readonly<ReorderStockRow> {
+  return Object.freeze({
+    productId: row.productId,
+    sku: row.sku,
+    name: row.name,
+    unit: row.unit,
+    stockExact: row.stockExact,
+    reservedExact: row.reservedExact,
+    availableExact: row.availableExact,
+    minStockExact: row.minStockExact,
+    shortfallExact: row.shortfallExact,
+    status: row.status,
+    needsReorder: row.needsReorder
+  });
+}
+
+/**
  * Do not present inconsistent canonical balances as ordinary purchase candidates.
  * Report them separately for manual reconciliation. No ledger mutation occurs.
  */
@@ -51,7 +72,8 @@ export function inspectReorderStockRows(rows: readonly ReorderStockRow[]) {
   const eligibleRows: ReorderStockRow[] = [];
   const stockExceptions: ReorderStockException[] = [];
   const seenProductIds = new Set<string>();
-  for (const row of rows) {
+  for (const original of rows) {
+    const row = snapshotReorderRow(original);
     if (!row.productId || !row.sku || !row.name || !row.unit) {
       throw new TypeError('REORDER_INVALID_PRODUCT');
     }
