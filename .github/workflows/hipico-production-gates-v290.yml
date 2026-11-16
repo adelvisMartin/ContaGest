@@ -293,11 +293,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: package-lock.json
+      # Capacitor generates the Gradle project later; no Gradle files exist at checkout.
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
       - uses: android-actions/setup-android@v4
       - name: Install pinned Android SDK
         run: |
