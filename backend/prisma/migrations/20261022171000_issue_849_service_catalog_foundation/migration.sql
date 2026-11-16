@@ -112,11 +112,11 @@ CREATE INDEX "ServiceLocationEligibility_tenantId_locationId_serviceId_idx"
 -- Historical service revisions are append-only, even if future adapters
 -- accidentally get a generic Prisma CRUD permission.
 CREATE FUNCTION public.service_catalog_revision_immutable() RETURNS trigger
-LANGUAGE plpgsql AS $
+LANGUAGE plpgsql AS $$
 BEGIN
   RAISE EXCEPTION 'SERVICE_CATALOG_REVISION_IMMUTABLE' USING ERRCODE = '23514';
 END;
-$;
+$$;
 CREATE TRIGGER service_definition_revision_no_mutation
   BEFORE UPDATE OR DELETE ON public."ServiceDefinitionRevision"
   FOR EACH ROW EXECUTE FUNCTION public.service_catalog_revision_immutable();
