@@ -126,7 +126,10 @@ async function lockPayrollPeriod(tx: Prisma.TransactionClient, tenantId: string,
 router.post('/receipts', validateBody(receiptSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const input = req.body as z.infer<typeof receiptSchema>;
-  try { assertPayrollReceiptArithmetic(input); }
+  const { gross, deductions, net } = input;
+  if (gross === undefined || deductions === undefined || net === undefined)
+    throw new HttpError(422, 'El recibo requiere bruto, deducciones y neto.', { code: 'PAYROLL_RECEIPT_AMOUNTS_REQUIRED' });
+  try { assertPayrollReceiptArithmetic({ gross, deductions, net }); }
   catch { throw new HttpError(422, 'El recibo no cuadra: bruto debe ser exactamente deducciones más neto.', { code: 'PAYROLL_RECEIPT_NOT_BALANCED' }); }
   const result = await prisma.$transaction(async tx => {
     const period = input.periodId
