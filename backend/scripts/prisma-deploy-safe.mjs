@@ -169,6 +169,9 @@ export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } =
   const temporaryPrefixes = [];
 
   try {
+    // Check for already-applied historical migration drift BEFORE any baseline
+    // resolve, compatibility projection, or schema mutation, even on ephemeral DBs.
+    await assertReviewedMigrationChecksums({ databaseUrl, migrationsRoot });
     if (ephemeral) {
       for (const migration of await pendingLegacyBaseline(databaseUrl)) {
         console.log(`[prisma-baseline] recording historical baseline: ${migration}`);
@@ -224,7 +227,6 @@ export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } =
       }
     }
 
-    await assertReviewedMigrationChecksums({ databaseUrl, migrationsRoot });
     runPrisma(['migrate', 'deploy', '--schema', schemaPath]);
   } finally {
     for (const prefix of temporaryPrefixes) {
