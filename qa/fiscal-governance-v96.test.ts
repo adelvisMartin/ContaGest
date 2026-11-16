@@ -25,7 +25,9 @@ async function userWithPermissions(h:any,name:string,permissions:string[]){
 }
 
 test('issue #96 fiscal RBAC and audited state machine on real PostgreSQL',async(t)=>{
-  const h=await createRealBackendHarness();
+  const h=await createRealBackendHarness({
+    approvedDatabaseNames:['contagest_fiscal_v96_e2e']
+  });
   const database=await h.prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
   assert.equal(database[0]?.name,'contagest_fiscal_v96_e2e',
     'Legal acceptance cleanup is allowed only on the dedicated disposable #96 database');
@@ -36,9 +38,9 @@ test('issue #96 fiscal RBAC and audited state machine on real PostgreSQL',async(
   t.after(async()=>{
     // Remove signed test sessions before deleting their user profiles.
     await h.close();
-    await h.prisma.fiscalDocument.deleteMany({where:{tenantId:{in:[h.tenant.id,tenantB.id]},period:{in:[PERIOD_A,PERIOD_DOC,PERIOD_CROSS,PERIOD_LINK]}}}).catch(()=>undefined);
-    await h.prisma.closingPeriod.deleteMany({where:{tenantId:{in:[h.tenant.id,tenantB.id]},period:{in:[PERIOD_A,PERIOD_DOC,PERIOD_CROSS,PERIOD_LINK]}}}).catch(()=>undefined);
-    await h.prisma.auditLog.deleteMany({where:{tenantId:h.tenant.id,action:{startsWith:'fiscal.'}}}).catch(()=>undefined);
+    // FiscalDocument and AuditLog are immutable protected evidence. Never
+    // suppress failed DELETEs against them just to make fixture cleanup green.
+    // The isolated PostgreSQL service is destroyed after this test job.
     for(const actor of [readOnly,closer]){
       await h.prisma.licenseKey.deleteMany({where:{userId:actor.user.id}});
       await h.prisma.userRole.deleteMany({where:{userId:actor.user.id}});
@@ -61,7 +63,9 @@ test('issue #96 fiscal RBAC and audited state machine on real PostgreSQL',async(
       assert.equal(survivingLegal[0]?.count,0n,'Legal acceptance FK cascade left synthetic evidence');
       assert.equal(survivingCookie[0]?.count,0n,'Cookie preference FK cascade left synthetic evidence');
     }
-    await h.prisma.tenant.delete({where:{id:tenantB.id}}).catch(()=>undefined);
+    // Tenant B deliberately remains only until the disposable DB is dropped:
+    // deleting it could cascade into protected fiscal evidence.
+
   });
 
   await t.test('read-only user sees periods/capabilities but cannot mutate',async()=>{
