@@ -25,7 +25,7 @@ function makeWorker(spec, { offline = false } = {}) {
     },
   };
   const context = {
-    URL, Request, Response,
+    URL, Request, Response, Headers,
     self: {
       location: { origin: new URL(spec.scope).origin },
       registration: { scope: spec.scope },
