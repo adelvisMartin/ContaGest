@@ -66,10 +66,32 @@ Investigación de referencia, sin extraer ni copiar código/activos de terceros:
 
 ## Verificación y decisión
 
-**Source verified (en baseline):** AGENTS, onboarding, provider catalog/verifier/tests, workflows `.github/workflows/provider-integration-catalog-v772.yml` y `ci.yml`, lista de issues, PR concurrentes y caminos documentales. **Local monorepo:** BLOCKED (no checkout vía GitHub DNS). **Node unit exacto, lint, typecheck, build, migration PG17, Playwright Chromium/Firefox/WebKit, Hípico, runtime, CI y seguridad dinámica:** NOT_EXECUTED/PENDING hasta lectura del run en el **SHA final**; nunca convertir fuente en PASS.
+**Source verified (en baseline):** AGENTS, onboarding, provider catalog/verifier/tests, workflows `.github/workflows/provider-integration-catalog-v772.yml` y `ci.yml`, lista de issues, PR concurrentes y caminos documentales. **Local monorepo:** BLOCKED (no checkout vía GitHub DNS). **Node #772 aislado:** PASS, 17/17 tests y parser/validador en Node v22.16.0, usando archivos de fuente y pruebas idénticos byte a byte a sus Git blobs en el PR (ver sección de iteración); catálogo JSON de contenido equivalente pero reserializado para el arnés aislado. **Lint, typecheck, build monorepo, PostgreSQL17, Playwright Chromium/Firefox/WebKit, Hípico, runtime y seguridad dinámica:** NOT_EXECUTED/PENDING hasta disponer de checkout/runner del candidato exacto. Ninguna evidencia aislada se convierte en PASS del monorepo.
 
 **Gates relevantes para este cambio sin runtime:** `node --check scripts/verify-provider-integration-catalog-v772.mjs`; `node --check tests/provider_integration_catalog_v772.test.mjs`; `node scripts/verify-provider-integration-catalog-v772.mjs`; `node --test tests/provider_integration_catalog_v772.test.mjs`, plus `npm ci --no-audit --no-fund`, `npm run typecheck`, `npm test`, `npm run build` y el matrix CI según archivo de workflow. No inventar salidas. Ante fallas existentes, rastrear job/test/line expected/received exacto y no modificar checks para obtener verde.
 
 **Riesgos/rollback:** enlaces legítimos con claves llamadas `token` o hosts IP se rechazarán en **catalog evidence**, no afectan proveedores activos porque están deshabilitados; si se necesitan, documentar y revisar caso sin introducir excepción general. Rollback: revertir los archivos de este PR (sin DDL ni datos). No secrets, no credenciales, no cambios de permisos/tenants.
 
 **Decisión:** PR en **draft** con avance real, de alcance delimitado. Ninguno de los 20 tickets cumple DoD completo en virtud de este PR. No cerrar issues ni promocionar producción sin validación, revisión de diff y checks del SHA final.
+
+## Iteración de seguridad, QA y refactor del PR #1309 (2026-11-16)
+
+**Diagnóstico reproducido:** la validación original eliminaba exactamente un punto final del hostname; `https://api.internal../docs` y `https://localhost../docs` quedaban con un punto residual que el control de sufijo no reconocía. Node 22 reprodujo la aceptación antes del fix. El parche ahora rechaza cualquier etiqueta DNS vacía por puntos consecutivos y conserva la aceptación de documentación pública normal.
+
+**Cambios de arquitectura/acoplamiento:** sólo el guard documental de #772. `node:net.isIP` impide IP literales (incluido IPv4 normalizado desde `127.1` e IPv6). El scanner de parámetros recorre el iterador `URLSearchParams.keys()` con retorno anticipado, sin convertir todas las claves en un arreglo; rechaza nombres sensibles codificados y, además, `auth`, `authorization`, `session_id`, `jwt`, `bearer` y `credential`. Se comprueban tanto `source` como `licenseSource` sin alterar providers, endpoints, identidad, RBAC, schema ni CI.
+
+**Reproducción aislada verificable:** Node `v22.16.0`; `node --check` de script/test, `node scripts/verify-provider-integration-catalog-v772.mjs` y `node --test tests/provider_integration_catalog_v772.test.mjs` completaron **17/17 PASS**. El `git hash-object` local de los dos archivos ejecutados coincidió con los Git blob SHAs publicados en el PR: `8364ace5afcfb630cefeac054dac6b36984ccfcb` (script) y `83d115985811b1383c8a297e2c8e740149b8b02f` (tests). El catálogo aislado fue reserializado, no es un archivo byte-exacto: los valores JSON canónicos coincidieron con el contenido leído del repo (longitud 5557 y FNV32 `727078091`), y el archivo remoto del catálogo no se modificó. **No se cuenta esta prueba como suite CI ni como smoke de PostgreSQL/browsers**.
+
+### FODA técnico y riesgo residual
+
+| Aspecto | Evaluación fundamentada | Acción y estado |
+| --- | --- | --- |
+| Fortaleza | El catálogo mantiene `runtimeEnabled=false`, todos los providers apagados, `SOURCE_REUSE=NONE` y contrato de tenant/firmas/reintentos explícito | **VERIFIED por fuente/contrato**, no por ejecución de adapters |
+| Debilidad | `validSource` sólo examina enlaces de documentos; no comprueba DNS a tiempo de conexión ni filtra credenciales incrustadas en segmentos de ruta arbitrarios | Mantener **NO_RUNTIME** y revisión manual de provenance; ninguna afirmación SSRF-safe |
+| Oportunidad | Reutilizar política declarativa en futuros ports/adapters con allowlist y DNS/IP enforcement real, HMAC y dedupe persistente | **OUT_OF_SCOPE** de este PR, requiere #772/#853 y tests red/PG17 |
+| Amenaza | Encodings/hosts anómalos, secretos de proveedor y fuga inter-tenant si un futuro adapter confía en payload externo | Regresiones de URL agregadas; adapter futuro seguirá **BLOCKED** sin contrato firmado/tenancy |
+| Amenaza de release | GitHub Actions permanece `queued/pending` y no hay checkout local completo ni runner PostgreSQL 17/Playwright en este entorno | **BLOCKED**; ninguna edición de `continue-on-error`, skips, timeouts o matriz para pintar verde |
+
+**Gates no sustituibles:** `npm ci`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run build:frontend`, `npm run build:backend`, migración/integración con PostgreSQL 17 efímero, navegador Chromium/Firefox/WebKit, aislamiento tenant y revisión CI por SHA. Los workflows `ci.yml`, `pr-quality-gate-v1.yml`, `qa-browser.yml` y `provider-integration-catalog-v772.yml` permanecieron intactos; el quality gate existente emplea PostgreSQL 16 y eso **no es evidencia PostgreSQL 17**. Hípico no fue modificado, no está probado por la ejecución aislada.
+
+**Decisión actual:** **PARTIAL / BLOCKED_RELEASE**, no fusionar, no cerrar tickets ni desplegar; en cuanto los jobs comiencen, exigir run/job exact-SHA, logs y artefactos, clasificar causas reales por test y corregir sólo regresiones demostrables. El watch automático no realiza merge ni promete PASS.
