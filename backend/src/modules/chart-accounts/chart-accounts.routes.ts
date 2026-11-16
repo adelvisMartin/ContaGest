@@ -8,6 +8,7 @@ import { validateBody } from '../../shared/middleware/validate.js';
 import { assertBalanced } from '../accounting/accounting.service.js';
 import { SEMANTIC_ACCOUNT_ROLES } from './account-role-policy.js';
 import { bindSemanticAccountRole, listSemanticAccountRoles, resolveSemanticPostingAccounts } from './account-role.repository.js';
+import { syncStarterChartAccounts } from './chart-template-sync.js';
 
 const chartAccounts = chartAccountsData as Array<{
   code: string;
@@ -53,13 +54,12 @@ router.get('/', requirePermission('accounting.view'), asyncHandler(async (req, r
   res.json(req.query.persistedOnly === 'true' ? accounts : (accounts.length ? accounts : chartAccounts));
 }));
 router.post('/sync-template', requirePermission('accounting.post'), asyncHandler(async (req, res) => {
-  const tenantId = getTenantId(req);
-  let synced = 0;
-  for (const account of chartAccounts) {
-    await prisma.chartAccount.upsert({ where:{ tenantId_code:{ tenantId, code:account.code } }, update:{ ...account }, create:{ tenantId, ...account } });
-    synced++;
-  }
-  res.json({ ok:true, synced });
+  const ctx = (req as any).context;
+  if (!ctx?.tenantId || !ctx.userId) throw new HttpError(401, 'Se requiere actor autenticado.');
+  const result = await prisma.$transaction(tx => syncStarterChartAccounts(tx, chartAccounts, {
+    tenantId: ctx.tenantId, userId: ctx.userId, ip: ctx.ip, userAgent: ctx.userAgent
+  }));
+  res.json(result);
 }));
 router.post('/', requirePermission('accounting.post'), validateBody(accountSchema), asyncHandler(async (req, res) => {
   const tenantId = getTenantId(req);
