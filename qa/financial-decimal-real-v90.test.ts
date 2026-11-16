@@ -25,16 +25,7 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
     // #90 runs in its own PG17 service and again on #91's disposable clone.
     approvedDatabaseNames:['contagest_financial_v90_e2e','contagest_ledger_v91']
   });
-  const ids = {
-    sales: [] as string[],
-    purchases: [] as string[],
-    ledgers: [] as string[],
-    bankAccounts: [] as string[],
-    bankMovements: [] as string[],
-    employees: [] as string[],
-    payrollPeriods: [] as string[],
-    payrollReceipts: [] as string[]
-  };
+  let bankAccountId = '';
 
   // Never attempt bulk DELETE of POSTED ledgers, bank movements, invoices or
   // payroll evidence: the domain correctly protects those rows at database
@@ -63,7 +54,6 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
         ]
       })
     });
-    ids.ledgers.push(entry.id);
     assert.equal(entry.posted, false, 'Manual ledger must start as DRAFT under #91');
     const stored = await h.prisma.ledgerEntry.findUnique({ where: { id: entry.id }, include: { lines: true } });
     assert.ok(stored);
@@ -101,8 +91,6 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
         ]
       })
     });
-    ids.sales.push(sale.id);
-    if (sale.ledgerEntryId) ids.ledgers.push(sale.ledgerEntryId);
     const stored = await h.prisma.salesInvoice.findUnique({ where: { id: sale.id }, include: { lines: true } });
     assert.ok(stored);
     assert.deepEqual(stored.lines.map((line) => line.total.toFixed(2)), ['3.33', '0.20']);
@@ -128,7 +116,6 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
     });
     assert.equal(cancelled.sale.status, 'cancelled');
     assert.ok(cancelled.reversalId);
-    ids.ledgers.push(cancelled.reversalId);
     const reversal = await h.prisma.ledgerEntry.findUnique({ where: { id: cancelled.reversalId }, include: { lines: true } });
     assertExactReversal(originalLedger, reversal);
     const repeated = await h.ok(`/sales/${sale.id}/cancel`, { method: 'PATCH', body: JSON.stringify({ reason: 'QA90 idempotency' }) });
@@ -146,8 +133,6 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
         lines: [{ description: 'Golden purchase', quantity: '1.005', unitCost: '19.99', taxRate: '16.00' }]
       })
     });
-    ids.purchases.push(purchase.id);
-    if (purchase.ledgerEntryId) ids.ledgers.push(purchase.ledgerEntryId);
     const stored = await h.prisma.purchaseInvoice.findUnique({ where: { id: purchase.id }, include: { lines: true } });
     assert.ok(stored);
     assert.equal(stored.lines[0].total.toFixed(2), '20.09');
@@ -167,7 +152,6 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
     });
     assert.equal(cancelled.purchase.status, 'cancelled');
     assert.ok(cancelled.reversalId);
-    ids.ledgers.push(cancelled.reversalId);
     const reversal = await h.prisma.ledgerEntry.findUnique({ where: { id: cancelled.reversalId }, include: { lines: true } });
     assertExactReversal(originalLedger, reversal);
     const repeated = await h.ok(`/purchases/${purchase.id}/cancel`, { method: 'PATCH', body: JSON.stringify({ reason: 'QA90 idempotency' }) });
@@ -186,7 +170,7 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
         currency: 'USD', openingBalance: '0.10'
       })
     });
-    ids.bankAccounts.push(account.id);
+    bankAccountId = account.id;
     const movement = await h.ok('/banking/movements', {
       method: 'POST',
       headers: { 'Idempotency-Key': `${RUN}-bank-income` },
@@ -195,7 +179,6 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
         type: 'income', currency: 'USD', amount: '0.20'
       })
     });
-    ids.bankMovements.push(movement.id);
     assert.equal(movement.amountExact, '0.20');
     let stored = await h.prisma.bankAccount.findUnique({ where: { id: account.id } });
     assert.equal(stored?.balance.toFixed(2), '0.30');
@@ -206,7 +189,6 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
       headers: { 'Idempotency-Key': `${RUN}-bank-reverse` },
       body: JSON.stringify({ reason: 'Synthetic QA exact decimal reversal' }),
     });
-    ids.bankMovements.push(reversal.id);
     assert.equal(reversal.reversalOfId, movement.id);
     stored = await h.prisma.bankAccount.findUnique({ where: { id: account.id } });
     assert.equal(stored?.balance.toFixed(2), '0.10');
@@ -220,18 +202,15 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
 
   await t.test('payroll aggregate keeps 0.10 + 0.20 == 0.30 in PostgreSQL', async () => {
     const period = await h.ok('/payroll/periods', { method: 'POST', body: JSON.stringify({ period: `${RUN}-P1` }) });
-    ids.payrollPeriods.push(period.id);
     for (const [index, gross] of ['0.10', '0.20'].entries()) {
       const employee = await h.ok('/employees', {
         method: 'POST',
         body: JSON.stringify({ idNumber: `${RUN}-E${index}`, fullName: `${RUN} Employee ${index}`, position: 'QA', salary: gross })
       });
-      ids.employees.push(employee.id);
       const receipt = await h.ok('/payroll/receipts', {
         method: 'POST',
         body: JSON.stringify({ periodId: period.id, employeeId: employee.id, gross, deductions: '0.00', net: gross })
       });
-      ids.payrollReceipts.push(receipt.receipt.id);
     }
     const stored = await h.prisma.payrollPeriod.findUnique({ where: { id: period.id } });
     assert.equal(stored?.totalGross.toFixed(2), '0.30');
@@ -239,7 +218,7 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
   });
 
   await t.test('API rejects out-of-policy monetary scale instead of truncating silently', async () => {
-    const account = await h.prisma.bankAccount.findFirst({ where: { id: { in: ids.bankAccounts } } });
+    const account = await h.prisma.bankAccount.findUnique({ where: { id: bankAccountId } });
     assert.ok(account);
     await h.status('/banking/movements', 422, {
       method: 'POST',
