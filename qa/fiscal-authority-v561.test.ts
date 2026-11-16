@@ -38,9 +38,17 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
   ]) {
     await h.status('/fiscal/documents',422,{method:'POST',body:JSON.stringify(body)});
   }
-  const external=await h.ok('/fiscal/documents',{
+  // External/manual supports must not bypass request idempotency protection.
+  await h.status('/fiscal/documents',428,{
     method:'POST',body:JSON.stringify(externalBase)
   });
+  const externalRequest={
+    method:'POST',headers:{'Idempotency-Key':`${RUN}-external-support`},
+    body:JSON.stringify(externalBase)
+  };
+  const external=await h.ok('/fiscal/documents',externalRequest);
+  const replay=await h.ok('/fiscal/documents',externalRequest);
+  assert.equal(replay.id,external.id,'retry must not produce a second fiscal supporting document');
   assert.equal(external.status,'external','manual supports must not impersonate issued tax documents');
   const supportAudits = await h.prisma.auditLog.findMany({where:{
     tenantId:h.tenant.id,entity:'FiscalDocument',entityId:external.id,

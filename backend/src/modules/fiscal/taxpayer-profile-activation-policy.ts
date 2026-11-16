@@ -9,6 +9,7 @@ export type ActiveTaxpayerProfile = Readonly<{
 }>;
 const fail = (): never => { throw new Error('TAXPAYER_PROFILE_NOT_AUTHORIZED'); };
 const SHA = /^[a-f0-9]{64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const actor = (value: unknown): value is string => typeof value === 'string' && value.trim() === value && !!value;
 export function assertProfileReview(p: ActiveTaxpayerProfile, actorId: string) {
   if (!p || p.status !== 'DRAFT' || !actor(actorId) || !actor(p.createdBy) ||
@@ -39,6 +40,7 @@ export function resolveActiveTaxpayerProfile(
   if (!Number.isSafeInteger(p.version) || p.version <= 0 ||
       !actor(p.createdBy) || !actor(p.reviewedBy) || !actor(p.activatedBy) ||
       new Set([p.createdBy,p.reviewedBy,p.activatedBy]).size !== 3 ||
-      !actor(p.sourceReference) || !SHA.test(p.sourceContentSha256)) fail();
+      !actor(p.sourceReference) || !SHA.test(p.sourceContentSha256) ||
+      typeof p.legalSourceId !== 'string' || !UUID.test(p.legalSourceId)) fail();
   return p;
 }

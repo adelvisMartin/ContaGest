@@ -27,7 +27,8 @@ async function audit(tx:Prisma.TransactionClient,ctx:CatalogActor,action:string,
   after:Record<string,unknown>,entity:'ServiceDefinition'|'ServiceCatalogCategory'='ServiceDefinition'){
   await tx.auditLog.create({data:{
     tenantId:ctx.tenantId,userId:actor(ctx),action,entity,entityId,
-    after,ipAddress:ctx.ip||null,userAgent:ctx.userAgent||null
+    after: JSON.parse(JSON.stringify(after)) as Prisma.InputJsonValue,
+    ipAddress:ctx.ip||null,userAgent:ctx.userAgent||null
   }});
 }
 async function ownedService(tx:Prisma.TransactionClient,tenantId:string,id:string){

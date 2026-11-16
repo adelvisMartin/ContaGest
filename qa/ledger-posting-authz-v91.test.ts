@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRealBackendHarness } from './support/real-backend-harness.ts';
+import { createRealBackendHarness, acceptCurrentLegalForSyntheticQaActor } from './support/real-backend-harness.ts';
+import { prepareQaManualPostingAccounts } from './support/semantic-posting-fixture.ts';
 
 const RUN = `QA91-AUTHZ-${Date.now().toString(36).toUpperCase()}`;
 const CUSTOMER_ID = `${RUN}-customer`;
@@ -54,6 +55,11 @@ test('issue #91 authenticated licensed user without accounting permissions canno
   `;
 
   const token = await h.issueSessionTokenFor({ id: user.id, email: user.email });
+  await acceptCurrentLegalForSyntheticQaActor(h,token);
+  await prepareQaManualPostingAccounts(h,[
+    {code:`${RUN}.AD`,nature:'debit'},
+    {code:`${RUN}.AC`,nature:'credit'},
+  ]);
 
   const viewDenied = await h.status('/accounting/entries', 403, { method: 'GET' }, token);
   assert.match(JSON.stringify(viewDenied.payload), /Permiso requerido: accounting\.view/i);

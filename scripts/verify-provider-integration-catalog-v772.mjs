@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const catalogPath = fileURLToPath(new URL('../config/provider-integration-catalog-v772.json', import.meta.url));
@@ -10,14 +11,35 @@ const costKinds = new Set(['SELF_HOST_PREFERRED','PLAN_RESTRICTED_CLOUD_API','LI
 const priorityKinds = new Set(['P0','P1','P2']);
 const requiredRedactions = ['authorization','cookie','set-cookie','password','apiKey','apiSecret','webhookSignature','personalData','rawBody'];
 
+// This is a provenance/documentation guard, not a runtime SSRF defense.
+const sensitiveKey = /(?:^|[_-])(?:api[_-]?(?:key|secret)|access[_-]?token|refresh[_-]?token|webhook[_-]?signature|token|secret|password|signature|auth(?:orization)?|session(?:[_-]?id)?|jwt|bearer|credential)(?:$|[_-])/i;
+
+function hasSensitiveParameter(queryOrFragment) {
+  // URI fragments may contain query-shaped segments before AND after '?'.
+  // Inspect each segment, not just the suffix, to avoid dropping a token key.
+  for (const part of queryOrFragment.replace(/^[?#]/, '').split('?')) {
+    for (const key of new URLSearchParams(part).keys()) {
+      if (sensitiveKey.test(key)) return true;
+    }
+  }
+  return false;
+}
+
 function validSource(value) {
   if (typeof value !== 'string') return false;
   try {
     const url = new URL(value);
-    if (url.protocol !== 'https:' || url.username || url.password || !url.hostname ||
-      /(^|[.])(localhost|local|internal)$/.test(url.hostname) ||
-      /^\d+(?:\.\d+){3}$/.test(url.hostname) ||
-      /(?:api[_-]?key|token|secret|password|signature)=/i.test(url.search)) return false;
+    // URL accepts repeated trailing dots; they can bypass internal-suffix checks.
+    // Reject malformed DNS names before allowing a public documentation link.
+    if (url.hostname.includes('..')) return false;
+    const host = url.hostname.toLowerCase().replace(/\.$/, '');
+    const ipCandidate = host.startsWith('[') && host.endsWith(']')
+      ? host.slice(1, -1)
+      : host;
+    if (url.protocol !== 'https:' || url.username || url.password ||
+      !host.includes('.') || /(^|\.)(localhost|local|internal)$/.test(host) ||
+      isIP(ipCandidate) !== 0 ||
+      hasSensitiveParameter(url.search) || hasSensitiveParameter(url.hash)) return false;
     return true;
   } catch { return false; }
 }

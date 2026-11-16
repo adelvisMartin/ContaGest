@@ -176,10 +176,12 @@ Work claims are `exclusive` or `advisory`. Advisory claims do not own issue clos
 
 See `.agents/context/AGENT_SYSTEM_V3.md` and `.agents/context/EVIDENCE_LEDGER_V3.json` for the machine-readable workflow.
 
-## 58-view UI/function audit
-Every route registered in `pageRegistry` must exist in `qa/support/module-visual-catalog.mjs`. The current catalog contains 58 routes.
+## 60-view UI/function audit
+Every route registered in `pageRegistry` must exist in `qa/support/module-visual-catalog.mjs`. The catalog currently contains 60 routes in `main@e7706f3dac3ae4c677fcdff05a662765fa6bdcc6`; refresh `MODULE_VISUAL_CATALOG` and `pageRegistry` before each full audit.
 
-Treat a full UI audit as **58 independent iterations**, one per route. A route does not inherit PASS from a neighboring/shared implementation. Each iteration must inspect at minimum:
+Legacy script names such as `qa:ui:58` and `test:browser:58` remain compatibility entrypoints; verify their actual collected route count before claiming complete 60-route coverage. Do not rename or weaken a CI gate simply to match documentation.
+
+Treat a full UI audit as **60 independent iterations**, one per route. A route does not inherit PASS from a neighboring/shared implementation. Each iteration must inspect at minimum:
 
 ```text
 light desktop 1440
@@ -298,10 +300,18 @@ Red-team review is independent and non-destructive.
 - backup is not verified recovery until a restore drill succeeds;
 - never claim legal/SENIAT/clinical compliance without professional scope and evidence.
 
-Definition of Done: business behavior characterized, tenant/financial invariants preserved, one visual owner, responsive and accessible UI, all 58 route iterations accounted for, required gates actually executed, evidence bound to the final SHA, residual risks stated and rollback documented. Provider-blocked evidence remains separate and never upgrades itself to PASS.
+Definition of Done: business behavior characterized, tenant/financial invariants preserved, one visual owner, responsive and accessible UI, all 60 current route iterations accounted for, required gates actually executed, evidence bound to the final SHA, residual risks stated and rollback documented. Provider-blocked evidence remains separate and never upgrades itself to PASS.
 
 ## Optional agent context helpers (developer workflow only)
 
 For ticket continuation across Codex/ChatGPT windows, follow `.agents/skills/codex-project-memory/SKILL.md`; for large developer-tool summaries use `.agents/skills/headroom/SKILL.md`; for reviewed post-task skill-improvement proposals use `.agents/skills/task-observer/SKILL.md`. Read `docs/AGENT_CONTEXT_TOOLING_REVIEW_2026-10-14.md` for provenance and constraints.
 
 These are **advisory process helpers**, not new domain authority or mandatory v3 ACTIVE skill slots. Do not replace 2–4 routed domain/risk skills; do not enable external hooks, memory daemons or transparent compression proxies; do not automatically capture conversation/tenant/financial/clinical/WhatsApp payloads. Raw exact-SHA CI, security and release evidence remains complete and authoritative. Parallel windows use separate branch/issue ownership and handoffs; live GitHub state always wins over remembered notes.
+
+
+## Plan operativo transversal de backlog (2026-11-16)
+
+- Ver [Plan 5×5 ContaGest + Control Hípico](docs/roadmap/PLAN_5x5_CONTAGEST_HIPICO_2026-11-16.md) para orden de dependencias, investigaciones visuales públicas, nuevos owners de seguridad y auditoría progresiva de las 60 rutas del catálogo actual. Es **planificación**, nunca evidencia de PASS ni permiso para saltar el ticket o estas reglas.
+- En **cada PR** actualizar la matriz de rutas/servicios impactados, documentar baseline/after de rendimiento si hay superficie de runtime, contrato funcional/seguridad, agentes/skills ruteados y regresión exact-SHA. Refactorizar sólo con consumer proof, conservar la autoridad CSS y datos, y evolucionar `main` mediante merges seriales protegidos.
+- Si diseño/benchmark visual propone algo incompatible con fiscalidad, política de WhatsApp Messenger, accesibilidad, seguridad o contrato del repo, prevalecen estas reglas. No scraping de sesiones privadas ni copia de elementos licenciados.
+- Los tickets de meta/producción no se dan por terminados hasta cumplir sus dependencias materiales; 24–72h soak y pruebas físicas NO se sustituyen con simulaciones.

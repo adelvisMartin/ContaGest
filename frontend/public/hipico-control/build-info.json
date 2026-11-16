@@ -1,6 +1,9 @@
 {
   "product": "control-hipico",
   "version": "1.13.0-rc3",
+  "buildId": "1.13.0-rc3",
+  "candidateSha": "local-unbound",
+  "bound": false,
   "uiSystem": "v4.1.3",
   "uiAuthority": "Equestrian Operations",
   "buildPolicy": "exact-sha",

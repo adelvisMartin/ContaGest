@@ -126,7 +126,10 @@ async function lockPayrollPeriod(tx: Prisma.TransactionClient, tenantId: string,
 router.post('/receipts', validateBody(receiptSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
   const input = req.body as z.infer<typeof receiptSchema>;
-  try { assertPayrollReceiptArithmetic(input); }
+  const { gross, deductions, net } = input;
+  if (gross === undefined || deductions === undefined || net === undefined)
+    throw new HttpError(422, 'El recibo requiere bruto, deducciones y neto.', { code: 'PAYROLL_RECEIPT_AMOUNTS_REQUIRED' });
+  try { assertPayrollReceiptArithmetic({ gross, deductions, net }); }
   catch { throw new HttpError(422, 'El recibo no cuadra: bruto debe ser exactamente deducciones más neto.', { code: 'PAYROLL_RECEIPT_NOT_BALANCED' }); }
   const result = await prisma.$transaction(async tx => {
     const period = input.periodId
@@ -152,8 +155,8 @@ router.post('/receipts', validateBody(receiptSchema), asyncHandler(async (req, r
     } });
     if (duplicate) throw new HttpError(409, 'El empleado ya tiene recibo en este período.');
     const created = await tx.payrollReceipt.create({
-      data: { periodId: period.id, employeeId: employee.id, gross: input.gross,
-        deductions: input.deductions, net: input.net, details: toJson(input.details) },
+      data: { periodId: period.id, employeeId: employee.id, gross,
+        deductions, net, details: toJson(input.details) },
       include: { employee: true },
     });
     const updated = await recalculatePeriod(period.id, tx);
