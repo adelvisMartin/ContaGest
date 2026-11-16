@@ -24,7 +24,7 @@ function denied(code:string,reason:string,status=409):never{
   throw new HttpError(status,reason,{code});
 }
 async function audit(tx:Prisma.TransactionClient,ctx:CatalogActor,action:string,entityId:string,
-  after:Record<string,unknown>,entity:'ServiceDefinition'|'ServiceCatalogCategory'='ServiceDefinition'){
+  after:Prisma.InputJsonObject,entity:'ServiceDefinition'|'ServiceCatalogCategory'='ServiceDefinition'){
   await tx.auditLog.create({data:{
     tenantId:ctx.tenantId,userId:actor(ctx),action,entity,entityId,
     after,ipAddress:ctx.ip||null,userAgent:ctx.userAgent||null
