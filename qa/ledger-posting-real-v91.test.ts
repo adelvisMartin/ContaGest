@@ -169,6 +169,18 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
       row.id!==staleAudit.id && (row.after as {deleted?:boolean}|null)?.deleted === true);
     assert.equal(authorizedAudit?.userId,h.admin.id,
       'Authorized DRAFT deletion must commit distinct actor-scoped audit atomically');
+    const auditBefore=authorizedAudit?.before as {
+      id:string;lines:Array<{accountCode:string;debit:string;credit:string}>
+    }|null;
+    const auditAfter=authorizedAudit?.after as {deleted:boolean;requestId:string|null}|null;
+    assert.equal(auditBefore?.id,draft.id,'Deleted draft identity must remain in audit');
+    assert.equal(auditBefore?.lines?.length,2,'Deleted draft must retain both financial lines');
+    assert.ok(auditBefore?.lines.some(line=>line.accountCode===`${RUN}.TMPD` &&
+      Number(line.debit)===2),'Draft debit value lost from audit snapshot');
+    assert.ok(auditBefore?.lines.some(line=>line.accountCode===`${RUN}.TMPC` &&
+      Number(line.credit)===2),'Draft credit value lost from audit snapshot');
+    assert.equal(auditAfter?.deleted,true,'Atomic audit must record deletion outcome');
+    assert.ok(auditAfter?.requestId,'Atomic audit must preserve request correlation');
 
     await h.status('/accounting/entries', 422, {
       method: 'POST',
