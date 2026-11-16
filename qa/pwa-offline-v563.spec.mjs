@@ -48,7 +48,7 @@ test.describe('PWA offline #563', () => {
     await expect(page.locator('html')).toHaveAttribute('data-network-state', 'revalidating');
   });
 
-  test('logout purge removes tenant A cache/indexeddb and tenant switch uses a different scope', async ({ page }) => {
+  test('logout purges the selected session only, including the current worker revision', async ({ page }) => {
     await page.goto('/');
     await waitForWorker(page);
     await importOfflineService(page);
@@ -59,19 +59,60 @@ test.describe('PWA offline #563', () => {
       const scopeA = service.sessionScope(tenantA);
       const scopeB = service.sessionScope(tenantB);
       const cacheA = `contagest-ve-v563-session-${scopeA}`;
-      const cache = await caches.open(cacheA);
-      await cache.put('/tenant-a-private-marker', new Response('A'));
-      await service.enqueueOfflineOperation({ session:tenantA, operation:'analytics.event', payload:{ events:[] }, idempotencyKey:'logout-a-563' });
-      await service.setServiceWorkerSession(tenantA);
-      await service.purgeOfflineSession(tenantA);
-      const cachesAfterLogout = await caches.keys();
-      await service.setServiceWorkerSession(tenantB);
-      const dbNames = typeof indexedDB.databases === 'function' ? (await indexedDB.databases()).map((entry) => entry.name) : [];
-      return { scopeA, scopeB, cachesAfterLogout, dbNames };
+      const cacheCurrentA = `contagest-ve-v563-3-session-${scopeA}`;
+      const cacheB = `contagest-ve-v563-3-session-${scopeB}`;
+      const prefixNeighbor = `${cacheA}neighbor`;
+      const foreignDb = `contagest-offline-v563-${scopeA}neighbor`;
+      try {
+        for (const name of [cacheA, cacheCurrentA, cacheB, prefixNeighbor]) {
+          const cache = await caches.open(name);
+          await cache.put('/synthetic-private-marker', new Response('synthetic'));
+        }
+        await new Promise((resolve, reject) => {
+          const request = indexedDB.open(foreignDb, 1);
+          request.onsuccess = () => { request.result.close(); resolve(); };
+          request.onerror = () => reject(request.error);
+        });
+        await service.enqueueOfflineOperation({ session:tenantA, operation:'analytics.event',
+          payload:{ events:[] }, idempotencyKey:'logout-a-563' });
+        await service.enqueueOfflineOperation({ session:tenantB, operation:'analytics.event',
+          payload:{ events:[] }, idempotencyKey:'logout-b-563' });
+        await service.setServiceWorkerSession(tenantA);
+        await service.purgeOfflineSession(tenantA);
+        const names = await caches.keys();
+        const dbNames = typeof indexedDB.databases === 'function'
+          ? (await indexedDB.databases()).map((entry) => entry.name) : [];
+        await service.setServiceWorkerSession(tenantB);
+        return {
+          scopeA, scopeB,
+          oldADeleted: !names.includes(cacheA),
+          currentADeleted: !names.includes(cacheCurrentA),
+          bPreserved: names.includes(cacheB),
+          prefixNeighborPreserved: names.includes(prefixNeighbor),
+          dbADeleted: !dbNames.includes(`contagest-offline-v563-${scopeA}`),
+          dbBPreserved: dbNames.includes(`contagest-offline-v563-${scopeB}`),
+          dbPrefixNeighborPreserved: dbNames.includes(foreignDb)
+        };
+      } finally {
+        await service.purgeOfflineSession(tenantA);
+        await service.purgeOfflineSession(tenantB);
+        await caches.delete(prefixNeighbor);
+        await new Promise((resolve, reject) => {
+          const request = indexedDB.deleteDatabase(foreignDb);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+          request.onblocked = () => reject(new Error('Synthetic neighbor DB remained locked'));
+        });
+      }
     });
     expect(result.scopeA).not.toBe(result.scopeB);
-    expect(result.cachesAfterLogout.some((name) => name.includes(result.scopeA))).toBe(false);
-    expect(result.dbNames.some((name) => String(name).includes(result.scopeA))).toBe(false);
+    expect(result.oldADeleted).toBe(true);
+    expect(result.currentADeleted).toBe(true);
+    expect(result.bPreserved).toBe(true);
+    expect(result.prefixNeighborPreserved).toBe(true);
+    expect(result.dbADeleted).toBe(true);
+    expect(result.dbBPreserved).toBe(true);
+    expect(result.dbPrefixNeighborPreserved).toBe(true);
   });
 
   test('outbox allowlist dedupes idempotency and refuses generic financial mutations', async ({ page }) => {
