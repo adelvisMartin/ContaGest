@@ -88,6 +88,13 @@ npm run qa:browser:routes:webkit
 
 Los últimos tres comandos de navegador dependen de servidor/browser y fixture ya preparados; no basta con ejecutarlos sobre recursos no configurados. La prueba PG17 exige `NODE_ENV=test`, host loopback y sufijo efímero por contrato. Los workflows son fuente operativa para migraciones y seed; no correr migraciones en BD real.
 
+## FODA técnico (parcial, vinculado a evidencias)
+
+- **Fortalezas:** factory de cinco consumidores con strict fields/tenant/RBAC preexistentes; la transacción agregada une operación y AuditLog; fixtures sintéticos y control de base efímera, 60 rutas indexadas desde una autoridad.
+- **Oportunidades:** extender atomicidad a owners financieros **sólo** bajo #637 con idempotencia/period lock, perf antes/después y PG17; priorizar UI densa, acciones accesibles y métricas verificables sin clonar Cg*.
+- **Debilidades:** sin checkout de repo no se ejecutó suite Node, typecheck/build, PostgreSQL ni Playwright; el mapa UX tiene datos de presencia, **no** evidencia de operación; cinco modelos CRUD no equivalen a todo el ERP.
+- **Amenazas:** un fallo persistente de AuditLog pasará ahora a bloquear correctamente la mutación; una matriz tenant/jobbing/exports incompleta puede ocultar BOLA/BOPLA; CI en cola y ramas concurrentes pueden dar falsa seguridad si se mezclan SHAs.
+
 ## Seguridad, performance, rollback y gate de promoción
 
 - **Afecta transacciones**: el nuevo contrato fail-closed puede convertir una solicitud que antes daba éxito sin audit trail en un error explícito con rollback. Es deseado desde seguridad; requiere comprobar todos los 5 consumidores y los errores estables de API antes de merge.
