@@ -235,3 +235,16 @@ test('#638/#1289: every legacy CRUD mutation and audit are one database transact
   assert.match(factory, /const where = \{ id: parseCrudRouteId\(req\.params\.id\), tenantId: ctx\.tenantId \};/);
   assert.equal((factory.match(/prisma\.\$transaction\(async \(tx\) => \{/g) || []).length, 3);
 });
+
+
+test('#1288: real API regression harness refuses shared databases before opening sessions', () => {
+  const source = read('qa/support/real-backend-harness.ts');
+  assert.match(source, /import \{ randomBytes, randomUUID \} from 'node:crypto'/);
+  assert.match(source, /SELECT current_database\(\) AS name/);
+  assert.match(source, /\(\?:_e2e\|_drill\|_restore\)\$/);
+  assert.match(source, /QA_EPHEMERAL_DATABASE_REQUIRED/);
+  const guard = source.indexOf("throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED')");
+  const firstFixture = source.indexOf('prisma.tenant.findUnique');
+  assert.ok(guard > 0 && firstFixture > guard,
+    'fail-closed database guard must precede all fixture tenant/session writes');
+});
