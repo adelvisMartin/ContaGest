@@ -1,4 +1,5 @@
-const CACHE_PREFIX = 'contagest-ve-v563-session-';
+const CACHE_PREFIX = 'contagest-ve-v563-session-'; // existing local/offline test namespace
+const SW_CACHE_PREFIX = 'contagest-ve-v563-3-session-'; // current worker namespace
 const DB_PREFIX = 'contagest-offline-v563-';
 const AUTH_SESSION_KEY = 'contagest_auth_session';
 const LEGACY_STATE_PREFIX = 'contagest_ve_enterprise_v7_state';
@@ -112,9 +113,10 @@ export async function purgeOfflineSession(session) {
   postToServiceWorker({ type: 'CLEAR_SESSION_DATA', scopeToken });
   if (typeof caches !== 'undefined') {
     const names = await caches.keys();
-    await Promise.all(names
-      .filter((name) => name === sessionCacheName(session) || name.startsWith(`${CACHE_PREFIX}${scopeToken}`))
-      .map((name) => caches.delete(name)));
+    // Exact ownership only. Prefix matching can delete another user's cache
+    // when their hashed scope starts with the current scope's token.
+    const owned = new Set([sessionCacheName(session), `${SW_CACHE_PREFIX}${scopeToken}`]);
+    await Promise.all(names.filter((name) => owned.has(name)).map((name) => caches.delete(name)));
   }
   await purgeIndexedDb(session);
 }
