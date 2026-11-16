@@ -71,7 +71,9 @@ async function purgeIndexedDb(session) {
     const databases = await indexedDB.databases().catch(() => []);
     for (const database of databases || []) {
       const name = String(database?.name || '');
-      if (name === dbName(session) || name.startsWith(`${DB_PREFIX}${sessionScope(session)}`)) targeted.add(name);
+      // Database names are exactly scoped; prefix neighbors may belong to
+      // a different user and must never be deleted by this session.
+      if (name === dbName(session)) targeted.add(name);
     }
   }
   await Promise.all([...targeted].map(deleteDatabase));
