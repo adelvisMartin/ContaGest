@@ -196,3 +196,24 @@ test('#1292 only the PWA installer owns ERP service-worker updates and local cle
   assert.match(installer, /item\\.scope === appBase\\.href/);
   assert.match(installer, /key\\.startsWith\\(['"]contagest-ve-['"]\\)/);
 });
+
+test('#1292 ContaGest logout leaves Control Hipico tab-scoped state untouched', async () => {
+  const entries = new Map([
+    ['cg_controller_reloaded', '1'],
+    ['contagest_private_draft', 'synthetic'],
+    ['hipico_cloud_session', 'keep-this-other-product'],
+    ['hipico_owner_scope', 'keep-this-other-product']
+  ]);
+  const storage = {
+    get length() { return entries.size; },
+    key: (index) => [...entries.keys()][index] ?? null,
+    getItem: (key) => entries.get(key) ?? null,
+    removeItem: (key) => entries.delete(key)
+  };
+  const { service } = serviceContext({ sessionStorage: storage });
+  await service.purgeOfflineSession(a);
+  assert.equal(entries.has('cg_controller_reloaded'), false);
+  assert.equal(entries.has('contagest_private_draft'), false);
+  assert.equal(entries.get('hipico_cloud_session'), 'keep-this-other-product');
+  assert.equal(entries.get('hipico_owner_scope'), 'keep-this-other-product');
+});
