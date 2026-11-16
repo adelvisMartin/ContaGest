@@ -11,13 +11,35 @@ export const QA_ADMIN_EMAIL='admin@erp.local';
 
 function unwrap(payload:any){return payload?.data ?? payload;}
 
-export async function createRealBackendHarness(){
-  // These fixtures create signed UserSessions and persistent CRUD rows. Refuse
-  // shared development/production databases before reading or changing any data.
-  const expectedDatabase=assertQaDisposableDatabaseConfig(process.env);
-  const databases=await prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
-  if(databases[0]?.name!==expectedDatabase){
-    throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
+/** Explicit opt-in for high-risk QA suites. Check the actual connected database
+ * BEFORE issuing any session, creating app state or provisioning synthetic rows.
+ * The runner may use its own disposable clone instead of the seed database.
+ */
+export async function createRealBackendHarness(options: {
+  approvedDatabaseNames?: readonly string[];
+} = {}){
+  if(options.approvedDatabaseNames){
+    assert.ok(options.approvedDatabaseNames.length>0,
+      'The QA isolation allowlist must not be empty');
+    for(const name of options.approvedDatabaseNames){
+      assert.match(name,/^contagest_[a-z0-9_]+_v[0-9]+(?:_e2e)?$/,
+        'Only explicit versioned ContaGest QA databases are eligible');
+    }
+    assert.equal(process.env.NODE_ENV,'test',
+      'High-risk real backend QA must never run in a production environment');
+    const db=await prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
+    assert.ok(options.approvedDatabaseNames.includes(db[0]?.name),
+      `Refusing synthetic QA mutations outside explicitly approved database(s): ${db[0]?.name || '(unknown)'}`);
+  }
+  if(!options.approvedDatabaseNames){
+    // Standard CRUD fixtures must run on an isolated loopback _e2e/_drill/_restore
+    // database. Explicit versioned allowlists above remain authoritative for
+    // specialist disposable suites (for example notification preferences QA).
+    const expectedDatabase=assertQaDisposableDatabaseConfig(process.env);
+    const databases=await prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
+    if(databases[0]?.name!==expectedDatabase){
+      throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
+    }
   }
   const tenant=await prisma.tenant.findUnique({where:{rif:QA_TENANT_RIF}});
   assert.ok(tenant,`QA tenant ${QA_TENANT_RIF} not found`);
@@ -57,8 +79,7 @@ export async function createRealBackendHarness(){
   try {
     token=await issueSessionTokenFor(admin);
   } catch (error) {
-    // The row is inserted before signAccessToken runs; a signing failure
-    // must not orphan the server-side test session.
+    // A failed signing step must not leave an unowned synthetic session.
     await cleanupFixtureSessions();
     throw error;
   }
@@ -108,4 +129,27 @@ export async function createRealBackendHarness(){
     finally{await cleanupFixtureSessions();}
   }
   return{tenant,admin,token,base,request,ok,status,close,prisma,issueSessionTokenFor};
+}
+
+/** Complete explicit legal acceptance through the real API for synthetic
+ * licensed actors. Never mock or disable the customer adhesion middleware.
+ */
+export async function acceptCurrentLegalForSyntheticQaActor(
+  h: Pick<Awaited<ReturnType<typeof createRealBackendHarness>>, 'ok'>,
+  token: string,
+) {
+  const legal=await h.ok('/legal/status',{},token) as {documents:Array<{
+    code:string;version:string;hash:string;required:boolean
+  }>};
+  const documents=legal.documents.filter(doc=>doc.required)
+    .map(({code,version,hash})=>({code,version,hash}));
+  assert.ok(documents.length>0,'QA must explicitly accept the current legal catalog');
+  await h.ok('/legal/accept',{
+    method:'POST',
+    body:JSON.stringify({documents,necessaryCookiesAcknowledged:true,
+      analyticsCookies:false,marketingCookies:false,locale:'es-VE'})
+  },token);
+  const after=await h.ok('/legal/status',{},token) as {pending:boolean;pendingCodes:string[]};
+  assert.equal(after.pending,false,'QA synthetic account acceptance must be current');
+  assert.deepEqual(after.pendingCodes,[]);
 }

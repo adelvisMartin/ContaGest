@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { inspectReorderStockRows, prepareReorderStockPage } from '../backend/src/modules/reports/replenishment-candidates.ts';
+import { deriveReorderCandidates, inspectReorderStockRows, prepareReorderStockPage } from '../backend/src/modules/reports/replenishment-candidates.ts';
 
 const row = (overrides = {}) => ({
   productId:'id-a',sku:'SKU-A',name:'Producto',unit:'UND',
@@ -60,4 +60,54 @@ test('stock anomalies stay visible as exceptions, not misleading derived candida
 test('invalid second row aborts entire page without returning any candidate IDs',()=>{
   assert.throws(()=>prepareReorderStockPage([row(),row({productId:'id-b',sku:'SKU-B',
     shortfallExact:'2.001'})]),/REORDER_SHORTFALL_MISMATCH/);
+});
+
+test('the bounded reorder page validates inventory only once before projecting candidates',()=>{
+  const stockRow=row();
+  let stockReadCount=0;
+  Object.defineProperty(stockRow,'stockExact',{
+    enumerable:true,
+    get(){stockReadCount++;return '5.000';}
+  });
+  const result=prepareReorderStockPage([stockRow]);
+  assert.equal(stockReadCount,1,'stock preflight must not repeat after successful validation');
+  assert.deepEqual(result.salesCandidateIds,['id-a']);
+  assert.equal(result.reorderCandidates[0].minShortfallExact,'2.000');
+});
+
+test('the public candidate projector still rejects unvalidated stock and flags',()=>{
+  assert.throws(()=>deriveReorderCandidates([row({availableExact:'999.000'})]),/REORDER_AVAILABLE_MISMATCH/);
+  assert.throws(()=>deriveReorderCandidates([row({needsReorder:false})]),/REORDER_FLAG_MISMATCH/);
+  assert.equal(deriveReorderCandidates([row()])[0].manualApprovalRequired,true);
+  assert.equal(deriveReorderCandidates([row()])[0].autoPurchaseEnabled,false);
+});
+
+test('snapshot prevents validated stock from changing before candidate projection',()=>{
+  const original=row();
+  let reads=0;
+  Object.defineProperty(original,'reservedExact',{
+    enumerable:true,
+    get(){ reads++; return reads===1?'3.000':'0.000'; }
+  });
+  const scan=prepareReorderStockPage([original]);
+  assert.equal(reads,1,'validated stock must be read once, not again while projecting');
+  assert.strictEqual(scan.rows[0],original,'preserve original read-only report row contract');
+  assert.equal(scan.stockReview.eligibleRows[0].reservedExact,'3.000');
+  assert.equal(scan.reorderCandidates[0].reservedExact,'3.000');
+  assert.equal(scan.reorderCandidates[0].availableExact,'2.000');
+  assert.equal(Object.isFrozen(scan.stockReview.eligibleRows[0]),true);
+});
+
+test('snapshot prevents a dynamic reorder flag from changing after validation',()=>{
+  const original=row();
+  let reads=0;
+  Object.defineProperty(original,'needsReorder',{
+    enumerable:true,
+    get(){ reads++; return reads===1; }
+  });
+  const scan=prepareReorderStockPage([original]);
+  assert.equal(reads,1);
+  assert.deepEqual(scan.salesCandidateIds,['id-a']);
+  assert.equal(scan.reorderCandidates[0].manualApprovalRequired,true);
+  assert.equal(scan.reorderCandidates[0].autoPurchaseEnabled,false);
 });

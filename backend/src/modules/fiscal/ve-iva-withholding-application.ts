@@ -14,6 +14,27 @@ export type PostedPurchaseEvidence = Readonly<{
 }>;
 const denied=():never=>{throw new Error('VE_IVA_WITHHOLDING_APPLICATION_REJECTED');};
 /** No implicit enablement from NODE_ENV, role or existence of an approved rule. */
+
+/** #775 Guard the FX evidence that was actually recorded with the posted
+ * purchase journal. PurchaseInvoice has no exchangeRate field; never infer
+ * one from the client, a current FX quote or a default.
+ */
+export function assertRetivaVesSource(input: Readonly<{
+  functionalCurrency: string;
+  invoiceCurrency: string;
+  totalPositive: boolean;
+  lines: readonly Readonly<{ currency: string; exchangeRate: { eq(value: number): boolean } }>[];
+}>) {
+  if (!input || input.functionalCurrency !== 'VES' ||
+      input.invoiceCurrency !== 'VES' || input.totalPositive !== true ||
+      !Array.isArray(input.lines) || input.lines.length < 2 ||
+      input.lines.some(line => !line || line.currency !== 'VES' ||
+        !line.exchangeRate || typeof line.exchangeRate.eq !== 'function' ||
+        !line.exchangeRate.eq(1))) {
+    throw new Error('RETIVA_CURRENCY_UNSUPPORTED');
+  }
+}
+
 export function isInternalRetivaPostingEnabled(value:unknown):boolean {
   return value==='true';
 }

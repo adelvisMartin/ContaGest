@@ -38,7 +38,8 @@ test('licencia, suscripción, legal y tenant switch usan la misma identidad de p
   assert.match(context,/if \(await hasPlatformAccess\(ctx\)\) return;/);
   assert.match(subscription,/hasPlatformAccess\(ctx\)/);
   assert.match(legal,/hasPlatformAccess\(ctx\)/);
-  assert.match(membership,/r\."scope"='platform'/);
+  assert.match(access,/r\."scope"\s*=\s*\$\{PLATFORM_ROLE_SCOPE\}/);
+  assert.match(membership,/hasPlatformAccess\(/);
   assert.match(membership,/PLATFORM_TENANT_RIF/);
   assert.match(membership,/hasPlatformAccess\(\{userId:target\.userProfileId,tenantId:target\.tenantId\}\)/);
 });

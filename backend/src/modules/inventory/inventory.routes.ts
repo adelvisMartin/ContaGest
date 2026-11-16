@@ -89,7 +89,7 @@ async function insertAuditLink(tx: Prisma.TransactionClient, input: {
     INSERT INTO "InventoryMovementAuditLink"
       ("id","tenantId","productId","originalMovementId","relatedMovementId","kind","reasonCode","reason","createdBy")
     VALUES
-      (${randomUUID()},${input.tenantId},${input.productId},${input.originalMovementId || null},${input.relatedMovementId},${input.kind},${input.reasonCode},${input.reason},${input.createdBy || null})
+      (CAST(${randomUUID()} AS UUID),${input.tenantId},${input.productId},${input.originalMovementId || null},${input.relatedMovementId},${input.kind},${input.reasonCode},${input.reason},${input.createdBy || null})
   `);
 }
 
