@@ -286,6 +286,26 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
     await h.ok(`/accounting/closing-periods/${period.id}/close`, { method: 'POST', body: JSON.stringify({ note: `${RUN} QA close` }) });
 
     await h.status(`/accounting/entries/${draft.id}/post`, 409, { method: 'POST' });
+    // Even direct PostgreSQL callers that insert matching audit evidence in the
+    // same transaction cannot remove an unposted draft after period close.
+    await assert.rejects(
+      h.prisma.$transaction(async tx=>{
+        await tx.auditLog.create({data:{
+          tenantId:h.tenant.id,userId:h.admin.id,
+          action:'ledger.entry.draft-deleted',entity:'LedgerEntry',entityId:draft.id,
+          after:{attempt:'closed-period-unauthorized'}
+        }});
+        await tx.ledgerEntry.delete({where:{id:draft.id}});
+      }),
+      /ACCOUNTING_PERIOD_CLOSED/,
+      'A current-transaction audit must never override a closed period'
+    );
+    assert.ok(await h.prisma.ledgerEntry.findUnique({where:{id:draft.id}}),
+      'Closed-period deletion must not remove the draft');
+    assert.equal(await h.prisma.auditLog.count({where:{
+      tenantId:h.tenant.id,entity:'LedgerEntry',entityId:draft.id,
+      action:'ledger.entry.draft-deleted'
+    }}),0,'Failed closed-period deletion must roll back attempted audit');
 
     const openDraft = await h.ok('/accounting/entries', {
       method: 'POST',
