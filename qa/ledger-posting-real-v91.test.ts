@@ -142,15 +142,33 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
     );
     assert.ok(await h.prisma.ledgerEntry.findUnique({ where: { id: draft.id } }),
       'A blocked unaudited deletion must preserve the draft');
+
+    // An old, valid-looking audit for this exact draft must NEVER authorize a
+    // later raw DELETE. Only audit evidence inserted in the deleting XID counts.
+    const staleAudit = await h.prisma.auditLog.create({ data: {
+      tenantId: h.tenant.id, userId: h.admin.id,
+      action: 'ledger.entry.draft-deleted', entity: 'LedgerEntry', entityId: draft.id,
+      after: { syntheticPriorTransaction: true }
+    } });
+    await assert.rejects(
+      h.prisma.ledgerEntry.delete({ where: { id: draft.id } }),
+      /LEDGER_DRAFT_DELETE_AUDIT_REQUIRED/,
+      'A prior audit record must not authorize raw deletion in a new transaction'
+    );
+    assert.ok(await h.prisma.ledgerEntry.findUnique({ where: { id: draft.id } }),
+      'A stale audit must not destroy a manual draft');
     const deleted = await h.ok(`/accounting/entries/${draft.id}`, { method: 'DELETE' });
     assert.equal(deleted.deleted, true);
     assert.equal(await h.prisma.ledgerEntry.findUnique({ where: { id: draft.id } }), null);
-    const deletionAudit=await h.prisma.auditLog.findFirst({
+    const deletionAudits=await h.prisma.auditLog.findMany({
       where: { tenantId: h.tenant.id, entity: 'LedgerEntry', entityId: draft.id,
         action: 'ledger.entry.draft-deleted' }
     });
-    assert.equal(deletionAudit?.userId,h.admin.id,
-      'Authorized DRAFT deletion must commit actor-scoped audit atomically');
+    assert.equal(deletionAudits.length,2,'Expected prior synthetic audit and atomic domain audit');
+    const authorizedAudit=deletionAudits.find(row=>
+      row.id!==staleAudit.id && (row.after as {deleted?:boolean}|null)?.deleted === true);
+    assert.equal(authorizedAudit?.userId,h.admin.id,
+      'Authorized DRAFT deletion must commit distinct actor-scoped audit atomically');
 
     await h.status('/accounting/entries', 422, {
       method: 'POST',
