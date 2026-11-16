@@ -116,9 +116,14 @@ async function assetCacheMatch(request) {
   return cache.match(request);
 }
 
+function fetchPublicAsset(request) {
+  // Offline assets are public and must not inherit a logged-in user's cookies.
+  return fetch(request, { cache: 'no-store', credentials: 'omit', redirect: 'error' });
+}
+
 async function networkFirst(request) {
   try {
-    const response = await fetch(request, { cache: 'no-store' });
+    const response = await fetchPublicAsset(request);
     if (mayCachePublicResponse(response)) {
       const cache = await caches.open(ASSET_CACHE);
       await cache.put(request, response.clone());
@@ -176,7 +181,7 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith((async () => {
     const cached = await assetCacheMatch(request);
-    const refresh = fetch(request, { cache: 'no-store' }).then(async (response) => {
+    const refresh = fetchPublicAsset(request).then(async (response) => {
       if (mayCachePublicResponse(response)) {
         const cache = await caches.open(ASSET_CACHE);
         await cache.put(request, response.clone());
