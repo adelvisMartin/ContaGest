@@ -82,3 +82,45 @@ test('#637 accounting period close is a tenant-scoped transactional domain comma
   assert.match(body,/WHERE "id" = \$\{input\.periodId\} AND "tenantId" = \$\{input\.tenantId\}/);
   assert.match(body,/status: 'open'/);
 });
+
+test('#637 manual DRAFT deletion requires atomic audit and cannot drop protected history',()=>{
+  const service=readFileSync(new URL('../backend/src/modules/accounting/accounting.service.ts',import.meta.url),'utf8');
+  const routes=readFileSync(new URL('../backend/src/modules/accounting/accounting.routes.ts',import.meta.url),'utf8');
+  const migration=readFileSync(new URL('../backend/prisma/migrations/20261116170000_issue_637_manual_draft_and_reversal_integrity/migration.sql',import.meta.url),'utf8');
+  const command=service.split('export async function deleteDraftLedgerEntry(')[1]?.split('export async function postLedgerEntry(')[0];
+  assert.ok(command,'Manual draft deletion command must exist');
+  const steps=['requirePostingActor(', 'prisma.$transaction(async (tx)', 'lockScopedLedgerEntry(tx,',
+    "assertLedgerActionAllowed(entry, 'delete')", "entry.source !== 'manual'",
+    'assertPeriodOpen(', 'tx.auditLog.create({', 'tx.ledgerEntry.delete({'];
+  let previous=-1;
+  for (const step of steps) {
+    const position=command.indexOf(step);
+    assert.ok(position>previous,'Atomic draft delete step missing or out of order: '+step);
+    previous=position;
+  }
+  assert.match(routes,/deleteDraftLedgerEntry\(\{[\s\S]*?deletedBy: ctx\.userId/);
+  assert.doesNotMatch(routes.split("router.delete('/entries/:id'")[1]?.split("\n}));")[0]||'',/writeAudit\(/);
+  assert.match(migration,/IF TG_TABLE_NAME = 'LedgerEntry'/);
+  assert.match(migration,/OLD\."posted" IS FALSE/);
+  assert.match(migration,/OLD\."source" = 'manual'/);
+  assert.match(migration,/OLD\."sourceId" IS NULL/);
+  assert.match(migration,/a\."action" = 'ledger\.entry\.draft-deleted'/);
+  assert.match(migration,/a\."userId" IS NOT NULL/);
+  assert.match(migration,/data_lifecycle_assert_not_held/);
+  assert.match(migration,/LEDGER_DRAFT_DELETE_AUDIT_REQUIRED/);
+  assert.match(migration,/generic delete denied for protected lifecycle entity/);
+  assert.match(migration,/retention policy denies purge for protected lifecycle entity/);
+});
+
+test('#637 reversal into a later OPEN period keeps exact counter-entry controls',()=>{
+  const migration=readFileSync(new URL('../backend/prisma/migrations/20261116170000_issue_637_manual_draft_and_reversal_integrity/migration.sql',import.meta.url),'utf8');
+  const functionSql=migration.split('CREATE OR REPLACE FUNCTION public.guard_ledger_reversal_compensation()')[1];
+  assert.ok(functionSql,'The protected reverse trigger must remain installed');
+  assert.match(functionSql,/original_tenant IS DISTINCT FROM NEW\."tenantId"/);
+  assert.match(functionSql,/original_posted IS DISTINCT FROM TRUE/);
+  assert.match(functionSql,/FULL OUTER JOIN reversal/);
+  assert.match(functionSql,/COALESCE\(r\.debit, 0\) <> COALESCE\(o\.credit, 0\)/);
+  assert.match(functionSql,/COALESCE\(r\.credit, 0\) <> COALESCE\(o\.debit, 0\)/);
+  assert.doesNotMatch(functionSql,/original_period IS DISTINCT FROM NEW\."fiscalPeriod"/);
+  assert.match(migration,/LedgerEntry_period_insert_gate/);
+});
