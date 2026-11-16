@@ -28,8 +28,7 @@ const privateAppPlugin = {
         .replace(/<meta name="viewport"[^>]*>/, '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />')
         .replace(/https:\/\/fonts\.googleapis\.com\/css2\?family=[^"]+/, canonicalFontStylesheet)
         .replace(/<link rel="manifest"[^>]*>/, '<link rel="manifest" href="/manifest.webmanifest" />')
-        .replace('</head>', `${metadata}\n</head>`)
-        .replace('</body>', '  <script src="/pwa-install.js" defer></script>\n</body>');
+        .replace('</head>', `${metadata}\n</head>`);
     }
   }
 };
