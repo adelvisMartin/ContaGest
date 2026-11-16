@@ -81,3 +81,33 @@ test('the public candidate projector still rejects unvalidated stock and flags',
   assert.equal(deriveReorderCandidates([row()])[0].manualApprovalRequired,true);
   assert.equal(deriveReorderCandidates([row()])[0].autoPurchaseEnabled,false);
 });
+
+test('snapshot prevents validated stock from changing before candidate projection',()=>{
+  const original=row();
+  let reads=0;
+  Object.defineProperty(original,'reservedExact',{
+    enumerable:true,
+    get(){ reads++; return reads===1?'3.000':'0.000'; }
+  });
+  const scan=prepareReorderStockPage([original]);
+  assert.equal(reads,1,'validated stock must be read once, not again while projecting');
+  assert.strictEqual(scan.rows[0],original,'preserve original read-only report row contract');
+  assert.equal(scan.stockReview.eligibleRows[0].reservedExact,'3.000');
+  assert.equal(scan.reorderCandidates[0].reservedExact,'3.000');
+  assert.equal(scan.reorderCandidates[0].availableExact,'2.000');
+  assert.equal(Object.isFrozen(scan.stockReview.eligibleRows[0]),true);
+});
+
+test('snapshot prevents a dynamic reorder flag from changing after validation',()=>{
+  const original=row();
+  let reads=0;
+  Object.defineProperty(original,'needsReorder',{
+    enumerable:true,
+    get(){ reads++; return reads===1; }
+  });
+  const scan=prepareReorderStockPage([original]);
+  assert.equal(reads,1);
+  assert.deepEqual(scan.salesCandidateIds,['id-a']);
+  assert.equal(scan.reorderCandidates[0].manualApprovalRequired,true);
+  assert.equal(scan.reorderCandidates[0].autoPurchaseEnabled,false);
+});
