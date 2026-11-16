@@ -25,7 +25,9 @@ BEGIN
        AND OLD."postedAt" IS NULL
        AND OLD."postedBy" IS NULL
        AND OLD."reversalOfId" IS NULL
-       AND OLD."sourceId" IS NULL THEN
+       AND OLD."sourceId" IS NULL
+       AND OLD."salesInvoiceId" IS NULL
+       AND OLD."purchaseInvoiceId" IS NULL THEN
       PERFORM public.data_lifecycle_assert_not_held(
         OLD."tenantId"::uuid, TG_TABLE_NAME, OLD."id"::text
       );
