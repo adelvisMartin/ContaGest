@@ -52,6 +52,9 @@ test('must reject public-reference URLs using IP literals or private hostnames',
   rejected(v => { v.providers[0].source = 'https://127.1/api'; }, 'HTTPS_PROVENANCE');
   rejected(v => { v.providers[0].source = 'https://api.internal./docs'; }, 'HTTPS_PROVENANCE');
   rejected(v => { v.providers[0].source = 'https://localhost./docs'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://api.internal../docs'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://localhost../docs'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://docs.example.com../docs'; }, 'HTTPS_PROVENANCE');
 });
 test('must reject encoded credential parameter names and fragments in provenance', () => {
   rejected(v => { v.providers[0].source = 'https://docs.example.com/?api%5Fkey=example'; }, 'HTTPS_PROVENANCE');
