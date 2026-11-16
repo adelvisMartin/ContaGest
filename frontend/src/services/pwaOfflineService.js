@@ -115,7 +115,8 @@ function purgeWebStorage(session) {
     }
   }
   if (typeof sessionStorage !== 'undefined') {
-    const sensitivePrefixes = ['cg_', 'contagest_', 'hipico_'];
+    // Do not erase Control Hípico's independent same-origin login or state.
+    const sensitivePrefixes = ['cg_', 'contagest_'];
     const keys = [];
     for (let index = 0; index < sessionStorage.length; index += 1) keys.push(sessionStorage.key(index));
     for (const key of keys.filter(Boolean)) {
