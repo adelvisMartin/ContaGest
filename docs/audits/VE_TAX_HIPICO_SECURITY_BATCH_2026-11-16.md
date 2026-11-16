@@ -108,3 +108,34 @@ npm run test:browser:hipico
 ```
 
 **Refactor y riesgos:** no añadir librería compartida de SW que obligue una nueva carga de red durante el install offline: ambos productos mantienen entrypoints y scopes distintos. No alterar `vercel.json` ni sus contratos de auto-deploy sin una decisión del propietario sobre habilitación de producción. El cierre #1292 aún requiere revocación/sesión/IndexedDB con pruebas multiusuario reales; #1291/#892 aún requieren corpus, API y LAB físicos autorizados. La cobertura de rutas codificadas y Unicode es conservadora: URLs malformadas y textos con invisibles pueden perder fallback/capacidad de consulta por seguridad. Revertir sólo con control equivalente.
+
+## Segunda iteración: fallos de CI, invariantes financieros, caché PWA y parseo MUI
+
+### Evidencia reproducible antes de tocar
+
+- `main` permanece en `e7706f3dac3ae4c677fcdff05a662765fa6bdcc6`; el candidato fallido examinado fue `ad30e1e68106d06f1da0f39ba72cfc100460bac4`. Los cuatro errores TypeScript y los errores de sintaxis/configuración de más abajo existen en archivos idénticos en ese `main`; se consideran defectos **PREEXISTENTES**. Esto no permite llamar PASS a los gates.
+- **ContaGest CI** [run 43906556026](https://github.com/adelvisMartin/ContaGest/actions/runs/43906556026), job 133436853238, `TypeScript` FAIL: `bank-reconciliation.service.ts:395` TS2554 (falta el cliente de transacción); `fiscal-withholding-application.routes.ts:209` TS2339 (`PurchaseInvoice.exchangeRate` no existe en schema); `payroll.routes.ts:129` TS2345 (efectos Zod tipados con montos optional); `service-catalog.service.ts:30` TS2322 (`Record<string,unknown>` no es JSON Prisma).
+- **Hípico Production Build Runtime** [run 43906555930](https://github.com/adelvisMartin/ContaGest/actions/runs/43906555930), job 133436852346: pruebas PWA y LAB nuevas PASS. El build termina FAIL en `tests/reproducible_install_contract.test.mjs:27`: esperaba allowlist objeto, recibió `false` en `vercel.json` raíz. `frontend/vercel.json` ya define la allowlist exacta.
+- **Verticales 49/51** [run 43906556147](https://github.com/adelvisMartin/ContaGest/actions/runs/43906556147), job 133436854321: `vite:import-analysis` no puede parsear `frontend/src/components/muiRuntime.js:63:820`, por paréntesis de más en `BreadcrumbsIsland`. Los cinco E2E fallaron en `qa/erp-visual-overlap-v4951.spec.mjs:152` porque `#pages` nunca se adjuntó. No se afirmó que el problema fuese el CSS o las vistas individuales.
+- **Control Hipico QA Foundation:** fallo histórico de árbol sucio aún sin rutas de diagnóstico, retenido como BLOCKED/NOT_VERIFIED. Nuevo paso de `git status --short --untracked-files=all` en error conserva el gate fail-closed, no introduce skips.
+
+### Correcciones integradas mínimas
+
+| Archivo | Invariante corregido | Riesgo y verificación requerida |
+| --- | --- | --- |
+| `frontend/src/components/muiRuntime.js` | Se elimina un `)` sobrante del Breadcrumbs; el runtime vuelve a ser sintácticamente válido. | Gate nuevo `tests/mui_runtime_syntax_v4951.test.mjs` ejecuta `node --check` antes del Playwright; inspección visual por ruta pendiente. |
+| `tests/reproducible_install_contract.test.mjs` | El root `git.deploymentEnabled=false` se reconoce como política **más estricta** que la allowlist; sólo el root admite este caso. | Regresiones rechazan `true`, valores ausentes, wildcard y ramas adicionales; el frontend sigue exigiendo coincidencia exacta de allowlist. **No se cambió** `vercel.json` ni se habilitó auto-deploy. |
+| `backend/src/modules/bank-reconciliation/bank-reconciliation.service.ts` | `createLedgerEntry` exige un `Prisma.TransactionClient`; el write-off se crea en `prisma.$transaction`, incluyendo el guard de período, sin cambiar idempotencia ni posting posterior. | Alto riesgo financiero; PostgreSQL17 y concurrencia/replay E2E obligatorios. |
+| `backend/src/modules/fiscal/fiscal-withholding-application.routes.ts` | La tasa FX=1 y moneda VES se validan contra **todas las líneas del asiento original contabilizado** (fuente persistida), en vez de leer una propiedad inexistente de PurchaseInvoice. | Alto riesgo fiscal; feature flag de posting sigue OFF por defecto; exige revisión legal y PG17. |
+| `backend/src/modules/payroll/payroll.routes.ts` | Validación explícita de `gross/deductions/net` antes de comprobar la ecuación y antes de crear el recibo. | Mantiene verificación bruto=deducciones+neto; regresiones de nómina y tenant en base real pendientes. |
+| `backend/src/modules/service-catalog/service-catalog.service.ts` | Auditoría recibe `Prisma.InputJsonObject` en lugar de `Record<string,unknown>`, sin conversiones `as any`. | Evaluar typecheck y auditoría transaccional real. |
+| `frontend/public/sw.js` | Sólo guarda un asset si la respuesta HTTP es pública/permitida: rechaza `Cache-Control: private`, `no-store` y `Vary: *`; navegación ajena al entrypoint no puede sobrescribir el shell `index.html`. | `tests/pwa_private_query_guard_v1292.test.mjs` prueba que no se cacheen respuestas privadas y que el shell público sigue soportando offline. |
+
+### Puertas y diagnóstico pendientes
+
+1. En el **nuevo HEAD** ejecutar y revisar por separado `npm ci --no-audit --no-fund`, `node --test tests/reproducible_install_contract.test.mjs tests/mui_runtime_syntax_v4951.test.mjs tests/pwa_private_query_guard_v1292.test.mjs`, `npm run typecheck`, `npm run build` y los suites de nómina/contabilidad/fiscal, seguridad, PWA, LAB y Playwright Chromium/Firefox/WebKit. Los tests de `ad30e1e...` no validan nuevos SHA.
+2. Completar PostgreSQL17 **efímero/aislado**, dos tenants y fixtures sintéticos con rollback/cleanup, write-off de creación/posting/replay/concurrencia y aplicación RETIVA sin alterar configuraciones productivas. No usar DB compartida ni mover flags financieros a ON.
+3. Mantener `#1011` SOURCE no-read/no-send, `#1018` report links OFF, política de cifrado/revocación PWA y validaciones físicas Android/Windows. No confluir consultas de LAB con fuente regulatoria ni tratar previews como comprobantes.
+4. Inspeccionar el diff final, artifacts/secret scan, `main` actual y **todos los required checks del HEAD** antes de merge. El nuevo candidato es provisional; estado **PARTIAL/NO_MERGE**.
+
+**Rendimiento/cambio mínimo:** el match de parámetros consulta directamente el iterador de `URLSearchParams`; el helper `mayCachePublicResponse` sólo se consulta en respuestas elegibles y no introduce fetching adicional. Son mejoras de código, no mediciones de tiempo. El rollback revierte el commit respectivo sin alterar esquema ni datos, pero sólo con un reemplazo equivalente de las barreras de caché y seguridad.
