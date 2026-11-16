@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
+import { writeAudit } from '../backend/src/shared/services/audit.service.ts';
 
 // #664 representative non-financial CRUD against the actual Express API and ephemeral PG.
 test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t) => {
@@ -58,4 +59,32 @@ test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t)
   await h.status(`/clients/${encodeURIComponent(clientId)}`, 404);
   const deletion = await h.prisma.auditLog.findMany({ where: { entityId: clientId, tenantId: h.tenant.id } });
   assert.equal(deletion.filter(row => row.action === 'delete').length, 1, 'one delete audit for one effect');
+});
+
+
+test('#638/#1289 PostgreSQL rejects unaudited CRUD when the audit FK fails', async (t) => {
+  const h = await createRealBackendHarness();
+  const rif = `J-ROLLBACK-${randomUUID().slice(0, 8)}`;
+  t.after(async () => {
+    try {
+      // Idempotent guard for a failing assertion, never a production database.
+      await h.prisma.client.deleteMany({ where: { tenantId: h.tenant.id, rif } });
+    } finally {
+      await h.close();
+    }
+  });
+
+  await assert.rejects(h.prisma.$transaction(async (tx) => {
+    const created = await tx.client.create({
+      data: { tenantId: h.tenant.id, rif, name: 'Rollback fixture #638' }
+    });
+    // Valid tenant + invalid synthetic user violates AuditLog.user FK. The
+    // domain mutation must roll back rather than commit without provenance.
+    await writeAudit({
+      tenantId: h.tenant.id, userId: randomUUID(), action: 'create',
+      entity: 'client', entityId: created.id, after: created
+    }, tx);
+  }));
+  assert.equal(await h.prisma.client.count({ where: { tenantId: h.tenant.id, rif } }), 0,
+    'the client must not survive a failed audit transaction');
 });
