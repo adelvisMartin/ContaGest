@@ -135,9 +135,22 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
         ]
       })
     });
+    // Raw SQL/ORM deletion without matching audit evidence is rejected.
+    await assert.rejects(
+      h.prisma.ledgerEntry.delete({ where: { id: draft.id } }),
+      /LEDGER_DRAFT_DELETE_AUDIT_REQUIRED/
+    );
+    assert.ok(await h.prisma.ledgerEntry.findUnique({ where: { id: draft.id } }),
+      'A blocked unaudited deletion must preserve the draft');
     const deleted = await h.ok(`/accounting/entries/${draft.id}`, { method: 'DELETE' });
     assert.equal(deleted.deleted, true);
     assert.equal(await h.prisma.ledgerEntry.findUnique({ where: { id: draft.id } }), null);
+    const deletionAudit=await h.prisma.auditLog.findFirst({
+      where: { tenantId: h.tenant.id, entity: 'LedgerEntry', entityId: draft.id,
+        action: 'ledger.entry.draft-deleted' }
+    });
+    assert.equal(deletionAudit?.userId,h.admin.id,
+      'Authorized DRAFT deletion must commit actor-scoped audit atomically');
 
     await h.status('/accounting/entries', 422, {
       method: 'POST',
