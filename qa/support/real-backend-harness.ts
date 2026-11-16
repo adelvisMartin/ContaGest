@@ -13,6 +13,15 @@ function unwrap(payload:any){return payload?.data ?? payload;}
 export async function createRealBackendHarness(){
   // These fixtures create signed UserSessions and persistent CRUD rows. Refuse
   // shared development/production databases before reading or changing any data.
+  const rawDatabaseUrl=String(process.env.DATABASE_URL||'');
+  let databaseUrl:URL;
+  try { databaseUrl=new URL(rawDatabaseUrl); }
+  catch { throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED'); }
+  if(process.env.NODE_ENV!=='test' || process.env.VERCEL ||
+     !['postgresql:','postgres:'].includes(databaseUrl.protocol) ||
+     !['127.0.0.1','localhost','[::1]'].includes(databaseUrl.hostname)){
+    throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
+  }
   const databases=await prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
   if(!/^.+(?:_e2e|_drill|_restore)$/.test(databases[0]?.name||'')){
     throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
