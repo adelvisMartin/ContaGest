@@ -157,7 +157,7 @@ test('#1292 ERP SW never stores HTTP private/no-store/Vary:* asset responses', a
   assert.equal(publicWorker.cacheWrites.length, 1, 'ordinary public assets remain cacheable');
 });
 
-test('#1292 ERP SW never poisons its public shell with arbitrary route HTML', async () => {
+test('#1292 ERP SW never poisons its offline shell with navigations or private HTML', async () => {
   const spec = WORKERS[0];
   const dynamicWorker = makeWorker(spec, { asPublicResponse: true });
   assert.equal((await dynamicWorker.fireFetch(new URL('?module=private-output', spec.scope).href)).status, 200);
@@ -169,7 +169,8 @@ test('#1292 ERP SW never poisons its public shell with arbitrary route HTML', as
   assert.equal(privateShell.cacheWrites.length, 0, 'no-store HTML must not be copied to CacheStorage');
   const publicShell = makeWorker(spec, { asPublicResponse: true });
   assert.equal((await publicShell.fireFetch(spec.scope)).status, 200);
-  assert.equal(publicShell.cacheWrites.length, 1, 'cacheable public entrypoint can still refresh the shell');
+  assert.equal(publicShell.cacheWrites.length, 0, 'navigations must never refresh a shared offline shell');
+  assert.equal(publicShell.fetchCalls[0]?.cache, 'no-store');
 });
 
 test('#1292 ERP SW does not supply Hipico offline shell or cache a different product', async () => {
