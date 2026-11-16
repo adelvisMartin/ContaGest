@@ -1,4 +1,5 @@
-const CACHE_VERSION = 'v563-2';
+// Security cache migration (#1292): activation must evict the older shell namespace.
+const CACHE_VERSION = 'v563-3';
 const ASSET_CACHE = `contagest-ve-${CACHE_VERSION}-assets`;
 const SESSION_CACHE_PREFIX = `contagest-ve-${CACHE_VERSION}-session-`;
 let SESSION_SCOPE = null;
