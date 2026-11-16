@@ -91,7 +91,7 @@
 | --- | --- | --- |
 | SOURCE_REVIEW | VERIFIED_SOURCE | Inspección de archivos/contratos GitHub en baseline y rama |
 | LOCAL_STATIC | NOT_EXECUTED | npm run lint; npm run typecheck; agent router; skills |
-| LOCAL_UNIT | NOT_EXECUTED | Tres suites de regresión #751/#774/#785 con Node 22 en checkout |
+| LOCAL_UNIT | PASS_FOCAL_ONLY | 12/12 pruebas en espejo aislado Node 22.16.0, siete archivos contrastados por SHA de blob; suite integral NOT_EXECUTED |
 | LOCAL_INTEGRATION | NOT_EXECUTED | HTTP auth/RBAC, chart-account sync real y regla/perfil fiscal |
 | LOCAL_POSTGRES | BLOCKED | PostgreSQL17 efímero; migraciones from-zero/upgrade, tenant A/B y cleanup |
 | LOCAL_BUILD | BLOCKED | npm ci --no-audit --no-fund; npm run build; npm test |
@@ -100,13 +100,21 @@
 | PHYSICAL_EXTERNAL | NOT_EXECUTED | Android/Windows/Messenger manual, soak 24–72h y restore real |
 | REMOTE_DEPLOY | OUT_OF_SCOPE | Nunca desplegar un candidato incompleto |
 
+**Evidencia focal real (2026-11-16):** comando ejecutado: node --experimental-strip-types --test sobre las tres suites #751/#774/#785 en /mnt/data/contagest-focal, resultado 12 PASS / 0 FAIL, exit 0. Hashes Git de los siete archivos fuente/test coincidieron con los blobs de la rama: 66f5b3a, 4b82b30, b81a423, 58895cd, 1fd2685, 3595955 y 5054b40 (prefijos de 40 hex). Se probó lógica de dominio real + dobles aislados de acceso a DB; **no se ejecutó Prisma/PostgreSQL real ni la suite contra un checkout completo**. La prueba de ruta sólo verifica cableado por fuente.
+
 **Nota reproducibilidad:** la autoridad real del monorepo es npm workspaces + package-lock.json, por tanto npm ci, no pnpm install --frozen-lockfile sin migración aprobada. Los tests nuevos no reemplazan PostgreSQL. A falta de checkout local completo, no existe evidencia de PASS nativo; un PR permanece DRAFT y sin merge.
 
 **Plan sugerido del runner:** npm ci → npm run agent:system:verify → npm run lint → npm test → npm run build → npm run test:ve-tax → npm run test:hipico → DB PG17 aislado + upgrade/migration → APIs RBAC/idempotencia/reconciliación → Playwright Chromium + Firefox/WebKit → diff/secrets/release exact-SHA. CI debe preservar artifacts y limpiar fixtures incluso en FAIL.
 
 **Go/No-Go:** NO-GO de producción y de SOURCE automático; ningún ticket de estos cinco se considera completado hasta satisfacción material de sus criterios. El rollback del incremento de código es revertir los commits del PR, sin cambios de esquema ni datos de producción.
 
-## 7. Registro de fuentes de proyecto
+## 7. Política Messenger revisada
+La revisión de fuentes oficiales el 2026-11-16 ratificó NO-GO de automatización de WhatsApp Messenger normal sin autorización expresa documentada. Las condiciones restringen auto-messaging y uso no personal no autorizado; las pautas de mensajería se actualizaron el 23-09-2026 y abarcan chats grupales. Hípico seguirá con LAB sintético y sugerencias manuales, sin lectura de SOURCE por cliente no oficial.
+- https://www.whatsapp.com/legal/terms-of-service?lang=en
+- https://www.whatsapp.com/legal/messaging-guidelines?lang=en
+- https://faq.whatsapp.com/361005896189245/?helpref=faq_content&locale=es_LA
+
+## 8. Registro de fuentes de proyecto
 - https://github.com/adelvisMartin/ContaGest/issues/661
 - https://github.com/adelvisMartin/ContaGest/issues/751
 - https://github.com/adelvisMartin/ContaGest/issues/785
