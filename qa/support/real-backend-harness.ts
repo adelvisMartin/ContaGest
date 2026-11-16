@@ -11,6 +11,12 @@ export const QA_ADMIN_EMAIL='admin@erp.local';
 function unwrap(payload:any){return payload?.data ?? payload;}
 
 export async function createRealBackendHarness(){
+  // These fixtures create signed UserSessions and persistent CRUD rows. Refuse
+  // shared development/production databases before reading or changing any data.
+  const databases=await prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
+  if(!/^.+(?:_e2e|_drill|_restore)$/.test(databases[0]?.name||'')){
+    throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
+  }
   const tenant=await prisma.tenant.findUnique({where:{rif:QA_TENANT_RIF}});
   assert.ok(tenant,`QA tenant ${QA_TENANT_RIF} not found`);
   const admin=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:QA_ADMIN_EMAIL,status:'active'}});
