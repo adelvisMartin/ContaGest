@@ -61,3 +61,21 @@ test('GHSA-27r3-jxmh-p828 is remediated in the exact production transitive lock'
   assert.equal(parser?.integrity,
     'sha512-Ifk1KcLrxaGt1occQagQNFNNOqRt1LFuehEnHHzB8Z6cRgIxRU1TBaiIsUiCdA+gy5PL7Y1IX31DNKkRmxtXjQ==');
 });
+
+
+test('Prisma postinstall preserves a clean exact-SHA worktree on the canonical schema',()=>{
+  const schema=readFileSync(new URL('../backend/prisma/schema.prisma',import.meta.url),'utf8');
+  const sync=readFileSync(new URL('../backend/scripts/sync-employee-prisma-schema.mjs',import.meta.url),'utf8');
+  const backendPackage=JSON.parse(readFileSync(new URL('../backend/package.json',import.meta.url),'utf8'));
+  assert.equal(backendPackage.scripts.postinstall,'npm run prisma:generate');
+  for(const model of ['PriceBook','PriceBookLocation','PriceEntry','SalesLinePriceSnapshot']){
+    assert.equal(schema.split('model '+model+' {').length-1,1,
+      'Prisma schema must contain exactly one checked-in '+model);
+  }
+  const pricing=sync.match(/const pricingModels = `([\s\S]*?)`;/);
+  assert.ok(pricing,'Canonical pricing projection template not found');
+  assert.equal(schema.endsWith(pricing[1]+'\n'),true,
+    'npm ci must not append missing price-book models to a tracked Prisma schema');
+  assert.match(sync,/if \(schema !== originalSchema\) \{\s*writeFileSync\(schemaPath, schema\);/,
+    'Schema generator must avoid no-op writes that invalidate exact-SHA browser gates');
+});
