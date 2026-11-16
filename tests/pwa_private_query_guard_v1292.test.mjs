@@ -31,6 +31,7 @@ function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicRespo
       location: { origin: new URL(spec.scope).origin },
       registration: { scope: spec.scope },
       clients: { claim: async () => {} },
+      skipWaiting: async () => {},
       addEventListener: (name, callback) => listeners.set(name, callback),
     },
     caches: {
@@ -39,7 +40,11 @@ function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicRespo
       delete: async (name) => { deletedCacheNames.push(name); return true; },
     },
     fetch: async (request, options) => {
-      fetchCalls.push({ url: request.url, cache: options?.cache });
+      fetchCalls.push({
+        url: request.url, cache: options?.cache ?? request.cache,
+        credentials: options?.credentials ?? request.credentials,
+        redirect: options?.redirect ?? request.redirect
+      });
       if (offline) throw new Error('NETWORK_OFFLINE');
       const response = new Response('network shell', { status: 200, headers: responseHeaders });
       // Node Response.type is "default"; browsers return "basic" for same-origin.
@@ -51,6 +56,11 @@ function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicRespo
   vm.runInNewContext(source, context, { filename: spec.path });
   const guard = vm.runInNewContext(spec.guard, context);
   const cacheName = vm.runInNewContext(spec.path.includes('/hipico-control/') ? 'SHELL_CACHE' : 'ASSET_CACHE', context);
+  const fireInstall = async () => {
+    let completion;
+    listeners.get('install')({ waitUntil: (result) => { completion = Promise.resolve(result); } });
+    await completion;
+  };
   const fireActivate = async () => {
     let completion;
     listeners.get('activate')({ waitUntil: (result) => { completion = Promise.resolve(result); } });
@@ -64,7 +74,7 @@ function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicRespo
     });
     return reply;
   };
-  return { guard, cacheName, fireActivate, fireFetch, fetchCalls, cacheWrites, cacheReads, deletedCacheNames };
+  return { guard, cacheName, fireInstall, fireActivate, fireFetch, fetchCalls, cacheWrites, cacheReads, deletedCacheNames };
 }
 
 for (const spec of WORKERS) {
@@ -235,4 +245,36 @@ test('#1292 both PWA cache migrations evict pre-hardening data without crossing 
   assert.ok(hipico.deletedCacheNames.includes(oldHipico));
   assert.ok(!hipico.deletedCacheNames.includes(oldErp), 'Hipico activation must not delete ERP caches');
   assert.ok(!hipico.deletedCacheNames.includes(erp.cacheName), 'Hipico activation must not delete active ERP cache');
+});
+
+test('#1292 install uses uncredentialed, no-redirect public shell fetches, never Cache.add/AddAll', async () => {
+  for (const spec of WORKERS) {
+    const privateWorker = makeWorker(spec, {
+      asPublicResponse: true, responseHeaders: { 'Cache-Control': 'private, no-store' }
+    });
+    if (spec.intercepts) {
+      await assert.rejects(privateWorker.fireInstall(), /HIPICO_PRIVATE_SHELL_RESPONSE/);
+    } else {
+      await privateWorker.fireInstall();
+    }
+    assert.equal(privateWorker.cacheWrites.length, 0, spec.path + ': private install must not persist');
+    assert.ok(privateWorker.fetchCalls.length > 0);
+    assert.ok(privateWorker.fetchCalls.every((call) => call.credentials === 'omit'
+      && call.redirect === 'error' && call.cache === 'reload'), spec.path + ': install must not use cookies or redirects');
+
+    const publicWorker = makeWorker(spec, { asPublicResponse: true });
+    await publicWorker.fireInstall();
+    assert.ok(publicWorker.cacheWrites.length > 0, spec.path + ': public shell must remain installable');
+    assert.equal(publicWorker.cacheWrites.length, publicWorker.fetchCalls.length,
+      spec.path + ': each allowed public install fetch should cache exactly once');
+  }
+});
+
+test('#1292 ERP service-worker registration URL follows its cache-version migration', () => {
+  const sw = readFileSync(new URL('../frontend/public/sw.js', import.meta.url), 'utf8');
+  const installer = readFileSync(new URL('../frontend/public/pwa-install.js', import.meta.url), 'utf8');
+  const version = sw.match(/const CACHE_VERSION = 'v([0-9]+-[0-9]+)'/);
+  assert.ok(version, 'ERP cache namespace must have a fixed version');
+  assert.ok(installer.includes(`./sw.js?v=${version[1]}`),
+    'the installer must request the same security revision as the ERP SW');
 });
