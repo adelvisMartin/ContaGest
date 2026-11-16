@@ -92,14 +92,9 @@ export function buildRouteQualityBaseline({
   };
 }
 
-export function assertRouteQualityCliArgs(args) {
-  if (args.length > 1 || (args.length === 1 && args[0] !== '--check')) {
-    throw new Error('ROUTE_MATRIX_UNSUPPORTED_ARGUMENT');
-  }
-}
-
 function main() {
-  assertRouteQualityCliArgs(process.argv.slice(2));
+  if (process.argv.length > 2) throw new Error('ROUTE_MATRIX_UNSUPPORTED_ARGUMENT');
+  if (process.argv[2] && process.argv[2] !== '--check') throw new Error('ROUTE_MATRIX_UNSUPPORTED_ARGUMENT');
   const candidateSha = String(process.env.CANDIDATE_SHA || '').trim().toLowerCase();
   if (!/^[a-f\d]{40}$/.test(candidateSha)) throw new Error('ROUTE_MATRIX_CANDIDATE_SHA_REQUIRED');
   const actualHead = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase();
