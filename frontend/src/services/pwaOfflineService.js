@@ -35,10 +35,17 @@ function dbName(session) {
 function postToServiceWorker(message) {
   if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
   const target = navigator.serviceWorker.controller;
-  if (target) target.postMessage(message);
+  if (target) {
+    target.postMessage(message);
+    return;
+  }
   navigator.serviceWorker.ready.then((registration) => {
+    // A pending ready() from login A must not restore A's scope after
+    // logout or after tenant B becomes the current session.
+    if (message.type === 'SET_SESSION_SCOPE' &&
+        sessionScope(parseStoredSession()) !== message.scopeToken) return;
     const worker = registration.active || registration.waiting || registration.installing;
-    if (worker && worker !== target) worker.postMessage(message);
+    worker?.postMessage(message);
   }).catch(() => undefined);
 }
 
