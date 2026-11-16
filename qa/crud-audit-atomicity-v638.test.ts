@@ -19,6 +19,20 @@ test('#638/#1289 CRUD audit rollback: create/update/delete never commit without 
   const rif = `J-QA-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
   let clientId = '';
 
+  // Rejecting on *any* Prisma error can hide a broken fixture. Each negative
+  // transaction must reach the audit write and fail with the FK violation.
+  async function expectAuditFkFailure(action: string, run: (reachedAudit: () => void) => Promise<unknown>) {
+    let auditAttempted = false;
+    await assert.rejects(run(() => { auditAttempted = true; }), (error: unknown) => {
+      assert.equal(auditAttempted, true, action + ': mutation must reach AuditLog');
+      const code = String((error as { code?: unknown; meta?: { code?: unknown } })?.code
+        ?? (error as { meta?: { code?: unknown } })?.meta?.code ?? '');
+      assert.ok(code === 'P2003' || code === '23503',
+        action + ': expected an AuditLog foreign-key error, received ' + (code || 'no database code'));
+      return true;
+    });
+  }
+
   t.after(async () => {
     try {
       if (clientId) {
@@ -32,8 +46,9 @@ test('#638/#1289 CRUD audit rollback: create/update/delete never commit without 
   });
 
   // CREATE: never persist a customer if the transaction's audit cannot commit.
-  await assert.rejects(h.prisma.$transaction(async (tx) => {
+  await expectAuditFkFailure('create', (reachedAudit) => h.prisma.$transaction(async (tx) => {
     const created = await tx.client.create({ data: { tenantId, rif, name: 'QA Audit Rollback Create' } });
+    reachedAudit();
     await writeAudit({
       tenantId, userId: invalidUserId, action: 'create',
       entity: 'client', entityId: created.id, after: created
@@ -57,11 +72,12 @@ test('#638/#1289 CRUD audit rollback: create/update/delete never commit without 
   }), 1);
 
   // UPDATE: data and audit use the same interactive Prisma transaction.
-  await assert.rejects(h.prisma.$transaction(async (tx) => {
+  await expectAuditFkFailure('update', (reachedAudit) => h.prisma.$transaction(async (tx) => {
     const updated = await tx.client.update({
       where: { id: clientId, tenantId },
       data: { name: 'QA Audit Should Not Persist' }
     });
+    reachedAudit();
     await writeAudit({
       tenantId, userId: invalidUserId, action: 'update',
       entity: 'client', entityId: clientId, before: created, after: updated
@@ -72,9 +88,10 @@ test('#638/#1289 CRUD audit rollback: create/update/delete never commit without 
     'UPDATE must roll back after the AuditLog foreign-key error');
 
   // DELETE: audit failure cannot permanently remove the business record.
-  await assert.rejects(h.prisma.$transaction(async (tx) => {
+  await expectAuditFkFailure('delete', (reachedAudit) => h.prisma.$transaction(async (tx) => {
     const before = await tx.client.findFirstOrThrow({ where: { tenantId, id: clientId } });
     await tx.client.delete({ where: { id: clientId, tenantId } });
+    reachedAudit();
     await writeAudit({
       tenantId, userId: invalidUserId, action: 'delete',
       entity: 'client', entityId: clientId, before
