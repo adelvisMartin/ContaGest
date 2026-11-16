@@ -38,9 +38,9 @@ test('#849 revision storage is append-only even against accidental ORM writes',(
 });
 
 test('#849 revision trigger uses valid balanced PostgreSQL dollar quotes on fresh installs', () => {
-  assert.match(sql, /LANGUAGE plpgsql AS \\$\\$\\s*BEGIN/);
-  assert.match(sql, /RAISE EXCEPTION 'SERVICE_CATALOG_REVISION_IMMUTABLE'[\\s\\S]*?END;\\s*\\$\\$;/);
-  assert.doesNotMatch(sql, /LANGUAGE plpgsql AS \\$(?!\\$)/);
+  assert.match(sql, /LANGUAGE plpgsql AS \$\$\s*BEGIN/);
+  assert.match(sql, /RAISE EXCEPTION 'SERVICE_CATALOG_REVISION_IMMUTABLE'[\s\S]*?END;\s*\$\$;/);
+  assert.doesNotMatch(sql, /LANGUAGE plpgsql AS \$(?!\$)/);
 });
 
 test('#849 does not recreate preexisting tenant + identity unique indexes', () => {
