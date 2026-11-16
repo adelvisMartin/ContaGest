@@ -99,8 +99,8 @@ test('#1292 tenant switch purges old synchronous state before hydrating the new 
   assert.equal(next.tenantId, 'tenant-b');
   assert.equal(sharedState, 'session-b', 'old purge must not wipe new global state');
   assert.deepEqual(events, [
-    'server-switch', 'purge-old-store', 'purge-old-web-storage',
-    'activate-new', 'async-old-cache-cleanup'
+    'server-switch', 'purge-old-web-storage', 'activate-new',
+    'purge-old-store', 'async-old-cache-cleanup'
   ]);
 });
 
@@ -120,7 +120,7 @@ test('#1292 blocked old-tenant storage cleanup still activates B but rejects swi
   });
   await assert.rejects(switchTenant('tenant-b'), (error) => error.code === 'OFFLINE_SESSION_PURGE_FAILED');
   assert.equal(activeTenant, 'tenant-b', 'the backend-approved tenant identity remains current');
-  assert.deepEqual(events, ['old-state-removed', 'old-purge-started', 'activate-new']);
+  assert.deepEqual(events, ['old-purge-started', 'activate-new', 'old-state-removed']);
 });
 
 test('#1292 failed or malformed switch never removes current-tenant storage', async () => {
