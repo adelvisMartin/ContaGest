@@ -4,7 +4,12 @@ import { prisma } from '../../database/prisma.js';
 // Passing a transaction makes the audit write part of the same commit as the
 // owning CRUD mutation. Legacy callers retain their existing best-effort policy.
 export async function writeAudit(input: { tenantId?: string; userId?: string; action: string; entity: string; entityId?: string; before?: unknown; after?: unknown; ipAddress?: string; userAgent?: string }, tx?: Prisma.TransactionClient) {
-  if (!input.tenantId) return null;
+  if (!input.tenantId) {
+    // A protected mutation must never commit with an absent audit tenant.
+    // Preserve legacy no-context behavior only for non-transactional callers.
+    if (tx) throw new Error('AUDIT_TRANSACTION_TENANT_REQUIRED');
+    return null;
+  }
   const operation = (tx ?? prisma).auditLog.create({
     data: {
       tenantId: input.tenantId,
