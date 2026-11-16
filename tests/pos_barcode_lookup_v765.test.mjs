@@ -30,9 +30,10 @@ test('never silently pick one product for cross-field collision', () => {
 
 test('read-only route uses authenticated tenant, permission and two-record cap', () => {
   const routeStart = sales.indexOf("router.get('/pos/product-lookup'");
-  const routeEnd = sales.indexOf("router.get('/', requirePermission('sales.view')", routeStart);
-  assert.ok(routeStart > 0 && routeEnd > routeStart, 'lookup precedes generic sales list');
+  const routeEnd = sales.indexOf('}));', routeStart) + 4;
+  assert.ok(routeStart > 0 && routeEnd > routeStart + 4, 'lookup handler must be complete');
   const route = sales.slice(routeStart, routeEnd);
+  assert.match(route, /ok\(res, decision\.value\);\s*}\)\);$/);
   assert.match(route, /requirePermission\('sales\.view'\)/);
   assert.match(route, /context\(req\)\.tenantId/);
   assert.match(route, /tenantId,\s*active:\s*true/);
