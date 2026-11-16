@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const catalogPath = fileURLToPath(new URL('../config/provider-integration-catalog-v772.json', import.meta.url));
@@ -10,14 +11,28 @@ const costKinds = new Set(['SELF_HOST_PREFERRED','PLAN_RESTRICTED_CLOUD_API','LI
 const priorityKinds = new Set(['P0','P1','P2']);
 const requiredRedactions = ['authorization','cookie','set-cookie','password','apiKey','apiSecret','webhookSignature','personalData','rawBody'];
 
+// This is a provenance/documentation guard, not a runtime SSRF defense.
+const sensitiveKey = /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|signature)/i;
+
+function hasSensitiveParameter(queryOrFragment) {
+  const part = queryOrFragment.includes('?')
+    ? queryOrFragment.slice(queryOrFragment.indexOf('?') + 1)
+    : queryOrFragment.replace(/^[?#]/, '');
+  return [...new URLSearchParams(part).keys()].some(key => sensitiveKey.test(key));
+}
+
 function validSource(value) {
   if (typeof value !== 'string') return false;
   try {
     const url = new URL(value);
-    if (url.protocol !== 'https:' || url.username || url.password || !url.hostname ||
-      /(^|[.])(localhost|local|internal)$/.test(url.hostname) ||
-      /^\d+(?:\.\d+){3}$/.test(url.hostname) ||
-      /(?:api[_-]?key|token|secret|password|signature)=/i.test(url.search)) return false;
+    const host = url.hostname.toLowerCase().replace(/\.$/, '');
+    const ipCandidate = host.startsWith('[') && host.endsWith(']')
+      ? host.slice(1, -1)
+      : host;
+    if (url.protocol !== 'https:' || url.username || url.password ||
+      !host.includes('.') || /(^|\.)(localhost|local|internal)$/.test(host) ||
+      isIP(ipCandidate) !== 0 ||
+      hasSensitiveParameter(url.search) || hasSensitiveParameter(url.hash)) return false;
     return true;
   } catch { return false; }
 }
