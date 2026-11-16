@@ -21,7 +21,10 @@ function assertExactReversal(original: any, reversal: any) {
 }
 
 test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exactly', async (t) => {
-  const h = await createRealBackendHarness();
+  const h = await createRealBackendHarness({
+    // #90 runs in its own PG17 service and again on #91's disposable clone.
+    approvedDatabaseNames:['contagest_financial_v90_e2e','contagest_ledger_v91']
+  });
   const ids = {
     sales: [] as string[],
     purchases: [] as string[],
