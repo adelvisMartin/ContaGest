@@ -62,6 +62,23 @@ test('CRUD #638: create/read/update/delete remains tenant scoped across real API
 
     const otherTenantRead = await request.get(`${base}/api/v1/clients/${encodeURIComponent(createdId)}`, { headers: headersB });
     expect(otherTenantRead.status()).toBe(404);
+    expect(await otherTenantRead.text()).not.toContain(customerRif);
+
+    // BOLA protections also apply to search/list projections and anonymous
+    // callers: an attacker must not infer ownership through a query result.
+    const otherTenantSearch = await request.get(
+      `${base}/api/v1/clients?q=${encodeURIComponent(customerRif)}`, { headers: headersB }
+    );
+    expect(otherTenantSearch.status()).toBe(200);
+    const searchPayload = await otherTenantSearch.json();
+    expect(searchPayload.data).toEqual([]);
+    expect(JSON.stringify(searchPayload)).not.toContain(customerRif);
+
+    const anonymousRead = await request.get(
+      `${base}/api/v1/clients/${encodeURIComponent(createdId)}`
+    );
+    expect(anonymousRead.status()).toBe(401);
+    expect(await anonymousRead.text()).not.toContain(customerRif);
 
     const otherTenantWrite = await request.put(`${base}/api/v1/clients/${encodeURIComponent(createdId)}`, {
       headers: headersB, data: { name: 'INTRUSION' }
