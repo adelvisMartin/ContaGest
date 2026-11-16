@@ -75,9 +75,16 @@ export const AuthService={
     // Start local purge immediately, without producing an unhandled rejection
     // while the remote revoke is in flight.
     const purge=previous?purgeOfflineSession(previous).then(()=>null,error=>error):Promise.resolve(null);
-    try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}catch{/* Remote revocation can be unavailable offline; local identity is already cleared. */}
+    let remoteRevoked=true;
+    try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}
+    catch{remoteRevoked=false;}
     const purgeError=await purge;
     if(purgeError)throw purgeError;
+    if(!remoteRevoked){
+      const error=new Error('La sesión local se cerró, pero no se confirmó la revocación en el servidor.');
+      error.code='AUTH_REMOTE_LOGOUT_UNCONFIRMED';
+      throw error;
+    }
   },
   authHeaders(){return {};}
 };
