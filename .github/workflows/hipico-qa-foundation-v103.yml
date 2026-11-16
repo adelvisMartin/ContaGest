@@ -120,6 +120,12 @@ jobs:
           HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
         run: npm run qa:hipico:visual
 
+      # Keep the clean-tree gate intact; show only file paths on failure so the
+      # next fix addresses the producer rather than bypassing exact-SHA checks.
+      - name: Diagnose worktree mutations after matrix failure
+        if: failure()
+        run: git status --short --untracked-files=all
+
       - name: Preserve view-by-view screenshots
         if: always()
         uses: actions/upload-artifact@v7
