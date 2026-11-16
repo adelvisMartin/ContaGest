@@ -60,6 +60,9 @@ const CANONICAL_RECEIPT_PURPOSES=new Set([
 ]);
 
 const MAX_LAB_CANONICAL_BYTES=16_384;
+// Reject invisible direction/word separators that can hide an action inside a
+// superficially read-only question. Preserve U+200D for ordinary emoji ZWJ.
+const UNSAFE_LAB_FORMAT_CONTROLS=/[\u200b\u200c\u200e\u200f\u202a-\u202e\u2060-\u2069\ufeff]/u;
 // Bound decompressed UTF-8 bytes as they arrive, before allocating a full body.
 // Native fetch exposes body.getReader(); streamless test adapters use text().
 async function readBoundedLabCanonicalBody(response){
@@ -109,6 +112,7 @@ const TOPIC={
 const MONEY=/\b(?:apostar|apuestas?|jugadas?|juega|consigue|pagos?|pagar|cobros?|cobrar|depositar|depositos?|retirar|retiros?|saldos?|abonar|liquidacion(?:es)?|liquidar|ganancias?|deudas?|transferencias?|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|dineros?|premios?|bolivares?|balances?|bs|usdt)\b|\$/;
 const normalizeQuery=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 export function labReadOnlyQueryPurpose(text,classification){
+  if(typeof text!=='string'||UNSAFE_LAB_FORMAT_CONTROLS.test(text))return null;
   const value=normalizeQuery(text);
   if(!value||value.length>1200||MONEY.test(value)||
     classification?.risk==='monetary'||
@@ -160,7 +164,7 @@ function validCanonicalLabEnvelope({token,labGroupId,labChannelKey,messageId,sen
   if(!bounded(token,4096)||!bounded(labGroupId,160)||
      !bounded(labChannelKey,128)||!bounded(messageId,320)||
      !bounded(senderId,160)||!bounded(text,1200,true)||
-     !Number.isFinite(timeoutMs)||timeoutMs<0||timeoutMs>30000)return false;
+     UNSAFE_LAB_FORMAT_CONTROLS.test(text)||!Number.isFinite(timeoutMs)||timeoutMs<0||timeoutMs>30000)return false;
   // Input must already be a normalized server/DOM observation timestamp.
   if(typeof timestamp!=='string'||
      !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(timestamp))return false;
