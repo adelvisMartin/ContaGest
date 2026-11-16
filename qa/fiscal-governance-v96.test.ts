@@ -40,21 +40,26 @@ test('issue #96 fiscal RBAC and audited state machine on real PostgreSQL',async(
     await h.prisma.closingPeriod.deleteMany({where:{tenantId:{in:[h.tenant.id,tenantB.id]},period:{in:[PERIOD_A,PERIOD_DOC,PERIOD_CROSS,PERIOD_LINK]}}}).catch(()=>undefined);
     await h.prisma.auditLog.deleteMany({where:{tenantId:h.tenant.id,action:{startsWith:'fiscal.'}}}).catch(()=>undefined);
     for(const actor of [readOnly,closer]){
-      // The production FK policy intentionally protects legal acceptance data.
-      // This deletion belongs exclusively to the isolated synthetic #96 DB.
-      await h.prisma.$executeRaw`
-        DELETE FROM public."CookiePreference"
-        WHERE "tenantId"=${h.tenant.id} AND "userId"=${actor.user.id}
-      `;
-      await h.prisma.$executeRaw`
-        DELETE FROM public."LegalAcceptance"
-        WHERE "tenantId"=${h.tenant.id} AND "userId"=${actor.user.id}
-      `;
       await h.prisma.licenseKey.deleteMany({where:{userId:actor.user.id}});
       await h.prisma.userRole.deleteMany({where:{userId:actor.user.id}});
       await h.prisma.rolePermission.deleteMany({where:{roleId:actor.role.id}});
       await h.prisma.role.delete({where:{id:actor.role.id}});
+      // Both legal tables have FK UserProfile(id) ON DELETE CASCADE
+      // (20260809224500_v11_15_legal_acceptance_rif_lock). Do not issue
+      // separate raw SQL that alters the tested production lifecycle.
       await h.prisma.userProfile.delete({where:{id:actor.user.id}});
+      const survivingLegal=await h.prisma.$queryRaw<Array<{count:bigint}>>`
+        SELECT COUNT(*)::bigint AS count
+        FROM public."LegalAcceptance" WHERE "tenantId"=${h.tenant.id}
+          AND "userId"=${actor.user.id}
+      `;
+      const survivingCookie=await h.prisma.$queryRaw<Array<{count:bigint}>>`
+        SELECT COUNT(*)::bigint AS count
+        FROM public."CookiePreference" WHERE "tenantId"=${h.tenant.id}
+          AND "userId"=${actor.user.id}
+      `;
+      assert.equal(survivingLegal[0]?.count,0n,'Legal acceptance FK cascade left synthetic evidence');
+      assert.equal(survivingCookie[0]?.count,0n,'Cookie preference FK cascade left synthetic evidence');
     }
     await h.prisma.tenant.delete({where:{id:tenantB.id}}).catch(()=>undefined);
   });
