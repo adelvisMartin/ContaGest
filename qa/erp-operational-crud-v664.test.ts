@@ -73,6 +73,18 @@ test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t)
   assert.equal(before.rif, rif);
   assert.equal(before.name, name);
 
+  // #1288: a tenant/id mass assignment must be denied for UPDATE as well
+  // as CREATE, without writing any audit event or modifying the record.
+  await h.status(`/clients/${encodeURIComponent(clientId)}`, 422, {
+    method: 'PUT',
+    body: JSON.stringify({ name: 'Forged cross-tenant mutation', tenantId: randomUUID() })
+  });
+  const afterSpoof = await h.ok(`/clients/${encodeURIComponent(clientId)}`);
+  assert.equal(afterSpoof.name, name);
+  assert.equal(await h.prisma.auditLog.count({
+    where: { entity: 'client', entityId: clientId, tenantId: h.tenant.id }
+  }), 1, 'rejected update must not create audit or mutate client');
+
   const updatedName = `${name} updated`;
   const updated = await h.ok(`/clients/${encodeURIComponent(clientId)}`, {
     method: 'PUT', body: JSON.stringify({ name: updatedName })
@@ -82,12 +94,35 @@ test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t)
   const reloaded = await h.ok(`/clients/${encodeURIComponent(clientId)}`);
   assert.equal(reloaded.name, updatedName);
 
-  const audit = await h.prisma.auditLog.findMany({ where: { entityId: clientId, tenantId: h.tenant.id } });
-  assert.equal(audit.filter(row => row.action === 'create').length, 1, 'one create audit for one effect');
-  assert.equal(audit.filter(row => row.action === 'update').length, 1, 'one update audit for one effect');
+  const audit = await h.prisma.auditLog.findMany({
+    where: { entity: 'client', entityId: clientId, tenantId: h.tenant.id },
+    orderBy: { createdAt: 'asc' }
+  });
+  const createAudit = audit.filter(row => row.action === 'create');
+  const updateAudit = audit.filter(row => row.action === 'update');
+  assert.equal(createAudit.length, 1, 'one create audit for one effect');
+  assert.equal(updateAudit.length, 1, 'one update audit for one effect');
+  for (const entry of [...createAudit, ...updateAudit]) {
+    assert.equal(entry.tenantId, h.tenant.id, 'audit tenant is inherited from server session');
+    assert.equal(entry.userId, h.admin.id, 'audit actor is the signed active user');
+    assert.equal(entry.entityId, clientId, 'audit entity is the persisted record');
+  }
+  assert.equal((createAudit[0].after as { name?: string } | null)?.name, name,
+    'create audit must describe the committed customer');
+  assert.equal((updateAudit[0].before as { name?: string } | null)?.name, name,
+    'update audit must preserve prior state');
+  assert.equal((updateAudit[0].after as { name?: string } | null)?.name, updatedName,
+    'update audit must preserve new state');
 
   await h.ok(`/clients/${encodeURIComponent(clientId)}`, { method: 'DELETE' });
   await h.status(`/clients/${encodeURIComponent(clientId)}`, 404);
-  const deletion = await h.prisma.auditLog.findMany({ where: { entityId: clientId, tenantId: h.tenant.id } });
-  assert.equal(deletion.filter(row => row.action === 'delete').length, 1, 'one delete audit for one effect');
+  const deletion = await h.prisma.auditLog.findMany({
+    where: { entity: 'client', entityId: clientId, tenantId: h.tenant.id }
+  });
+  const deleteAudit = deletion.filter(row => row.action === 'delete');
+  assert.equal(deleteAudit.length, 1, 'one delete audit for one effect');
+  assert.equal(deleteAudit[0].userId, h.admin.id, 'deleted customer must retain actor provenance');
+  assert.equal((deleteAudit[0].before as { name?: string } | null)?.name, updatedName,
+    'delete audit must preserve the state before deletion');
+  assert.equal(deleteAudit[0].after, null, 'delete audit must not invent a post-delete record');
 });
