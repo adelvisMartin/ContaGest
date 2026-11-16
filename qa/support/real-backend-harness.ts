@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../../backend/src/app.ts';
 import { prisma } from '../../backend/src/database/prisma.ts';
 import { signAccessToken } from '../../backend/src/shared/auth/jwt.ts';
+import { assertQaDisposableDatabaseConfig } from './disposable-database-guard-v1288.mjs';
 
 export const QA_TENANT_RIF='00000000';
 export const QA_ADMIN_EMAIL='admin@erp.local';
@@ -29,6 +30,16 @@ export async function createRealBackendHarness(options: {
     const db=await prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
     assert.ok(options.approvedDatabaseNames.includes(db[0]?.name),
       `Refusing synthetic QA mutations outside explicitly approved database(s): ${db[0]?.name || '(unknown)'}`);
+  }
+  if(!options.approvedDatabaseNames){
+    // Standard CRUD fixtures must run on an isolated loopback _e2e/_drill/_restore
+    // database. Explicit versioned allowlists above remain authoritative for
+    // specialist disposable suites (for example notification preferences QA).
+    const expectedDatabase=assertQaDisposableDatabaseConfig(process.env);
+    const databases=await prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
+    if(databases[0]?.name!==expectedDatabase){
+      throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
+    }
   }
   const tenant=await prisma.tenant.findUnique({where:{rif:QA_TENANT_RIF}});
   assert.ok(tenant,`QA tenant ${QA_TENANT_RIF} not found`);
@@ -64,7 +75,14 @@ export async function createRealBackendHarness(options: {
       fixtureSessionIds.delete(id);
     }
   }
-  const token=await issueSessionTokenFor(admin);
+  let token:string;
+  try {
+    token=await issueSessionTokenFor(admin);
+  } catch (error) {
+    // A failed signing step must not leave an unowned synthetic session.
+    await cleanupFixtureSessions();
+    throw error;
+  }
 
   let server:ReturnType<ReturnType<typeof createApp>['listen']>;
   try{

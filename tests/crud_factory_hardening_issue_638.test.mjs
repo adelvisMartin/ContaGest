@@ -204,3 +204,72 @@ test('#638: registration type safety and runtime authority gate cannot be bypass
     assert.match(manifest,new RegExp("model:'"+model+"'"));
   }
 });
+
+
+test('#638/#1289: every legacy CRUD mutation and audit are one database transaction', () => {
+  const factory = read('backend/src/modules/crud.factory.ts');
+  const audit = read('backend/src/shared/services/audit.service.ts');
+  const handlers = [
+    { start: "  router.post('/',", end: "  router.put('/:id',", action: 'create' },
+    { start: "  router.put('/:id',", end: "  router.delete('/:id',", action: 'update' },
+    { start: "  router.delete('/:id',", end: '  return router;', action: 'delete' }
+  ];
+  for (const { start, end, action } of handlers) {
+    const from = factory.indexOf(start);
+    const until = factory.indexOf(end, from + start.length);
+    assert.ok(from >= 0 && until > from, action + ': CRUD handler not found');
+    const block = factory.slice(from, until);
+    assert.match(block, /prisma\.\$transaction\(async \(tx\) => \{/,
+      action + ': mutation must be transactional');
+    assert.match(block, /getDelegate\(tx\)/, action + ': mutation must use tx delegate');
+    assert.match(block, /await writeAudit\(\{[\s\S]*?\}, tx\)/,
+      action + ': audit must run on the same transaction');
+    assert.ok(block.includes("action: '" + action + "'"), action + ': audit event action mismatch');
+    assert.ok(block.indexOf('await writeAudit(') < block.indexOf('return ' + (
+      action === 'create' ? 'created' : action === 'update' ? 'updated' : 'deleted') + ';'),
+      action + ': audit must complete before committing');
+    assert.doesNotMatch(block, /\.catch\(\(\) => null\)/, action + ': no swallowed audit errors');
+  }
+  assert.match(audit, /\(tx \?\? prisma\)\.auditLog\.create\(/);
+  assert.match(audit, /return tx \? operation : operation\.catch\(\(\) => null\)/);
+  assert.match(audit, /if \(tx\) throw new Error\('AUDIT_TRANSACTION_TENANT_REQUIRED'\)/,
+    'transaction-bound audit must reject missing tenant instead of silently returning null');
+  assert.match(factory, /const where = \{ id: parseCrudRouteId\(req\.params\.id\), tenantId: ctx\.tenantId \};/);
+  assert.equal((factory.match(/prisma\.\$transaction\(async \(tx\) => \{/g) || []).length, 3);
+});
+
+
+test('#1288: real API regression harness refuses shared databases before opening sessions', () => {
+  const source = read('qa/support/real-backend-harness.ts');
+  const policy = read('qa/support/disposable-database-guard-v1288.mjs');
+  assert.match(source, /import \{ randomBytes, randomUUID \} from 'node:crypto'/);
+  assert.match(source, /assertQaDisposableDatabaseConfig\(process\.env\)/);
+  assert.match(source, /SELECT current_database\(\) AS name/);
+  assert.match(source, /QA_EPHEMERAL_DATABASE_REQUIRED/);
+  assert.match(policy, /DATABASE_RUNTIME_URL/);
+  assert.match(policy, /DIRECT_DATABASE_URL/);
+  assert.match(policy, /\(\?:_e2e\|_drill\|_restore\)\$/);
+  const guard = source.indexOf('const expectedDatabase=assertQaDisposableDatabaseConfig(process.env)');
+  const firstFixture = source.indexOf('prisma.tenant.findUnique');
+  assert.ok(guard > 0 && firstFixture > guard,
+    'fail-closed database guard must precede all fixture tenant/session writes');
+  const signingBlock = source.slice(source.indexOf('  let token:string;'), source.indexOf('  let server:'));
+  assert.match(signingBlock, /try \{[\s\S]*await issueSessionTokenFor\(admin\)/);
+  assert.match(signingBlock, /catch \(error\) \{[\s\S]*await cleanupFixtureSessions\(\)/,
+    'server session must be cleaned if token signing fails before Express starts');
+});
+
+test('#985/#1289 CI PostgreSQL and Quality Gate never mislabel merge-commit evidence as PR HEAD', () => {
+  const quality = read('.github/workflows/pr-quality-gate-v1.yml');
+  const commercial = read('.github/workflows/e2e-commercial-v23.yml');
+  const pinned = 'ref: ${{ env.CANDIDATE_SHA }}';
+  const checkoutAssertion = 'test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"';
+  assert.equal(quality.split(pinned).length - 1, 4,
+    'static, PG, browser and security must all check out the PR HEAD');
+  assert.equal(quality.split('name: Verify exact checked-out candidate').length - 1, 4);
+  assert.ok(quality.includes(checkoutAssertion));
+  assert.ok(commercial.includes(pinned));
+  assert.ok(commercial.includes(checkoutAssertion));
+  assert.match(commercial, /e2e-commercial-v23-provenance\.txt/);
+  assert.match(commercial, /postgres:17-alpine/);
+});
