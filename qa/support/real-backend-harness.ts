@@ -60,7 +60,15 @@ export async function createRealBackendHarness(){
       fixtureSessionIds.delete(id);
     }
   }
-  const token=await issueSessionTokenFor(admin);
+  let token:string;
+  try {
+    token=await issueSessionTokenFor(admin);
+  } catch (error) {
+    // The row is inserted before signAccessToken runs; a signing failure
+    // must not orphan the server-side test session.
+    await cleanupFixtureSessions();
+    throw error;
+  }
 
   let server:ReturnType<ReturnType<typeof createApp>['listen']>;
   try{
