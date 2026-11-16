@@ -180,10 +180,18 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
         store.add(record);
         return;
       }
+      // A non-JSON or throwing payload cannot be declared an identical
+      // replay: never let an exception inside an IDB event handler masquerade
+      // as a successful enqueue.
+      let samePayload = false;
+      try {
+        const original = JSON.stringify(existing.payload);
+        samePayload = original !== undefined && original === JSON.stringify(record.payload);
+      } catch { /* unrepresentable replay: conflict */ }
       if (existing.scopeToken !== record.scopeToken ||
           existing.operation !== record.operation ||
           existing.idempotencyKey !== record.idempotencyKey ||
-          JSON.stringify(existing.payload) !== JSON.stringify(record.payload)) {
+          !samePayload) {
         conflict = true;
         return;
       }
