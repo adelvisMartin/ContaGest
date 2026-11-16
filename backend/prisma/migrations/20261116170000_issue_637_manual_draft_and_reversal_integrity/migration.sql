@@ -36,6 +36,13 @@ BEGIN
           AND a."entityId" = OLD."id"
           AND a."action" = 'ledger.entry.draft-deleted'
           AND a."userId" IS NOT NULL
+          -- A previously committed audit is not consent to a later deletion.
+          -- PostgreSQL 17 stores the inserting transaction XID in xmin (32 bit).
+          -- Compare it with the current top-level xid8 modulo 2^32.
+          -- This check is fail-closed and does not grant deletion authority
+          -- outside the same transaction that wrote the audit.
+          AND a.xmin::text =
+            (pg_current_xact_id()::text::numeric % 4294967296)::text
       ) THEN
         RAISE EXCEPTION 'LEDGER_DRAFT_DELETE_AUDIT_REQUIRED'
           USING ERRCODE = '42501';
