@@ -57,6 +57,20 @@ test('#638/#1289 CRUD audit rollback: create/update/delete never commit without 
   assert.equal(await h.prisma.client.count({ where: { tenantId, rif } }), 0,
     'CREATE must roll back after the AuditLog foreign-key error');
 
+  // A missing audit tenant is a contract violation, never a successful
+  // transaction without provenance.
+  await assert.rejects(h.prisma.$transaction(async (tx) => {
+    const createdWithoutAuditContext = await tx.client.create({
+      data: { tenantId, rif, name: 'QA Audit Missing Tenant' }
+    });
+    await writeAudit({
+      action: 'create', entity: 'client',
+      entityId: createdWithoutAuditContext.id, after: createdWithoutAuditContext
+    }, tx);
+  }), /AUDIT_TRANSACTION_TENANT_REQUIRED/);
+  assert.equal(await h.prisma.client.count({ where: { tenantId, rif } }), 0,
+    'CREATE must roll back when transaction audit tenant is missing');
+
   // Positive control: a valid audit and client are committed together.
   const created = await h.prisma.$transaction(async (tx) => {
     const customer = await tx.client.create({ data: { tenantId, rif, name: 'QA Audit Original' } });
