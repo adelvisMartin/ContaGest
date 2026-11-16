@@ -193,3 +193,30 @@ En un origen web compartido, la página controlada por el SW de Hípico puede in
 - **Rollback:** si una instalación no obtiene assets públicos sin cookies, el nuevo SW falla cerrado (Hípico) o deja 503 offline para recursos faltantes (ERP). Revisar política de acceso estático/proxy, pero **no revertir silenciosamente a `cache.addAll` autenticado** ni reutilizar nombres de caché antiguos. No hay migraciones DB; se puede revertir el código con bump de versión y nueva validación de los consumidores.
 
 **Estado de release: PARTIAL / NO_MERGE.** No declarar DONE para #1292/#1291/#892 ni los restantes tickets fiscales y de Hípico mientras falten gates exact-SHA y aceptación real.
+
+## Iteración V — idempotencia offline y revocación de estado por sesión
+
+**16-nov-2026 · PR #1296 · baseline `main@e7706f3dac3ae4c677fcdff05a662765fa6bdcc6`**.
+
+### Hallazgos técnicos y correcciones
+
+1. **Idempotencia E2E que no concordaba con IndexedDB:** `qa/pwa-offline-v563.spec.mjs` exige que un segundo `enqueueOfflineOperation` con mismo tenant, operation y key devuelva el evento original. La implementación anterior hacía `store.add(record)` sin comprobar si ya existía; el segundo intento podía lanzar `ConstraintError`. Ahora `store.get(id)` y la inserción/decisión se realizan dentro de la **misma transacción readwrite**. El reintento idéntico devuelve el registro persistido con `createdAt` original; un cuerpo distinto o no serializable provoca `OFFLINE_IDEMPOTENCY_CONFLICT`; no hay sustitución de payload, permiso financiero añadido ni borrado de intentos fallidos. El adaptador de flush sigue exigiendo ACK explícito.
+2. **Eliminación por prefijo de cachés e IndexedDB:** `purgeOfflineSession` borraba nombres que empezaban por el hash de la sesión; eso podía afectar un identificador distinto que compartiera prefijo. Ahora sólo elimina la clave exacta de sesión del namespace legado `contagest-ve-v563-session-` y del worker activo `contagest-ve-v563-3-session-`; `purgeIndexedDb` limita el borrado a la base cuyo nombre coincide exactamente. No se borran datos ajenos ni se cambia la versión de la BD.
+3. **Carrera `serviceWorker.ready` vs logout/switch:** `postToServiceWorker` enviaba en forma inmediata al controller y posteriormente a `registration.active`, susceptible de reproducir un `SET_SESSION_SCOPE` viejo después de un logout o cambio de tenant. Si ya hay controller se envía sólo una vez; de lo contrario, el envío diferido se permite únicamente si `sessionScope(parseStoredSession())` todavía coincide con el scope solicitado. `CLEAR_SESSION_DATA` mantiene su ruta de purga.
+4. **QA positiva y negativa por usuario:** la prueba E2E de logout/tenant switch construye datos sintéticos en ambas revisiones de CacheStorage, dos sesiones/outboxes IndexedDB y una base/cache vecina con prefijo coincidente; exige eliminar únicamente el tenant A, conservar B y la vecina, y garantiza limpieza de fixtures en `finally`. El E2E de outbox exige mismo ID/ACK y rechaza conflicto sin permitir cambio en la entrega. `tests/pwa_session_scope_v1292.test.mjs` comprueba en Node VM el worker-ready tardío y el borrado exacto; el workflow PWA se actualizó para disparar y ejecutar ese test, sin omitir browser, build ni contracts existentes.
+
+### Evidencia ejecutada y gates
+
+- `enqueueOfflineOperation` extraída **sin reimplementar el código de negocio** de la fuente GitHub: **6/6** casos de un simulador transaccional sintético en el blob `51f65c2e1e5e09e0f1cf6a7f1462ea96fa11fe0b`: alta, reintento, conflicto, payload cíclico, tenant B aislado y ledger prohibido. No hubo HTTP ni fuentes reales.
+- `setServiceWorkerSession` y `postToServiceWorker` reales: **4/4** comprobaciones sintéticas en blob `616609114dbc0a0359c97ab86a298c3c7f8719c2` (conmutación A→B, login actual, entrega única al controller y logout). Estos son resultados de funciones ejecutadas con dobles `navigator`/`IndexedDB` en V8, **no** resultados del runner Node ni de Chromium.
+- Parser sintáctico V8 con transformación lexical ESM aplicada a `pwaOfflineService.js`, `qa/pwa-offline-v563.spec.mjs`, las dos suites de pruebas VM y ambos workers: compilación sin errores observados. **NO** equivale al test runner, Vite ni a módulos cargados por browser.
+- `npm ci`, `npm run agent:gates -- --base main`, lint/typecheck/build, PostgreSQL17 efímero, Playwright Chromium/Firefox/WebKit, Windows LAB/Android físico y despliegue/runtime: **NOT_EXECUTED/BLOCKED** (sin checkout/DNS GitHub ni Docker/PG local). Las ejecuciones GitHub Actions del HEAD deben consultarse por SHA; se observaron **queued/pending**, sin PASS de los jobs requeridos. En la consulta a Jobs del SHA previo `8f77d609...`, `validate`, `contract` y `production-build-runtime` seguían `queued`, sin steps ejecutados. Nuevos SHAs invalidan esa evidencia como gate final.
+- Revisión de código afecta únicamente límites de PWA/outbox y tests/regresiones; no esquema DB, tokens, secretos, SOURCE automático ni despliegue a producción. **No se solicita merge ni cierre de #1292/#1291/#892**.
+
+### Riesgos residuales / acciones antes de release
+
+- **Persistencia bloqueada por otras pestañas:** `indexedDB.deleteDatabase` existente trata `onblocked`/`onerror` como respuesta cumplida; si la eliminación queda realmente bloqueada, la UX aún no garantiza aviso y reconfirmación. Retener #1292 abierto; comprobar esa condición en Chromium real y diseñar recuperación/alerta sin ocultar logout.
+- Las claves de ámbito usan hashes FNV32 de tenant/usuario para nombres locales; no ofrecen aislamiento criptográfico ni sustituyen la autorización del backend. Validar RLS y cambios de identidad reales y estudiar migración versionada si el threat model lo exige.
+- Los reintentos concurrentes usan serialización transaccional real de IndexedDB que **todavía debe validarse en Chromium**, no está probado por el simulador. Revalidar todos los contratos del HEAD exacto antes de cambiar estado a DONE.
+
+**Resultado: PARTIAL / NO_MERGE.** Un checklist queued no acredita PASS; los cambios de código aún no constituyen garantía de producción.
