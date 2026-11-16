@@ -35,7 +35,13 @@ function scopedPath(url) {
 
 async function primeShell() {
   const cache = await caches.open(ASSET_CACHE);
-  await Promise.allSettled([...APP_SHELL_URLS].map((url) => cache.add(new Request(url, { cache: 'reload' }))));
+  await Promise.allSettled([...APP_SHELL_URLS].map(async (url) => {
+    // Cache.add() ignores HTTP no-store/private and can use session cookies.
+    // The offline shell must be fetched without credentials and checked first.
+    const request = new Request(url, { cache: 'reload', credentials: 'omit', redirect: 'error' });
+    const response = await fetch(request);
+    if (mayCachePublicResponse(response)) await cache.put(request, response);
+  }));
 }
 
 self.addEventListener('install', (event) => {
