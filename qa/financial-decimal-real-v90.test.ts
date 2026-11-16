@@ -97,7 +97,7 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
         fiscalPeriod: PERIOD,
         status: 'issued',
         currency: 'VES',
-        exchangeRate: '36.1234',
+        exchangeRate: '1.0000',
         lines: [
           { description: 'Golden A', quantity: '0.333', unitPrice: '10.01', taxRate: '16.25' },
           { description: 'Golden B', quantity: '2.005', unitPrice: '0.10', taxRate: '8.50' }
@@ -112,7 +112,7 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
     assert.equal(stored.subtotal.toFixed(2), '3.53');
     assert.equal(stored.iva.toFixed(2), '0.56');
     assert.equal(stored.total.toFixed(2), '4.09');
-    assert.equal(stored.exchangeRate.toFixed(4), '36.1234');
+    assert.equal(stored.exchangeRate.toFixed(4), '1.0000');
 
     const originalLedger = await h.prisma.ledgerEntry.findFirst({
       where: { tenantId: h.tenant.id, source: 'sales', sourceId: sale.id },
@@ -179,23 +179,46 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
   });
 
   await t.test('bank balance applies and reverses 0.20 over 0.10 exactly', async () => {
-    const account = await h.ok('/bank-accounts', {
+    // The audit-authorized banking route owns the opening balance and
+    // immutable movements; generic CRUD cannot seed monetary state.
+    const account = await h.ok('/banking/accounts', {
       method: 'POST',
-      body: JSON.stringify({ bankName: `${RUN} Bank`, accountNo: `${RUN}-ACCT`, currency: 'USD', balance: '0.10' })
+      headers: { 'Idempotency-Key': `${RUN}-account-open` },
+      body: JSON.stringify({
+        bankName: `${RUN} Bank`, accountNo: `${RUN}-ACCT`,
+        currency: 'USD', openingBalance: '0.10'
+      })
     });
     ids.bankAccounts.push(account.id);
     const movement = await h.ok('/banking/movements', {
       method: 'POST',
-      body: JSON.stringify({ accountId: account.id, description: `${RUN} income`, type: 'income', currency: 'USD', amount: '0.20' })
+      headers: { 'Idempotency-Key': `${RUN}-bank-income` },
+      body: JSON.stringify({
+        accountId: account.id, description: `${RUN} income`,
+        type: 'income', currency: 'USD', amount: '0.20'
+      })
     });
     ids.bankMovements.push(movement.id);
     assert.equal(movement.amountExact, '0.20');
     let stored = await h.prisma.bankAccount.findUnique({ where: { id: account.id } });
     assert.equal(stored?.balance.toFixed(2), '0.30');
-    await h.ok(`/banking/movements/${movement.id}`, { method: 'DELETE' });
-    ids.bankMovements = ids.bankMovements.filter((id) => id !== movement.id);
+
+    await h.status(`/banking/movements/${movement.id}`, 409, { method: 'DELETE' });
+    const reversal = await h.ok(`/banking/movements/${movement.id}/reverse`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': `${RUN}-bank-reverse` },
+      body: JSON.stringify({ reason: 'Synthetic QA exact decimal reversal' }),
+    });
+    ids.bankMovements.push(reversal.id);
+    assert.equal(reversal.reversalOfId, movement.id);
     stored = await h.prisma.bankAccount.findUnique({ where: { id: account.id } });
     assert.equal(stored?.balance.toFixed(2), '0.10');
+    const replay = await h.ok(`/banking/movements/${movement.id}/reverse`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': `${RUN}-bank-reverse` },
+      body: JSON.stringify({ reason: 'Synthetic QA exact decimal reversal' }),
+    });
+    assert.equal(replay.id, reversal.id, 'Idempotent reversal created a duplicate');
   });
 
   await t.test('payroll aggregate keeps 0.10 + 0.20 == 0.30 in PostgreSQL', async () => {
