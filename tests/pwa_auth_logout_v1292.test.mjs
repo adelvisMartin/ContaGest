@@ -153,7 +153,7 @@ test('#1292 same-tenant refresh does not destroy its own offline state', async (
 });
 
 const switchStart = auth.indexOf('  async switchTenant(tenantId){');
-const switchEnd = auth.indexOf(',\\n  async logout(){', switchStart);
+const switchEnd = auth.indexOf(',\n  async logout(){', switchStart);
 assert.ok(switchStart >= 0 && switchEnd > switchStart, 'authService tenant switch owner must exist');
 const originalSwitch = auth.slice(switchStart, switchEnd);
 
