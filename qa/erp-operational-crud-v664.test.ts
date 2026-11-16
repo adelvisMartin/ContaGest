@@ -59,9 +59,12 @@ test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t)
   await h.status('/clients', 403, {}, deniedToken);
   const deniedRead = await h.status(`/clients/${encodeURIComponent(clientId)}`, 403, {}, deniedToken);
   assert.doesNotMatch(JSON.stringify(deniedRead.payload), new RegExp(rif));
+  const deniedRif = `J-DENIED-${randomUUID().slice(0, 10)}`;
   await h.status('/clients', 403, {
-    method: 'POST', body: JSON.stringify({ rif: 'J-UNAUTHORIZED', name: 'Denied' })
+    method: 'POST', body: JSON.stringify({ rif: deniedRif, name: 'Denied' })
   }, deniedToken);
+  assert.equal(await h.prisma.client.count({ where: { tenantId: h.tenant.id, rif: deniedRif } }), 0,
+    'a forbidden create must never persist a record');
   // A revoked server-side UserSession invalidates a still-unexpired JWT.
   await h.prisma.$executeRaw`
     UPDATE public."UserSession" SET "status"='revoked', "updatedAt"=now()
