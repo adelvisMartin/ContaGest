@@ -30,6 +30,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 concurrency:
   group: e2e-commercial-v23-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -68,8 +71,15 @@ jobs:
       SUPABASE_AUTH_FALLBACK: 'false'
 
     steps:
-      - name: Descargar código
+      - name: Descargar código del HEAD candidato (no merge sintético)
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 2
+
+      - name: Verificar que el checkout corresponde al HEAD esperado
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
       - name: Configurar Node 22
         uses: actions/setup-node@v7
@@ -111,11 +121,20 @@ jobs:
           set -o pipefail
           npm run test:backend:commercial:real 2>&1 | tee e2e-commercial-v23.log
 
+      - name: Registrar procedencia de evidencia por SHA
+        if: always()
+        shell: bash
+        run: |
+          printf 'candidateSha=%s\nrunId=%s\nrunAttempt=%s\n' "$CANDIDATE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > e2e-commercial-v23-provenance.txt
+          printf 'jobStatus=%s\n' "${{ job.status }}" >> e2e-commercial-v23-provenance.txt
+
       - name: Conservar evidencia E2E
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: evidencia-e2e-comercial-v23-30
-          path: e2e-commercial-v23.log
+          name: evidencia-e2e-comercial-v23-30-${{ env.CANDIDATE_SHA }}
+          path: |
+            e2e-commercial-v23.log
+            e2e-commercial-v23-provenance.txt
           if-no-files-found: warn
           retention-days: 14
