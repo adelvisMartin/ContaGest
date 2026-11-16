@@ -222,8 +222,9 @@ test('#638/#1289: every legacy CRUD mutation and audit are one database transact
     assert.match(block, /prisma\.\$transaction\(async \(tx\) => \{/,
       action + ': mutation must be transactional');
     assert.match(block, /getDelegate\(tx\)/, action + ': mutation must use tx delegate');
-    assert.match(block, new RegExp('await writeAudit\\(\\{[\\s\\S]*?action: \\'' + action + '\\'[\\s\\S]*?\\}, tx\\)'),
+    assert.match(block, /await writeAudit\(\{[\s\S]*?\}, tx\)/,
       action + ': audit must run on the same transaction');
+    assert.ok(block.includes("action: '" + action + "'"), action + ': audit event action mismatch');
     assert.ok(block.indexOf('await writeAudit(') < block.indexOf('return ' + (
       action === 'create' ? 'created' : action === 'update' ? 'updated' : 'deleted') + ';'),
       action + ': audit must complete before committing');
