@@ -13,7 +13,21 @@ async function userWithPermissions(h:any,name:string,permissions:string[]){
   for(const key of permissions){const perm=await h.prisma.permission.findUniqueOrThrow({where:{key}});await h.prisma.rolePermission.create({data:{roleId:role.id,permissionId:perm.id}});}
   await h.prisma.userRole.create({data:{userId:user.id,roleId:role.id}});
   await h.prisma.licenseKey.create({data:{tenantId:h.tenant.id,userId:user.id,userEmail:email,plan:'enterprise',keyHash:createHash('sha256').update(`${RUN}-${name}`).digest('hex'),keyPreview:`${RUN}-${name}`.slice(0,32),modules:['tributos'],expiresAt:new Date(Date.now()+86400000),status:'active'}});
-  return {user,role,token:await h.issueSessionTokenFor({id:user.id,email:user.email})};
+  const token=await h.issueSessionTokenFor({id:user.id,email:user.email});
+  // Synthetic licensed actors must complete the real first-access adhesion
+  // route. Never bypass HTTP 428 or assume the platform/admin consent applies.
+  const legal=await h.ok('/legal/status',{},token) as {documents:Array<{
+    code:string;version:string;hash:string;required:boolean
+  }>};
+  const documents=legal.documents.filter(doc=>doc.required)
+    .map(({code,version,hash})=>({code,version,hash}));
+  assert.ok(documents.length>0,'Fixture must explicitly accept the current legal catalog');
+  await h.ok('/legal/accept',{
+    method:'POST',
+    body:JSON.stringify({documents,necessaryCookiesAcknowledged:true,
+      analyticsCookies:false,marketingCookies:false,locale:'es-VE'})
+  },token);
+  return {user,role,token};
 }
 
 test('issue #96 fiscal RBAC and audited state machine on real PostgreSQL',async(t)=>{
