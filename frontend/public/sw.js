@@ -83,8 +83,10 @@ function isSensitiveRequest(url) {
 
 function hasPrivateRequestHeaders(request) {
   // Header-bound requests cannot share the app-shell cache, even at a public URL.
-  return ['authorization', 'x-api-key', 'x-hipico-bridge-token']
-    .some((name) => request.headers?.has?.(name));
+  const headers = request.headers;
+  return Boolean(headers?.has?.('authorization')
+    || headers?.has?.('x-api-key')
+    || headers?.has?.('x-hipico-bridge-token'));
 }
 
 function isPublicStaticAsset(url) {
