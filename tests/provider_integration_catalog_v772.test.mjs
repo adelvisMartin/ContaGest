@@ -60,6 +60,9 @@ test('must reject encoded credential parameter names and fragments in provenance
   rejected(v => { v.providers[0].source = 'https://docs.example.com/?api%5Fkey=example'; }, 'HTTPS_PROVENANCE');
   rejected(v => { v.providers[0].source = 'https://docs.example.com/#access%5Ftoken=example'; }, 'HTTPS_PROVENANCE');
   rejected(v => { v.providers[0].source = 'https://docs.example.com/#/page?refresh_token=example'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://docs.example.com/?session_id=example'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://docs.example.com/#authorization=example'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://docs.example.com/?jwt=example'; }, 'HTTPS_PROVENANCE');
 });
 test('must preserve normal public documentation links with harmless query and anchor', () => {
   assert.deepEqual(mutate(v => { v.providers[0].source = 'https://docs.frappe.io/framework/user/en/api/rest?lang=en#authentication'; }), []);
