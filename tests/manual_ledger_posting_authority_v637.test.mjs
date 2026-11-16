@@ -67,8 +67,14 @@ test('#637 accounting period close is a tenant-scoped transactional domain comma
   const source=readFileSync(new URL('../backend/src/modules/accounting/accounting.service.ts',import.meta.url),'utf8');
   const body=source.split('export async function closeAccountingPeriod(')[1]?.split('function normalizeLedgerLines')[0];
   assert.ok(body);
-  const gates=['requirePostingActor(', 'prisma.$transaction(async (tx)', 'FOR UPDATE',
-    'tx.closingPeriod.findFirst({', "existing.status === 'closed'",
+  // A tenant-scoped read discovers the period used for the shared advisory lock;
+  // a second tenant-scoped read after FOR UPDATE is the mutation authority.
+  const gates=['requirePostingActor(', 'prisma.$transaction(async (tx)',
+    'const candidate = await tx.closingPeriod.findFirst({',
+    'await lockAccountingPeriodMutation(input.tenantId, candidate.period, tx);',
+    'FOR UPDATE',
+    'const existing = await tx.closingPeriod.findFirst({',
+    "existing.status === 'closed'",
     'tx.closingPeriod.updateMany({', 'updated.count !== 1',
     'tx.auditLog.create({'];
   let prev=-1;
