@@ -151,14 +151,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       const shellUrl = scoped('./index.html');
       try {
-        const response = await fetch(request, { cache: 'no-store' });
-        // Only the canonical public entrypoint may refresh the offline shell.
-        if ((url.toString() === scoped('./') || url.toString() === shellUrl)
-            && mayCachePublicResponse(response)) {
-          const cache = await caches.open(ASSET_CACHE);
-          await cache.put(shellUrl, response.clone());
-        }
-        return response;
+        // Navigations can carry login cookies. Only install's credential-free
+        // public fetch may populate the shared offline HTML shell.
+        return await fetch(request, { cache: 'no-store' });
       } catch {
         const cached = await assetCacheMatch(shellUrl);
         if (!cached) return new Response('ContaGest no está disponible sin conexión.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-CG-Offline': 'true' } });
