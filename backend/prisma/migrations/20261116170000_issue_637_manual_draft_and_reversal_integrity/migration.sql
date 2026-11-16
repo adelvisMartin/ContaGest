@@ -27,7 +27,7 @@ BEGIN
        AND OLD."reversalOfId" IS NULL
        AND OLD."sourceId" IS NULL THEN
       PERFORM public.data_lifecycle_assert_not_held(
-        OLD."tenantId", TG_TABLE_NAME, OLD."id"::text
+        OLD."tenantId"::uuid, TG_TABLE_NAME, OLD."id"::text
       );
       IF NOT EXISTS (
         SELECT 1 FROM public."AuditLog" a
@@ -49,13 +49,13 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  PERFORM public.data_lifecycle_assert_not_held(OLD."tenantId", TG_TABLE_NAME, OLD."id"::text);
+  PERFORM public.data_lifecycle_assert_not_held(OLD."tenantId"::uuid, TG_TABLE_NAME, OLD."id"::text);
 
   SELECT p."purgeable", p."deleteSemantics"
   INTO v_purgeable, v_semantics
   FROM public."DataRetentionPolicyVersion" p
   WHERE p."entityType" = TG_TABLE_NAME
-    AND (p."tenantId" = OLD."tenantId" OR p."tenantId" IS NULL)
+    AND (p."tenantId" = OLD."tenantId"::uuid OR p."tenantId" IS NULL)
     AND p."effectiveFrom" <= CURRENT_TIMESTAMP
     AND (p."effectiveTo" IS NULL OR p."effectiveTo" > CURRENT_TIMESTAMP)
   ORDER BY (p."tenantId" IS NOT NULL) DESC, p."effectiveFrom" DESC, p."version" DESC
