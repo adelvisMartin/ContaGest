@@ -20,10 +20,18 @@ test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t)
 
   const rif = `J-SMOKE-${randomUUID().slice(0, 8)}`;
   const name = `#664 Client ${rif}`;
-  const created = await h.ok('/clients', {
+  // #638/#1288: a client-supplied tenant is mass assignment, not a
+  // supported alias. The server must reject it before persistence.
+  await h.status('/clients', 422, {
     method: 'POST', body: JSON.stringify({
       rif, name, contact: 'Synthetic QA', tenantId: randomUUID()
     })
+  });
+  const denied = await h.prisma.client.count({ where: { rif, tenantId: h.tenant.id } });
+  assert.equal(denied, 0, 'tenant-spoofed request must not create a row');
+
+  const created = await h.ok('/clients', {
+    method: 'POST', body: JSON.stringify({ rif, name, contact: 'Synthetic QA' })
   });
   clientId = String(created.id || '');
   assert.ok(clientId, 'create should return persistent resource identity');
@@ -43,11 +51,11 @@ test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t)
   assert.equal(reloaded.name, updatedName);
 
   const audit = await h.prisma.auditLog.findMany({ where: { entityId: clientId, tenantId: h.tenant.id } });
-  assert.ok(audit.some(row => row.action === 'create'));
-  assert.ok(audit.some(row => row.action === 'update'));
+  assert.equal(audit.filter(row => row.action === 'create').length, 1, 'one create audit for one effect');
+  assert.equal(audit.filter(row => row.action === 'update').length, 1, 'one update audit for one effect');
 
   await h.ok(`/clients/${encodeURIComponent(clientId)}`, { method: 'DELETE' });
   await h.status(`/clients/${encodeURIComponent(clientId)}`, 404);
   const deletion = await h.prisma.auditLog.findMany({ where: { entityId: clientId, tenantId: h.tenant.id } });
-  assert.ok(deletion.some(row => row.action === 'delete'));
+  assert.equal(deletion.filter(row => row.action === 'delete').length, 1, 'one delete audit for one effect');
 });
