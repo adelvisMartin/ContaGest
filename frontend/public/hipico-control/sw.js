@@ -48,8 +48,8 @@ function cacheablePublicResponse(response) {
   // A static allowlisted URL can still receive an explicit private response.
   const cacheControl = (response.headers.get('cache-control') || '').toLowerCase();
   if (/(?:^|,)\s*(?:no-store|private)(?:\s*(?:,|=|$))/.test(cacheControl)) return false;
-  return !(response.headers.get('vary') || '').split(',')
-    .some((name) => name.trim() === '*');
+  return !(response.headers.get('vary') || '').toLowerCase().split(',')
+    .some((name) => ['*', 'cookie', 'authorization', 'x-api-key'].includes(name.trim()));
 }
 function offlineNavigationShell(url) {
   return url.pathname.endsWith('/recovery.html') ? './recovery.html' : './index.html';
