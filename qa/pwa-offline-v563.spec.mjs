@@ -115,6 +115,40 @@ test.describe('PWA offline #563', () => {
     expect(result.dbPrefixNeighborPreserved).toBe(true);
   });
 
+  test('blocked IndexedDB deletion reports incomplete offline logout and cleans up the fixture', async ({ page }) => {
+    await page.goto('/');
+    await importOfflineService(page);
+    const result = await page.evaluate(async () => {
+      const service = window.__pwaV563;
+      const session = { tenantId: 'tenant-idb-block', user: { id: 'user-idb-block' } };
+      const databaseName = `contagest-offline-v563-${service.sessionScope(session)}`;
+      const connection = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(databaseName, 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      let failureCode = null;
+      try {
+        // Keep the connection open when deleteDatabase issues versionchange.
+        // IndexedDB must report blocked, not a successful privacy purge.
+        try { await service.purgeOfflineSession(session); }
+        catch (error) { failureCode = error.code; }
+      } finally {
+        connection.close();
+        // The first pending deletion may complete after the connection closes;
+        // this second delete waits for it and guarantees fixture cleanup.
+        await new Promise((resolve, reject) => {
+          const request = indexedDB.deleteDatabase(databaseName);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+          request.onblocked = () => reject(new Error('Synthetic IDB cleanup is blocked'));
+        });
+      }
+      return { failureCode };
+    });
+    expect(result.failureCode).toBe('OFFLINE_SESSION_PURGE_FAILED');
+  });
+
   test('outbox allowlist dedupes idempotency and refuses generic financial mutations', async ({ page }) => {
     await page.goto('/');
     await importOfflineService(page);
