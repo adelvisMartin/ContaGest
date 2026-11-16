@@ -40,7 +40,9 @@ function assertExactReversal(original: any, reversal: any) {
 }
 
 test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on real PostgreSQL', async (t) => {
-  const h = await createRealBackendHarness();
+  const h = await createRealBackendHarness({
+    approvedDatabaseNames:['contagest_ledger_v91']
+  });
   t.after(async () => h.close());
   await prepareQaSemanticPosting(h);
   await prepareQaManualPostingAccounts(h, [
