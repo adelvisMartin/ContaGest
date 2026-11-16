@@ -8,6 +8,7 @@ on:
       - 'frontend/public/pwa-install.js'
       - 'frontend/src/services/authService.js'
       - 'frontend/src/app.js'
+      - 'frontend/vite.config.js'
       - 'frontend/src/services/pwaOfflineService.js'
       - 'frontend/index.html'
       - 'qa/pwa-offline-v563.spec.mjs'
