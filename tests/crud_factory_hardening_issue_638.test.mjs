@@ -241,11 +241,15 @@ test('#638/#1289: every legacy CRUD mutation and audit are one database transact
 
 test('#1288: real API regression harness refuses shared databases before opening sessions', () => {
   const source = read('qa/support/real-backend-harness.ts');
+  const policy = read('qa/support/disposable-database-guard-v1288.mjs');
   assert.match(source, /import \{ randomBytes, randomUUID \} from 'node:crypto'/);
+  assert.match(source, /assertQaDisposableDatabaseConfig\(process\.env\)/);
   assert.match(source, /SELECT current_database\(\) AS name/);
-  assert.match(source, /\(\?:_e2e\|_drill\|_restore\)\$/);
   assert.match(source, /QA_EPHEMERAL_DATABASE_REQUIRED/);
-  const guard = source.indexOf("throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED')");
+  assert.match(policy, /DATABASE_RUNTIME_URL/);
+  assert.match(policy, /DIRECT_DATABASE_URL/);
+  assert.match(policy, /\(\?:_e2e\|_drill\|_restore\)\$/);
+  const guard = source.indexOf('const expectedDatabase=assertQaDisposableDatabaseConfig(process.env)');
   const firstFixture = source.indexOf('prisma.tenant.findUnique');
   assert.ok(guard > 0 && firstFixture > guard,
     'fail-closed database guard must precede all fixture tenant/session writes');
