@@ -115,3 +115,84 @@ test('#1292 session purge removes exact legacy/current keys, not adjacent tenant
   assert.deepEqual(deletedDatabases, [databaseA]);
   assert.equal(names.has(authKey), false, 'the selected session is no longer in web storage');
 });
+
+test('#1292 blocked IndexedDB deletion is reported and cache cleanup still runs', async () => {
+  const deleted = [];
+  let deleteRequests = 0;
+  const { service } = serviceContext({
+    caches: {
+      keys: async () => [
+        `contagest-ve-v563-session-${scope}`,
+        `contagest-ve-v563-3-session-${scope}`
+      ],
+      delete: async (name) => { deleted.push(name); return true; }
+    },
+    indexedDB: {
+      databases: async () => [],
+      deleteDatabase: () => {
+        deleteRequests += 1;
+        const request = {};
+        Promise.resolve().then(() => request.onblocked?.());
+        return request;
+      }
+    }
+  });
+  const scope = service.sessionScope(a);
+  await assert.rejects(service.purgeOfflineSession(a), (error) =>
+    error?.code === 'OFFLINE_SESSION_PURGE_FAILED');
+  assert.equal(deleteRequests, 1);
+  assert.deepEqual(deleted.sort(), [
+    `contagest-ve-v563-session-${scope}`,
+    `contagest-ve-v563-3-session-${scope}`
+  ].sort());
+});
+
+test('#1292 IndexedDB errors never produce a false successful session purge', async () => {
+  const { service } = serviceContext({
+    indexedDB: {
+      databases: async () => [],
+      deleteDatabase: () => {
+        const request = {};
+        Promise.resolve().then(() => {
+          request.error = new Error('synthetic IDB deletion error');
+          request.onerror?.();
+        });
+        return request;
+      }
+    }
+  });
+  await assert.rejects(service.purgeOfflineSession(a), (error) =>
+    error?.code === 'OFFLINE_SESSION_PURGE_FAILED');
+});
+
+test('#1292 cache deletion failure does not prevent independent IndexedDB cleanup', async () => {
+  let dbDeleted = false;
+  const { service } = serviceContext({
+    caches: {
+      keys: async () => [`contagest-ve-v563-session-${scope}`],
+      delete: async () => { throw new Error('synthetic cache failure'); }
+    },
+    indexedDB: {
+      databases: async () => [],
+      deleteDatabase: () => {
+        const request = {};
+        Promise.resolve().then(() => { dbDeleted = true; request.onsuccess?.(); });
+        return request;
+      }
+    }
+  });
+  const scope = service.sessionScope(a);
+  await assert.rejects(service.purgeOfflineSession(a), (error) =>
+    error?.code === 'OFFLINE_SESSION_PURGE_FAILED');
+  assert.equal(dbDeleted, true);
+});
+
+test('#1292 only the PWA installer owns ERP service-worker updates and local cleanup', () => {
+  const app = readFileSync(new URL('../frontend/src/app.js', import.meta.url), 'utf8');
+  const installer = readFileSync(new URL('../frontend/public/pwa-install.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(app, /serviceWorker\\.register\\s*\\(/);
+  assert.doesNotMatch(app, /serviceWorker\\.addEventListener\\(\\s*['"]controllerchange/);
+  assert.match(installer, /serviceWorker\\.register\\(SW_URL\\.href/);
+  assert.match(installer, /item\\.scope === appBase\\.href/);
+  assert.match(installer, /key\\.startsWith\\(['"]contagest-ve-['"]\\)/);
+});
