@@ -305,3 +305,11 @@ Definition of Done: business behavior characterized, tenant/financial invariants
 For ticket continuation across Codex/ChatGPT windows, follow `.agents/skills/codex-project-memory/SKILL.md`; for large developer-tool summaries use `.agents/skills/headroom/SKILL.md`; for reviewed post-task skill-improvement proposals use `.agents/skills/task-observer/SKILL.md`. Read `docs/AGENT_CONTEXT_TOOLING_REVIEW_2026-10-14.md` for provenance and constraints.
 
 These are **advisory process helpers**, not new domain authority or mandatory v3 ACTIVE skill slots. Do not replace 2–4 routed domain/risk skills; do not enable external hooks, memory daemons or transparent compression proxies; do not automatically capture conversation/tenant/financial/clinical/WhatsApp payloads. Raw exact-SHA CI, security and release evidence remains complete and authoritative. Parallel windows use separate branch/issue ownership and handoffs; live GitHub state always wins over remembered notes.
+
+
+## Plan operativo transversal de backlog (2026-11-16)
+
+- Ver [Plan 5×5 ContaGest + Control Hípico](docs/roadmap/PLAN_5x5_CONTAGEST_HIPICO_2026-11-16.md) para orden de dependencias, investigaciones visuales públicas, nuevos owners de seguridad y auditoría progresiva de 58 rutas. Es **planificación**, nunca evidencia de PASS ni permiso para saltar el ticket o estas reglas.
+- En **cada PR** actualizar la matriz de rutas/servicios impactados, documentar baseline/after de rendimiento si hay superficie de runtime, contrato funcional/seguridad, agentes/skills ruteados y regresión exact-SHA. Refactorizar sólo con consumer proof, conservar la autoridad CSS y datos, y evolucionar `main` mediante merges seriales protegidos.
+- Si diseño/benchmark visual propone algo incompatible con fiscalidad, política de WhatsApp Messenger, accesibilidad, seguridad o contrato del repo, prevalecen estas reglas. No scraping de sesiones privadas ni copia de elementos licenciados.
+- Los tickets de meta/producción no se dan por terminados hasta cumplir sus dependencias materiales; 24–72h soak y pruebas físicas NO se sustituyen con simulaciones.
