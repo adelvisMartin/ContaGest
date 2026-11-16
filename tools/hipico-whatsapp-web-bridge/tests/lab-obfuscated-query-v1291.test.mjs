@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { labReadOnlyQueryPurpose, queryCanonicalLab } from '../src/lab-canonical-query.mjs';
+import { labReadOnlyQueryPurpose, queryCanonicalLab, resolveQuotedLabRaceScope } from '../src/lab-canonical-query.mjs';
 
 const classification = { intent: 'conversation', risk: 'safe' };
 const base = {
@@ -23,6 +23,9 @@ const obfuscated = [
   '\u202e¿Resultado de carrera 5?',
   '¿Estado de carrera 5?\u2066PAGAR\u2069',
   '¿Estado de carrera 5?\ufeff',
+  '¿Resultado y ｐａｇａｒ premio?',
+  '¿Resultado y рagar premio?', // Cyrillic U+0440 replaces Latin 'p'
+  '¿Estado de carrera 5? αctualizar', // Greek alpha masks Latin verb
 ];
 
 test('#1291 LAB classifier rejects invisible obfuscation of money instructions and bidi text', () => {
@@ -63,4 +66,29 @@ test('#892 direct canonical adapter rejects monetary requests even without a cla
     assert.deepEqual(result, { available: false, reason: 'LAB_CANONICAL_DISABLED' }, text);
   }
   assert.equal(calls, 0);
+});
+
+test('#1291 quoted LAB race scope cannot inherit from unsafe or confusable text', () => {
+  const group = '120363222222222222@g.us';
+  const sender = '123456789012@lid';
+  const sourceId = `false_${group}_source_${sender}`;
+  const replyId = `false_${group}_reply_${sender}`;
+  const safeSource = '¿Cuál es el estado de carrera 5 en La Rinconada el 2026-10-12?';
+  const prior = { id: sourceId, text: safeSource, fromMe: false, hasMedia: false };
+  const reply = {
+    id: replyId, quotedId: sourceId, text: '¿Cuál fue el resultado de esa carrera?',
+    fromMe: false, hasMedia: false
+  };
+  assert.deepEqual(resolveQuotedLabRaceScope(reply, [prior]), {
+    raceNumber: 5, racetrack: 'La Rinconada', raceDate: '2026-10-12'
+  });
+  for (const text of [
+    safeSource + '\u200b',
+    safeSource + ' рagar premio?',
+    safeSource + ' ｐａｇａｒ premio?'
+  ]) {
+    assert.equal(resolveQuotedLabRaceScope(reply, [{ ...prior, text }]), null, JSON.stringify(text));
+  }
+  assert.equal(resolveQuotedLabRaceScope({ ...reply, text: reply.text + '\u2060' }, [prior]), null);
+  assert.equal(resolveQuotedLabRaceScope({ ...reply, text: reply.text + ' αctualizar' }, [prior]), null);
 });
