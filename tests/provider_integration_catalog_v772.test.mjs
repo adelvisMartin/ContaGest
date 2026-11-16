@@ -47,6 +47,21 @@ test('must reject missing provenance or embedded URL credentials', () => {
   rejected(v => { v.providers[0].source = 'https://foo.example/?api_key=plaintext'; }, 'HTTPS_PROVENANCE');
   rejected(v => { v.providers[0].source = 'https://me:password@foo.example/path'; }, 'HTTPS_PROVENANCE');
 });
+test('must reject public-reference URLs using IP literals or private hostnames', () => {
+  rejected(v => { v.providers[0].source = 'https://[::1]/admin'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://127.1/api'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://api.internal./docs'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://localhost./docs'; }, 'HTTPS_PROVENANCE');
+});
+test('must reject encoded credential parameter names and fragments in provenance', () => {
+  rejected(v => { v.providers[0].source = 'https://docs.example.com/?api%5Fkey=example'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://docs.example.com/#access%5Ftoken=example'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].source = 'https://docs.example.com/#/page?refresh_token=example'; }, 'HTTPS_PROVENANCE');
+});
+test('must preserve normal public documentation links with harmless query and anchor', () => {
+  assert.deepEqual(mutate(v => { v.providers[0].source = 'https://docs.frappe.io/framework/user/en/api/rest?lang=en#authentication'; }), []);
+});
+
 test('must reject unverified providers activated as candidate connectors', () => {
   rejected(v => { v.providers[5].decision = 'CONSUME_EXTERNAL_API'; }, 'DOCUMENTED_API');
   rejected(v => { v.providers[5].status = 'CANDIDATE'; }, 'UNVERIFIED_MUST_FAIL_CLOSED');
