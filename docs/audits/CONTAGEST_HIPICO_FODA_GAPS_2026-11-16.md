@@ -213,3 +213,32 @@ Invariantes:
 No afirmar `DONE` sin `npm ci`, lock reproducible, lint/typecheck, suite completa, build, `npm audit`, PostgreSQL 17 efímero de cero y desde upgrade, tenant A/B/RLS y legal holds, chequeo antes/después de Auditoría y saldos, tests #90/#91/#96 + #775/#776 y browser Playwright Chromium/Firefox/WebKit, Hípico LAB y seguridad, evidencias de release *todos sobre el SHA exacto*. Bloqueos externos y checks `queued/skipped/cancelled/pending` son **NOT VERIFIED**, nunca PASS. El código SOURCE Messenger de terceros no se automatiza y las obligaciones fiscales reales siguen requiriendo fuentes jurídicas aprobadas.
 
 **Rollback lógico:** revert de commit funcional para app y roll-forward controlado de funciones SQL bajo DBA; ninguna reversión destructiva de datos. Verificar hashes de migraciones #849/#751 en cada ambiente antes de ejecutar Prisma deploy. No se consultó ni modificó un ambiente productivo desde esta iteración.
+
+## 12. Quinta iteración — amenazas, integridad contable y preflight de migraciones (2026-11-16)
+
+**Rama:** `fix/next-five-integrity-20261116`; **baseline main:** `e7706f3dac3ae4c677fcdff05a662765fa6bdcc6`. Todas las nuevas pruebas PostgreSQL y CI deben ejecutarse sobre el HEAD definitivo; los estados previos no se transfieren.
+
+### Hallazgos y correcciones
+
+| Hallazgo | Riesgo antes | Cambio aplicado | Comprobación requerida |
+| --- | --- | --- | --- |
+| Manual DRAFT con `sourceId` o relación a `SalesInvoice/PurchaseInvoice` | El servicio verificaba `source='manual'` pero no vínculos residuales; un borrador de origen podía editarse/borrarse | Guard compartido `assertUnlinkedManualDraft` para edición y borrado; trigger SQL agrega condiciones `salesInvoiceId/purchaseInvoiceId IS NULL` | E2E #91 y prueba negativa cross-tenant, auditoría y origen |
+| DELETE SQL en período cerrado | El servicio revisaba `ClosingPeriod` pero el guard de BD admitía un DELETE directo si se cumplía la condición de auditoría | Trigger adquiere mutex de período `cg:ledger-period:v1`, consulta módulo `accounting/all` y rechaza `ACCOUNTING_PERIOD_CLOSED` antes de evaluar borrado | PG17 concurrente: cierre versus DELETE y rechazo de auditoría en la misma transacción, sin mutación ni auditoría residual |
+| Replay de auditoría antigua | Un log ya persistido podía justificar un DELETE posterior | AuditLog `xmin` debe coincidir con el XID actual (PostgreSQL 17, módulo 2^32) | PG17 negativo con auditoría comprometida previa; verificación de rollback |
+| Fixture fiscal sintético | Limpieza añadía DELETE SQL explícito de `LegalAcceptance/CookiePreference` a pesar del FK `ON DELETE CASCADE` de v11.15 | QA elimina el UserProfile sintético en la DB estrictamente identificada como `contagest_fiscal_v96_e2e`, y comprueba cascada legal/cookies con conteo exacto cero | Flujo legal `/status→/accept→/status`, RBAC #96, FK/cascada real y finalización sin leaks |
+| Migraciones previas #849/#751 con SQL corregido en PR | Diferencias entre SHA-256 aplicado y archivo de migración pueden pasar inadvertidas en un deploy | `prisma-deploy-safe.mjs` compara SHA-256 de archivos contra `_prisma_migrations.checksum` sólo en filas completadas/no revertidas; `HISTORICAL_MIGRATION_CHECKSUM_DRIFT:<name>:DBA_REVIEW_REQUIRED` bloquea antes de deploy | PG17 desde cero + instalación representativa, inspección de checksum de CADA entorno, respaldo/restauración y plan de roll-forward |
+
+### Matriz FODA ajustada
+
+- **Fortalezas:** la validación de origen manual es compartida por edición/borrado, el guard de PostgreSQL rechaza históricos/invoices vinculados y cierres contables, y la auditoría no se escribe después del commit.
+- **Debilidades:** todavía no hay ejecución concluyente de los gate E2E SQL/navegador sobre el HEAD; el PR contiene correcciones a migraciones históricas SQL con potencial checksum drift.
+- **Oportunidades:** consolidar un protocolo de adopción por entorno con read-only checksum preflight, fixtures PostgreSQL sintéticos y pruebas negativas de concurrencia y tenant.
+- **Amenazas:** GitHub Actions en cola por indisponibilidad de runners; migraciones existentes con checksums divergentes, cierre simultáneo de período, actor comprometido, borrado de un origen comercial y cobertura insuficiente Hípico LAB/SOURCE. SOURCE continúa **NO-GO**.
+
+### Revisión y gates
+
+Se inspeccionó código vivo de `schema.prisma`, migraciones v11.15, guard PostgreSQL, rutas/servicio de asientos, `prisma-deploy-safe.mjs`, suites #91/#96 y workflows. **25/25 verificaciones estructurales de fuente** realizadas con los contenidos recuperados de la rama; son **inspección estática, no tests ejecutados**. Se añadieron pruebas Node de orden del checksum-preflight, guard SQL y E2E PostgreSQL de rechazo para origen y período cerrado. Ninguna ha pasado oficialmente en esta iteración.
+
+**NO-GO/MERGE BLOQUEADO:** `npm ci`, typecheck, lint, build, `npm audit`, `npm install --package-lock-only` reproducible; PostgreSQL 17 fresh+upgrade, checksum histórico, rollback de función, legal holds y RLS tenant A/B; #90/#91/#96 y regresiones fiscales; Chromium/Firefox/WebKit; Hípico LAB sin SOURCE, seguridad y release exact-SHA. Los runners `queued`/`pending` siguen **NOT_EXECUTED**.
+
+**Instrucciones DBA:** consultar `_prisma_migrations` sin alterar registros, comparar SHA-256 con el repositorio, verificar respaldo/restauración antes de migrar. No usar `migrate resolve`, actualización manual de checksum ni modificación de migraciones aplicadas para silenciar el nuevo guard. Ante divergencia, detener y realizar revisión explícita de historia, schema, funciones y datos; diseñar nueva migración forward-only que sea compatible. La migración nueva de ledger exige validación PG17 y no está autorizada a producción con evidencia únicamente estática.
