@@ -93,3 +93,26 @@ export async function createRealBackendHarness(){
   }
   return{tenant,admin,token,base,request,ok,status,close,prisma,issueSessionTokenFor};
 }
+
+/** Complete explicit legal acceptance through the real API for synthetic
+ * licensed actors. Never mock or disable the customer adhesion middleware.
+ */
+export async function acceptCurrentLegalForSyntheticQaActor(
+  h: Pick<Awaited<ReturnType<typeof createRealBackendHarness>>, 'ok'>,
+  token: string,
+) {
+  const legal=await h.ok('/legal/status',{},token) as {documents:Array<{
+    code:string;version:string;hash:string;required:boolean
+  }>};
+  const documents=legal.documents.filter(doc=>doc.required)
+    .map(({code,version,hash})=>({code,version,hash}));
+  assert.ok(documents.length>0,'QA must explicitly accept the current legal catalog');
+  await h.ok('/legal/accept',{
+    method:'POST',
+    body:JSON.stringify({documents,necessaryCookiesAcknowledged:true,
+      analyticsCookies:false,marketingCookies:false,locale:'es-VE'})
+  },token);
+  const after=await h.ok('/legal/status',{},token) as {pending:boolean;pendingCodes:string[]};
+  assert.equal(after.pending,false,'QA synthetic account acceptance must be current');
+  assert.deepEqual(after.pendingCodes,[]);
+}
