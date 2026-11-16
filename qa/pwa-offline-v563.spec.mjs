@@ -82,15 +82,29 @@ test.describe('PWA offline #563', () => {
       const session = { tenantId:'tenant-outbox', user:{ id:'user-outbox' } };
       const first = await service.enqueueOfflineOperation({ session, operation:'analytics.event', payload:{ events:[{ type:'offline-fixture' }] }, idempotencyKey:'analytics-563-key' });
       const retry = await service.enqueueOfflineOperation({ session, operation:'analytics.event', payload:{ events:[{ type:'offline-fixture' }] }, idempotencyKey:'analytics-563-key' });
+      let conflictCode = null;
+      try {
+        await service.enqueueOfflineOperation({
+          session, operation:'analytics.event',
+          payload:{ events:[{ type:'different-event-must-not-replace' }] },
+          idempotencyKey:'analytics-563-key'
+        });
+      } catch (error) { conflictCode = error.code; }
       let financialCode = null;
       try { await service.enqueueOfflineOperation({ session, operation:'ledger.post', payload:{ amount:10 }, idempotencyKey:'ledger-563-key' }); }
       catch (error) { financialCode = error.code; }
       const delivered = [];
       const flushed = await service.flushOfflineOutbox(session, async (item) => { delivered.push(item); return { ok:true }; });
       await service.purgeOfflineSession(session);
-      return { sameId:first.id===retry.id, financialCode, delivered:delivered.length, flushed:flushed.length };
+      return {
+        sameId:first.id===retry.id, conflictCode, financialCode,
+        delivered:delivered.length, flushed:flushed.length,
+        deliveredEvent:delivered[0]?.payload?.events?.[0]?.type
+      };
     });
     expect(result.sameId).toBe(true);
+    expect(result.conflictCode).toBe('OFFLINE_IDEMPOTENCY_CONFLICT');
+    expect(result.deliveredEvent).toBe('offline-fixture');
     expect(result.financialCode).toBe('OFFLINE_OPERATION_NOT_ALLOWED');
     expect(result.delivered).toBe(1);
     expect(result.flushed).toBe(1);
