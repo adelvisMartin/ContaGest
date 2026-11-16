@@ -1,8 +1,11 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 
-export async function writeAudit(input: { tenantId?: string; userId?: string; action: string; entity: string; entityId?: string; before?: unknown; after?: unknown; ipAddress?: string; userAgent?: string }) {
+// Passing a transaction makes the audit write part of the same commit as the
+// owning CRUD mutation. Legacy callers retain their existing best-effort policy.
+export async function writeAudit(input: { tenantId?: string; userId?: string; action: string; entity: string; entityId?: string; before?: unknown; after?: unknown; ipAddress?: string; userAgent?: string }, tx?: Prisma.TransactionClient) {
   if (!input.tenantId) return null;
-  return prisma.auditLog.create({
+  const operation = (tx ?? prisma).auditLog.create({
     data: {
       tenantId: input.tenantId,
       userId: input.userId,
@@ -14,5 +17,8 @@ export async function writeAudit(input: { tenantId?: string; userId?: string; ac
       ipAddress: input.ipAddress,
       userAgent: input.userAgent
     }
-  }).catch(() => null);
+  });
+  // A transactional write must fail closed so the enclosing mutation rolls back
+  // rather than committing unlogged state; retain compatibility for other callers.
+  return tx ? operation : operation.catch(() => null);
 }
