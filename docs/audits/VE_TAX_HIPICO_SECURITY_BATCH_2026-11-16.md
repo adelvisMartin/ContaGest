@@ -72,3 +72,39 @@ La política fiscal **prohíbe** tasas, bases, vencimientos, porcentajes, alícu
 **Rollback de esta rama:** revertir los commits de guard de URL, regresión y enganche a CI; no hay migraciones ni cambios de datos. Antes de revertir una corrección de seguridad, reemplazarla por control equivalente o bloquear el flujo sensible. Mantener los flags `SOURCE` y report-shares en OFF.
 
 **Decisión de release:** `PARTIAL` / `NO_MERGE` / `NO_PRODUCTION_ACTIVATION`; mantener abiertos los diez issues hasta verificar sus respectivos criterios. Reconciliar PR #1287/#1295 antes de cualquier merge.
+
+## Iteración de hardening y refactorización del PR #1296 (2026-11-16)
+
+**Qué se revisó:** HEAD vivo, diff del PR, dos SW, contratos de caché/offline, consultas canónicas de LAB, clasificación de intención, tests existentes y logs de Actions del candidato `0a22fbb8e65210b4d7ea375843277e111c2aa0e2`. Esta revisión **no** convierte el resto del backlog en implementado.
+
+**Correcciones adicionales #1292:**
+- Se interpreta el pathname con `decodeURIComponent` antes de decidir si una navegación tiene autoridad para usar el caché; los escapes malformados hacen fail-closed.
+- El SW principal verifica la lista de recursos públicos **antes** de cachear solicitudes con destino `script` o `style`; una URL privada que aparentemente devuelve JS no puede crear un nuevo activo offline.
+- El matcher de parámetros privados se compila una sola vez y recorre `URLSearchParams.keys()` sin materializar un arreglo en cada request. Esta reducción de asignaciones es una mejora estática; **no se afirma un benchmark real**.
+- Tests del SW ejecutan URLs con path codificado, escapes inválidos, recursos script no autorizados, consultas privadas y navegación pública recuperable sin red. La allowlist de assets públicos se conserva; HTML/sesiones no se consideran caché privado autorizado.
+
+**Correcciones adicionales #1291/#892:**
+- El detector de texto adversarial contempla Unicode bidi, soft hyphen, combining grapheme joiner y ZWJ incrustado entre letras/números. No rechaza el ZWJ de emojis legítimos.
+- Un helper `unsafeLabText` centraliza la comprobación y es usado tanto por la selección de propósito como por el envelope de red.
+- La función de red `queryCanonicalLab` comprueba `MONEY` de nuevo aun cuando un caller directo omita `labReadOnlyQueryPurpose`; ni un bypass interno debe enviar una consulta con intención monetaria como lectura inocua.
+- La regresión LAB comprueba que no se invoque `fetchImpl` en ninguno de los casos adversariales. No equivale a autorización de Messenger ni seguridad de NLP completa.
+
+**CI exact-SHA histórico (candidato anterior, nunca trasladar PASS al nuevo HEAD):**
+- Run [43903102133](https://github.com/adelvisMartin/ContaGest/actions/runs/43903102133) / job 133424678361: `Verify private URL/offline cache boundary` y `Verify synthetic LAB obfuscated query rejection` = **PASS**. `Build exact production frontend` = **FAIL** durante `preqa:source`: `tests/reproducible_install_contract.test.mjs:27`, expected `typeof deploymentEnabled === 'object'`, received `boolean`. Evidencia fuente: `vercel.json` raíz de main tiene `git.deploymentEnabled = false`, mientras `frontend/vercel.json` define una allowlist. Es divergencia PREEXISTENTE en baseline, no producida por el parche; no cambiar despliegues automáticos ni relajar el contrato sólo para dar verde.
+- Run [43903102231](https://github.com/adelvisMartin/ContaGest/actions/runs/43903102231) / job 133424675429: 11 pruebas de contrato Hípico = **PASS**, navegador = **BLOCKED**, `HIPICO_CANDIDATE_WORKTREE_DIRTY`. El log no contiene aún la ruta modificada. Se añade diagnóstico `git status --short --untracked-files=all` **sólo cuando falle el job**; no relaja `inspectExactCandidate`. Hasta obtener las rutas, la causa del dirty tree se clasifica **NOT VERIFIED**, no se inventa.
+- GitHub Actions del nuevo HEAD deben inspeccionarse por separado. Otros jobs `queued/pending/skipped` no cuentan como PASS.
+
+**QA sugerida en checkout exacto:**
+```sh
+git rev-parse HEAD
+git status --porcelain=v1
+npm ci --no-audit --no-fund
+node --test tests/pwa_private_query_guard_v1292.test.mjs tests/pwa_offline_v563_contract.test.mjs tests/hipico_offline_recovery_routing_297.test.mjs
+node --test tools/hipico-whatsapp-web-bridge/tests/lab-obfuscated-query-v1291.test.mjs tools/hipico-whatsapp-web-bridge/tests/lab-canonical-query.test.mjs
+npm run lint
+npm run typecheck
+npm run build
+npm run test:browser:hipico
+```
+
+**Refactor y riesgos:** no añadir librería compartida de SW que obligue una nueva carga de red durante el install offline: ambos productos mantienen entrypoints y scopes distintos. No alterar `vercel.json` ni sus contratos de auto-deploy sin una decisión del propietario sobre habilitación de producción. El cierre #1292 aún requiere revocación/sesión/IndexedDB con pruebas multiusuario reales; #1291/#892 aún requieren corpus, API y LAB físicos autorizados. La cobertura de rutas codificadas y Unicode es conservadora: URLs malformadas y textos con invisibles pueden perder fallback/capacidad de consulta por seguridad. Revertir sólo con control equivalente.
