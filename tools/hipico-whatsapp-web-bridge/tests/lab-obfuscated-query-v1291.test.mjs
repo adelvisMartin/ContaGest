@@ -15,6 +15,10 @@ const base = {
 
 const obfuscated = [
   '¿Resultado y pa\u200bgar premio?',
+  '¿Resultado y pa\u200dgar premio?',
+  '¿Resultado y pa\u00adgar premio?',
+  '¿Resultado y co\u034fbrar?',
+  '\u061c¿Resultado de carrera 5?',
   '¿Resultado y \u2060retirar dinero?',
   '\u202e¿Resultado de carrera 5?',
   '¿Estado de carrera 5?\u2066PAGAR\u2069',
