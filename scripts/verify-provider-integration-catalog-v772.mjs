@@ -25,6 +25,9 @@ function validSource(value) {
   if (typeof value !== 'string') return false;
   try {
     const url = new URL(value);
+    // URL accepts repeated trailing dots; they can bypass internal-suffix checks.
+    // Reject malformed DNS names before allowing a public documentation link.
+    if (url.hostname.includes('..')) return false;
     const host = url.hostname.toLowerCase().replace(/\.$/, '');
     const ipCandidate = host.startsWith('[') && host.endsWith(']')
       ? host.slice(1, -1)
