@@ -300,7 +300,10 @@ export async function updateDraftLedgerEntry(input: {
   });
 }
 
-export async function deleteDraftLedgerEntry(input: { tenantId: string; entryId: string }) {
+export async function deleteDraftLedgerEntry(input: {
+  tenantId: string; entryId: string; deletedBy?: string; audit?: LedgerAuditContext;
+}) {
+  const actorId = requirePostingActor(input.deletedBy || input.audit?.userId);
   return prisma.$transaction(async (tx) => {
     await lockScopedLedgerEntry(tx, input.tenantId, input.entryId);
     const entry = await tx.ledgerEntry.findFirst({
@@ -311,6 +314,21 @@ export async function deleteDraftLedgerEntry(input: { tenantId: string; entryId:
     assertLedgerActionAllowed(entry, 'delete');
     if (entry.source !== 'manual') throw new HttpError(409, 'Solo los asientos manuales en borrador pueden eliminarse.');
     await assertPeriodOpen(input.tenantId, entry.fiscalPeriod, tx);
+    // The retention guard requires this same-transaction audit evidence BEFORE
+    // permitting a manual, unposted draft to be discarded. A failed delete
+    // rolls the audit back; failed audit never leaves an unaudited deletion.
+    await tx.auditLog.create({
+      data: {
+        tenantId: input.tenantId, userId: actorId,
+        action: 'ledger.entry.draft-deleted',
+        entity: 'LedgerEntry', entityId: entry.id,
+        before: { source: entry.source, fiscalPeriod: entry.fiscalPeriod,
+          lineCount: entry.lines.length, posted: entry.posted },
+        after: { deleted: true },
+        ipAddress: input.audit?.ipAddress || null,
+        userAgent: input.audit?.userAgent || null
+      }
+    });
     await tx.ledgerEntry.delete({ where: { id: entry.id, tenantId: input.tenantId } });
     return entry;
   });
