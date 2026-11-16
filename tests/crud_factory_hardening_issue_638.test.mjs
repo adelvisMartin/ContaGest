@@ -249,4 +249,8 @@ test('#1288: real API regression harness refuses shared databases before opening
   const firstFixture = source.indexOf('prisma.tenant.findUnique');
   assert.ok(guard > 0 && firstFixture > guard,
     'fail-closed database guard must precede all fixture tenant/session writes');
+  const signingBlock = source.slice(source.indexOf('  let token:string;'), source.indexOf('  let server:'));
+  assert.match(signingBlock, /try \{[\s\S]*await issueSessionTokenFor\(admin\)/);
+  assert.match(signingBlock, /catch \(error\) \{[\s\S]*await cleanupFixtureSessions\(\)/,
+    'server session must be cleaned if token signing fails before Express starts');
 });
