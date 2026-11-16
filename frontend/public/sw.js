@@ -56,9 +56,15 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
+function hasPrivateQueryParameter(url) {
+  // A token in a URL must never turn into a persistent cache key or an offline shell.
+  return [...url.searchParams.keys()].some((key) => /^(?:t|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth|authorization|code|api[_-]?key|apikey|secret|password|session(?:[_-]?id)?|jwt|signature|sig|x-amz-(?:signature|credential)|x-goog-signature)$/i.test(key));
+}
+
 function isSensitiveRequest(url) {
   const pathname = scopedPath(url);
-  return pathname.startsWith('/api/')
+  return hasPrivateQueryParameter(url)
+    || pathname.startsWith('/api/')
     || pathname.startsWith('/auth/')
     || pathname.includes('/licenses')
     || pathname.includes('/media')
