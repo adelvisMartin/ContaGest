@@ -138,6 +138,26 @@ test('#1292 failed or malformed switch never removes current-tenant storage', as
   }
 });
 
+test('#1292 same tenant with changed authenticated user purges previous user scope', async () => {
+  const events = [];
+  const { switchTenant } = switchMethod({
+    AuthSession: { get: () => ({ tenantId: 'tenant-a', user: { id: 'user-a' } }) },
+    BackendApi: { request: async () => ({ tenantId: 'tenant-a', user: { id: 'user-b' } }) },
+    Store: { purgeSessionScope: (old) => events.push('store:' + old.user.id) },
+    purgeOfflineSession: (old) => {
+      events.push('offline:' + old.user.id);
+      return Promise.resolve();
+    },
+    normalizeSession: (next) => {
+      events.push('new:' + next.user.id);
+      return next;
+    }
+  });
+  const next = await switchTenant('tenant-a');
+  assert.equal(next.user.id, 'user-b');
+  assert.deepEqual(events, ['offline:user-a', 'new:user-b', 'store:user-a']);
+});
+
 test('#1292 same-tenant refresh does not destroy its own offline state', async () => {
   let purges = 0;
   const nextPayload = { tenantId: 'tenant-a', user: { id: 'user-a' } };
