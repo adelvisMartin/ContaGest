@@ -11,6 +11,7 @@ on:
       - 'frontend/index.html'
       - 'qa/pwa-offline-v563.spec.mjs'
       - 'tests/pwa_offline_v563_contract.test.mjs'
+      - 'tests/pwa_private_query_guard_v1292.test.mjs'
       - 'docs/ADR_PWA_OFFLINE_V563.md'
       - '.github/workflows/pwa-offline-v563.yml'
   push:
