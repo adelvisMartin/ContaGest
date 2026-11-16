@@ -169,7 +169,9 @@ function validCanonicalLabEnvelope({token,labGroupId,labChannelKey,messageId,sen
   if(!bounded(token,4096)||!bounded(labGroupId,160)||
      !bounded(labChannelKey,128)||!bounded(messageId,320)||
      !bounded(senderId,160)||!bounded(text,1200,true)||
-     unsafeLabText(text)||!Number.isFinite(timeoutMs)||timeoutMs<0||timeoutMs>30000)return false;
+     // Enforce the read-only domain boundary even when an alternate caller skips classification.
+     (unsafeLabText(text)||MONEY.test(normalizeQuery(text)))||
+     !Number.isFinite(timeoutMs)||timeoutMs<0||timeoutMs>30000)return false;
   // Input must already be a normalized server/DOM observation timestamp.
   if(typeof timestamp!=='string'||
      !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(timestamp))return false;
