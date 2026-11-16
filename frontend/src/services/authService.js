@@ -67,7 +67,10 @@ export const AuthService={
     const payload=await BackendApi.request('/auth/switch-tenant',{method:'POST',body:{tenantId}});
     const nextTenantId=payload?.tenantId||payload?.tenant?.id;
     if(!nextTenantId)throw new Error('El backend no devolvió una sesión con empresa activa.');
-    if(previous&&previous.tenantId!==nextTenantId){
+    const oldUserId=previous?.user?.id||previous?.userId;
+    const nextUserId=payload?.user?.id||payload?.userId;
+    if(previous&&(previous.tenantId!==nextTenantId||
+        (oldUserId&&nextUserId&&oldUserId!==nextUserId))){
       // Clear A's web storage before hydrating B, but defer Store's scoped
       // purge until after switching: that avoids an intermediate anonymous
       // render while the backend-approved tenant becomes active.
