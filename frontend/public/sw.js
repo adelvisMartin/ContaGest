@@ -53,11 +53,10 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
+    // An ERP update may evict obsolete ContaGest namespaces only.
+    // Generic "-session-" matching would delete other same-origin products.
     await Promise.all(keys
       .filter((key) => key.startsWith('contagest-ve-') && key !== ASSET_CACHE && !key.startsWith(SESSION_CACHE_PREFIX))
-      .map((key) => caches.delete(key)));
-    await Promise.all(keys
-      .filter((key) => key.includes('-session-') && !key.startsWith(SESSION_CACHE_PREFIX))
       .map((key) => caches.delete(key)));
     await self.clients.claim();
   })());
