@@ -1,0 +1,119 @@
+# ContaGest + Control Hípico — FODA, riesgo residual y plan de cierre
+**Corte:** 2026-11-16 · **baseline de revisión:** main e7706f3dac3ae4c677fcdff05a662765fa6bdcc6 · **Estado:** PARTIAL / NOT_RELEASE_READY.
+
+## 1. Autoridad, límites y selección
+- Monorepo: adelvisMartin/ContaGest. Dos productos y contextos de negocio independientes; Hípico no se conecta implícitamente al ledger financiero del ERP.
+- Fuente: AGENTS.md v16.7, docs/PROJECT_START_HERE.md, .agents/TICKET_EXECUTION_POLICY.md, issues vivos y código del baseline. La auditoría del 15-10 es contexto histórico, no PASS actual.
+- Cola canónica de cinco P0 ContaGest (#661): **#751, #785, #774, #775, #776**. La posición histórica #001 de Hípico es **#1011**, una línea independiente y además un gate de política; no se debe inventar un envío automático a Messenger.
+- Este incremento sólo corrige defensas acotadas de #751/#785/#774 y caracteriza #775/#776/#1011. Ninguno de estos seis issues se cierra o se marca DONE por el PR.
+- Alcance de archivos: gobernanza y tests fiscales (#751); selección y tests de perfil (#774); sync no destructivo, helper y tests del plan (#785); este informe. Sin migración SQL, cambio de tasas legales, posting fiscal nuevo, pago real, acceso a datos de producción, despliegue o automatización de WhatsApp.
+
+## 2. Hallazgos source-grounded y cambios del incremento
+| Issue | Evidencia de arquitectura actual | Incremento | Aceptación restante |
+| --- | --- | --- | --- |
+| #751 | FiscalLegalSource, revisión independiente, rule governance, snapshots y SQL previamente fusionados | Rechazar basis no-string sin invocar su toString; regresión hostil | Activación/supersession concurrente, intervalos, hashes, documento histórico, PG17/RLS/RBAC y UI |
+| #785 | SemanticAccountRoleMapping, validación de roles y chart accounts ya implementados | Reemplazar upsert destructivo de plantilla por inserción aditiva con conflictos ignorados y auditoría atómica; regresiones de cuentas personalizadas | Conciliación posting real, transición de históricos, cuentas padre, reversos, pruebas con dos tenants y PG17 |
+| #774 | TaxpayerProfileVersion y transiciones DRAFT→REVIEWED→ACTIVE con fuente/actores; DB FK existente | Exigir legalSourceId UUID en la selección pura de perfil ACTIVE, adicional al check de DB; tests negativos | Calendario/actividad/jurisdicción, snapshots emitidos, API/RBAC, competencia, PG17 y browser |
+| #775 | IVA preview con regla revisada; rutas de aplicación de retención, reverso y conciliación | Revisión de autoridad; ningún nuevo flujo contable activado | Certificados, notas y documentos, base/exenciones, prueba real del balance e idempotencia, UI/API, norma vigente |
+| #776 | Previews seguros de ISLR y familia de reglas existente | Caracterización, sin implementación funcional nueva | Conceptos, mínimos y beneficiarios legales, certificados, posting, rectificación, conciliación, PG17/browser |
+| #1011 Hípico | Sugerencia manual con revisión/consentimiento por versión, copia explícita, sin autolectura ni autoenvío SOURCE | Se preservan restricciones y se transfiere evaluación de política al gate Hípico | Consentimiento/privacidad/QA físico, revisión oficial antes de cambiar decisión, no-go de SOURCE automático |
+
+**Riesgo confirmado #785:** el handler anterior hacía Prisma upsert por tenant/código con update de todos los campos de plantilla; una segunda sincronización podía modificar cuentas previamente personalizadas. El nuevo camino usa createMany(skipDuplicates) en la misma transacción que AuditLog, sin modificar existentes. El campo synced conserva cantidad total de elementos de la plantilla y se añaden created/unchanged. Requiere prueba PostgreSQL y compatibilidad API.
+**Riesgo #774:** el modelo SQL exige referencia legal, pero la función de dominio no la validaba antes de devolver el perfil. Ahora se exige UUID válido, sin alterar documentos existentes.
+**Riesgo #751:** el parser DSL podía invocar String() de un objeto no-string no confiable antes de rechazarlo; la comprobación de tipo sucede ahora antes del lookup de vocabulario.
+
+## 3. FODA técnico y de producto
+
+### Fortalezas (hechos de fuente)
+1. Plataforma multiempresa con boundaries para identidad, RLS/RBAC, documentos y contabilidad, en lugar de módulos completamente independientes.
+2. Reglas de agentes, skills, políticas de seguridad y evidencia exact-SHA formalizadas; flujos de QA e inventario extenso de tests y suites.
+3. PostgreSQL/Prisma, versionado de reglas fiscales, snapshots históricos y rol semántico de cuentas reutilizables.
+4. Motor Hípico LAB, PWA/Android, mensajería/orquestación de pruebas y funciones de recuperación documentadas; las capacidades no equivalen a certificación de producción.
+5. Política fiscal explícita: ninguna tasa productiva nueva sin fuente, vigencia y revisión. Fuente legal, RIF y empresa delimitados por tenant.
+6. Integraciones diseñadas alrededor de authorities compartidas y principio free-first; no es obligatorio inventar costos o proveedor único.
+7. Canales separados Hípico LAB y SOURCE, y bloqueo de automatización de Messenger no autorizada.
+
+### Debilidades (hechos/riesgos pendientes de verificar en runtime)
+1. Muchos issues P0/P1 abiertos y grandes épicas con aceptación incompleta; una implementación parcial no equivale a DONE.
+2. Falta evidencia reciente de PostgreSQL 17 aislado, RLS de dos tenants, backup/restore 25/25, E2E 58 rutas y dispositivos físicos en el mismo candidate.
+3. Workflows proliferados, checks externos inestables y dificultad de atribuir PASS a HEAD exacto; el baseline presenta Vercel failure.
+4. En negocio, varias authorities están en preview/read-model o requieren conexión completa a posting, reverso, recibos, estados y UI.
+5. UX a validar con teclado, focus, 360/390/430, ambos temas, estados vacíos/error, offline y lectores de pantalla.
+6. Transición de migraciones/contratos de miles de pruebas y código histórico: el riesgo de romper un consumidor es alto.
+7. Dependencias de política y capacidades externas para funciones Hípico; el producto no puede prometer autoenvío a Messenger normal.
+
+### Oportunidades (propuestas, no funcionalidades existentes)
+1. **Fiscal explainable by design:** cada cifra del IVA/ISLR/IGTF enlaza versión de regla, fuente/hora, base, cálculo exacto, asiento, documento y conciliación; sin declarar cumplimiento automático.
+2. **Cierre contable guiado:** preflight por periodo, excepciones de balance, diferencias de tasa y certificados faltantes, con revisión humana y acciones reversibles.
+3. **Copiloto de auditoría de sólo lectura:** búsqueda por documentos y reglas con provenance, citas y redacción de PII; nunca genera postings ni firma declaraciones.
+4. **Inventario predictivo con explicaciones:** sugerencia de reposición y anomalías FEFO, pero aprobación humana y stocks/costos del ledger como autoridad.
+5. **Operación offline resiliente:** PWA queues con idempotencia, control de conflicto y expiración de sesión; nada de persistir secretos/tokens en caché.
+6. **Hípico LAB como producto de simulación seguro:** replay sintético, corpus de preguntas, trazabilidad de respuesta y panel de intervención humana; SOURCE permanece NO-GO.
+7. **Cockpit de cumplimiento y recuperación:** dashboards de calidad verificable por SHA, migración, tenant-negative, backups y restores; nunca mezclar READY de hosting con release aprobado.
+8. **A11y y métricas de tarea:** reducir pasos/errores con prototipos medibles sobre rutas operativas, sin reemplazar el design system aprobado.
+
+### Amenazas (escenarios que requieren controles; no incidentes demostrados)
+1. Cambios en providencias y vigencias de Venezuela o clasificación fiscal incorrecta pueden generar importes o libros erróneos.
+2. Acceso entre empresas, token/sesión robados y enlaces compartibles podrían exponer operaciones, saldos y datos de terceros.
+3. Asiento duplicado, pérdida de precisión, reintento o período cerrado pueden afectar integridad monetaria si se saltan transacciones.
+4. Fallo de restore, degradación del proveedor free tier, lock/deadlock de DB y deriva de configuración afectan continuidad.
+5. Un cliente no oficial o automatización de WhatsApp Messenger real contravendría el gate de política y arriesga cuentas/privacidad.
+6. Datos personales de verticales clínicas exigen RBAC y trazabilidad especiales; no extender asistentes IA a diagnósticos.
+7. Dependencias/skills externas, cambios de cadena de suministro y licencias incompatibles implican auditoría de origen.
+8. Inflación del backlog/CI puede crear falsa sensación de avance por merges o checks saltados.
+
+## 4. Backlog priorizado y dependencias
+
+| Prioridad | Orden operativo | Owner canónico | Criterio material antes de cerrar |
+| --- | --- | --- | --- |
+| P0 | 1 | #751 → #774 → #775/#776/#778/#780/#781 → #782/#783 | Reglas/fuentes legales, tenant, posting + documentos/retenciones y prueba PG17 |
+| P0 | 2 | #785, #637, #643 | Plan y roles reales, balance Debe/Haber, asientos inmutables, reversos, concurrencia |
+| P0 | 3 | Hípico #1011, #892, #119, #120 | LAB canónico y seguro; SOURCE sin autolectura/autoenvío; QA físico y soak real |
+| P0 | 4 | Hípico #1018, #842, #839 | RLS links, ledger reconciliado, rol backup, restore 25/25, GO/NO-GO exact-SHA |
+| P0 | 5 | #669, #840, #841 y padres #624/#835/#837 | Candidato congelado, migraciones, seguridad, runtime servido y rollback verificable |
+| P1 | 6 | #651, #979, #985, #688 y #836 | Hallazgos AppSec, contratos telemetría, PostgreSQL efímero en CI, build/provider |
+| P1 | 7 | #743–#757, #765, #769, #770 | Documentos venta→entrega→inventario→subledger→bancos integrados de punta a punta |
+| P1 | 8 | #849, #852, #848, #854, #772 | Catálogo, derechos, scheduling, notificaciones y adapters consumiendo core único |
+| P1 | 9 | #746–#832 verticales Gym/Dental/Vet/Care | Identidades, agenda, permisos, auditoría y conciliación clínica/comercial end-to-end |
+| P2 | 10 | #661, #663, #664, #665, #666, #657 | Dedupe, clean room, smoke, configuración y documentación, sin esconder deuda |
+| P2 | 11 | #707/#708/#764/#773/#771 | Benchmark legal sin copiar fuentes, UX/observabilidad, dashboards reconciliables |
+
+**No duplicar tickets ya cerrados:** #907 inbox LAB, #853 outbox, #851 session hardening y #659 functional gap audit constan cerrados en consulta viva; aplicar regresión/transferir nuevos defectos al owner activo. Las fuentes y evidencias históricas no acreditan un PASS de 2026-11-16.
+
+## 5. Plan de innovación por fases
+- **0–30 días, calidad primero:** exact-SHA pipeline estable, contratos API, QA PG17/tenant A/B, SAST/secrets, smoke funcional, restore drill, permisos de Hípico; corregir defects sin rediseño visual.
+- **31–60 días, valor operativo:** completar five-P0 fiscales con norma verificable, centros de excepciones/conciliación y primer workflow entero ERP UI→API→DB→UI; medir tiempo por tarea y tasa de errores.
+- **61–90 días, diferenciación:** asistente read-only con fuente, predicción explicable bajo aprobación humana, resiliencia offline y observabilidad accionable; primero threat model/RBAC/retención y pruebas de regresión.
+- **Después de los gates:** expansión vertical y SEO sólo con datos no sensibles y licencia/legal revisadas; benchmarks sobre funciones observables y no sobre código privado.
+
+## 6. Matriz de verificación y release
+| Dimensión | Estado para este incremento | Evidencia requerida |
+| --- | --- | --- |
+| SOURCE_REVIEW | VERIFIED_SOURCE | Inspección de archivos/contratos GitHub en baseline y rama |
+| LOCAL_STATIC | NOT_EXECUTED | npm run lint; npm run typecheck; agent router; skills |
+| LOCAL_UNIT | NOT_EXECUTED | Tres suites de regresión #751/#774/#785 con Node 22 en checkout |
+| LOCAL_INTEGRATION | NOT_EXECUTED | HTTP auth/RBAC, chart-account sync real y regla/perfil fiscal |
+| LOCAL_POSTGRES | BLOCKED | PostgreSQL17 efímero; migraciones from-zero/upgrade, tenant A/B y cleanup |
+| LOCAL_BUILD | BLOCKED | npm ci --no-audit --no-fund; npm run build; npm test |
+| LOCAL_BROWSER_E2E | BLOCKED | Chromium como gate de PR; matrix Firefox/WebKit; Hípico QA; 58 rutas |
+| REMOTE_CI | NOT_VERIFIED | Github checks sobre HEAD exacto del PR, no main previo |
+| PHYSICAL_EXTERNAL | NOT_EXECUTED | Android/Windows/Messenger manual, soak 24–72h y restore real |
+| REMOTE_DEPLOY | OUT_OF_SCOPE | Nunca desplegar un candidato incompleto |
+
+**Nota reproducibilidad:** la autoridad real del monorepo es npm workspaces + package-lock.json, por tanto npm ci, no pnpm install --frozen-lockfile sin migración aprobada. Los tests nuevos no reemplazan PostgreSQL. A falta de checkout local completo, no existe evidencia de PASS nativo; un PR permanece DRAFT y sin merge.
+
+**Plan sugerido del runner:** npm ci → npm run agent:system:verify → npm run lint → npm test → npm run build → npm run test:ve-tax → npm run test:hipico → DB PG17 aislado + upgrade/migration → APIs RBAC/idempotencia/reconciliación → Playwright Chromium + Firefox/WebKit → diff/secrets/release exact-SHA. CI debe preservar artifacts y limpiar fixtures incluso en FAIL.
+
+**Go/No-Go:** NO-GO de producción y de SOURCE automático; ningún ticket de estos cinco se considera completado hasta satisfacción material de sus criterios. El rollback del incremento de código es revertir los commits del PR, sin cambios de esquema ni datos de producción.
+
+## 7. Registro de fuentes de proyecto
+- https://github.com/adelvisMartin/ContaGest/issues/661
+- https://github.com/adelvisMartin/ContaGest/issues/751
+- https://github.com/adelvisMartin/ContaGest/issues/785
+- https://github.com/adelvisMartin/ContaGest/issues/774
+- https://github.com/adelvisMartin/ContaGest/issues/775
+- https://github.com/adelvisMartin/ContaGest/issues/776
+- https://github.com/adelvisMartin/ContaGest/issues/1011
+- https://github.com/adelvisMartin/ContaGest/issues/842
+- https://github.com/adelvisMartin/ContaGest/issues/839
+- docs/audits/AUDITORIA_STAFF_CONTAGEST_CONTROL_HIPICO_2026-10-15.md
