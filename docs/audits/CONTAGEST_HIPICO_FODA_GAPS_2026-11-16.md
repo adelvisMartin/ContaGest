@@ -173,3 +173,43 @@ Antes de ejecutar cualquier `prisma migrate deploy` fuera de PostgreSQL efímero
 **Estado de estas remediaciones:** código y docs escritos en el PR, revisión de fuente realizada, CI del SHA final **aún sin PASS verificable**. El nuevo candidato necesita install, lint, contratos, migraciones from-zero/upgrade y revisión de cambios en configuración de seguridad.
 
 **Cambio de contrato rechazado:** no se ha desactivado el control de arquitectura, audit de seguridad, E2E, tests de documentos fiscales, SOURCE NO-GO ni protección por tenants. El runbook de checksum #849 en la sección 9 sigue siendo obligatorio para producción.
+
+
+## 11. Iteración de integridad, lockfile y regresiones — 2026-11-16, tercera revisión
+
+### Evidencia de ejecución antes de la iteración
+
+Baseline para esta revisión: \`main=e7706f3dac3ae4c677fcdff05a662765fa6bdcc6\`; PR previo \`6947b1dde4b2f4b411e82765879334fd0860154d\`. En GitHub Actions, de **ese SHA anterior** constan PASS en PostgreSQL/DB y aislamiento tenant, API #565, IAM, dependencia #656, security-baseline, verticales PG 48/51; constan FAIL en CI general, Quality Gate, #90, #91, #96 y varios E2E Hípico. El hecho de que una suite de migración haya pasado **no** autoriza trasladar su resultado a la nueva migración y commits posteriores.
+
+Se inspeccionaron los jobs **exactos**:
+- \`ContaGest CI 43899562456\`, \`tests/manual_ledger_posting_authority_v637.test.mjs:75\`: aserción fuente esperaba la primera lectura después del lock; servicio usa lectura inicial acotada para descubrir período, mutex transaccional, \`SELECT ... FOR UPDATE\` y *segunda lectura*; se ajustó la caracterización para cubrir las tres barreras, no silenciarla.
+- \`Fiscal #96 43899561495\`: usuarios sintéticos licenciados sin aceptación legal real recibían 428; cierre y reapertura carecían de Idempotency-Key 428; emisión genérica regulada ahora responde 422. Se ejecuta el flujo real de adhesión \`/legal/status\` → \`/legal/accept\` → verificación, se generan claves únicas, y se exige explícitamente el rechazo de emisión fiscal no autorizada.
+- \`Financial #90 43899562086\` y \`Accounting #91 43899562366\`: cuentas artificiales no estaban dadas de alta; ahora se crean desde la API autorizada tras afirmar que la base es efímera, se conservan las reglas de posting. La factura funcional VES requiere FX=1. Las operaciones bancarias no se borran; apertura idempotente, movimiento idempotente y reverso idempotente reconcilian saldos con evidencia.
+- \`PR Quality 43899562640\`: \`npm audit\` detectó \`body-parser 2.3.0\` (GHSA-27r3-jxmh-p828): pin de \`2.4.0\` con SRI y transitive dependency graph compatible. También \`/health/db\` responde \`data.database.ready=true\`, no un array; precio/costo decimal viajan como string exacto, no JS number. Se repararon contratos de prueba, no la serialización precisa.
+- \`Toolchain v26 43899562201\`: regeneración lockfile cambiaba \`@types/pdfkit\` desde \`^0.17.7\` a \`0.17.7\` y eliminaba \`libc\` metadata de 6 dependencias opcionales Rolldown; se sincronizó el lock con \`npm 10\` observado. Revalidar \`npm install --package-lock-only --ignore-scripts --no-audit --no-fund\` sin diferencia; nunca desactivar el gate.
+- \`Hípico\`: persisten fallos en bridge LAB/ACK, contrato SOURCE y navegador, no se alteró el modo SOURCE NO-GO ni las pruebas de auditoría para obtener verde artificial.
+
+### Reparación contable forward-only de riesgo alto
+
+**Incompatibilidad real en el baseline:** \`deleteDraftLedgerEntry\` permite DRAFT manual, pero el trigger \`data_lifecycle_protected_delete_guard\` de #562 niega todo \`DELETE\` de LedgerEntry; \`guard_ledger_reversal_compensation\` de #628 exige mismo período, mientras #91 permite reversar en período abierto posterior al cierre original. Se añade una **nueva** migración \`20261116170000_issue_637_manual_draft_and_reversal_integrity\`; las migraciones históricas de esta revisión anterior permanecen como están y el checksum-preflight anterior sigue siendo obligatorio.
+
+Invariantes:
+1. Solo asiento **manual**, no contabilizado, sin linked source, sin relación de reverso ni metadatos de posting puede eliminarse; una consulta PostgreSQL al AuditLog debe comprobar auditoría con **actor no nulo** y acción \`ledger.entry.draft-deleted\`. El trigger consulta legal hold; si hay retención/suspensión legal, rechaza la eliminación.
+2. La ruta requiere permiso \`accounting.post\` y la operación de dominio exige actor; bajo el *mismo tx* bloquea asiento/período, lee y valida, crea auditoría y finalmente elimina. Cualquier fallo provoca ROLLBACK de ambos; el código ya no realiza auditoría best-effort tras el commit.
+3. Todos los demás modelos, AuditLog, asientos contabilizados y borrados genéricos siguen la política de conservación anterior. No se habilita borrado por una variable cliente ni se desactiva la auditoría.
+4. Un reverso sigue exigiendo asiento original contabilizado, mismo tenant, no reverso encadenado, y **compensación exacta de débito/crédito, moneda y tasa por cuenta**. El período destino sigue gobernado por los triggers de período abierto, sin exigir reabrir el período original.
+
+**Pruebas añadidas/actualizadas:** caracterización de guard SQL y orden auditable en #637; QA PostgreSQL intenta DELETE no auditado (debe fallar y preservar borrador), después DELETE autorizado (debe confirmar actor/audit) y reverso tras cierre de origen en período abierto posterior. Ejecución de PG real para este SHA final: **NO VERIFICADA** hasta resultado de Actions.
+
+### FODA adicional y riesgos no resueltos
+
+- **Fortaleza:** fuente real de persistencia, audit, RBAC, legal acceptance, idempotencia y FX mantienen primacía sobre mocks/expectativas obsoletas.
+- **Debilidad:** suite multifuncional extensa; bloqueos cruzados entre chart de pruebas, snapshots legales y policy DB; refactor debe separarse por owner y no convertirse en un bypass.
+- **Oportunidad:** fixture único con provisioning reversible/efímero y aserciones de invariantes; security dependency audit sin renunciar a contratos.
+- **Amenaza:** cambio de función trigger en esquema de producción, checksums históricos, compatibilidad upgrade desde cada entorno, borrado accidental y regresiones del bridge Hípico. **No desplegar sin staging/upgrade+rollback/restore probado**.
+
+### Gate pendiente para aprobar
+
+No afirmar \`DONE\` sin \`npm ci\`, lock reproducible, lint/typecheck, suite completa, build, \`npm audit\`, PostgreSQL 17 efímero de cero y desde upgrade, tenant A/B/RLS y legal holds, chequeo antes/después de Auditoría y saldos, tests #90/#91/#96 + #775/#776 y browser Playwright Chromium/Firefox/WebKit, Hípico LAB y seguridad, evidencias de release *todos sobre el SHA exacto*. Bloqueos externos y checks \`queued/skipped/cancelled/pending\` son **NOT VERIFIED**, nunca PASS. El código SOURCE Messenger de terceros no se automatiza y las obligaciones fiscales reales siguen requiriendo fuentes jurídicas aprobadas.
+
+**Rollback lógico:** revert de commit funcional para app y roll-forward controlado de funciones SQL bajo DBA; ninguna reversión destructiva de datos. Verificar hashes de migraciones #849/#751 en cada ambiente antes de ejecutar Prisma deploy. No se consultó ni modificó un ambiente productivo desde esta iteración.
