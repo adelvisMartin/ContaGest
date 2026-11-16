@@ -84,6 +84,7 @@ for (const spec of WORKERS) {
       't=private', 'ToKeN=private', '%61ccess_token=private',
       'refresh_token=private', 'id_token=private', 'code=private',
       'api_key=private', 'signature=private', 'x-amz-signature=private',
+      'ｔ=private', 'ａｃｃｅｓｓ＿ｔｏｋｅｎ=private',
     ];
     for (const query of protectedParams) {
       const url = new URL('?'+query, spec.scope);
@@ -93,7 +94,8 @@ for (const spec of WORKERS) {
       const url = new URL('?'+query, spec.scope);
       assert.equal(worker.guard(url), false, query);
     }
-    for (const encoded of ['%61pi/v1/private', 'auth%2Fsession', '%E0%A4%A']) {
+    for (const encoded of ['%61pi/v1/private', 'auth%2Fsession', '%E0%A4%A',
+      '%2561pi/v1/private', 'API/v1/private', 'AUTH/session']) {
       assert.equal(worker.guard(new URL(encoded, spec.scope)), true, encoded);
     }
     assert.equal(worker.guard(new URL('api/v1/private', spec.scope)), true);
