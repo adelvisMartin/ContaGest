@@ -13,17 +13,35 @@ function unwrap(payload:any){return payload?.data ?? payload;}
 export async function createRealBackendHarness(){
   // These fixtures create signed UserSessions and persistent CRUD rows. Refuse
   // shared development/production databases before reading or changing any data.
-  const rawDatabaseUrl=String(process.env.DATABASE_URL||'');
-  let databaseUrl:URL;
-  try { databaseUrl=new URL(rawDatabaseUrl); }
-  catch { throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED'); }
-  if(process.env.NODE_ENV!=='test' || process.env.VERCEL ||
-     !['postgresql:','postgres:'].includes(databaseUrl.protocol) ||
-     !['127.0.0.1','localhost','[::1]'].includes(databaseUrl.hostname)){
+  // Prisma runtime prefers DATABASE_RUNTIME_URL to DATABASE_URL. Check
+  // *every* configured alias before touching Prisma so one local-looking
+  // variable cannot hide a remote or different active database.
+  if(process.env.NODE_ENV!=='test' || process.env.VERCEL || process.env.VERCEL_ENV){
     throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
   }
+  const aliases=['DATABASE_URL','DATABASE_RUNTIME_URL','DIRECT_DATABASE_URL'];
+  const configured=aliases.map(key=>String(process.env[key]||'').trim()).filter(Boolean);
+  if(!process.env.DATABASE_URL || configured.length===0){
+    throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
+  }
+  const databaseNames=new Set<string>();
+  for(const rawUrl of configured){
+    let target:URL;
+    try { target=new URL(rawUrl); }
+    catch { throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED'); }
+    if(!['postgresql:','postgres:'].includes(target.protocol) ||
+       !['127.0.0.1','localhost','[::1]'].includes(target.hostname)){
+      throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
+    }
+    const databaseName=decodeURIComponent(target.pathname.slice(1));
+    if(!/^.+(?:_e2e|_drill|_restore)$/.test(databaseName)){
+      throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
+    }
+    databaseNames.add(databaseName);
+  }
+  if(databaseNames.size!==1)throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
   const databases=await prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
-  if(!/^.+(?:_e2e|_drill|_restore)$/.test(databases[0]?.name||'')){
+  if(databases[0]?.name!==[...databaseNames][0]){
     throw new Error('QA_EPHEMERAL_DATABASE_REQUIRED');
   }
   const tenant=await prisma.tenant.findUnique({where:{rif:QA_TENANT_RIF}});
