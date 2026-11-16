@@ -46,6 +46,9 @@ test('browser pre-QA reuses the locked Vercel install and only adds the pinned s
 });
 
 test('Vercel auto-deploy budget is fail-closed in root and effective frontend project config', () => {
-  assertDeploymentBudget(rootVercel, 'root vercel.json');
+  // The repository root is deliberately stricter than the frontend project:
+  // it must never create an automatic deployment of an unreviewed checkout.
+  assert.equal(rootVercel.git?.deploymentEnabled, false,
+    'root Vercel auto-deploy must remain disabled, even on main');
   assertDeploymentBudget(frontendVercel, 'frontend/vercel.json');
 });
