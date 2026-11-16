@@ -34,3 +34,36 @@ export async function prepareQaSemanticPosting(
     assert.equal(readiness.ready, true, `#785 QA fixture not ready for ${flow}: ${JSON.stringify(readiness)}`);
   }
 }
+
+/** Provision synthetic manual ledger codes via the authenticated API only.
+ * No test may bypass the chart-of-accounts authorization or target shared DBs.
+ */
+export async function prepareQaManualPostingAccounts(
+  h: Pick<Awaited<ReturnType<typeof createRealBackendHarness>>, 'ok' | 'prisma' | 'tenant'>,
+  accounts: readonly Readonly<{ code: string; nature: 'debit' | 'credit' }>[],
+) {
+  const db = await h.prisma.$queryRaw<Array<{ name: string }>>`SELECT current_database() AS name`;
+  assert.match(db[0]?.name || '', /^contagest_[a-z0-9_]+(?:_v\\d+|_e2e)$/i,
+    'Manual chart fixture requires an isolated disposable QA database');
+  assert.equal(new Set(accounts.map(account => account.code)).size, accounts.length,
+    'Fixture must not contain duplicate account codes');
+  for (const account of accounts) {
+    assert.match(account.code, /^[A-Za-z0-9._-]{1,40}$/, 'Invalid QA account code');
+    await h.ok('/chart-accounts', {
+      method: 'POST',
+      body: JSON.stringify({
+        code: account.code,
+        name: `Synthetic QA ${account.code}`,
+        type: account.nature === 'debit' ? 'asset' : 'liability',
+        nature: account.nature, level: 1, allowPosting: true, active: true,
+      }),
+    });
+  }
+  const stored = await h.prisma.chartAccount.findMany({
+    where: { tenantId: h.tenant.id, code: { in: accounts.map(account => account.code) } },
+  });
+  assert.equal(stored.length, accounts.length, 'Fixture accounts must persist under this tenant');
+  for (const account of stored) {
+    assert.equal(account.active && account.allowPosting, true, 'QA account cannot be non-postable');
+  }
+}
