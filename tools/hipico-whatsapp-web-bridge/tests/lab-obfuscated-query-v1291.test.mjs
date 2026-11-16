@@ -48,3 +48,19 @@ test('#892 canonical LAB network request rejects obfuscated text before fetch or
   }
   assert.equal(calls, 0);
 });
+
+test('#892 direct canonical adapter rejects monetary requests even without a classifier', async () => {
+  let calls = 0;
+  for (const text of ['¿Estado y pagar premio?', '¿Qué saldo queda?', 'Registra la llegada y liquidar']) {
+    const result = await queryCanonicalLab({
+      ...base,
+      text,
+      fetchImpl: async () => {
+        calls += 1;
+        throw new Error('Not expected');
+      }
+    });
+    assert.deepEqual(result, { available: false, reason: 'LAB_CANONICAL_DISABLED' }, text);
+  }
+  assert.equal(calls, 0);
+});
