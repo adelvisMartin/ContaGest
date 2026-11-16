@@ -70,8 +70,19 @@ function mount(){
       applySessionToStore(result);
       window.dispatchEvent(new CustomEvent('cg:tenant-switched',{detail:{from:previous,to:result.tenantId,tenant:result.tenant}}));
     }catch(error){
-      select.value=previous||'';
-      window.dispatchEvent(new CustomEvent('cg:tenant-switch-error',{detail:{message:error.message}}));
+      const active=AuthSession.get();
+      // The server may have switched tenants while old offline cleanup
+      // failed. Never display tenant A while authenticated as tenant B.
+      if(active?.tenantId&&active.tenantId!==previous){
+        applySessionToStore(active);
+        window.dispatchEvent(new CustomEvent('cg:tenant-switched',{
+          detail:{from:previous,to:active.tenantId,tenant:active.tenant,cleanupIncomplete:true}
+        }));
+      }
+      select.value=active?.tenantId||previous||'';
+      window.dispatchEvent(new CustomEvent('cg:tenant-switch-error',{
+        detail:{message:error.message,activeTenantId:active?.tenantId||previous}
+      }));
     }finally{switching=false;select.disabled=false;}
   });
 }
