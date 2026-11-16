@@ -63,4 +63,8 @@ test('#849/#751 applied migration checksum drift blocks deploy before running Pr
   const preflight=deploy.indexOf('await assertReviewedMigrationChecksums({ databaseUrl, migrationsRoot });');
   const apply=deploy.indexOf("runPrisma(['migrate', 'deploy', '--schema', schemaPath]);");
   assert.ok(preflight>0&&apply>preflight,'Migrations must never deploy before checksum preflight');
+  const resolve=deploy.indexOf("runPrisma(['migrate', 'resolve', '--applied', migration, '--schema', schemaPath]);");
+  const projection=deploy.indexOf('const lifecycle = await migrationProjectionState(');
+  assert.ok(resolve>preflight && projection>preflight,
+    'Historical checksum drift must stop before baseline resolve or compatibility projections');
 });
