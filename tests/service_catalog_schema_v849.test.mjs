@@ -49,3 +49,22 @@ test('#849 does not recreate preexisting tenant + identity unique indexes', () =
       table + '_tenantId_id_key" ON public\\."' + table + '"\\("tenantId","id"\\);'));
   }
 });
+
+test('#849/#751 applied migration checksum drift blocks deploy before running Prisma', () => {
+  const deploy=readFileSync(new URL('../backend/scripts/prisma-deploy-safe.mjs',import.meta.url),'utf8');
+  for(const name of [
+    '20261022171000_issue_849_service_catalog_foundation',
+    '20261022173000_issue_751_reviewed_fiscal_rule_governance'
+  ]) assert.ok(deploy.includes(name),'Preflight must review applied historical SQL: '+name);
+  assert.match(deploy,/SELECT migration_name, checksum/);
+  assert.match(deploy,/finished_at IS NOT NULL AND rolled_back_at IS NULL/);
+  assert.match(deploy,/createHash\('sha256'\)/);
+  assert.match(deploy,/HISTORICAL_MIGRATION_CHECKSUM_DRIFT/);
+  const preflight=deploy.indexOf('await assertReviewedMigrationChecksums({ databaseUrl, migrationsRoot });');
+  const apply=deploy.indexOf("runPrisma(['migrate', 'deploy', '--schema', schemaPath]);");
+  assert.ok(preflight>0&&apply>preflight,'Migrations must never deploy before checksum preflight');
+  const resolve=deploy.indexOf("runPrisma(['migrate', 'resolve', '--applied', migration, '--schema', schemaPath]);");
+  const projection=deploy.indexOf('const lifecycle = await migrationProjectionState(');
+  assert.ok(resolve>preflight && projection>preflight,
+    'Historical checksum drift must stop before baseline resolve or compatibility projections');
+});

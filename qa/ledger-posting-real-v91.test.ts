@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
-import { prepareQaSemanticPosting } from './support/semantic-posting-fixture.ts';
+import { prepareQaManualPostingAccounts, prepareQaSemanticPosting } from './support/semantic-posting-fixture.ts';
 
 const RUN = `QA91-${Date.now().toString(36).toUpperCase()}`;
 const PERIOD_MANUAL = '2097-01';
@@ -40,9 +40,15 @@ function assertExactReversal(original: any, reversal: any) {
 }
 
 test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on real PostgreSQL', async (t) => {
-  const h = await createRealBackendHarness();
+  const h = await createRealBackendHarness({
+    approvedDatabaseNames:['contagest_ledger_v91']
+  });
   t.after(async () => h.close());
   await prepareQaSemanticPosting(h);
+  await prepareQaManualPostingAccounts(h, [
+    ...['D','TMPD','FD','CLOSED.D','RCD','BD'].map(part => ({code:`${RUN}.${part}`,nature:'debit' as const})),
+    ...['C','TMPC','FC','CLOSED.C','RCC','BC'].map(part => ({code:`${RUN}.${part}`,nature:'credit' as const})),
+  ]);
 
   const database = await h.prisma.$queryRaw<Array<{ name: string }>>`SELECT current_database() AS name`;
   assert.match(database[0]?.name || '', /_v91$/, 'Issue #91 real test must run only on the disposable *_v91 database');
@@ -131,9 +137,52 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
         ]
       })
     });
+    // Raw SQL/ORM deletion without matching audit evidence is rejected.
+    await assert.rejects(
+      h.prisma.ledgerEntry.delete({ where: { id: draft.id } }),
+      /LEDGER_DRAFT_DELETE_AUDIT_REQUIRED/
+    );
+    assert.ok(await h.prisma.ledgerEntry.findUnique({ where: { id: draft.id } }),
+      'A blocked unaudited deletion must preserve the draft');
+
+    // An old, valid-looking audit for this exact draft must NEVER authorize a
+    // later raw DELETE. Only audit evidence inserted in the deleting XID counts.
+    const staleAudit = await h.prisma.auditLog.create({ data: {
+      tenantId: h.tenant.id, userId: h.admin.id,
+      action: 'ledger.entry.draft-deleted', entity: 'LedgerEntry', entityId: draft.id,
+      after: { syntheticPriorTransaction: true }
+    } });
+    await assert.rejects(
+      h.prisma.ledgerEntry.delete({ where: { id: draft.id } }),
+      /LEDGER_DRAFT_DELETE_AUDIT_REQUIRED/,
+      'A prior audit record must not authorize raw deletion in a new transaction'
+    );
+    assert.ok(await h.prisma.ledgerEntry.findUnique({ where: { id: draft.id } }),
+      'A stale audit must not destroy a manual draft');
     const deleted = await h.ok(`/accounting/entries/${draft.id}`, { method: 'DELETE' });
     assert.equal(deleted.deleted, true);
     assert.equal(await h.prisma.ledgerEntry.findUnique({ where: { id: draft.id } }), null);
+    const deletionAudits=await h.prisma.auditLog.findMany({
+      where: { tenantId: h.tenant.id, entity: 'LedgerEntry', entityId: draft.id,
+        action: 'ledger.entry.draft-deleted' }
+    });
+    assert.equal(deletionAudits.length,2,'Expected prior synthetic audit and atomic domain audit');
+    const authorizedAudit=deletionAudits.find(row=>
+      row.id!==staleAudit.id && (row.after as {deleted?:boolean}|null)?.deleted === true);
+    assert.equal(authorizedAudit?.userId,h.admin.id,
+      'Authorized DRAFT deletion must commit distinct actor-scoped audit atomically');
+    const auditBefore=authorizedAudit?.before as {
+      id:string;lines:Array<{accountCode:string;debit:string;credit:string}>
+    }|null;
+    const auditAfter=authorizedAudit?.after as {deleted:boolean;requestId:string|null}|null;
+    assert.equal(auditBefore?.id,draft.id,'Deleted draft identity must remain in audit');
+    assert.equal(auditBefore?.lines?.length,2,'Deleted draft must retain both financial lines');
+    assert.ok(auditBefore?.lines.some(line=>line.accountCode===`${RUN}.TMPD` &&
+      Number(line.debit)===2),'Draft debit value lost from audit snapshot');
+    assert.ok(auditBefore?.lines.some(line=>line.accountCode===`${RUN}.TMPC` &&
+      Number(line.credit)===2),'Draft credit value lost from audit snapshot');
+    assert.equal(auditAfter?.deleted,true,'Atomic audit must record deletion outcome');
+    assert.ok(auditAfter?.requestId,'Atomic audit must preserve request correlation');
 
     await h.status('/accounting/entries', 422, {
       method: 'POST',
@@ -147,6 +196,96 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
         ]
       })
     });
+  });
+
+  await t.test('record-scoped legal hold blocks even atomically audited manual DRAFT deletion',async()=>{
+    const draft=await h.ok('/accounting/entries',{
+      method:'POST',body:JSON.stringify({
+        fiscalPeriod:PERIOD_MANUAL,description:`${RUN} held draft`,
+        lines:[
+          {accountCode:`${RUN}.TMPD`,accountName:'Held debit',debit:'1.00'},
+          {accountCode:`${RUN}.TMPC`,accountName:'Held credit',credit:'1.00'}
+        ]
+      })
+    });
+    // The compatibility migration projects lifecycle tenant references to TEXT,
+    // matching the canonical Tenant.id and this disposable PostgreSQL fixture.
+    const rows=await h.prisma.$queryRaw<Array<{id:string}>>`
+      INSERT INTO public."DataLegalHold"
+        ("tenantId","scopeType","entityType","recordId","reason","authorizationRef","createdBy")
+      VALUES
+        (${h.tenant.id},'record','LedgerEntry',${draft.id},
+         'Synthetic QA accounting evidence hold',${RUN+'-HOLD'},${h.admin.id})
+      RETURNING "id"::text AS id
+    `;
+    assert.ok(rows[0]?.id,'Legal hold fixture missing');
+    try{
+      await assert.rejects(
+        h.prisma.$transaction(async tx=>{
+          await tx.auditLog.create({data:{
+            tenantId:h.tenant.id,userId:h.admin.id,
+            action:'ledger.entry.draft-deleted',entity:'LedgerEntry',entityId:draft.id,
+            after:{attempt:'held-entry-denied'}
+          }});
+          await tx.ledgerEntry.delete({where:{id:draft.id}});
+        }),
+        /LEGAL_HOLD_ACTIVE/,
+        'An active record legal hold must outrank valid same-XID audit'
+      );
+      assert.ok(await h.prisma.ledgerEntry.findUnique({where:{id:draft.id}}),
+        'A held draft may not disappear');
+      assert.equal(await h.prisma.auditLog.count({where:{
+        tenantId:h.tenant.id,entity:'LedgerEntry',entityId:draft.id,
+        action:'ledger.entry.draft-deleted'
+      }}),0,'A denied held-delete audit must roll back');
+    } finally {
+      // A legal hold is immutable except for authorized release with evidence.
+      // Release in finally so even a failing test leaves no active synthetic hold.
+      await h.prisma.$transaction(async tx=>{
+        await tx.$queryRaw`SELECT set_config('contagest.lifecycle_hold_release','true',true)`;
+        await tx.$executeRaw`
+          UPDATE public."DataLegalHold" SET
+            "active"=false,"releasedAt"=CURRENT_TIMESTAMP,
+            "releasedBy"=${h.admin.id},"releaseAuthorizationRef"=${RUN+'-RELEASE'},
+            "releaseReason"='Synthetic QA fixture cleanup'
+          WHERE "id"=${rows[0].id}::uuid AND "tenantId"=${h.tenant.id}
+        `;
+      });
+    }
+    const deleted=await h.ok(`/accounting/entries/${draft.id}`,{method:'DELETE'});
+    assert.equal(deleted.deleted,true,'Released hold must allow an audited DRAFT delete');
+  });
+
+  await t.test('legacy/manual drafts with an origin reference cannot be edited or deleted', async () => {
+    // An intentionally inconsistent legacy fixture bypasses the public draft
+    // constructor; its document-origin reference must remain protected.
+    const linked = await h.prisma.ledgerEntry.create({
+      data: {
+        tenantId:h.tenant.id, fiscalPeriod:PERIOD_MANUAL,
+        description:`${RUN} provenance protected`, source:'manual',
+        sourceId:`${RUN}-BUSINESS-ORIGIN`, posted:false,
+        lines:{create:[
+          {accountCode:`${RUN}.TMPD`,accountName:'Linked debit',debit:'1.00',credit:'0.00'},
+          {accountCode:`${RUN}.TMPC`,accountName:'Linked credit',debit:'0.00',credit:'1.00'}
+        ]}
+      }
+    });
+    await h.status(`/accounting/entries/${linked.id}`,409,{
+      method:'PATCH',body:JSON.stringify({
+        fiscalPeriod:PERIOD_MANUAL,description:`${RUN} unauthorized reclassification`,
+        lines:[
+          {accountCode:`${RUN}.TMPD`,accountName:'Linked debit',debit:'1.00'},
+          {accountCode:`${RUN}.TMPC`,accountName:'Linked credit',credit:'1.00'}
+        ]
+      })
+    });
+    await h.status(`/accounting/entries/${linked.id}`,409,{method:'DELETE'});
+    const persisted=await h.prisma.ledgerEntry.findFirst({
+      where:{id:linked.id,tenantId:h.tenant.id},include:{lines:true}
+    });
+    assert.equal(persisted?.sourceId,`${RUN}-BUSINESS-ORIGIN`,
+      'Unauthorized operations must preserve the business origin');
+    assert.equal(persisted?.lines.length,2,'Unauthorized edit must not alter ledger lines');
   });
 
   await t.test('reversal creates a new POSTED inverse, leaves original intact and cannot chain', async () => {
@@ -207,6 +346,26 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
     await h.ok(`/accounting/closing-periods/${period.id}/close`, { method: 'POST', body: JSON.stringify({ note: `${RUN} QA close` }) });
 
     await h.status(`/accounting/entries/${draft.id}/post`, 409, { method: 'POST' });
+    // Even direct PostgreSQL callers that insert matching audit evidence in the
+    // same transaction cannot remove an unposted draft after period close.
+    await assert.rejects(
+      h.prisma.$transaction(async tx=>{
+        await tx.auditLog.create({data:{
+          tenantId:h.tenant.id,userId:h.admin.id,
+          action:'ledger.entry.draft-deleted',entity:'LedgerEntry',entityId:draft.id,
+          after:{attempt:'closed-period-unauthorized'}
+        }});
+        await tx.ledgerEntry.delete({where:{id:draft.id}});
+      }),
+      /ACCOUNTING_PERIOD_CLOSED/,
+      'A current-transaction audit must never override a closed period'
+    );
+    assert.ok(await h.prisma.ledgerEntry.findUnique({where:{id:draft.id}}),
+      'Closed-period deletion must not remove the draft');
+    assert.equal(await h.prisma.auditLog.count({where:{
+      tenantId:h.tenant.id,entity:'LedgerEntry',entityId:draft.id,
+      action:'ledger.entry.draft-deleted'
+    }}),0,'Failed closed-period deletion must roll back attempted audit');
 
     const openDraft = await h.ok('/accounting/entries', {
       method: 'POST',

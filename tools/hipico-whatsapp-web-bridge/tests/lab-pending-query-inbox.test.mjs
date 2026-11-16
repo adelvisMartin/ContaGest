@@ -857,6 +857,14 @@ test('rechecks original LAB TTL after a slow canonical HTTP response before send
       read:async id=>{assert.equal(id,MESSAGE);actions.push('freshness-read');return null;}
     },
     backendState:'online',BACKEND_SYNC_ENABLED:true,
+    // These synthetic configuration values are lexically required by the
+    // extracted production function. The canonical query and eligibility
+    // transports remain mocked and MUST NOT contact any SOURCE channel.
+    INGEST_URL:'http://127.0.0.1:19991/api/v1/hipico/bridge/events',
+    TOKEN:'synthetic-lab-only-qa-token',
+    LAB_GROUP_ID:LAB,
+    LAB_CHANNEL_KEY:'control-hipico-lab',
+    BACKEND_TIMEOUT_MS:5000,
     labTestTagFor:()=> '[LABTEST:012345abcd]',
     labTestReplyJournal:{
       read:async()=>{actions.push('journal-read');return null;},
