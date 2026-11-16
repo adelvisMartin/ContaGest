@@ -12,7 +12,7 @@ const priorityKinds = new Set(['P0','P1','P2']);
 const requiredRedactions = ['authorization','cookie','set-cookie','password','apiKey','apiSecret','webhookSignature','personalData','rawBody'];
 
 // This is a provenance/documentation guard, not a runtime SSRF defense.
-const sensitiveKey = /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|signature|(?:^|[_-])(?:auth(?:orization)?|session(?:[_-]?id)?|jwt|bearer|credential)(?:$|[_-]))/i;
+const sensitiveKey = /(?:^|[_-])(?:api[_-]?(?:key|secret)|access[_-]?token|refresh[_-]?token|webhook[_-]?signature|token|secret|password|signature|auth(?:orization)?|session(?:[_-]?id)?|jwt|bearer|credential)(?:$|[_-])/i;
 
 function hasSensitiveParameter(queryOrFragment) {
   // URI fragments may contain query-shaped segments before AND after '?'.
