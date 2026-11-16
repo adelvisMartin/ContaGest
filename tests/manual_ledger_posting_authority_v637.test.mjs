@@ -67,10 +67,16 @@ test('#637 accounting period close is a tenant-scoped transactional domain comma
   const source=readFileSync(new URL('../backend/src/modules/accounting/accounting.service.ts',import.meta.url),'utf8');
   const body=source.split('export async function closeAccountingPeriod(')[1]?.split('function normalizeLedgerLines')[0];
   assert.ok(body);
+  // Only the immutable lookup key may be read before the period/row locks.
+  // The status decision must be made from the tenant-scoped row re-read AFTER both locks.
+  const preLock=body.slice(body.indexOf('const candidate ='),body.indexOf('await lockAccountingPeriodMutation('));
+  assert.match(preLock,/where: \{ id: input\.periodId, tenantId: input\.tenantId, module: 'accounting' \}/);
+  assert.match(preLock,/select: \{ period: true \}/);
+  assert.doesNotMatch(preLock,/\bstatus\b|\bclosedAt\b|\bupdateMany\b|\bcreate\(/);
   // A tenant-scoped read discovers the period used for the shared advisory lock;
   // a second tenant-scoped read after FOR UPDATE is the mutation authority.
   const gates=['requirePostingActor(', 'prisma.$transaction(async (tx)',
-    'const candidate = await tx.closingPeriod.findFirst({',
+    'const candidate = await tx.closingPeriod.findFirst({', 'select: { period: true }',
     'await lockAccountingPeriodMutation(input.tenantId, candidate.period, tx);',
     'FOR UPDATE',
     'const existing = await tx.closingPeriod.findFirst({',
