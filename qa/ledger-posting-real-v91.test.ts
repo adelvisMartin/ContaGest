@@ -196,6 +196,64 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
     });
   });
 
+  await t.test('record-scoped legal hold blocks even atomically audited manual DRAFT deletion',async()=>{
+    const draft=await h.ok('/accounting/entries',{
+      method:'POST',body:JSON.stringify({
+        fiscalPeriod:PERIOD_MANUAL,description:`${RUN} held draft`,
+        lines:[
+          {accountCode:`${RUN}.TMPD`,accountName:'Held debit',debit:'1.00'},
+          {accountCode:`${RUN}.TMPC`,accountName:'Held credit',credit:'1.00'}
+        ]
+      })
+    });
+    // The compatibility migration projects lifecycle tenant references to TEXT,
+    // matching the canonical Tenant.id and this disposable PostgreSQL fixture.
+    const rows=await h.prisma.$queryRaw<Array<{id:string}>>`
+      INSERT INTO public."DataLegalHold"
+        ("tenantId","scopeType","entityType","recordId","reason","authorizationRef","createdBy")
+      VALUES
+        (${h.tenant.id},'record','LedgerEntry',${draft.id},
+         'Synthetic QA accounting evidence hold',${RUN+'-HOLD'},${h.admin.id})
+      RETURNING "id"::text AS id
+    `;
+    assert.ok(rows[0]?.id,'Legal hold fixture missing');
+    try{
+      await assert.rejects(
+        h.prisma.$transaction(async tx=>{
+          await tx.auditLog.create({data:{
+            tenantId:h.tenant.id,userId:h.admin.id,
+            action:'ledger.entry.draft-deleted',entity:'LedgerEntry',entityId:draft.id,
+            after:{attempt:'held-entry-denied'}
+          }});
+          await tx.ledgerEntry.delete({where:{id:draft.id}});
+        }),
+        /LEGAL_HOLD_ACTIVE/,
+        'An active record legal hold must outrank valid same-XID audit'
+      );
+      assert.ok(await h.prisma.ledgerEntry.findUnique({where:{id:draft.id}}),
+        'A held draft may not disappear');
+      assert.equal(await h.prisma.auditLog.count({where:{
+        tenantId:h.tenant.id,entity:'LedgerEntry',entityId:draft.id,
+        action:'ledger.entry.draft-deleted'
+      }}),0,'A denied held-delete audit must roll back');
+    } finally {
+      // A legal hold is immutable except for authorized release with evidence.
+      // Release in finally so even a failing test leaves no active synthetic hold.
+      await h.prisma.$transaction(async tx=>{
+        await tx.$queryRaw`SELECT set_config('contagest.lifecycle_hold_release','true',true)`;
+        await tx.$executeRaw`
+          UPDATE public."DataLegalHold" SET
+            "active"=false,"releasedAt"=CURRENT_TIMESTAMP,
+            "releasedBy"=${h.admin.id},"releaseAuthorizationRef"=${RUN+'-RELEASE'},
+            "releaseReason"='Synthetic QA fixture cleanup'
+          WHERE "id"=${rows[0].id}::uuid AND "tenantId"=${h.tenant.id}
+        `;
+      });
+    }
+    const deleted=await h.ok(`/accounting/entries/${draft.id}`,{method:'DELETE'});
+    assert.equal(deleted.deleted,true,'Released hold must allow an audited DRAFT delete');
+  });
+
   await t.test('legacy/manual drafts with an origin reference cannot be edited or deleted', async () => {
     // An intentionally inconsistent legacy fixture bypasses the public draft
     // constructor; its document-origin reference must remain protected.
