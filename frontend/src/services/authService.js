@@ -72,9 +72,12 @@ export const AuthService={
     const previous=AuthSession.get();
     AuthSession.clear();
     if(previous)Store.purgeSessionScope(previous);else Store.reset();
-    const purge=previous?purgeOfflineSession(previous):Promise.resolve();
-    try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}catch{/* Cookie revocation may be unavailable offline; local/session data is still purged. */}
-    await purge.catch(()=>undefined);
+    // Start local purge immediately, without producing an unhandled rejection
+    // while the remote revoke is in flight.
+    const purge=previous?purgeOfflineSession(previous).then(()=>null,error=>error):Promise.resolve(null);
+    try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}catch{/* Remote revocation can be unavailable offline; local identity is already cleared. */}
+    const purgeError=await purge;
+    if(purgeError)throw purgeError;
   },
   authHeaders(){return {};}
 };
