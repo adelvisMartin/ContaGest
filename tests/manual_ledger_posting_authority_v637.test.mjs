@@ -70,9 +70,9 @@ test('#637 accounting period close is a tenant-scoped transactional domain comma
   // Only the immutable lookup key may be read before the period/row locks.
   // The status decision must be made from the tenant-scoped row re-read AFTER both locks.
   const preLock=body.slice(body.indexOf('const candidate ='),body.indexOf('await lockAccountingPeriodMutation('));
-  assert.match(preLock,/where: \\{ id: input\\.periodId, tenantId: input\\.tenantId, module: 'accounting' \\}/);
-  assert.match(preLock,/select: \\{ period: true \\}/);
-  assert.doesNotMatch(preLock,/\\bstatus\\b|\\bclosedAt\\b|\\bupdateMany\\b|\\bcreate\\(/);
+  assert.match(preLock,/where: \{ id: input\.periodId, tenantId: input\.tenantId, module: 'accounting' \}/);
+  assert.match(preLock,/select: \{ period: true \}/);
+  assert.doesNotMatch(preLock,/\bstatus\b|\bclosedAt\b|\bupdateMany\b|\bcreate\(/);
   const gates=['requirePostingActor(', 'prisma.$transaction(async (tx)',
     'const candidate = await tx.closingPeriod.findFirst({', 'select: { period: true }',
     'await lockAccountingPeriodMutation(', 'FOR UPDATE',
