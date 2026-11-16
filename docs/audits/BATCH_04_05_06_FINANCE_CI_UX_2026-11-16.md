@@ -134,3 +134,24 @@ Los últimos tres comandos de navegador dependen de servidor/browser y fixture y
 - Validaciones del inventario UX no implican que las 60 vistas se hayan abierto o refactorizado. No se clonaron assets ni sistema Cg*. #637 tiene PR #1299 y no se ha duplicado.
 - Rollback por revertir commits propios y revalidar HEAD; no se revierten contabilidades ni se ejecutan migraciones.
 - **Entrega: PARTIAL / BLOCKED CI / NO MERGE**. La corrección aumenta la calidad del candidato, pero todavía no satisface todos los DoD de los 15 issues.
+
+## Iteración III — integridad HTTP del rastro de auditoría y nombres de BD efímera
+
+**Contexto de ejecución (2026-11-16):** PR #1310, rama `feat/04-05-06-atomic-crud-quality-20261116`. Baseline de `main`: `e7706f3dac3ae4c677fcdff05a662765fa6bdcc6`. Concurrencia y SHA del PR deben verificarse después de cada nuevo commit.
+
+### Nueva revisión FODA, causa raíz y modificación mínima
+
+- **Amenaza — pruebas de integridad insuficientes:** `qa/erp-operational-crud-v664.test.ts` comprobaba número de eventos create/update/delete pero no `userId`, `tenantId` ni la exactitud de `before/after`. Un rastro mal atribuido podría pasar. **Solución:** aserciones sobre identidad del actor firmado, tenant real, entidad persistida, estado anterior y posterior en create/update/delete, preservando el flujo HTTP real y sin nuevos endpoints. Se añade negativa PUT con `tenantId` falsificado que debe devolver 422, no modificar nombre ni crear audit adicional. Para POST sin permiso se usa RIF sintético único por ejecución y se comprueba que el conteo de filas sea cero.
+- **Amenaza — nombre efímero ambiguo:** el preflight `assertQaDisposableDatabaseConfig` reconocía cualquier cadena terminada en `_e2e`, `_drill` o `_restore`, incluso `shared%2Fother_e2e` tras decodificar (separadores o caracteres de control). **Solución:** aceptar sólo identificadores `[A-Za-z0-9_]` con sufijo efímero explícito, manteniendo los nombres legítimos `contagest_e2e` y `harness_drill`. Se añaden negativos de slash, backslash, NUL, newline y puntos codificados.
+- **Fortaleza:** ninguna mutación de negocio adicional, migración de SQL, permiso nuevo, dependencia externa, modificación de Control Hípico o CSS.
+- **Debilidad residual:** la nueva prueba de audit provenance aún necesita ejecución con PostgreSQL real/Express/Prisma y datos aislados. La comparación de URL, nombre y host loopback por sí sola **no demuestra** que un túnel local no apunte a otro clúster: el aprovisionamiento del CI debe garantizar que la base sea realmente efímera.
+- **Oportunidad (fuera de alcance):** medir la latencia de inserción AuditLog y rechazos de permisos antes de cualquier refactor del servicio o separación de dominios.
+
+### Evidencia de la iteración
+
+1. **VERIFIED, Node 22 nativo:** ejecución `node --test tests/qa_disposable_database_guard_v1288.test.mjs` sobre dos archivos exactos, aislados del repositorio completo. **4/4 PASS; 0 FAIL.** Antes de ejecutarlos, `git hash-object` local coincidió byte a byte con GitHub: guard `e63689e011a335aa818f21db3258b0b47bdf89dd`, test `2c5b57208844fb492e826353419a927011f79980`. Prueba el parser y rechazo de alias/nombres de BD, **no** un PostgreSQL conectado.
+2. **SOURCE SYNTHETIC, V8:** **7/7 callbacks** de contratos de atomicidad, harness, pin de HEAD del CI y 60 rutas sobre código real del HEAD `2ca5a2cf6d9a4cf4e58bafda0d4aa30952eff65e` con lectura y filesystem simulados. No equivale a `node --test` del repo, `tsc` o Browser E2E.
+3. **LOCAL BLOCKED:** falta checkout de repositorio y no hay Docker/PostgreSQL ni Playwright. No se ejecutaron `npm ci`, lint, typecheck, build ni integración HTTP real.
+4. **REMOTE CI:** al inicio de esta iteración, para `6116218a4bfd67bbf141cdd42afa41fbbc245efa` había 43 checks: 36 `queued`, 7 `skipped`, ningún PASS/FAIL material. Los runs no pertenecen al nuevo SHA; no deben usarse como veredicto. Se consultaron los tags reales `v7` de `actions/checkout`, `actions/setup-node` y `actions/upload-artifact`; todos existen, **por lo que no se atribuye el bloqueo de runners a esos tags**.
+
+**Criterio de salida:** un solo PR en borrador, sin merge y sin cerrar #638/#1288/#1289/#773/#1293/#1294 ni el resto del lote hasta demostrar Postgres17 real, suite exact-SHA, E2E Chromium/Firefox/WebKit, métricas y regresiones de seguridad.
