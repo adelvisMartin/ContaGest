@@ -1,7 +1,7 @@
 -- #849 additive relational Service Catalog foundation; no migration of existing Products.
 -- Product remains the only commercial pricing/tax authority.
-CREATE UNIQUE INDEX "Product_tenantId_id_key" ON public."Product"("tenantId","id");
-CREATE UNIQUE INDEX "Employee_tenantId_id_key" ON public."Employee"("tenantId","id");
+CREATE UNIQUE INDEX IF NOT EXISTS "Product_tenantId_id_key" ON public."Product"("tenantId","id");
+CREATE UNIQUE INDEX IF NOT EXISTS "Employee_tenantId_id_key" ON public."Employee"("tenantId","id");
 
 CREATE TABLE public."ServiceCatalogCategory" (
   "id" TEXT PRIMARY KEY DEFAULT (gen_random_uuid()::text),
