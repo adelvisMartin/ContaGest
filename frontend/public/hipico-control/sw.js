@@ -104,7 +104,8 @@ self.addEventListener('fetch', (event) => {
     const cache = await caches.open(SHELL_CACHE);
     const cached = await cache.match(request);
     if (cached) return cached;
-    const response = await fetch(request, { cache: 'no-store' });
+    // Public allowlisted assets must never be fetched with session cookies.
+    const response = await fetch(request, { cache: 'no-store', credentials: 'omit', redirect: 'error' });
     if (cacheablePublicResponse(response)) await cache.put(request, response.clone());
     return response;
   })());
