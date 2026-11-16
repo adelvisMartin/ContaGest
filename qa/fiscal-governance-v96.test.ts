@@ -26,6 +26,9 @@ async function userWithPermissions(h:any,name:string,permissions:string[]){
 
 test('issue #96 fiscal RBAC and audited state machine on real PostgreSQL',async(t)=>{
   const h=await createRealBackendHarness();
+  const database=await h.prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
+  assert.equal(database[0]?.name,'contagest_fiscal_v96_e2e',
+    'Legal acceptance cleanup is allowed only on the dedicated disposable #96 database');
   const readOnly=await userWithPermissions(h,'reader',['fiscal.read']);
   const closer=await userWithPermissions(h,'closer',['fiscal.read','fiscal.close']);
   const tenantB=await h.prisma.tenant.create({data:{rif:`${RUN}-B`,name:`${RUN} Tenant B`,legalName:`${RUN} Tenant B`}});
@@ -36,7 +39,23 @@ test('issue #96 fiscal RBAC and audited state machine on real PostgreSQL',async(
     await h.prisma.fiscalDocument.deleteMany({where:{tenantId:{in:[h.tenant.id,tenantB.id]},period:{in:[PERIOD_A,PERIOD_DOC,PERIOD_CROSS,PERIOD_LINK]}}}).catch(()=>undefined);
     await h.prisma.closingPeriod.deleteMany({where:{tenantId:{in:[h.tenant.id,tenantB.id]},period:{in:[PERIOD_A,PERIOD_DOC,PERIOD_CROSS,PERIOD_LINK]}}}).catch(()=>undefined);
     await h.prisma.auditLog.deleteMany({where:{tenantId:h.tenant.id,action:{startsWith:'fiscal.'}}}).catch(()=>undefined);
-    for(const actor of [readOnly,closer]){await h.prisma.licenseKey.deleteMany({where:{userId:actor.user.id}}).catch(()=>undefined);await h.prisma.userRole.deleteMany({where:{userId:actor.user.id}}).catch(()=>undefined);await h.prisma.rolePermission.deleteMany({where:{roleId:actor.role.id}}).catch(()=>undefined);await h.prisma.role.delete({where:{id:actor.role.id}}).catch(()=>undefined);await h.prisma.userProfile.delete({where:{id:actor.user.id}}).catch(()=>undefined);}
+    for(const actor of [readOnly,closer]){
+      // The production FK policy intentionally protects legal acceptance data.
+      // This deletion belongs exclusively to the isolated synthetic #96 DB.
+      await h.prisma.$executeRaw`
+        DELETE FROM public."CookiePreference"
+        WHERE "tenantId"=${h.tenant.id} AND "userId"=${actor.user.id}
+      `;
+      await h.prisma.$executeRaw`
+        DELETE FROM public."LegalAcceptance"
+        WHERE "tenantId"=${h.tenant.id} AND "userId"=${actor.user.id}
+      `;
+      await h.prisma.licenseKey.deleteMany({where:{userId:actor.user.id}});
+      await h.prisma.userRole.deleteMany({where:{userId:actor.user.id}});
+      await h.prisma.rolePermission.deleteMany({where:{roleId:actor.role.id}});
+      await h.prisma.role.delete({where:{id:actor.role.id}});
+      await h.prisma.userProfile.delete({where:{id:actor.user.id}});
+    }
     await h.prisma.tenant.delete({where:{id:tenantB.id}}).catch(()=>undefined);
   });
 
