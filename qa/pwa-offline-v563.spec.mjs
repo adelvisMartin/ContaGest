@@ -20,6 +20,12 @@ test.describe('PWA offline #563', () => {
   test('install and service worker update/recovery keep one coherent shell', async ({ page }) => {
     await page.goto('/');
     await waitForWorker(page);
+    await expect(page.locator('script[src*="pwa-install.js"]')).toHaveCount(1);
+    const ownRegistrations = await page.evaluate(async () => {
+      const items = await navigator.serviceWorker.getRegistrations();
+      return items.filter((item) => item.scope === new URL('/', location.href).href).length;
+    });
+    expect(ownRegistrations).toBe(1);
     const manifest = await page.locator('link[rel="manifest"]').getAttribute('href');
     expect(manifest).toBe('/manifest.webmanifest');
     const recovered = await page.evaluate(async () => {
