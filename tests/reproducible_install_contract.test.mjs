@@ -22,9 +22,13 @@ function assertLockedInstall(config, label) {
   assert.doesNotMatch(config.installCommand, /npm\s+install(?:\s|$)/);
 }
 
-function assertDeploymentBudget(config, label) {
+function assertDeploymentBudget(config, label, { allowFullyDisabled = false } = {}) {
   const deploymentEnabled = config.git?.deploymentEnabled;
-  assert.equal(typeof deploymentEnabled, 'object', `${label} deploymentEnabled must be a branch allowlist object`);
+  // A full disable is STRICTER than the allowlist, and is authorized only
+  // for the repository-root config. It must never become a blanket escape.
+  if (allowFullyDisabled && deploymentEnabled === false) return;
+  assert.ok(deploymentEnabled && typeof deploymentEnabled === 'object' && !Array.isArray(deploymentEnabled),
+    `${label} deploymentEnabled must be the exact branch allowlist`);
   assert.deepEqual(deploymentEnabled, EXPECTED_DEPLOYMENT_POLICY, `${label} deployment budget drifted`);
 }
 
@@ -46,6 +50,17 @@ test('browser pre-QA reuses the locked Vercel install and only adds the pinned s
 });
 
 test('Vercel auto-deploy budget is fail-closed in root and effective frontend project config', () => {
-  assertDeploymentBudget(rootVercel, 'root vercel.json');
+  assertDeploymentBudget(rootVercel, 'root vercel.json', { allowFullyDisabled: true });
   assertDeploymentBudget(frontendVercel, 'frontend/vercel.json');
+});
+
+test('Vercel deployment policy rejects true, wildcards, missing policies, and frontend full-disable drift', () => {
+  const root = { allowFullyDisabled: true };
+  for (const unsafe of [
+    undefined, null, true, [], { '**': true }, { ...EXPECTED_DEPLOYMENT_POLICY, 'feature/**': true }
+  ]) {
+    assert.throws(() => assertDeploymentBudget({ git: { deploymentEnabled: unsafe } }, 'root', root));
+  }
+  assert.throws(() => assertDeploymentBudget({ git: { deploymentEnabled: false } }, 'frontend'));
+  assert.doesNotThrow(() => assertDeploymentBudget({ git: { deploymentEnabled: false } }, 'root', root));
 });
