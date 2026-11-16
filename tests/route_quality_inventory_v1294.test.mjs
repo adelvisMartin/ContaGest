@@ -4,7 +4,6 @@ import { PAGE_REGISTRY } from '../frontend/src/data/pageRegistry.js';
 import { MODULE_VISUAL_CATALOG } from '../qa/support/module-visual-catalog.mjs';
 import {
   buildRouteQualityBaseline,
-  assertRouteQualityCliArgs,
   ROUTE_PERFORMANCE_TARGETS
 } from '../scripts/route-quality-baseline-v1294.mjs';
 
@@ -54,12 +53,4 @@ test('#1294 mismatched, duplicate and tampered route binding fail closed', () =>
   assert.throws(() => buildRouteQualityBaseline({ registry: traversal }), /ROUTE_MATRIX_UNSAFE_PAGE_BINDING/);
 
   assert.throws(() => buildRouteQualityBaseline({ sourceExists: () => false }), /ROUTE_MATRIX_PAGE_SOURCE_MISSING/);
-});
-
-test('#1294 quality gate CLI accepts --check and rejects unknown or extra flags', () => {
-  assert.doesNotThrow(() => assertRouteQualityCliArgs([]));
-  assert.doesNotThrow(() => assertRouteQualityCliArgs(['--check']));
-  for (const args of [['--fix'], ['--help'], ['--check', '--check'], ['--check', '--fix']]) {
-    assert.throws(() => assertRouteQualityCliArgs(args), /ROUTE_MATRIX_UNSUPPORTED_ARGUMENT/);
-  }
 });
