@@ -93,6 +93,20 @@
   async function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
     try {
+      if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+        // Local development must not persist the PWA shell or erase the
+        // unrelated Hípico worker/data sharing the same origin.
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations
+          .filter((item) => item.scope === appBase.href)
+          .map((item) => item.unregister()));
+        if (typeof caches !== 'undefined') {
+          const keys = await caches.keys();
+          await Promise.all(keys.filter((key) => key.startsWith('contagest-ve-'))
+            .map((key) => caches.delete(key)));
+        }
+        return;
+      }
       registration = await navigator.serviceWorker.register(SW_URL.href, { scope: appBase.pathname, updateViaCache: 'none' });
       sendSessionScope(registration.active || navigator.serviceWorker.controller);
       if (registration.waiting) registration.waiting.postMessage({ type: 'ACTIVATE_UPDATE' });
