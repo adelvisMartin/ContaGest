@@ -43,7 +43,7 @@ CREATE INDEX "FiscalRuleVersion_active_rule_idx"
 -- The legal capture may transition once from DRAFT to reviewed/rejected.
 -- No user or later sidecar GRANT may silently replace source/hash metadata.
 CREATE FUNCTION public.contagest_751_guard_legal_source()
-RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $
+RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog AS $$
 BEGIN
   IF TG_OP='DELETE' THEN
     RAISE EXCEPTION 'FISCAL_LEGAL_SOURCE_IMMUTABLE' USING ERRCODE='55000';
@@ -57,7 +57,7 @@ BEGIN
     RAISE EXCEPTION 'FISCAL_LEGAL_SOURCE_IMMUTABLE' USING ERRCODE='55000';
   END IF;
   RETURN NEW;
-END; $;
+END; $$;
 CREATE TRIGGER contagest_751_guard_legal_source
   BEFORE UPDATE OR DELETE ON public."FiscalLegalSource"
   FOR EACH ROW EXECUTE FUNCTION public.contagest_751_guard_legal_source();
