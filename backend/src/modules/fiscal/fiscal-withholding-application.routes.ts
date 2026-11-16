@@ -206,7 +206,8 @@ router.post('/',requirePermission('fiscal.post_withholding'),validateBody(applic
     const period=recognizedAt.toISOString().slice(0,7);
     await assertPeriods(tx,ctx.tenantId,period);
     const fx=await getFxPolicy(ctx.tenantId,tx);
-    if(fx.functionalCurrency!=='VES'||invoice.currency!=='VES'||!invoice.total||!invoice.exchangeRate.eq(1))
+    if(fx.functionalCurrency!=='VES'||invoice.currency!=='VES'||!invoice.total.gt(0)||
+       !posted.lines.length||posted.lines.some(line=>line.currency!=='VES'||!line.exchangeRate.eq(1)))
       throw bad('Aplicación IVA interna admitida sólo para libros y facturas VES con FX=1.','RETIVA_CURRENCY_UNSUPPORTED');
 
     const [buyer,vatAtInvoice,retAtRecognition]=await Promise.all([
