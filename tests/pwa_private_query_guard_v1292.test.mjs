@@ -10,7 +10,7 @@ const WORKERS = [
   { path: 'frontend/public/hipico-control/sw.js', scope: 'https://qa.example.test/hipico-control/', guard: 'isSensitive', intercepts: true },
 ];
 
-function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicResponse = false } = {}) {
+function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicResponse = false, cacheMiss = false } = {}) {
   const listeners = new Map();
   const fetchCalls = [];
   const cacheWrites = [];
@@ -18,7 +18,7 @@ function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicRespo
   const cache = {
     match: async (request) => {
       cacheReads.push(String(request?.url || request));
-      return new Response('cached public shell', { status: 200 });
+      return cacheMiss ? undefined : new Response('cached public shell', { status: 200 });
     },
     put: async (request) => {
       cacheWrites.push(String(request?.url || request));
@@ -191,4 +191,22 @@ test('#1292 requests bound to an authorization header are excluded from both off
       assert.equal(worker.cacheWrites.length, 0, spec.path + ':' + name);
     }
   }
+});
+
+test('#1292 Hipico SW honors private/no-store/Vary:* when populating runtime assets', async () => {
+  const spec = WORKERS[1];
+  const url = new URL('assets/js/app.js', spec.scope).href;
+  for (const headers of [
+    { 'Cache-Control': 'private, max-age=3600' },
+    { 'Cache-Control': 'public, no-store' },
+    { 'Vary': '*' }
+  ]) {
+    const worker = makeWorker(spec, { responseHeaders: headers, cacheMiss: true });
+    assert.equal((await worker.fireFetch(url, 'script')).status, 200);
+    assert.equal(worker.cacheReads.length, 1);
+    assert.equal(worker.cacheWrites.length, 0, JSON.stringify(headers));
+  }
+  const publicWorker = makeWorker(spec, { cacheMiss: true });
+  assert.equal((await publicWorker.fireFetch(url, 'script')).status, 200);
+  assert.equal(publicWorker.cacheWrites.length, 1, 'public allowlisted assets still get offline cache');
 });
