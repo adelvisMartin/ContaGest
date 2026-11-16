@@ -268,3 +268,30 @@ La revisión final del instalador `backend/scripts/prisma-deploy-safe.mjs` y su 
 - Test, lint, typecheck, npm ci, auditoría de dependencias, migraciones PG17 desde cero/upgrade, Playwright y Hípico LAB: **BLOCKED / NOT_EXECUTED** desde este entorno. No se debilitan gates ni se abren integraciones SOURCE.
 
 **FODA:** fortaleza = una frontera de DB al comenzar QA y respeto del ledger append-only; debilidad = ejecución integral todavía no confirmada; oportunidad = proveer PG17 efímero y resultados exact-SHA; amenaza = url de conexión incorrecta, tests de cleanup destructivos y runners Actions en cola. **Decisión: DRAFT / NO-GO** hasta gates requeridos en verde y revisión de migraciones históricas #849/#751. No se intentó deploy ni merge.
+
+## 15. Octava iteración — causa raíz de WORKTREE_DIRTY y aislamiento QA (2026-11-16)
+
+**HECHOS HISTÓRICOS, no transferencia de PASS al HEAD nuevo:** GitHub Actions Hípico Operations run `43899562355` en `6947b1dde4b2f4b411e82765879334fd0860154d` concluyó `failure` en operations-regression (17/374 tests fallidos, 357 verdes) y browser-regression. En browser, el paso `npm run test:browser:hipico` terminó en `HIPICO_CANDIDATE_WORKTREE_DIRTY` antes de abrir Chromium. Un fallo de la suite de bridge en `lab-pending-query-inbox.test.mjs:844` presentó `INGEST_URL is not defined` al ejecutar `resumePendingLabQueries` mediante VM con contexto sintético insuficiente. Quedan otras 16 fallas históricas sin atribución al HEAD actual: no cambiar tests de autoridad para conseguir verde.
+
+### Causa raíz reproducida mediante transformación fuente
+
+`backend/package.json` ejecuta `postinstall: npm run prisma:generate`; `prisma:generate` invoca `backend/scripts/sync-employee-prisma-schema.mjs`. El script añade modelos `PriceBook`, `PriceBookLocation`, `PriceEntry` y `SalesLinePriceSnapshot` cuando falta `PriceBook`. Se ejecutó en un evaluador JavaScript aislado **el mismo algoritmo del script** contra el `backend/prisma/schema.prisma` recuperado de GitHub en esta sesión: resultó distinto, con 2.170 bytes añadidos exactamente al final. Así `npm ci` podía modificar un archivo controlado por Git después del gate inicial, y el gate posterior de Playwright abortaba legítimamente.
+
+**Corrección de la causa raíz, sin bypass de SHA ni del árbol limpio:** se versionaron los cuatro modelos en `schema.prisma` como autoridad fuente. El script conserva la migración condicional para compatibilidad de copias antiguas, pero sólo ejecuta `writeFileSync` cuando el contenido cambia. El mismo algoritmo, ejecutado de nuevo contra el esquema ya corregido, produjo **sin cambios tanto en la primera como en la segunda proyección**. Un test en `tests/reproducible_install_contract.test.mjs` exige exactamente una declaración por modelo, coincidencia literal con la plantilla del generador y escritura sólo cuando cambia.
+
+### Contrato LAB de expiración pre-envío
+
+El test VM de `lab-pending-query-inbox.test.mjs` ahora proporciona únicamente configuración sintética de LAB (`INGEST_URL` local, token ficticio, id de grupo LAB, canal y timeout) para las dependencias léxicas de `resumePendingLabQueries`. No altera el Bridge productivo, no habilita mensajería SOURCE ni elimina asserts de WAL/TTL. La función real extraída del source se ejecutó con los mocks de transporte y devolvió la secuencia esperada: `journal-read → handoff-before → backoff-allowed → canonical-read → backoff-clear → freshness-read → expired-log`, **sin intento de prepare/send**. Esta es ejecución aislada con mocks, no un gate Hípico completo ni recepción física.
+
+### Otras mejoras vigentes de esta iteración
+
+En #90/#91/#96, `createRealBackendHarness` verifica la DB conectada y `NODE_ENV=test` **antes** de crear sesiones/tenant de QA; allowlists exactas conforme a los workflows. Suites #90/#96 no intentan eliminar operaciones financieras o fiscal/auditoría inmutables ni silencian fallos de esas eliminaciones. Se quitaron del fixture #90 los arrays/push de IDs que quedaron obsoletos tras ese cambio; permanece sólo la referencia realmente usada para el banco. El harness superó 8/8 escenarios aislados con driver simulado (3 bases válidas, 5 fallos cerrados) y 15/15 comparaciones estructurales contra flujos y workflows. Son comprobaciones limitadas a código fuente/mock, no pruebas de servicio PG.
+
+### FODA y gates
+
+- **Fortaleza:** instalación reproducible más coherente: el código generado está versionado, el generador no hace escrituras innecesarias y el gate exact-SHA sigue intacto.
+- **Debilidad:** el PR acumula decenas de commits/archivos de riesgo; la integración en PostgreSQL, el navegador real y los 16 restantes fallos Hípico previos no tienen nuevo PASS.
+- **Oportunidad:** ejecutar `npm ci` en checkout limpio y comparar `git status --porcelain`; luego suite LAB, PostgreSQL y Playwright con artifacts exact-SHA.
+- **Amenaza:** migraciones históricas #849/#751 y proyección #562, bloqueo de Actions en cola, deuda Hípico de seguridad/entrega y retención legal sin E2E post-commit.
+
+**Estado: DRAFT / PARTIAL / BLOCKED / NO-GO**. No declarar limpio el checkout ni verdes los tests sin logs efectivos del HEAD; no hacer merge/deploy; no conectar ni enviar a SOURCE.
