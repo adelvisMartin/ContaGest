@@ -67,7 +67,13 @@ test('must reject encoded credential parameter names and fragments in provenance
   rejected(v => { v.providers[0].source = 'https://docs.example.com/?jwt=example'; }, 'HTTPS_PROVENANCE');
 });
 test('must preserve normal public documentation links with harmless query and anchor', () => {
-  assert.deepEqual(mutate(v => { v.providers[0].source = 'https://docs.frappe.io/framework/user/en/api/rest?lang=en#authentication'; }), []);
+  for (const source of [
+    'https://docs.frappe.io/framework/user/en/api/rest?lang=en#authentication',
+    'https://docs.example.com/#tokenization?tab=1',
+    'https://docs.example.com/#signatureAlgorithm?view=reference'
+  ]) {
+    assert.deepEqual(mutate(v => { v.providers[0].source = source; }), []);
+  }
 });
 
 test('must apply the same provenance guard to license sources', () => {
