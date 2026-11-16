@@ -107,8 +107,8 @@ function mayCachePublicResponse(response) {
   const directives = (response.headers.get('cache-control') || '')
     .split(',').map((part) => part.trim().split('=')[0].toLowerCase());
   if (directives.includes('private') || directives.includes('no-store')) return false;
-  return !(response.headers.get('vary') || '')
-    .split(',').some((header) => header.trim() === '*');
+  return !(response.headers.get('vary') || '').toLowerCase().split(',')
+    .some((header) => ['*', 'cookie', 'authorization', 'x-api-key'].includes(header.trim()));
 }
 
 async function assetCacheMatch(request) {
