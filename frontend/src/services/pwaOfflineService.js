@@ -63,11 +63,19 @@ export function setServiceWorkerSession(session) {
 
 function deleteDatabase(name) {
   if (typeof indexedDB === 'undefined') return Promise.resolve();
-  return new Promise((resolve) => {
-    const request = indexedDB.deleteDatabase(name);
+  return new Promise((resolve, reject) => {
+    // IndexedDB may keep the old database alive while another tab holds a
+    // connection. Never turn blocked/error into a successful privacy purge.
+    let request;
+    try { request = indexedDB.deleteDatabase(name); }
+    catch (error) { reject(error); return; }
     request.onsuccess = () => resolve();
-    request.onerror = () => resolve();
-    request.onblocked = () => resolve();
+    request.onerror = () => reject(request.error || new Error('OFFLINE_DB_DELETE_FAILED'));
+    request.onblocked = () => {
+      const error = new Error('OFFLINE_DB_DELETE_BLOCKED');
+      error.code = 'OFFLINE_DB_DELETE_BLOCKED';
+      reject(error);
+    };
   });
 }
 
@@ -118,16 +126,31 @@ function purgeWebStorage(session) {
 
 export async function purgeOfflineSession(session) {
   const scopeToken = sessionScope(session);
-  purgeWebStorage(session);
-  postToServiceWorker({ type: 'CLEAR_SESSION_DATA', scopeToken });
-  if (typeof caches !== 'undefined') {
-    const names = await caches.keys();
-    // Exact ownership only. Prefix matching can delete another user's cache
-    // when their hashed scope starts with the current scope's token.
-    const owned = new Set([sessionCacheName(session), `${SW_CACHE_PREFIX}${scopeToken}`]);
-    await Promise.all(names.filter((name) => owned.has(name)).map((name) => caches.delete(name)));
+  const errors = [];
+  try { purgeWebStorage(session); }
+  catch (error) { errors.push(error); }
+  try { postToServiceWorker({ type: 'CLEAR_SESSION_DATA', scopeToken }); }
+  catch (error) { errors.push(error); }
+
+  // Both stores must be attempted even if one fails. A blocked database may
+  // finish deletion later, but cannot be reported as already purged.
+  const results = await Promise.allSettled([
+    (async () => {
+      if (typeof caches === 'undefined') return;
+      const names = await caches.keys();
+      const owned = new Set([sessionCacheName(session), `${SW_CACHE_PREFIX}${scopeToken}`]);
+      await Promise.all(names.filter((name) => owned.has(name)).map((name) => caches.delete(name)));
+    })(),
+    purgeIndexedDb(session)
+  ]);
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason);
   }
-  await purgeIndexedDb(session);
+  if (errors.length > 0) {
+    const error = new Error('No se pudo borrar toda la información offline. Cierra otras pestañas y vuelve a intentarlo.');
+    error.code = 'OFFLINE_SESSION_PURGE_FAILED';
+    throw error;
+  }
 }
 
 function openOutbox(session) {
