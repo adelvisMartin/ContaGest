@@ -10,7 +10,7 @@ const WORKERS = [
   { path: 'frontend/public/hipico-control/sw.js', scope: 'https://qa.example.test/hipico-control/', guard: 'isSensitive', intercepts: true },
 ];
 
-function makeWorker(spec, { offline = false } = {}) {
+function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicResponse = false } = {}) {
   const listeners = new Map();
   const fetchCalls = [];
   const cacheWrites = [];
@@ -39,7 +39,10 @@ function makeWorker(spec, { offline = false } = {}) {
     fetch: async (request, options) => {
       fetchCalls.push({ url: request.url, cache: options?.cache });
       if (offline) throw new Error('NETWORK_OFFLINE');
-      return new Response('network shell', { status: 200 });
+      const response = new Response('network shell', { status: 200, headers: responseHeaders });
+      // Node Response.type is "default"; browsers return "basic" for same-origin.
+      if (asPublicResponse) Object.defineProperty(response, 'type', { value: 'basic' });
+      return response;
     },
   };
   const source = readFileSync(new URL('../' + spec.path, import.meta.url), 'utf8');
@@ -118,3 +121,35 @@ for (const spec of WORKERS) {
     assert.equal(worker.cacheReads.length, 1);
   });
 }
+
+test('#1292 ERP SW never stores HTTP private/no-store/Vary:* asset responses', async () => {
+  const spec = WORKERS[0];
+  for (const headers of [
+    { 'Cache-Control': 'private, max-age=3600' },
+    { 'Cache-Control': 'public, no-store' },
+    { 'Vary': '*' }
+  ]) {
+    const worker = makeWorker(spec, { responseHeaders: headers, asPublicResponse: true });
+    const response = worker.fireFetch(new URL('assets/public.js', spec.scope).href, 'script');
+    assert.equal((await response).status, 200);
+    assert.equal(worker.cacheWrites.length, 0, JSON.stringify(headers));
+  }
+  const publicWorker = makeWorker(spec, { asPublicResponse: true });
+  assert.equal((await publicWorker.fireFetch(new URL('assets/public.js', spec.scope).href, 'script')).status, 200);
+  assert.equal(publicWorker.cacheWrites.length, 1, 'ordinary public assets remain cacheable');
+});
+
+test('#1292 ERP SW never poisons its public shell with arbitrary route HTML', async () => {
+  const spec = WORKERS[0];
+  const dynamicWorker = makeWorker(spec, { asPublicResponse: true });
+  assert.equal((await dynamicWorker.fireFetch(new URL('?module=private-output', spec.scope).href)).status, 200);
+  assert.equal(dynamicWorker.cacheWrites.length, 0, 'dynamic navigation must not overwrite the public shell');
+  const privateShell = makeWorker(spec, {
+    responseHeaders: { 'Cache-Control': 'no-store' }, asPublicResponse: true
+  });
+  assert.equal((await privateShell.fireFetch(spec.scope)).status, 200);
+  assert.equal(privateShell.cacheWrites.length, 0, 'no-store HTML must not be copied to CacheStorage');
+  const publicShell = makeWorker(spec, { asPublicResponse: true });
+  assert.equal((await publicShell.fireFetch(spec.scope)).status, 200);
+  assert.equal(publicShell.cacheWrites.length, 1, 'cacheable public entrypoint can still refresh the shell');
+});
