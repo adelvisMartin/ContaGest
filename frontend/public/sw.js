@@ -82,6 +82,16 @@ function isPublicStaticAsset(url) {
     || STATIC_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
 }
 
+function mayCachePublicResponse(response) {
+  if (!response.ok || (response.type !== 'basic' && response.type !== 'cors')) return false;
+  // CacheStorage does not honor HTTP Cache-Control on its own.
+  const directives = (response.headers.get('cache-control') || '')
+    .split(',').map((part) => part.trim().split('=')[0].toLowerCase());
+  if (directives.includes('private') || directives.includes('no-store')) return false;
+  return !(response.headers.get('vary') || '')
+    .split(',').some((header) => header.trim() === '*');
+}
+
 async function assetCacheMatch(request) {
   const cache = await caches.open(ASSET_CACHE);
   return cache.match(request);
@@ -90,7 +100,7 @@ async function assetCacheMatch(request) {
 async function networkFirst(request) {
   try {
     const response = await fetch(request, { cache: 'no-store' });
-    if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
+    if (mayCachePublicResponse(response)) {
       const cache = await caches.open(ASSET_CACHE);
       await cache.put(request, response.clone());
     }
@@ -123,7 +133,9 @@ self.addEventListener('fetch', (event) => {
       const shellUrl = scoped('./index.html');
       try {
         const response = await fetch(request, { cache: 'no-store' });
-        if (response.ok) {
+        // Only the canonical public entrypoint may refresh the offline shell.
+        if ((url.toString() === scoped('./') || url.toString() === shellUrl)
+            && mayCachePublicResponse(response)) {
           const cache = await caches.open(ASSET_CACHE);
           await cache.put(shellUrl, response.clone());
         }
@@ -151,7 +163,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith((async () => {
     const cached = await assetCacheMatch(request);
     const refresh = fetch(request, { cache: 'no-store' }).then(async (response) => {
-      if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
+      if (mayCachePublicResponse(response)) {
         const cache = await caches.open(ASSET_CACHE);
         await cache.put(request, response.clone());
       }
