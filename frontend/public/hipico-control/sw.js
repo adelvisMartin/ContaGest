@@ -55,10 +55,20 @@ function offlineNavigationShell(url) {
   return url.pathname.endsWith('/recovery.html') ? './recovery.html' : './index.html';
 }
 
+async function primeShell() {
+  const cache = await caches.open(SHELL_CACHE);
+  // addAll() may persist authenticated or no-store responses; explicitly
+  // fetch without credentials and reject unsafe resources before writing.
+  await Promise.all([...APP_SHELL_URLS].map(async (url) => {
+    const request = new Request(url, { cache: 'reload', credentials: 'omit', redirect: 'error' });
+    const response = await fetch(request);
+    if (!cacheablePublicResponse(response)) throw new Error('HIPICO_PRIVATE_SHELL_RESPONSE');
+    await cache.put(request, response);
+  }));
+}
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
-    const cache = await caches.open(SHELL_CACHE);
-    await cache.addAll([...APP_SHELL_URLS]);
+    await primeShell();
     await self.skipWaiting();
   })());
 });
