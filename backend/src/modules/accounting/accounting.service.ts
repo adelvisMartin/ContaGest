@@ -27,6 +27,7 @@ export type LedgerAuditContext = {
   userId?: string;
   ipAddress?: string;
   userAgent?: string;
+  requestId?: string | null;
 };
 
 export type LedgerLifecycleAction = 'post' | 'reverse' | 'edit' | 'delete';
@@ -322,9 +323,11 @@ export async function deleteDraftLedgerEntry(input: {
         tenantId: input.tenantId, userId: actorId,
         action: 'ledger.entry.draft-deleted',
         entity: 'LedgerEntry', entityId: entry.id,
-        before: { source: entry.source, fiscalPeriod: entry.fiscalPeriod,
-          lineCount: entry.lines.length, posted: entry.posted },
-        after: { deleted: true },
+        // Preserve the previous route-level forensic before-snapshot, including
+        // exact Decimal amounts and line details, but commit it with DELETE.
+        // Serializing first gives Prisma JSON its canonical string/number types.
+        before: JSON.parse(JSON.stringify(entry)) as Prisma.InputJsonValue,
+        after: { deleted: true, requestId: input.audit?.requestId || null },
         ipAddress: input.audit?.ipAddress || null,
         userAgent: input.audit?.userAgent || null
       }
