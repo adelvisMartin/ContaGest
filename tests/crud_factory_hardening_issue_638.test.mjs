@@ -204,3 +204,33 @@ test('#638: registration type safety and runtime authority gate cannot be bypass
     assert.match(manifest,new RegExp("model:'"+model+"'"));
   }
 });
+
+
+test('#638/#1289: every legacy CRUD mutation and audit are one database transaction', () => {
+  const factory = read('backend/src/modules/crud.factory.ts');
+  const audit = read('backend/src/shared/services/audit.service.ts');
+  const handlers = [
+    { start: "  router.post('/',", end: "  router.put('/:id',", action: 'create' },
+    { start: "  router.put('/:id',", end: "  router.delete('/:id',", action: 'update' },
+    { start: "  router.delete('/:id',", end: '  return router;', action: 'delete' }
+  ];
+  for (const { start, end, action } of handlers) {
+    const from = factory.indexOf(start);
+    const until = factory.indexOf(end, from + start.length);
+    assert.ok(from >= 0 && until > from, action + ': CRUD handler not found');
+    const block = factory.slice(from, until);
+    assert.match(block, /prisma\.\$transaction\(async \(tx\) => \{/,
+      action + ': mutation must be transactional');
+    assert.match(block, /getDelegate\(tx\)/, action + ': mutation must use tx delegate');
+    assert.match(block, new RegExp('await writeAudit\\(\\{[\\s\\S]*?action: \\'' + action + '\\'[\\s\\S]*?\\}, tx\\)'),
+      action + ': audit must run on the same transaction');
+    assert.ok(block.indexOf('await writeAudit(') < block.indexOf('return ' + (
+      action === 'create' ? 'created' : action === 'update' ? 'updated' : 'deleted') + ';'),
+      action + ': audit must complete before committing');
+    assert.doesNotMatch(block, /\.catch\(\(\) => null\)/, action + ': no swallowed audit errors');
+  }
+  assert.match(audit, /\(tx \?\? prisma\)\.auditLog\.create\(/);
+  assert.match(audit, /return tx \? operation : operation\.catch\(\(\) => null\)/);
+  assert.match(factory, /const where = \{ id: parseCrudRouteId\(req\.params\.id\), tenantId: ctx\.tenantId \};/);
+  assert.equal((factory.match(/prisma\.\$transaction\(async \(tx\) => \{/g) || []).length, 3);
+});
