@@ -56,6 +56,9 @@ jobs:
       - name: Install workspace from lockfile
         run: npm ci --no-audit --no-fund
 
+      - name: Verify private URL/offline cache boundary
+        run: node --test tests/pwa_private_query_guard_v1292.test.mjs
+
       - name: Install Chromium used by build pre-QA
         run: npx playwright install --with-deps chromium
 
