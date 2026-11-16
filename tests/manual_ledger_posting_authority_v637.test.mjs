@@ -129,6 +129,12 @@ test('#637 manual DRAFT deletion requires atomic audit and cannot drop protected
   assert.match(migration,/a\.xmin::text\s*=\s*\(pg_current_xact_id\(\)::text::numeric % 4294967296\)::text/,
     'A previously committed deletion audit must never authorize a later transaction');
   assert.match(migration,/data_lifecycle_assert_not_held/);
+  const sqlQa=readFileSync(new URL('../qa/ledger-posting-real-v91.test.ts',import.meta.url),'utf8');
+  assert.match(sqlQa,/record-scoped legal hold blocks even atomically audited manual DRAFT deletion/);
+  assert.match(sqlQa,/LEGAL_HOLD_ACTIVE/);
+  assert.match(sqlQa,/contagest\.lifecycle_hold_release/);
+  assert.match(sqlQa,/finally \{/,
+    'Legal hold fixture must be released on both assertion success and failure');
   // The canonical #562 migration is projected from UUID to TEXT because
   // Tenant.id is TEXT. An explicit ::uuid here breaks fresh/upgrade installs.
   const compat=readFileSync(new URL('../backend/scripts/migration-compat-v626.mjs',import.meta.url),'utf8');
