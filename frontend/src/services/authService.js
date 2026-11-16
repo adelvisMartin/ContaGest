@@ -10,7 +10,9 @@ import { purgeOfflineSession, setServiceWorkerSession } from './pwaOfflineServic
 
 installLoginEnhancer();
 installSessionAccessGuard();
-installMultiTenantEnhancer();
+// Lazy callback avoids an import cycle; the selector delegates to the single
+// AuthService tenant-switch owner only when the user changes the selection.
+installMultiTenantEnhancer((tenantId)=>AuthService.switchTenant(tenantId));
 installLegalAcceptanceEnhancer();
 
 const DEMO_USER={id:'demo-admin',name:'Administrador Local',fullName:'Administrador Local',email:'admin@erp.local',role:'admin',permissions:['*']};
