@@ -24,13 +24,14 @@ const APP_SHELL_URLS = new Set(APP_SHELL.map(scoped));
 const PRIVATE_QUERY_KEY = /^(?:t|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth|authorization|code|api[_-]?key|apikey|secret|password|session(?:[_-]?id)?|jwt|signature|sig|x-amz-(?:signature|credential)|x-goog-signature)$/i;
 function hasPrivateQueryParameter(url) {
   for (const key of url.searchParams.keys()) {
-    if (PRIVATE_QUERY_KEY.test(key)) return true;
+    if (PRIVATE_QUERY_KEY.test(key.normalize('NFKC'))) return true;
   }
   return false;
 }
 function isSensitive(url) {
   if (hasPrivateQueryParameter(url)) return true;
   let pathname;
+  if (/%25/i.test(url.pathname)) return true;
   try { pathname = decodeURIComponent(url.pathname); }
   catch { return true; } // Malformed escapes must not reach offline fallback.
   return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(pathname);
