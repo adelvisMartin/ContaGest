@@ -7,6 +7,7 @@ on:
       - 'frontend/**'
       - 'qa/erp-visual-overlap-v4951.spec.mjs'
       - 'tests/erp_ui_visual_overlap_49_51.test.mjs'
+      - 'tests/mui_runtime_syntax_v4951.test.mjs'
       - 'playwright.config.mjs'
       - 'package.json'
       - 'package-lock.json'
@@ -55,7 +56,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Static contract
-        run: node --test tests/erp_ui_visual_overlap_49_51.test.mjs
+        run: node --test tests/erp_ui_visual_overlap_49_51.test.mjs tests/mui_runtime_syntax_v4951.test.mjs
 
       - name: Execute visual matrix
         shell: bash

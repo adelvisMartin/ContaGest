@@ -1,9 +1,9 @@
-import { BackendApi } from './backendApi.js';
 import { AuthSession } from './authSession.js';
 import { Store } from '../state/store.js';
 
 let installed=false;
 let switching=false;
+let switchTenantWithCleanup=null;
 
 function safeTenants(){
   const session=AuthSession.get();
@@ -64,19 +64,32 @@ function mount(){
     switching=true;select.disabled=true;
     const previous=AuthSession.get()?.tenantId;
     try{
-      const result=await BackendApi.request('/auth/switch-tenant',{method:'POST',body:{tenantId:select.value}});
-      AuthSession.set(result);
+      // Route through AuthService: direct BackendApi/AuthSession writes would
+      // bypass prior-user cache, IndexedDB and service-worker invalidation.
+      const result=await switchTenantWithCleanup(select.value);
       applySessionToStore(result);
       window.dispatchEvent(new CustomEvent('cg:tenant-switched',{detail:{from:previous,to:result.tenantId,tenant:result.tenant}}));
     }catch(error){
-      select.value=previous||'';
-      window.dispatchEvent(new CustomEvent('cg:tenant-switch-error',{detail:{message:error.message}}));
+      const active=AuthSession.get();
+      // The server may have switched tenants while old offline cleanup
+      // failed. Never display tenant A while authenticated as tenant B.
+      if(active?.tenantId&&active.tenantId!==previous){
+        applySessionToStore(active);
+        window.dispatchEvent(new CustomEvent('cg:tenant-switched',{
+          detail:{from:previous,to:active.tenantId,tenant:active.tenant,cleanupIncomplete:true}
+        }));
+      }
+      select.value=active?.tenantId||previous||'';
+      window.dispatchEvent(new CustomEvent('cg:tenant-switch-error',{
+        detail:{message:error.message,activeTenantId:active?.tenantId||previous}
+      }));
     }finally{switching=false;select.disabled=false;}
   });
 }
 
-export function installMultiTenantEnhancer(){
-  if(installed||typeof document==='undefined')return;
+export function installMultiTenantEnhancer(switchTenant){
+  if(typeof switchTenant==='function')switchTenantWithCleanup=switchTenant;
+  if(installed||typeof document==='undefined'||!switchTenantWithCleanup)return;
   installed=true;
   const observer=new MutationObserver(()=>mount());
   observer.observe(document.documentElement,{childList:true,subtree:true});

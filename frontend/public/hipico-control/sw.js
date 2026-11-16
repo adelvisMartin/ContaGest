@@ -1,5 +1,6 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r38-consolidator-v4-1-3`;
+// Security cache migration (#1292): never reuse the previous shell namespace.
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r39-consolidator-v4-1-3`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
@@ -20,17 +21,55 @@ const APP_SHELL = [
 
 function scoped(path) { return new URL(path, self.registration.scope).toString(); }
 const APP_SHELL_URLS = new Set(APP_SHELL.map(scoped));
-function isSensitive(url) { return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(url.pathname); }
+const PRIVATE_QUERY_KEY = /^(?:t|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth|authorization|code|api[_-]?key|apikey|secret|password|session(?:[_-]?id)?|jwt|signature|sig|x-amz-(?:signature|credential)|x-goog-signature)$/i;
+function hasPrivateQueryParameter(url) {
+  for (const key of url.searchParams.keys()) {
+    if (PRIVATE_QUERY_KEY.test(key.normalize('NFKC'))) return true;
+  }
+  return false;
+}
+function isSensitive(url) {
+  if (hasPrivateQueryParameter(url)) return true;
+  let pathname;
+  if (/%25/i.test(url.pathname)) return true;
+  try { pathname = decodeURIComponent(url.pathname); }
+  catch { return true; } // Malformed escapes must not reach offline fallback.
+  return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(pathname);
+}
+function hasPrivateRequestHeaders(request) {
+  const headers = request.headers;
+  return Boolean(headers?.has?.('authorization')
+    || headers?.has?.('x-api-key')
+    || headers?.has?.('x-hipico-bridge-token'));
+}
 function isRuntimeMetadata(url) { return url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json'); }
 function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
+function cacheablePublicResponse(response) {
+  if (!response.ok) return false;
+  // A static allowlisted URL can still receive an explicit private response.
+  const cacheControl = (response.headers.get('cache-control') || '').toLowerCase();
+  if (/(?:^|,)\s*(?:no-store|private)(?:\s*(?:,|=|$))/.test(cacheControl)) return false;
+  return !(response.headers.get('vary') || '').toLowerCase().split(',')
+    .some((name) => ['*', 'cookie', 'authorization', 'x-api-key'].includes(name.trim()));
+}
 function offlineNavigationShell(url) {
   return url.pathname.endsWith('/recovery.html') ? './recovery.html' : './index.html';
 }
 
+async function primeShell() {
+  const cache = await caches.open(SHELL_CACHE);
+  // addAll() may persist authenticated or no-store responses; explicitly
+  // fetch without credentials and reject unsafe resources before writing.
+  await Promise.all([...APP_SHELL_URLS].map(async (url) => {
+    const request = new Request(url, { cache: 'reload', credentials: 'omit', redirect: 'error' });
+    const response = await fetch(request);
+    if (!cacheablePublicResponse(response)) throw new Error('HIPICO_PRIVATE_SHELL_RESPONSE');
+    await cache.put(request, response);
+  }));
+}
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
-    const cache = await caches.open(SHELL_CACHE);
-    await cache.addAll([...APP_SHELL_URLS]);
+    await primeShell();
     await self.skipWaiting();
   })());
 });
@@ -46,8 +85,10 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   const scope = new URL(self.registration.scope);
-  if (url.origin !== scope.origin) return;
-  if (isSensitive(url) || isRuntimeMetadata(url)) { event.respondWith(fetch(request, { cache: 'no-store' })); return; }
+  // Controlled clients can fetch same-origin ERP/API paths outside this
+  // registration scope. Those requests belong to the browser/other worker.
+  if (url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;
+  if (hasPrivateRequestHeaders(request) || isSensitive(url) || isRuntimeMetadata(url)) { event.respondWith(fetch(request, { cache: 'no-store' })); return; }
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try { return await fetch(request, { cache: 'no-store' }); }
@@ -64,8 +105,9 @@ self.addEventListener('fetch', (event) => {
     const cache = await caches.open(SHELL_CACHE);
     const cached = await cache.match(request);
     if (cached) return cached;
-    const response = await fetch(request, { cache: 'no-store' });
-    if (response.ok) await cache.put(request, response.clone());
+    // Public allowlisted assets must never be fetched with session cookies.
+    const response = await fetch(request, { cache: 'no-store', credentials: 'omit', redirect: 'error' });
+    if (cacheablePublicResponse(response)) await cache.put(request, response.clone());
     return response;
   })());
 });

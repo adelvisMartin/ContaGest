@@ -1,4 +1,5 @@
-const CACHE_PREFIX = 'contagest-ve-v563-session-';
+const CACHE_PREFIX = 'contagest-ve-v563-session-'; // existing local/offline test namespace
+const SW_CACHE_PREFIX = 'contagest-ve-v563-3-session-'; // current worker namespace
 const DB_PREFIX = 'contagest-offline-v563-';
 const AUTH_SESSION_KEY = 'contagest_auth_session';
 const LEGACY_STATE_PREFIX = 'contagest_ve_enterprise_v7_state';
@@ -34,10 +35,17 @@ function dbName(session) {
 function postToServiceWorker(message) {
   if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
   const target = navigator.serviceWorker.controller;
-  if (target) target.postMessage(message);
+  if (target) {
+    target.postMessage(message);
+    return;
+  }
   navigator.serviceWorker.ready.then((registration) => {
+    // A pending ready() from login A must not restore A's scope after
+    // logout or after tenant B becomes the current session.
+    if (message.type === 'SET_SESSION_SCOPE' &&
+        sessionScope(parseStoredSession()) !== message.scopeToken) return;
     const worker = registration.active || registration.waiting || registration.installing;
-    if (worker && worker !== target) worker.postMessage(message);
+    worker?.postMessage(message);
   }).catch(() => undefined);
 }
 
@@ -55,11 +63,19 @@ export function setServiceWorkerSession(session) {
 
 function deleteDatabase(name) {
   if (typeof indexedDB === 'undefined') return Promise.resolve();
-  return new Promise((resolve) => {
-    const request = indexedDB.deleteDatabase(name);
+  return new Promise((resolve, reject) => {
+    // IndexedDB may keep the old database alive while another tab holds a
+    // connection. Never turn blocked/error into a successful privacy purge.
+    let request;
+    try { request = indexedDB.deleteDatabase(name); }
+    catch (error) { reject(error); return; }
     request.onsuccess = () => resolve();
-    request.onerror = () => resolve();
-    request.onblocked = () => resolve();
+    request.onerror = () => reject(request.error || new Error('OFFLINE_DB_DELETE_FAILED'));
+    request.onblocked = () => {
+      const error = new Error('OFFLINE_DB_DELETE_BLOCKED');
+      error.code = 'OFFLINE_DB_DELETE_BLOCKED';
+      reject(error);
+    };
   });
 }
 
@@ -70,7 +86,9 @@ async function purgeIndexedDb(session) {
     const databases = await indexedDB.databases().catch(() => []);
     for (const database of databases || []) {
       const name = String(database?.name || '');
-      if (name === dbName(session) || name.startsWith(`${DB_PREFIX}${sessionScope(session)}`)) targeted.add(name);
+      // Database names are exactly scoped; prefix neighbors may belong to
+      // a different user and must never be deleted by this session.
+      if (name === dbName(session)) targeted.add(name);
     }
   }
   await Promise.all([...targeted].map(deleteDatabase));
@@ -97,7 +115,8 @@ function purgeWebStorage(session) {
     }
   }
   if (typeof sessionStorage !== 'undefined') {
-    const sensitivePrefixes = ['cg_', 'contagest_', 'hipico_'];
+    // Do not erase Control Hípico's independent same-origin login or state.
+    const sensitivePrefixes = ['cg_', 'contagest_'];
     const keys = [];
     for (let index = 0; index < sessionStorage.length; index += 1) keys.push(sessionStorage.key(index));
     for (const key of keys.filter(Boolean)) {
@@ -108,15 +127,31 @@ function purgeWebStorage(session) {
 
 export async function purgeOfflineSession(session) {
   const scopeToken = sessionScope(session);
-  purgeWebStorage(session);
-  postToServiceWorker({ type: 'CLEAR_SESSION_DATA', scopeToken });
-  if (typeof caches !== 'undefined') {
-    const names = await caches.keys();
-    await Promise.all(names
-      .filter((name) => name === sessionCacheName(session) || name.startsWith(`${CACHE_PREFIX}${scopeToken}`))
-      .map((name) => caches.delete(name)));
+  const errors = [];
+  try { purgeWebStorage(session); }
+  catch (error) { errors.push(error); }
+  try { postToServiceWorker({ type: 'CLEAR_SESSION_DATA', scopeToken }); }
+  catch (error) { errors.push(error); }
+
+  // Both stores must be attempted even if one fails. A blocked database may
+  // finish deletion later, but cannot be reported as already purged.
+  const results = await Promise.allSettled([
+    (async () => {
+      if (typeof caches === 'undefined') return;
+      const names = await caches.keys();
+      const owned = new Set([sessionCacheName(session), `${SW_CACHE_PREFIX}${scopeToken}`]);
+      await Promise.all(names.filter((name) => owned.has(name)).map((name) => caches.delete(name)));
+    })(),
+    purgeIndexedDb(session)
+  ]);
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason);
   }
-  await purgeIndexedDb(session);
+  if (errors.length > 0) {
+    const error = new Error('No se pudo borrar toda la información offline. Cierra otras pestañas y vuelve a intentarlo.');
+    error.code = 'OFFLINE_SESSION_PURGE_FAILED';
+    throw error;
+  }
 }
 
 function openOutbox(session) {
@@ -168,11 +203,42 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
       attempts: 0,
       authority
     };
-    // Store.add enforces write-once event identity. put() silently overwrote
-    // a pending event with new payload under the same idempotency key.
-    store.add(record);
+    // An existing idempotency key is a safe retry only for the exact same
+    // pending event. Use one readwrite transaction so competing tabs cannot
+    // overwrite or independently enqueue the same identity.
+    let storedRecord = record;
+    let conflict = false;
+    const lookup = store.get(id);
+    lookup.onsuccess = () => {
+      const existing = lookup.result;
+      if (!existing) {
+        store.add(record);
+        return;
+      }
+      // A non-JSON or throwing payload cannot be declared an identical
+      // replay: never let an exception inside an IDB event handler masquerade
+      // as a successful enqueue.
+      let samePayload = false;
+      try {
+        const original = JSON.stringify(existing.payload);
+        samePayload = original !== undefined && original === JSON.stringify(record.payload);
+      } catch { /* unrepresentable replay: conflict */ }
+      if (existing.scopeToken !== record.scopeToken ||
+          existing.operation !== record.operation ||
+          existing.idempotencyKey !== record.idempotencyKey ||
+          !samePayload) {
+        conflict = true;
+        return;
+      }
+      storedRecord = existing;
+    };
     await transactionPromise(transaction);
-    return record;
+    if (conflict) {
+      const error = new Error('La clave de idempotencia pertenece a una operación diferente.');
+      error.code = 'OFFLINE_IDEMPOTENCY_CONFLICT';
+      throw error;
+    }
+    return storedRecord;
   } finally {
     database.close();
   }

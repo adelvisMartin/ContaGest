@@ -10,7 +10,9 @@ import { purgeOfflineSession, setServiceWorkerSession } from './pwaOfflineServic
 
 installLoginEnhancer();
 installSessionAccessGuard();
-installMultiTenantEnhancer();
+// Lazy callback avoids an import cycle; the selector delegates to the single
+// AuthService tenant-switch owner only when the user changes the selection.
+installMultiTenantEnhancer((tenantId)=>AuthService.switchTenant(tenantId));
 installLegalAcceptanceEnhancer();
 
 const DEMO_USER={id:'demo-admin',name:'Administrador Local',fullName:'Administrador Local',email:'admin@erp.local',role:'admin',permissions:['*']};
@@ -64,17 +66,42 @@ export const AuthService={
   async tenants(){return BackendApi.request('/auth/tenants');},
   async switchTenant(tenantId){
     const previous=AuthSession.get();
-    const next=normalizeSession(await BackendApi.request('/auth/switch-tenant',{method:'POST',body:{tenantId}}));
-    if(previous&&previous.tenantId!==next.tenantId){Store.purgeSessionScope(previous);await purgeOfflineSession(previous);}
-    return next;
+    const payload=await BackendApi.request('/auth/switch-tenant',{method:'POST',body:{tenantId}});
+    const nextTenantId=payload?.tenantId||payload?.tenant?.id;
+    if(!nextTenantId)throw new Error('El backend no devolvió una sesión con empresa activa.');
+    const oldUserId=previous?.user?.id||previous?.userId;
+    const nextUserId=payload?.user?.id||payload?.userId;
+    if(previous&&(previous.tenantId!==nextTenantId||
+        (oldUserId&&nextUserId&&oldUserId!==nextUserId))){
+      // Clear A's web storage before hydrating B, but defer Store's scoped
+      // purge until after switching: that avoids an intermediate anonymous
+      // render while the backend-approved tenant becomes active.
+      const purge=purgeOfflineSession(previous).then(()=>null,error=>error);
+      const next=normalizeSession(payload);
+      Store.purgeSessionScope(previous);
+      const purgeError=await purge;
+      if(purgeError)throw purgeError;
+      return next;
+    }
+    return normalizeSession(payload);
   },
   async logout(){
     const previous=AuthSession.get();
     AuthSession.clear();
     if(previous)Store.purgeSessionScope(previous);else Store.reset();
-    const purge=previous?purgeOfflineSession(previous):Promise.resolve();
-    try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}catch{/* Cookie revocation may be unavailable offline; local/session data is still purged. */}
-    await purge.catch(()=>undefined);
+    // Start local purge immediately, without producing an unhandled rejection
+    // while the remote revoke is in flight.
+    const purge=previous?purgeOfflineSession(previous).then(()=>null,error=>error):Promise.resolve(null);
+    let remoteRevoked=true;
+    try{await BackendApi.request('/auth/logout',{method:'POST',body:{},skipRefresh:true});}
+    catch{remoteRevoked=false;}
+    const purgeError=await purge;
+    if(purgeError)throw purgeError;
+    if(!remoteRevoked){
+      const error=new Error('La sesión local se cerró, pero no se confirmó la revocación en el servidor.');
+      error.code='AUTH_REMOTE_LOGOUT_UNCONFIRMED';
+      throw error;
+    }
   },
   authHeaders(){return {};}
 };

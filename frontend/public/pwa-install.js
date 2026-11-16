@@ -3,7 +3,7 @@
     ? new URL(document.currentScript.src)
     : new URL('./pwa-install.js', window.location.href);
   const appBase = new URL('./', scriptUrl);
-  const SW_URL = new URL('./sw.js?v=563-2', appBase);
+  const SW_URL = new URL('./sw.js?v=563-3', appBase);
   const isStandalone = () => [
     '(display-mode: standalone)', '(display-mode: fullscreen)', '(display-mode: minimal-ui)'
   ].some((query) => window.matchMedia(query).matches) || window.navigator.standalone === true;

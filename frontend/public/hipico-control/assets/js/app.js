@@ -840,8 +840,21 @@ root.addEventListener("click", async (event) => {
         }
         if (action === "logout") { modal = { type: "logout" }; render(); return; }
         if (action === "confirm-logout") {
-            await flushWorkspaceWrites().catch(() => {}); mode = null; cloudProfile = null; cloudWorkspaceId = null; navigationHistory = [];
-            await setAppMode(null); await signOut().catch(() => {}); workspace = null; modal = null; render(); toast("Sesión cerrada. Se solicitará acceso al abrir nuevamente.", "success"); return;
+            await flushWorkspaceWrites().catch(() => {});
+            mode = null; cloudProfile = null; cloudWorkspaceId = null; navigationHistory = [];
+            await setAppMode(null);
+            let logout;
+            try { logout = await signOut(); }
+            catch { logout = { localCleared: false, remoteRevoked: false }; }
+            workspace = null; modal = null; render();
+            if (!logout.localCleared) {
+                toast("No se confirmó la limpieza de la sesión local. Revisa el almacenamiento de este dispositivo.", "warning");
+            } else if (!logout.remoteRevoked) {
+                toast("Sesión local cerrada. La revocación en la nube sigue sin confirmarse.", "warning");
+            } else {
+                toast("Sesión cerrada. Se solicitará acceso al abrir nuevamente.", "success");
+            }
+            return;
         }
         if (action === "go-home") { navigateTo("dashboard"); return; }
         if (action === "go-back") { goBack(); return; }

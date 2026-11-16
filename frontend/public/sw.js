@@ -1,4 +1,5 @@
-const CACHE_VERSION = 'v563-2';
+// Security cache migration (#1292): activation must evict the older shell namespace.
+const CACHE_VERSION = 'v563-3';
 const ASSET_CACHE = `contagest-ve-${CACHE_VERSION}-assets`;
 const SESSION_CACHE_PREFIX = `contagest-ve-${CACHE_VERSION}-session-`;
 let SESSION_SCOPE = null;
@@ -34,7 +35,13 @@ function scopedPath(url) {
 
 async function primeShell() {
   const cache = await caches.open(ASSET_CACHE);
-  await Promise.allSettled([...APP_SHELL_URLS].map((url) => cache.add(new Request(url, { cache: 'reload' }))));
+  await Promise.allSettled([...APP_SHELL_URLS].map(async (url) => {
+    // Cache.add() ignores HTTP no-store/private and can use session cookies.
+    // The offline shell must be fetched without credentials and checked first.
+    const request = new Request(url, { cache: 'reload', credentials: 'omit', redirect: 'error' });
+    const response = await fetch(request);
+    if (mayCachePublicResponse(response)) await cache.put(request, response);
+  }));
 }
 
 self.addEventListener('install', (event) => {
@@ -46,23 +53,49 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
+    // An ERP update may evict obsolete ContaGest namespaces only.
+    // Generic "-session-" matching would delete other same-origin products.
     await Promise.all(keys
       .filter((key) => key.startsWith('contagest-ve-') && key !== ASSET_CACHE && !key.startsWith(SESSION_CACHE_PREFIX))
-      .map((key) => caches.delete(key)));
-    await Promise.all(keys
-      .filter((key) => key.includes('-session-') && !key.startsWith(SESSION_CACHE_PREFIX))
       .map((key) => caches.delete(key)));
     await self.clients.claim();
   })());
 });
 
+const PRIVATE_QUERY_KEY = /^(?:t|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth|authorization|code|api[_-]?key|apikey|secret|password|session(?:[_-]?id)?|jwt|signature|sig|x-amz-(?:signature|credential)|x-goog-signature)$/i;
+function hasPrivateQueryParameter(url) {
+  // URLSearchParams decodes parameter names; avoid per-request array allocation.
+  for (const key of url.searchParams.keys()) {
+    if (PRIVATE_QUERY_KEY.test(key.normalize('NFKC'))) return true;
+  }
+  return false;
+}
+
 function isSensitiveRequest(url) {
-  const pathname = scopedPath(url);
-  return pathname.startsWith('/api/')
+  let pathname;
+  // Case-insensitive backend routes and double-encoded separators must not
+  // regain an offline response through an alternate URL spelling.
+  if (/%25/i.test(url.pathname)) return true;
+  try { pathname = decodeURIComponent(scopedPath(url)).toLowerCase(); }
+  catch { return true; } // Malformed escapes must not use offline cache.
+  return hasPrivateQueryParameter(url)
+    || pathname === '/api'
+    || pathname.startsWith('/api/')
+    || pathname === '/auth'
     || pathname.startsWith('/auth/')
+    // Same-origin Hípico pages must never receive the ERP offline shell.
+    || /^\/(?:hipico-control|control-hipico)(?:\/|$)/.test(pathname)
     || pathname.includes('/licenses')
     || pathname.includes('/media')
     || pathname.includes('/admin');
+}
+
+function hasPrivateRequestHeaders(request) {
+  // Header-bound requests cannot share the app-shell cache, even at a public URL.
+  const headers = request.headers;
+  return Boolean(headers?.has?.('authorization')
+    || headers?.has?.('x-api-key')
+    || headers?.has?.('x-hipico-bridge-token'));
 }
 
 function isPublicStaticAsset(url) {
@@ -70,15 +103,30 @@ function isPublicStaticAsset(url) {
     || STATIC_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
 }
 
+function mayCachePublicResponse(response) {
+  if (!response.ok || (response.type !== 'basic' && response.type !== 'cors')) return false;
+  // CacheStorage does not honor HTTP Cache-Control on its own.
+  const directives = (response.headers.get('cache-control') || '')
+    .split(',').map((part) => part.trim().split('=')[0].toLowerCase());
+  if (directives.includes('private') || directives.includes('no-store')) return false;
+  return !(response.headers.get('vary') || '').toLowerCase().split(',')
+    .some((header) => ['*', 'cookie', 'authorization', 'x-api-key'].includes(header.trim()));
+}
+
 async function assetCacheMatch(request) {
   const cache = await caches.open(ASSET_CACHE);
   return cache.match(request);
 }
 
+function fetchPublicAsset(request) {
+  // Offline assets are public and must not inherit a logged-in user's cookies.
+  return fetch(request, { cache: 'no-store', credentials: 'omit', redirect: 'error' });
+}
+
 async function networkFirst(request) {
   try {
-    const response = await fetch(request, { cache: 'no-store' });
-    if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
+    const response = await fetchPublicAsset(request);
+    if (mayCachePublicResponse(response)) {
       const cache = await caches.open(ASSET_CACHE);
       await cache.put(request, response.clone());
     }
@@ -93,7 +141,7 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || isSensitiveRequest(url)) return;
+  if (url.origin !== self.location.origin || isSensitiveRequest(url) || hasPrivateRequestHeaders(request)) return;
 
   if (url.toString() === scoped('./build-info.json')) {
     event.respondWith(fetch(request, { cache: 'no-store' }).catch(() => new Response(JSON.stringify({
@@ -110,12 +158,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       const shellUrl = scoped('./index.html');
       try {
-        const response = await fetch(request, { cache: 'no-store' });
-        if (response.ok) {
-          const cache = await caches.open(ASSET_CACHE);
-          await cache.put(shellUrl, response.clone());
-        }
-        return response;
+        // Navigations can carry login cookies. Only install's credential-free
+        // public fetch may populate the shared offline HTML shell.
+        return await fetch(request, { cache: 'no-store' });
       } catch {
         const cached = await assetCacheMatch(shellUrl);
         if (!cached) return new Response('ContaGest no está disponible sin conexión.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'X-CG-Offline': 'true' } });
@@ -128,17 +173,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Scripts and styles must also be in the public allowlist.
+  if (!isPublicStaticAsset(url)) return;
+
   if (request.destination === 'script' || request.destination === 'style') {
     event.respondWith(networkFirst(request));
     return;
   }
 
-  if (!isPublicStaticAsset(url)) return;
-
   event.respondWith((async () => {
     const cached = await assetCacheMatch(request);
-    const refresh = fetch(request, { cache: 'no-store' }).then(async (response) => {
-      if (response.ok && (response.type === 'basic' || response.type === 'cors')) {
+    const refresh = fetchPublicAsset(request).then(async (response) => {
+      if (mayCachePublicResponse(response)) {
         const cache = await caches.open(ASSET_CACHE);
         await cache.put(request, response.clone());
       }

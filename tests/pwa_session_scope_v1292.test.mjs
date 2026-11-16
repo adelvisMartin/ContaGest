@@ -1,0 +1,234 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+
+// Exercise the actual client module with isolated browser primitives; the
+// separate Chromium E2E verifies native IndexedDB and CacheStorage behavior.
+const source = readFileSync(new URL('../frontend/src/services/pwaOfflineService.js', import.meta.url), 'utf8')
+  .replace(/^export\s+/gm, '');
+
+function serviceContext(overrides = {}) {
+  const context = vm.createContext({
+    ...overrides,
+    localStorage: overrides.localStorage || {
+      getItem: () => null, removeItem: () => {}, get length() { return 0; }, key: () => null
+    }
+  });
+  vm.runInContext(source, context, { filename: 'frontend/src/services/pwaOfflineService.js' });
+  return {
+    service: {
+      sessionScope: vm.runInContext('sessionScope', context),
+      setServiceWorkerSession: vm.runInContext('setServiceWorkerSession', context),
+      purgeOfflineSession: vm.runInContext('purgeOfflineSession', context)
+    },
+    context
+  };
+}
+
+const a = { tenantId: 'tenant-a', user: { id: 'user-a' } };
+const b = { tenantId: 'tenant-b', user: { id: 'user-b' } };
+
+test('#1292 delayed worker registration must not restore a logged-out or switched tenant', async () => {
+  const messages = [];
+  const worker = { postMessage: (message) => messages.push(message) };
+  let resolveReady;
+  const ready = new Promise((resolve) => { resolveReady = resolve; });
+  let currentSession = a;
+  const browser = { serviceWorker: { controller: null, ready } };
+  const { service } = serviceContext({
+    navigator: browser,
+    localStorage: { getItem: () => currentSession ? JSON.stringify(currentSession) : null }
+  });
+
+  service.setServiceWorkerSession(a);
+  currentSession = b;
+  resolveReady({ active: worker });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(messages.length, 0, 'a stale login must not overwrite tenant B');
+
+  service.setServiceWorkerSession(b);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].scopeToken, service.sessionScope(b));
+
+  browser.serviceWorker.controller = worker;
+  service.setServiceWorkerSession(b);
+  assert.equal(messages.length, 2, 'active controllers receive exactly one message');
+  browser.serviceWorker.controller = null;
+
+  currentSession = a;
+  service.setServiceWorkerSession(a);
+  currentSession = null;
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(messages.length, 2, 'a deferred login must not restore a logged-out scope');
+});
+
+test('#1292 session purge removes exact legacy/current keys, not adjacent tenant keys', async () => {
+  const deletedCaches = [];
+  const deletedDatabases = [];
+  const names = new Map();
+  const authKey = 'contagest_auth_session';
+  names.set(authKey, JSON.stringify(a));
+  const storage = {
+    getItem: (key) => names.get(key) ?? null,
+    removeItem: (key) => names.delete(key),
+    get length() { return names.size; },
+    key: (i) => [...names.keys()][i] ?? null
+  };
+  const worker = { postMessage: () => {} };
+  const cacheNames = [];
+  const browser = {
+    navigator: { serviceWorker: { controller: worker, ready: Promise.resolve({ active: worker }) } },
+    localStorage: storage,
+    caches: {
+      keys: async () => [...cacheNames],
+      delete: async (name) => { deletedCaches.push(name); return true; }
+    },
+    indexedDB: {
+      databases: async () => [
+        { name: databaseA }, { name: databaseNeighbor }, { name: databaseB }
+      ],
+      deleteDatabase: (name) => {
+        const request = {};
+        Promise.resolve().then(() => { deletedDatabases.push(name); request.onsuccess?.(); });
+        return request;
+      }
+    }
+  };
+  const { service } = serviceContext(browser);
+  const scopeA = service.sessionScope(a);
+  const scopeB = service.sessionScope(b);
+  const cacheA = `contagest-ve-v563-session-${scopeA}`;
+  const currentA = `contagest-ve-v563-3-session-${scopeA}`;
+  const cacheNeighbor = `${cacheA}neighbor`;
+  const cacheB = `contagest-ve-v563-3-session-${scopeB}`;
+  const databaseA = `contagest-offline-v563-${scopeA}`;
+  const databaseNeighbor = `${databaseA}neighbor`;
+  const databaseB = `contagest-offline-v563-${scopeB}`;
+  cacheNames.push(cacheA, currentA, cacheNeighbor, cacheB);
+  await service.purgeOfflineSession(a);
+  assert.deepEqual(deletedCaches.sort(), [cacheA, currentA].sort());
+  assert.deepEqual(deletedDatabases, [databaseA]);
+  assert.equal(names.has(authKey), false, 'the selected session is no longer in web storage');
+});
+
+test('#1292 blocked IndexedDB deletion is reported and cache cleanup still runs', async () => {
+  const deleted = [];
+  let deleteRequests = 0;
+  const { service } = serviceContext({
+    caches: {
+      keys: async () => [
+        `contagest-ve-v563-session-${scope}`,
+        `contagest-ve-v563-3-session-${scope}`
+      ],
+      delete: async (name) => { deleted.push(name); return true; }
+    },
+    indexedDB: {
+      databases: async () => [],
+      deleteDatabase: () => {
+        deleteRequests += 1;
+        const request = {};
+        Promise.resolve().then(() => request.onblocked?.());
+        return request;
+      }
+    }
+  });
+  const scope = service.sessionScope(a);
+  await assert.rejects(service.purgeOfflineSession(a), (error) =>
+    error?.code === 'OFFLINE_SESSION_PURGE_FAILED');
+  assert.equal(deleteRequests, 1);
+  assert.deepEqual(deleted.sort(), [
+    `contagest-ve-v563-session-${scope}`,
+    `contagest-ve-v563-3-session-${scope}`
+  ].sort());
+});
+
+test('#1292 IndexedDB errors never produce a false successful session purge', async () => {
+  const { service } = serviceContext({
+    indexedDB: {
+      databases: async () => [],
+      deleteDatabase: () => {
+        const request = {};
+        Promise.resolve().then(() => {
+          request.error = new Error('synthetic IDB deletion error');
+          request.onerror?.();
+        });
+        return request;
+      }
+    }
+  });
+  await assert.rejects(service.purgeOfflineSession(a), (error) =>
+    error?.code === 'OFFLINE_SESSION_PURGE_FAILED');
+});
+
+test('#1292 cache deletion failure does not prevent independent IndexedDB cleanup', async () => {
+  let dbDeleted = false;
+  const { service } = serviceContext({
+    caches: {
+      keys: async () => [`contagest-ve-v563-session-${scope}`],
+      delete: async () => { throw new Error('synthetic cache failure'); }
+    },
+    indexedDB: {
+      databases: async () => [],
+      deleteDatabase: () => {
+        const request = {};
+        Promise.resolve().then(() => { dbDeleted = true; request.onsuccess?.(); });
+        return request;
+      }
+    }
+  });
+  const scope = service.sessionScope(a);
+  await assert.rejects(service.purgeOfflineSession(a), (error) =>
+    error?.code === 'OFFLINE_SESSION_PURGE_FAILED');
+  assert.equal(dbDeleted, true);
+});
+
+test('#1292 Vite renders one ERP installer and only that installer registers the service worker', () => {
+  const app = readFileSync(new URL('../frontend/src/app.js', import.meta.url), 'utf8');
+  const installer = readFileSync(new URL('../frontend/public/pwa-install.js', import.meta.url), 'utf8');
+  const vite = readFileSync(new URL('../frontend/vite.config.js', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+
+  // Execute the real Vite index.html transformation without bootstrapping Vite.
+  const start = vite.indexOf('const privateAppPlugin = {');
+  const end = vite.indexOf('\nexport default defineConfig(', start);
+  assert.ok(start >= 0 && end > start, 'private app HTML transform is present');
+  const transform = vm.runInNewContext(
+    vite.slice(start, end) + '\nprivateAppPlugin.transformIndexHtml.handler',
+    { canonicalFontStylesheet: 'https://example.test/fixture-font.css' }
+  );
+  const rendered = transform(html);
+  const installers = rendered.match(/<script\b[^>]*\bsrc=["'][^"']*pwa-install\.js["']/gi) || [];
+  assert.equal(installers.length, 1, 'Vite must not inject a second PWA script');
+
+  assert.doesNotMatch(app, /serviceWorker\.register\s*\(/);
+  assert.doesNotMatch(app, /serviceWorker\.addEventListener\(\s*['"]controllerchange/);
+  assert.match(installer, /serviceWorker\.register\(SW_URL\.href/);
+  assert.doesNotMatch(installer, /getRegistrations\s*\(/,
+    'local Chromium E2E must not lose its worker to dev-only cleanup');
+});
+
+test('#1292 ContaGest logout leaves Control Hipico tab-scoped state untouched', async () => {
+  const entries = new Map([
+    ['cg_controller_reloaded', '1'],
+    ['contagest_private_draft', 'synthetic'],
+    ['hipico_cloud_session', 'keep-this-other-product'],
+    ['hipico_owner_scope', 'keep-this-other-product']
+  ]);
+  const storage = {
+    get length() { return entries.size; },
+    key: (index) => [...entries.keys()][index] ?? null,
+    getItem: (key) => entries.get(key) ?? null,
+    removeItem: (key) => entries.delete(key)
+  };
+  const { service } = serviceContext({ sessionStorage: storage });
+  await service.purgeOfflineSession(a);
+  assert.equal(entries.has('cg_controller_reloaded'), false);
+  assert.equal(entries.has('contagest_private_draft'), false);
+  assert.equal(entries.get('hipico_cloud_session'), 'keep-this-other-product');
+  assert.equal(entries.get('hipico_owner_scope'), 'keep-this-other-product');
+});
