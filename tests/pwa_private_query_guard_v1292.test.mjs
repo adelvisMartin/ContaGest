@@ -10,11 +10,12 @@ const WORKERS = [
   { path: 'frontend/public/hipico-control/sw.js', scope: 'https://qa.example.test/hipico-control/', guard: 'isSensitive', intercepts: true },
 ];
 
-function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicResponse = false, cacheMiss = false } = {}) {
+function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicResponse = false, cacheMiss = false, existingCacheKeys = [] } = {}) {
   const listeners = new Map();
   const fetchCalls = [];
   const cacheWrites = [];
   const cacheReads = [];
+  const deletedCacheNames = [];
   const cache = {
     match: async (request) => {
       cacheReads.push(String(request?.url || request));
@@ -29,12 +30,13 @@ function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicRespo
     self: {
       location: { origin: new URL(spec.scope).origin },
       registration: { scope: spec.scope },
+      clients: { claim: async () => {} },
       addEventListener: (name, callback) => listeners.set(name, callback),
     },
     caches: {
       open: async () => cache,
-      keys: async () => [],
-      delete: async () => true,
+      keys: async () => [...existingCacheKeys],
+      delete: async (name) => { deletedCacheNames.push(name); return true; },
     },
     fetch: async (request, options) => {
       fetchCalls.push({ url: request.url, cache: options?.cache });
@@ -48,6 +50,12 @@ function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicRespo
   const source = readFileSync(new URL('../' + spec.path, import.meta.url), 'utf8');
   vm.runInNewContext(source, context, { filename: spec.path });
   const guard = vm.runInNewContext(spec.guard, context);
+  const cacheName = vm.runInNewContext(spec.path.includes('/hipico-control/') ? 'SHELL_CACHE' : 'ASSET_CACHE', context);
+  const fireActivate = async () => {
+    let completion;
+    listeners.get('activate')({ waitUntil: (result) => { completion = Promise.resolve(result); } });
+    await completion;
+  };
   const fireFetch = (url, mode = 'navigate', headers = {}) => {
     let reply;
     listeners.get('fetch')({
@@ -56,7 +64,7 @@ function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicRespo
     });
     return reply;
   };
-  return { guard, fireFetch, fetchCalls, cacheWrites, cacheReads };
+  return { guard, cacheName, fireActivate, fireFetch, fetchCalls, cacheWrites, cacheReads, deletedCacheNames };
 }
 
 for (const spec of WORKERS) {
@@ -209,4 +217,22 @@ test('#1292 Hipico SW honors private/no-store/Vary:* when populating runtime ass
   const publicWorker = makeWorker(spec, { cacheMiss: true });
   assert.equal((await publicWorker.fireFetch(url, 'script')).status, 200);
   assert.equal(publicWorker.cacheWrites.length, 1, 'public allowlisted assets still get offline cache');
+});
+
+test('#1292 both PWA cache migrations evict pre-hardening data without crossing products', async () => {
+  const oldErp = 'contagest-ve-v563-2-assets';
+  const oldErpSession = 'contagest-ve-v563-2-session-synthetic';
+  const oldHipico = 'hipico-control-v1.13.0-rc3-shell-r38-consolidator-v4-1-3';
+  const erp = makeWorker(WORKERS[0], { existingCacheKeys: [oldErp, oldErpSession, oldHipico] });
+  const hipico = makeWorker(WORKERS[1], { existingCacheKeys: [oldErp, oldHipico, erp.cacheName] });
+  assert.match(erp.cacheName, /v563-3-assets$/);
+  assert.match(hipico.cacheName, /shell-r39-/);
+  await erp.fireActivate();
+  await hipico.fireActivate();
+  assert.ok(erp.deletedCacheNames.includes(oldErp));
+  assert.ok(erp.deletedCacheNames.includes(oldErpSession));
+  assert.ok(!erp.deletedCacheNames.includes(oldHipico), 'ERP activation must not delete Hipico caches');
+  assert.ok(hipico.deletedCacheNames.includes(oldHipico));
+  assert.ok(!hipico.deletedCacheNames.includes(oldErp), 'Hipico activation must not delete ERP caches');
+  assert.ok(!hipico.deletedCacheNames.includes(erp.cacheName), 'Hipico activation must not delete active ERP cache');
 });
