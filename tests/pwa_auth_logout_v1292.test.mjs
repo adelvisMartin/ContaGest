@@ -70,5 +70,5 @@ test('#1292 user menu warns instead of claiming cleanup success on logout reject
   assert.match(app, /logout\.then\(/);
   assert.match(app, /AUTH_REMOTE_LOGOUT_UNCONFIRMED/);
   assert.match(app, /No se pudo borrar toda la información offline/);
-  assert.doesNotMatch(app, /AuthService\.logout\(\);UrlStateService\.navigate/);
+  assert.doesNotMatch(app, /if\(action==='logout'\)\{AuthService\.logout\(\);/);
 });
