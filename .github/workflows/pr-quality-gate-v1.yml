@@ -52,6 +52,10 @@ jobs:
           ref: ${{ env.CANDIDATE_SHA }}
           fetch-depth: 2
 
+      - name: Verify exact checked-out candidate
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+
       - name: Node 22
         uses: actions/setup-node@v4
         with:
@@ -123,6 +127,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 2
+
+      - name: Verify exact checked-out candidate
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
       - name: Node 22
         uses: actions/setup-node@v4
@@ -198,6 +209,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 2
+
+      - name: Verify exact checked-out candidate
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
       - name: Node 22
         uses: actions/setup-node@v4
@@ -259,6 +277,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          fetch-depth: 2
+
+      - name: Verify exact checked-out candidate
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
       - name: Node 22
         uses: actions/setup-node@v4
