@@ -232,6 +232,8 @@ test('#638/#1289: every legacy CRUD mutation and audit are one database transact
   }
   assert.match(audit, /\(tx \?\? prisma\)\.auditLog\.create\(/);
   assert.match(audit, /return tx \? operation : operation\.catch\(\(\) => null\)/);
+  assert.match(audit, /if \(tx\) throw new Error\('AUDIT_TRANSACTION_TENANT_REQUIRED'\)/,
+    'transaction-bound audit must reject missing tenant instead of silently returning null');
   assert.match(factory, /const where = \{ id: parseCrudRouteId\(req\.params\.id\), tenantId: ctx\.tenantId \};/);
   assert.equal((factory.match(/prisma\.\$transaction\(async \(tx\) => \{/g) || []).length, 3);
 });
