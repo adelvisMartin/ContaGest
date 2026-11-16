@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../../backend/src/app.ts';
 import { prisma } from '../../backend/src/database/prisma.ts';
@@ -9,7 +10,26 @@ export const QA_ADMIN_EMAIL='admin@erp.local';
 
 function unwrap(payload:any){return payload?.data ?? payload;}
 
-export async function createRealBackendHarness(){
+/** Explicit opt-in for high-risk QA suites. Check the actual connected database
+ * BEFORE issuing any session, creating app state or provisioning synthetic rows.
+ * The runner may use its own disposable clone instead of the seed database.
+ */
+export async function createRealBackendHarness(options: {
+  approvedDatabaseNames?: readonly string[];
+} = {}){
+  if(options.approvedDatabaseNames){
+    assert.ok(options.approvedDatabaseNames.length>0,
+      'The QA isolation allowlist must not be empty');
+    for(const name of options.approvedDatabaseNames){
+      assert.match(name,/^contagest_[a-z0-9_]+_v[0-9]+(?:_e2e)?$/,
+        'Only explicit versioned ContaGest QA databases are eligible');
+    }
+    assert.equal(process.env.NODE_ENV,'test',
+      'High-risk real backend QA must never run in a production environment');
+    const db=await prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
+    assert.ok(options.approvedDatabaseNames.includes(db[0]?.name),
+      `Refusing synthetic QA mutations outside explicitly approved database(s): ${db[0]?.name || '(unknown)'}`);
+  }
   const tenant=await prisma.tenant.findUnique({where:{rif:QA_TENANT_RIF}});
   assert.ok(tenant,`QA tenant ${QA_TENANT_RIF} not found`);
   const admin=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:QA_ADMIN_EMAIL,status:'active'}});
@@ -91,4 +111,27 @@ export async function createRealBackendHarness(){
     finally{await cleanupFixtureSessions();}
   }
   return{tenant,admin,token,base,request,ok,status,close,prisma,issueSessionTokenFor};
+}
+
+/** Complete explicit legal acceptance through the real API for synthetic
+ * licensed actors. Never mock or disable the customer adhesion middleware.
+ */
+export async function acceptCurrentLegalForSyntheticQaActor(
+  h: Pick<Awaited<ReturnType<typeof createRealBackendHarness>>, 'ok'>,
+  token: string,
+) {
+  const legal=await h.ok('/legal/status',{},token) as {documents:Array<{
+    code:string;version:string;hash:string;required:boolean
+  }>};
+  const documents=legal.documents.filter(doc=>doc.required)
+    .map(({code,version,hash})=>({code,version,hash}));
+  assert.ok(documents.length>0,'QA must explicitly accept the current legal catalog');
+  await h.ok('/legal/accept',{
+    method:'POST',
+    body:JSON.stringify({documents,necessaryCookiesAcknowledged:true,
+      analyticsCookies:false,marketingCookies:false,locale:'es-VE'})
+  },token);
+  const after=await h.ok('/legal/status',{},token) as {pending:boolean;pendingCodes:string[]};
+  assert.equal(after.pending,false,'QA synthetic account acceptance must be current');
+  assert.deepEqual(after.pendingCodes,[]);
 }

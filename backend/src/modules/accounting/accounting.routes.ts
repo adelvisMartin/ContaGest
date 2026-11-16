@@ -144,8 +144,11 @@ router.patch('/entries/:id', requirePermission('accounting.post'), validateBody(
 
 router.delete('/entries/:id', requirePermission('accounting.post'), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const deleted = await deleteDraftLedgerEntry({ tenantId: ctx.tenantId, entryId: req.params.id });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.draft-deleted', entity: 'LedgerEntry', entityId: deleted.id, before: deleted, after: { requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
+  const deleted = await deleteDraftLedgerEntry({
+    tenantId: ctx.tenantId, entryId: req.params.id, deletedBy: ctx.userId,
+    audit: { userId: ctx.userId, ipAddress: ctx.ip, userAgent: ctx.userAgent,
+      requestId: requestId(req) }
+  });
   ok(res, { deleted: true, id: deleted.id });
 }));
 

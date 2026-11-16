@@ -44,6 +44,27 @@ function exactUnits(text: string, signed: boolean): bigint {
 }
 
 /**
+ * Preserve one coherent set of source values for the whole projection.
+ * The public rows array remains untouched, while candidate/policy calculations
+ * must never re-read an object that could change after validation.
+ */
+function snapshotReorderRow(row: ReorderStockRow): Readonly<ReorderStockRow> {
+  return Object.freeze({
+    productId: row.productId,
+    sku: row.sku,
+    name: row.name,
+    unit: row.unit,
+    stockExact: row.stockExact,
+    reservedExact: row.reservedExact,
+    availableExact: row.availableExact,
+    minStockExact: row.minStockExact,
+    shortfallExact: row.shortfallExact,
+    status: row.status,
+    needsReorder: row.needsReorder
+  });
+}
+
+/**
  * Do not present inconsistent canonical balances as ordinary purchase candidates.
  * Report them separately for manual reconciliation. No ledger mutation occurs.
  */
@@ -51,7 +72,8 @@ export function inspectReorderStockRows(rows: readonly ReorderStockRow[]) {
   const eligibleRows: ReorderStockRow[] = [];
   const stockExceptions: ReorderStockException[] = [];
   const seenProductIds = new Set<string>();
-  for (const row of rows) {
+  for (const original of rows) {
+    const row = snapshotReorderRow(original);
     if (!row.productId || !row.sku || !row.name || !row.unit) {
       throw new TypeError('REORDER_INVALID_PRODUCT');
     }
@@ -98,8 +120,8 @@ export function inspectReorderStockRows(rows: readonly ReorderStockRow[]) {
  * Advisory candidates derived ONLY from canonical inventory stock-health rows.
  * Inconsistent stock or reservations require reconciliation, never replenishment.
  */
-export function deriveReorderCandidates(rows: readonly ReorderStockRow[]) {
-  return inspectReorderStockRows(rows).eligibleRows
+function projectValidatedReorderCandidates(eligibleRows: readonly ReorderStockRow[]) {
+  return eligibleRows
     .filter(row => row.needsReorder && row.status !== 'healthy')
     .map(row => ({
       productId: row.productId,
@@ -119,6 +141,9 @@ export function deriveReorderCandidates(rows: readonly ReorderStockRow[]) {
       a.sku.localeCompare(b.sku) || a.productId.localeCompare(b.productId));
 }
 
+export function deriveReorderCandidates(rows: readonly ReorderStockRow[]) {
+  return projectValidatedReorderCandidates(inspectReorderStockRows(rows).eligibleRows);
+}
 
 /**
  * Prepare one bounded catalog page from canonical stock health rows BEFORE
@@ -128,7 +153,8 @@ export function deriveReorderCandidates(rows: readonly ReorderStockRow[]) {
  */
 export function prepareReorderStockPage(rows: readonly ReorderStockRow[]) {
   const stockReview = inspectReorderStockRows(rows);
-  const reorderCandidates = deriveReorderCandidates(stockReview.eligibleRows);
+  // Already validated as an atomic page. Do not scan the same DB snapshot twice.
+  const reorderCandidates = projectValidatedReorderCandidates(stockReview.eligibleRows);
   return {
     rows,
     stockReview,

@@ -27,8 +27,8 @@ export function assertFiscalRatioDefinition(value: unknown): asserts value is Fi
   if (Object.keys(v).length !== 4 ||
       !['formula', 'numerator', 'denominator', 'basis'].every(k => Object.hasOwn(v, k)) ||
       v.formula !== 'RATIO_MINOR_UNITS' ||
-      !['taxable_minor', 'tax_minor', 'payment_minor'].includes(String(v.basis)) ||
       typeof v.basis !== 'string' ||
+      !['taxable_minor', 'tax_minor', 'payment_minor'].includes(v.basis) ||
       typeof v.numerator !== 'number' || !Number.isSafeInteger(v.numerator) || v.numerator < 0 ||
       typeof v.denominator !== 'number' || !Number.isSafeInteger(v.denominator) || v.denominator <= 0 ||
       v.numerator > v.denominator) fail();

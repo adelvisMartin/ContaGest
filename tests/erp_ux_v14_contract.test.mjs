@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { MODULE_VISUAL_ROUTES } from '../qa/support/module-visual-catalog.mjs';
 
 const root=process.cwd();
@@ -98,4 +99,12 @@ test('P0 engineering skills and deterministic agent router remain present',()=>{
   assert.equal(fs.existsSync(path.join(root,'qa','support','domain-risk-catalog.mjs')),true);
   assert.equal(fs.existsSync(path.join(root,'scripts','agent-gate-router.mjs')),true);
   assert.equal(fs.existsSync(path.join(root,'scripts','erp-module-function-audit.mjs')),true);
+});
+
+
+test('MUI runtime parses as JavaScript before Vite browser QA',()=>{
+  const file=path.join(root,'frontend','src','components','muiRuntime.js');
+  const checked=spawnSync(process.execPath,['--check',file],{encoding:'utf8'});
+  assert.equal(checked.error,undefined,checked.error?.message);
+  assert.equal(checked.status,0,checked.stderr||checked.stdout||'MUI runtime parse failed');
 });

@@ -27,6 +27,7 @@ export type LedgerAuditContext = {
   userId?: string;
   ipAddress?: string;
   userAgent?: string;
+  requestId?: string | null;
 };
 
 export type LedgerLifecycleAction = 'post' | 'reverse' | 'edit' | 'delete';
@@ -58,6 +59,21 @@ async function lockAccountingPeriodMutation(
   await tx.$queryRaw<Array<{ locked: string | null }>>`
     SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))::text AS locked
   `;
+}
+
+/** A manual draft linked to any originating business document is not free-form.
+ * Guard both edit and delete; PostgreSQL independently enforces deletion safety.
+ */
+function assertUnlinkedManualDraft(entry: {
+  source: string;
+  sourceId: string | null;
+  salesInvoiceId: string | null;
+  purchaseInvoiceId: string | null;
+}): void {
+  if (entry.source !== 'manual' || entry.sourceId !== null ||
+      entry.salesInvoiceId !== null || entry.purchaseInvoiceId !== null) {
+    throw new HttpError(409, 'Solo los asientos manuales sin documentos vinculados pueden modificarse o eliminarse.');
+  }
 }
 
 export function assertLedgerActionAllowed(entry: LedgerLifecycleSnapshot, action: LedgerLifecycleAction) {
@@ -277,7 +293,7 @@ export async function updateDraftLedgerEntry(input: {
     });
     if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
     assertLedgerActionAllowed(entry, 'edit');
-    if (entry.source !== 'manual') throw new HttpError(409, 'Solo los asientos manuales en borrador pueden editarse.');
+    assertUnlinkedManualDraft(entry);
     const normalizedLines = normalizeLedgerLines(input.lines);
     assertBalanced(normalizedLines);
     await assertPeriodOpen(input.tenantId, entry.fiscalPeriod, tx);
@@ -300,7 +316,10 @@ export async function updateDraftLedgerEntry(input: {
   });
 }
 
-export async function deleteDraftLedgerEntry(input: { tenantId: string; entryId: string }) {
+export async function deleteDraftLedgerEntry(input: {
+  tenantId: string; entryId: string; deletedBy?: string; audit?: LedgerAuditContext;
+}) {
+  const actorId = requirePostingActor(input.deletedBy || input.audit?.userId);
   return prisma.$transaction(async (tx) => {
     await lockScopedLedgerEntry(tx, input.tenantId, input.entryId);
     const entry = await tx.ledgerEntry.findFirst({
@@ -309,8 +328,25 @@ export async function deleteDraftLedgerEntry(input: { tenantId: string; entryId:
     });
     if (!entry) throw new HttpError(404, 'Asiento contable no encontrado.');
     assertLedgerActionAllowed(entry, 'delete');
-    if (entry.source !== 'manual') throw new HttpError(409, 'Solo los asientos manuales en borrador pueden eliminarse.');
+    assertUnlinkedManualDraft(entry);
     await assertPeriodOpen(input.tenantId, entry.fiscalPeriod, tx);
+    // The retention guard requires this same-transaction audit evidence BEFORE
+    // permitting a manual, unposted draft to be discarded. A failed delete
+    // rolls the audit back; failed audit never leaves an unaudited deletion.
+    await tx.auditLog.create({
+      data: {
+        tenantId: input.tenantId, userId: actorId,
+        action: 'ledger.entry.draft-deleted',
+        entity: 'LedgerEntry', entityId: entry.id,
+        // Preserve the previous route-level forensic before-snapshot, including
+        // exact Decimal amounts and line details, but commit it with DELETE.
+        // Serializing first gives Prisma JSON its canonical string/number types.
+        before: JSON.parse(JSON.stringify(entry)) as Prisma.InputJsonValue,
+        after: { deleted: true, requestId: input.audit?.requestId || null },
+        ipAddress: input.audit?.ipAddress || null,
+        userAgent: input.audit?.userAgent || null
+      }
+    });
     await tx.ledgerEntry.delete({ where: { id: entry.id, tenantId: input.tenantId } });
     return entry;
   });
