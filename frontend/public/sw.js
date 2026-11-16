@@ -67,14 +67,17 @@ const PRIVATE_QUERY_KEY = /^(?:t|token|access[_-]?token|refresh[_-]?token|id[_-]
 function hasPrivateQueryParameter(url) {
   // URLSearchParams decodes parameter names; avoid per-request array allocation.
   for (const key of url.searchParams.keys()) {
-    if (PRIVATE_QUERY_KEY.test(key)) return true;
+    if (PRIVATE_QUERY_KEY.test(key.normalize('NFKC'))) return true;
   }
   return false;
 }
 
 function isSensitiveRequest(url) {
   let pathname;
-  try { pathname = decodeURIComponent(scopedPath(url)); }
+  // Case-insensitive backend routes and double-encoded separators must not
+  // regain an offline response through an alternate URL spelling.
+  if (/%25/i.test(url.pathname)) return true;
+  try { pathname = decodeURIComponent(scopedPath(url)).toLowerCase(); }
   catch { return true; } // Malformed escapes must not use offline cache.
   return hasPrivateQueryParameter(url)
     || pathname === '/api'
