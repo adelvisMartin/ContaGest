@@ -20,7 +20,11 @@ const APP_SHELL = [
 
 function scoped(path) { return new URL(path, self.registration.scope).toString(); }
 const APP_SHELL_URLS = new Set(APP_SHELL.map(scoped));
-function isSensitive(url) { return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(url.pathname); }
+function hasPrivateQueryParameter(url) {
+  // Do not serve an offline shell for a URL carrying report/authentication credentials.
+  return [...url.searchParams.keys()].some((key) => /^(?:t|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth|authorization|code|api[_-]?key|apikey|secret|password|session(?:[_-]?id)?|jwt|signature|sig|x-amz-(?:signature|credential)|x-goog-signature)$/i.test(key));
+}
+function isSensitive(url) { return hasPrivateQueryParameter(url) || /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(url.pathname); }
 function isRuntimeMetadata(url) { return url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json'); }
 function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
 function offlineNavigationShell(url) {
