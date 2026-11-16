@@ -35,6 +35,7 @@ jobs:
         with: { node-version: '22', cache: npm }
       - run: npm ci
       - run: node --test tests/pwa_offline_v563_contract.test.mjs
+      - run: node --test tests/pwa_private_query_guard_v1292.test.mjs
       - run: npm run build:frontend
 
   chromium:
