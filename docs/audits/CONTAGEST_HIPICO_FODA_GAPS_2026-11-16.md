@@ -158,3 +158,18 @@ Antes de ejecutar cualquier `prisma migrate deploy` fuera de PostgreSQL efímero
 - **Release:** reexaminar `main` y candidate SHA y logs de ese mismo commit. Sin resultado exact-SHA, decisión BLOCKED/NOT_EXECUTED, no DONE.
 
 **Restricción de alcance:** estas correcciones de CI no entregan el DoD completo de #751/#774/#775/#776/#785 ni los gates físicos de Hípico. No convertir el PR en mega-refactor de todo el monorepo; futuros cambios deben estar ligados a evidencia y aceptar prueba completa.
+
+
+## 10. Segunda ronda de CI: migraciones, contratos, arquitectura y dependencias
+
+**Evidencia para SHA anterior `8b8f115855edd5e28d88e8a381cd74f5c5b5934f` (NO transferible al nuevo SHA):**
+- `API #565 · contract governance` PASS (incluyó typecheck tras las cuatro reparaciones).
+- `ContaGest CI` avanzó hasta `Architecture boundaries`: el auditor tenía un orden esperado desactualizado para `service-catalog`, `customer-entitlements`, `reorder-policies`. Se incorporaron sus IDs al **contrato del orden actual**, sin reordenar routers ni desactivar auditorías.
+- `npm test` local al runner avanzó cientos de pruebas y falló en `tests/pos_barcode_lookup_v765.test.mjs:31`, porque el test analizaba rutas vecinas en vez de limitarse a `/pos/product-lookup`. Se restringió el fragmento hasta el cierre del handler y se exige la presencia de su respuesta; la prohibición de devolver costo/precio/stock sigue intacta.
+- PostgreSQL desde cero pasó la sintaxis de la función #849 pero falló `P3018/42P07` en índice preexistente `Product_tenantId_id_key`. La migración sólo intenta crear `Product/Employee_tenantId_id_key` cuando no existen, conservando su unicidad y el contrato de columnas. **No es prueba de que todas las migraciones siguientes funcionen**.
+- `Security baseline from source` alertó sobre `deepmerge-ts 7.1.5` y `ip-address 10.4.0` (además de `qs` ya corregido). Se actualizaron los artefactos pinneados e integridades publicadas del lock a `deepmerge-ts 8.0.2`, `ip-address 10.7.4`, `qs 6.16.1`; se revisará en npm ci/audit exact-SHA. Existe override explícito de `deepmerge-ts`; se actualizó a la versión del lock.
+- Los errores restantes reportados por otras suites deben distinguirse entre cascadas de PostgreSQL, provider y fallos autónomos; jamás trasladar PASS de un run anterior.
+
+**Estado de estas remediaciones:** código y docs escritos en el PR, revisión de fuente realizada, CI del SHA final **aún sin PASS verificable**. El nuevo candidato necesita install, lint, contratos, migraciones from-zero/upgrade y revisión de cambios en configuración de seguridad.
+
+**Cambio de contrato rechazado:** no se ha desactivado el control de arquitectura, audit de seguridad, E2E, tests de documentos fiscales, SOURCE NO-GO ni protección por tenants. El runbook de checksum #849 en la sección 9 sigue siendo obligatorio para producción.
