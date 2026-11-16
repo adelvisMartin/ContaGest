@@ -70,11 +70,21 @@ function isSensitiveRequest(url) {
   try { pathname = decodeURIComponent(scopedPath(url)); }
   catch { return true; } // Malformed escapes must not use offline cache.
   return hasPrivateQueryParameter(url)
+    || pathname === '/api'
     || pathname.startsWith('/api/')
+    || pathname === '/auth'
     || pathname.startsWith('/auth/')
+    // Same-origin Hípico pages must never receive the ERP offline shell.
+    || /^\/(?:hipico-control|control-hipico)(?:\/|$)/.test(pathname)
     || pathname.includes('/licenses')
     || pathname.includes('/media')
     || pathname.includes('/admin');
+}
+
+function hasPrivateRequestHeaders(request) {
+  // Header-bound requests cannot share the app-shell cache, even at a public URL.
+  return ['authorization', 'x-api-key', 'x-hipico-bridge-token']
+    .some((name) => request.headers?.has?.(name));
 }
 
 function isPublicStaticAsset(url) {
@@ -115,7 +125,7 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || isSensitiveRequest(url)) return;
+  if (url.origin !== self.location.origin || isSensitiveRequest(url) || hasPrivateRequestHeaders(request)) return;
 
   if (url.toString() === scoped('./build-info.json')) {
     event.respondWith(fetch(request, { cache: 'no-store' }).catch(() => new Response(JSON.stringify({
