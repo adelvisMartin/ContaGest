@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
-import { prepareQaSemanticPosting } from './support/semantic-posting-fixture.ts';
+import { prepareQaManualPostingAccounts, prepareQaSemanticPosting } from './support/semantic-posting-fixture.ts';
 
 const RUN = `QA90-${Date.now().toString(36).toUpperCase()}`;
 const PERIOD = '2096-09';
@@ -46,6 +46,11 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
   });
 
   await prepareQaSemanticPosting(h);
+  await prepareQaManualPostingAccounts(h, [
+    {code:`${RUN}.D1`,nature:'debit'},
+    {code:`${RUN}.D2`,nature:'debit'},
+    {code:`${RUN}.C`,nature:'credit'},
+  ]);
 
   await t.test('manual ledger accepts 0.10 + 0.20 == 0.30 exactly', async () => {
     const entry = await h.ok('/accounting/entries', {
