@@ -12,7 +12,7 @@ import { resolveSemanticPostingAccounts } from '../chart-accounts/account-role.r
 import { getFxPolicy } from '../currency/fx.repository.js';
 import { fiscalEvidenceHash, resolveFiscalRules } from './fiscal.repository.js';
 import { getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
-import { exactMinor, planPostedPurchaseWithholding, isInternalRetivaPostingEnabled } from './ve-iva-withholding-application.js';
+import { exactMinor, planPostedPurchaseWithholding, isInternalRetivaPostingEnabled, assertRetivaVesSource } from './ve-iva-withholding-application.js';
 import { reconcileVatWithholdingApplications } from './ve-iva-withholding-reconciliation.js';
 import type { AppliedRatio } from './ve-tax-posting-plan.js';
 
@@ -206,9 +206,16 @@ router.post('/',requirePermission('fiscal.post_withholding'),validateBody(applic
     const period=recognizedAt.toISOString().slice(0,7);
     await assertPeriods(tx,ctx.tenantId,period);
     const fx=await getFxPolicy(ctx.tenantId,tx);
-    if(fx.functionalCurrency!=='VES'||invoice.currency!=='VES'||!invoice.total.gt(0)||
-       !posted.lines.length||posted.lines.some(line=>line.currency!=='VES'||!line.exchangeRate.eq(1)))
+    try {
+      assertRetivaVesSource({
+        functionalCurrency: fx.functionalCurrency,
+        invoiceCurrency: invoice.currency,
+        totalPositive: invoice.total.gt(0),
+        lines: posted.lines,
+      });
+    } catch {
       throw bad('Aplicación IVA interna admitida sólo para libros y facturas VES con FX=1.','RETIVA_CURRENCY_UNSUPPORTED');
+    }
 
     const [buyer,vatAtInvoice,retAtRecognition]=await Promise.all([
       getEffectiveTaxpayerProfile(tx,ctx.tenantId,recognizedAt),
