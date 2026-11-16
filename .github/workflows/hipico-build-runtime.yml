@@ -59,6 +59,9 @@ jobs:
       - name: Verify private URL/offline cache boundary
         run: node --test tests/pwa_private_query_guard_v1292.test.mjs
 
+      - name: Verify synthetic LAB obfuscated query rejection
+        run: node --test tools/hipico-whatsapp-web-bridge/tests/lab-obfuscated-query-v1291.test.mjs
+
       - name: Install Chromium used by build pre-QA
         run: npx playwright install --with-deps chromium
 
