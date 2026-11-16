@@ -35,8 +35,10 @@ function isSensitive(url) {
   return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(pathname);
 }
 function hasPrivateRequestHeaders(request) {
-  return ['authorization', 'x-api-key', 'x-hipico-bridge-token']
-    .some((name) => request.headers?.has?.(name));
+  const headers = request.headers;
+  return Boolean(headers?.has?.('authorization')
+    || headers?.has?.('x-api-key')
+    || headers?.has?.('x-hipico-bridge-token'));
 }
 function isRuntimeMetadata(url) { return url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json'); }
 function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
