@@ -68,11 +68,12 @@ export const AuthService={
     const nextTenantId=payload?.tenantId||payload?.tenant?.id;
     if(!nextTenantId)throw new Error('El backend no devolvió una sesión con empresa activa.');
     if(previous&&previous.tenantId!==nextTenantId){
-      // Purge the old synchronous storage before the new tenant is hydrated.
-      // Await only the asynchronous cache/IndexedDB cleanup after installing B.
-      Store.purgeSessionScope(previous);
+      // Clear A's web storage before hydrating B, but defer Store's scoped
+      // purge until after switching: that avoids an intermediate anonymous
+      // render while the backend-approved tenant becomes active.
       const purge=purgeOfflineSession(previous).then(()=>null,error=>error);
       const next=normalizeSession(payload);
+      Store.purgeSessionScope(previous);
       const purgeError=await purge;
       if(purgeError)throw purgeError;
       return next;
