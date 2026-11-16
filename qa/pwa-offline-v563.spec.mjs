@@ -63,7 +63,9 @@ test.describe('PWA offline #563', () => {
       const cacheB = `contagest-ve-v563-3-session-${scopeB}`;
       const prefixNeighbor = `${cacheA}neighbor`;
       const foreignDb = `contagest-offline-v563-${scopeA}neighbor`;
+      const hipicoSessionKey = 'hipico_synthetic_other_product_session';
       try {
+        sessionStorage.setItem(hipicoSessionKey, 'independent-product');
         for (const name of [cacheA, cacheCurrentA, cacheB, prefixNeighbor]) {
           const cache = await caches.open(name);
           await cache.put('/synthetic-private-marker', new Response('synthetic'));
@@ -91,9 +93,11 @@ test.describe('PWA offline #563', () => {
           prefixNeighborPreserved: names.includes(prefixNeighbor),
           dbADeleted: !dbNames.includes(`contagest-offline-v563-${scopeA}`),
           dbBPreserved: dbNames.includes(`contagest-offline-v563-${scopeB}`),
-          dbPrefixNeighborPreserved: dbNames.includes(foreignDb)
+          dbPrefixNeighborPreserved: dbNames.includes(foreignDb),
+          hipicoSessionPreserved: sessionStorage.getItem(hipicoSessionKey) === 'independent-product'
         };
       } finally {
+        sessionStorage.removeItem(hipicoSessionKey);
         await service.purgeOfflineSession(tenantA);
         await service.purgeOfflineSession(tenantB);
         await caches.delete(prefixNeighbor);
@@ -113,6 +117,7 @@ test.describe('PWA offline #563', () => {
     expect(result.dbADeleted).toBe(true);
     expect(result.dbBPreserved).toBe(true);
     expect(result.dbPrefixNeighborPreserved).toBe(true);
+    expect(result.hipicoSessionPreserved).toBe(true);
   });
 
   test('blocked IndexedDB deletion reports incomplete offline logout and cleans up the fixture', async ({ page }) => {
