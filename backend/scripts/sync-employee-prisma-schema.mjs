@@ -4,7 +4,8 @@ import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const schemaPath = resolve(here, '../prisma/schema.prisma');
-let schema = readFileSync(schemaPath, 'utf8');
+const originalSchema = readFileSync(schemaPath, 'utf8');
+let schema = originalSchema;
 
 const fieldsBefore = `  idNumber    String
   fullName    String
@@ -124,5 +125,9 @@ if (!schema.includes('model PriceBook {')) {
   schema = `${schema.trimEnd()}${pricingModels}\n`;
 }
 
-writeFileSync(schemaPath, schema);
-console.log('Prisma sincronizado: Employee + #856 Price Book authority.');
+if (schema !== originalSchema) {
+  writeFileSync(schemaPath, schema);
+  console.log('Prisma sincronizado: Employee + #856 Price Book authority.');
+} else {
+  console.log('Prisma schema canónico: sin cambios.');
+}

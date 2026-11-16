@@ -23,3 +23,38 @@ test('#637 protected CRUD contract stays fail closed during QA',()=>{
   const matches=harness.match(/import \{ randomBytes, randomUUID \} from 'node:crypto';/g)||[];
   assert.equal(matches.length,1,'fixture runtime must not redeclare crypto imports');
 });
+
+test('#637 high-risk QA validates exact ephemeral database before creating sessions',()=>{
+  const harnessEntry=harness.indexOf('export async function createRealBackendHarness(');
+  const connectedDatabaseCheck=harness.indexOf('SELECT current_database() AS name',harnessEntry);
+  const tenantLookup=harness.indexOf('await prisma.tenant.findUnique(',harnessEntry);
+  const sessionInsert=harness.indexOf('INSERT INTO public."UserSession"',harnessEntry);
+  assert.ok(harnessEntry>=0&&connectedDatabaseCheck>harnessEntry &&
+    tenantLookup>connectedDatabaseCheck&&sessionInsert>connectedDatabaseCheck,
+    'The database preflight must precede all test tenant/session mutations');
+  assert.match(harness,/approvedDatabaseNames\.includes\(db\[0\]\?\.name\)/);
+  assert.match(harness,/process\.env\.NODE_ENV,'test'/);
+  const suites=[
+    ['financial-decimal-real-v90.test.ts',["'contagest_financial_v90_e2e'","'contagest_ledger_v91'"]],
+    ['ledger-posting-real-v91.test.ts',["'contagest_ledger_v91'"]],
+    ['fiscal-governance-v96.test.ts',["'contagest_fiscal_v96_e2e'"]]
+  ];
+  for(const [file,approved] of suites){
+    const source=readFileSync(new URL('../qa/'+file,import.meta.url),'utf8');
+    assert.match(source,/approvedDatabaseNames:\[/,'Missing opt-in for '+file);
+    for(const name of approved)assert.ok(source.includes(name),
+      'Expected disposable database not allowlisted for '+file+': '+name);
+  }
+});
+
+test('#90/#96 QA preserve immutable fiscal and posted financial evidence',()=>{
+  const financial=readFileSync(new URL('../qa/financial-decimal-real-v90.test.ts',import.meta.url),'utf8');
+  const fiscal=readFileSync(new URL('../qa/fiscal-governance-v96.test.ts',import.meta.url),'utf8');
+  assert.doesNotMatch(financial,/\.ledgerEntry\.deleteMany\(/);
+  assert.doesNotMatch(financial,/\.bankMovement\.deleteMany\(/);
+  assert.doesNotMatch(financial,/\.salesInvoice\.deleteMany\(/);
+  assert.doesNotMatch(financial,/\.purchaseInvoice\.deleteMany\(/);
+  assert.doesNotMatch(fiscal,/\.fiscalDocument\.deleteMany\(/);
+  assert.doesNotMatch(fiscal,/\.auditLog\.deleteMany\(/);
+  assert.match(financial,/t\.after\(async \(\) => h\.close\(\)\)/);
+});

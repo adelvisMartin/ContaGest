@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
-import { cp, copyFile, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
+import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import pg from 'pg';
@@ -48,6 +49,43 @@ function runPrisma(args) {
   });
   if (result.error) throw result.error;
   if (result.status !== 0) throw new Error(`PRISMA_COMMAND_FAILED:${args.join(' ')}:${result.status}`);
+}
+
+// #849/#751 are SQL-format corrections to historical migration files. Prisma
+// deploy is not proof that an already-applied checksum matches the deployed
+// source. Never silently bless drift on a customer database.
+export const REVIEWED_HISTORICAL_SQL_REPAIRS = Object.freeze([
+  '20261022171000_issue_849_service_catalog_foundation',
+  '20261022173000_issue_751_reviewed_fiscal_rule_governance'
+]);
+
+export async function assertReviewedMigrationChecksums({ databaseUrl, migrationsRoot }) {
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const exists = await client.query(
+      `SELECT to_regclass('public."_prisma_migrations"') AS migration_table`
+    );
+    if (!exists.rows[0]?.migration_table) return;
+    const applied = await client.query(
+      `SELECT migration_name, checksum
+       FROM public."_prisma_migrations"
+       WHERE migration_name = ANY($1::text[])
+         AND finished_at IS NOT NULL AND rolled_back_at IS NULL`,
+      [REVIEWED_HISTORICAL_SQL_REPAIRS]
+    );
+    for (const row of applied.rows) {
+      const migrationName = String(row.migration_name);
+      const migrationPath = path.join(migrationsRoot, migrationName, 'migration.sql');
+      const canonical = createHash('sha256')
+        .update(await readFile(migrationPath)).digest('hex');
+      if (!row.checksum || String(row.checksum).toLowerCase() !== canonical) {
+        throw new Error(`HISTORICAL_MIGRATION_CHECKSUM_DRIFT:${migrationName}:DBA_REVIEW_REQUIRED`);
+      }
+    }
+  } finally {
+    await client.end();
+  }
 }
 
 async function pendingLegacyBaseline(databaseUrl) {
@@ -131,6 +169,9 @@ export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } =
   const temporaryPrefixes = [];
 
   try {
+    // Check for already-applied historical migration drift BEFORE any baseline
+    // resolve, compatibility projection, or schema mutation, even on ephemeral DBs.
+    await assertReviewedMigrationChecksums({ databaseUrl, migrationsRoot });
     if (ephemeral) {
       for (const migration of await pendingLegacyBaseline(databaseUrl)) {
         console.log(`[prisma-baseline] recording historical baseline: ${migration}`);
