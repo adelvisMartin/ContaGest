@@ -129,8 +129,16 @@ test('#637 manual DRAFT deletion requires atomic audit and cannot drop protected
   assert.match(migration,/a\.xmin::text\s*=\s*\(pg_current_xact_id\(\)::text::numeric % 4294967296\)::text/,
     'A previously committed deletion audit must never authorize a later transaction');
   assert.match(migration,/data_lifecycle_assert_not_held/);
-  assert.match(migration,/OLD\."tenantId"::uuid/, 'UUID-typed legal hold must receive explicit cast from ledger tenant TEXT');
-  assert.match(migration,/p\."tenantId" = OLD\."tenantId"::uuid/, 'Retention policy UUID comparison must use explicit cast');
+  // The canonical #562 migration is projected from UUID to TEXT because
+  // Tenant.id is TEXT. An explicit ::uuid here breaks fresh/upgrade installs.
+  const compat=readFileSync(new URL('../backend/scripts/migration-compat-v626.mjs',import.meta.url),'utf8');
+  assert.match(compat,/TENANT_COLUMN_UUID/);
+  assert.match(compat,/TENANT_PARAM_UUID/);
+  assert.match(compat,/return match\.replace\(\/uuid\\b\/, 'text'\)/);
+  assert.match(migration,/data_lifecycle_assert_not_held\(\s*OLD\."tenantId",/);
+  assert.match(migration,/p\."tenantId" = OLD\."tenantId"/);
+  assert.doesNotMatch(migration,/OLD\."tenantId"::uuid/,
+    'Projected TEXT tenantId cannot be coerced to UUID for lifecycle guards');
   assert.match(migration,/LEDGER_DRAFT_DELETE_AUDIT_REQUIRED/);
   assert.match(migration,/generic delete denied for protected lifecycle entity/);
   assert.match(migration,/retention policy denies purge for protected lifecycle entity/);
