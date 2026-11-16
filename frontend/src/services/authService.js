@@ -64,9 +64,20 @@ export const AuthService={
   async tenants(){return BackendApi.request('/auth/tenants');},
   async switchTenant(tenantId){
     const previous=AuthSession.get();
-    const next=normalizeSession(await BackendApi.request('/auth/switch-tenant',{method:'POST',body:{tenantId}}));
-    if(previous&&previous.tenantId!==next.tenantId){Store.purgeSessionScope(previous);await purgeOfflineSession(previous);}
-    return next;
+    const payload=await BackendApi.request('/auth/switch-tenant',{method:'POST',body:{tenantId}});
+    const nextTenantId=payload?.tenantId||payload?.tenant?.id;
+    if(!nextTenantId)throw new Error('El backend no devolvió una sesión con empresa activa.');
+    if(previous&&previous.tenantId!==nextTenantId){
+      // Purge the old synchronous storage before the new tenant is hydrated.
+      // Await only the asynchronous cache/IndexedDB cleanup after installing B.
+      Store.purgeSessionScope(previous);
+      const purge=purgeOfflineSession(previous).then(()=>null,error=>error);
+      const next=normalizeSession(payload);
+      const purgeError=await purge;
+      if(purgeError)throw purgeError;
+      return next;
+    }
+    return normalizeSession(payload);
   },
   async logout(){
     const previous=AuthSession.get();
