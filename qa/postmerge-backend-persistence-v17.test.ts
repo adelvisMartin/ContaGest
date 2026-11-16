@@ -71,11 +71,17 @@ async function assertCrud({base,token,path,create,update,identity,immutable=fals
         method:'PUT',body:JSON.stringify(update)
       });
       assert.equal(String(updated.id),id,`${path}: update changed identity`);
-      for(const [key,value] of Object.entries(update))
-        assert.deepEqual(updated[key],value,`${path}: update field ${key} not persisted in response`);
+      for(const [key,value] of Object.entries(update)) {
+        if (['price','cost','taxRate','balance'].includes(key))
+          assert.equal(String(updated[key]),String(value),`${path}: exact decimal update ${key} mismatch`);
+        else assert.deepEqual(updated[key],value,`${path}: update field ${key} not persisted in response`);
+      }
       const refreshed=await expectOk(base,token,`${path}/${encodeURIComponent(id)}`);
-      for(const [key,value] of Object.entries(update))
-        assert.deepEqual(refreshed[key],value,`${path}: refresh lost field ${key}`);
+      for(const [key,value] of Object.entries(update)) {
+        if (['price','cost','taxRate','balance'].includes(key))
+          assert.equal(String(refreshed[key]),String(value),`${path}: exact decimal refresh ${key} mismatch`);
+        else assert.deepEqual(refreshed[key],value,`${path}: refresh lost field ${key}`);
+      }
     }
 
     const list=await expectOk(base,token,`${path}?take=100`);
@@ -138,7 +144,7 @@ test('post-merge real persistence: CRUD, audit, licensing and tenant isolation',
 
   await t.test('real DB health and auth middleware',async()=>{
     const health=await expectOk(base,token,'/health/db');
-    assert.ok(Array.isArray(health.database),'DB health did not return database evidence');
+    assert.equal(health.database?.ready,true,'DB health must report a successful actual SQL probe');
     const restricted=await request(base,restrictedToken,'/clients');
     assert.equal(restricted.response.status,403,'Unlicensed QA role unexpectedly bypassed license guard');
   });
