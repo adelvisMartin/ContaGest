@@ -10,7 +10,26 @@ export const QA_ADMIN_EMAIL='admin@erp.local';
 
 function unwrap(payload:any){return payload?.data ?? payload;}
 
-export async function createRealBackendHarness(){
+/** Explicit opt-in for high-risk QA suites. Check the actual connected database
+ * BEFORE issuing any session, creating app state or provisioning synthetic rows.
+ * The runner may use its own disposable clone instead of the seed database.
+ */
+export async function createRealBackendHarness(options: {
+  approvedDatabaseNames?: readonly string[];
+} = {}){
+  if(options.approvedDatabaseNames){
+    assert.ok(options.approvedDatabaseNames.length>0,
+      'The QA isolation allowlist must not be empty');
+    for(const name of options.approvedDatabaseNames){
+      assert.match(name,/^contagest_[a-z0-9_]+_v[0-9]+(?:_e2e)?$/,
+        'Only explicit versioned ContaGest QA databases are eligible');
+    }
+    assert.equal(process.env.NODE_ENV,'test',
+      'High-risk real backend QA must never run in a production environment');
+    const db=await prisma.$queryRaw<Array<{name:string}>>`SELECT current_database() AS name`;
+    assert.ok(options.approvedDatabaseNames.includes(db[0]?.name),
+      `Refusing synthetic QA mutations outside explicitly approved database(s): ${db[0]?.name || '(unknown)'}`);
+  }
   const tenant=await prisma.tenant.findUnique({where:{rif:QA_TENANT_RIF}});
   assert.ok(tenant,`QA tenant ${QA_TENANT_RIF} not found`);
   const admin=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:QA_ADMIN_EMAIL,status:'active'}});
