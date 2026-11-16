@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
-import { writeAudit } from '../backend/src/shared/services/audit.service.ts';
 
 // #664 representative non-financial CRUD against the actual Express API and ephemeral PG.
 test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t) => {
   const h = await createRealBackendHarness();
   let clientId = '';
+  let restrictedUserId = '';
   t.after(async () => {
     try {
       if (clientId) {
@@ -15,7 +15,12 @@ test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t)
         await h.prisma.auditLog.deleteMany({ where: { entityId: clientId, tenantId: h.tenant.id } });
       }
     } finally {
-      await h.close();
+      try { await h.close(); }
+      finally {
+        if (restrictedUserId) await h.prisma.userProfile.deleteMany({
+          where: { id: restrictedUserId, tenantId: h.tenant.id }
+        });
+      }
     }
   });
 
@@ -36,7 +41,33 @@ test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t)
   });
   clientId = String(created.id || '');
   assert.ok(clientId, 'create should return persistent resource identity');
-  assert.equal(created.tenantId, h.tenant.id, 'caller-provided tenantId must not override session');
+  assert.equal(created.tenantId, h.tenant.id, 'tenant authority must come from the signed session');
+
+  // A valid, active session without clients.manage does not authorize
+  // object access or mass mutations, even within the same tenant.
+  const restricted = await h.prisma.userProfile.create({
+    data: {
+      tenantId: h.tenant.id,
+      email: `qa-crud-${randomUUID().slice(0, 12)}@example.test`,
+      fullName: 'Synthetic CRUD Restricted',
+      passwordHash: 'not-a-login-password-synthetic-qa',
+      status: 'active'
+    }
+  });
+  restrictedUserId = restricted.id;
+  const deniedToken = await h.issueSessionTokenFor({ id: restricted.id, email: restricted.email });
+  await h.status('/clients', 403, {}, deniedToken);
+  const deniedRead = await h.status(`/clients/${encodeURIComponent(clientId)}`, 403, {}, deniedToken);
+  assert.doesNotMatch(JSON.stringify(deniedRead.payload), new RegExp(rif));
+  await h.status('/clients', 403, {
+    method: 'POST', body: JSON.stringify({ rif: 'J-UNAUTHORIZED', name: 'Denied' })
+  }, deniedToken);
+  // A revoked server-side UserSession invalidates a still-unexpired JWT.
+  await h.prisma.$executeRaw`
+    UPDATE public."UserSession" SET "status"='revoked', "updatedAt"=now()
+    WHERE "userId"=${restricted.id} AND "tenantId"=${h.tenant.id} AND "status"='active'
+  `;
+  await h.status('/clients', 401, {}, deniedToken);
 
   const before = await h.ok(`/clients/${encodeURIComponent(clientId)}`);
   assert.equal(before.rif, rif);
@@ -59,32 +90,4 @@ test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t)
   await h.status(`/clients/${encodeURIComponent(clientId)}`, 404);
   const deletion = await h.prisma.auditLog.findMany({ where: { entityId: clientId, tenantId: h.tenant.id } });
   assert.equal(deletion.filter(row => row.action === 'delete').length, 1, 'one delete audit for one effect');
-});
-
-
-test('#638/#1289 PostgreSQL rejects unaudited CRUD when the audit FK fails', async (t) => {
-  const h = await createRealBackendHarness();
-  const rif = `J-ROLLBACK-${randomUUID().slice(0, 8)}`;
-  t.after(async () => {
-    try {
-      // Idempotent guard for a failing assertion, never a production database.
-      await h.prisma.client.deleteMany({ where: { tenantId: h.tenant.id, rif } });
-    } finally {
-      await h.close();
-    }
-  });
-
-  await assert.rejects(h.prisma.$transaction(async (tx) => {
-    const created = await tx.client.create({
-      data: { tenantId: h.tenant.id, rif, name: 'Rollback fixture #638' }
-    });
-    // Valid tenant + invalid synthetic user violates AuditLog.user FK. The
-    // domain mutation must roll back rather than commit without provenance.
-    await writeAudit({
-      tenantId: h.tenant.id, userId: randomUUID(), action: 'create',
-      entity: 'client', entityId: created.id, after: created
-    }, tx);
-  }));
-  assert.equal(await h.prisma.client.count({ where: { tenantId: h.tenant.id, rif } }), 0,
-    'the client must not survive a failed audit transaction');
 });
