@@ -6,7 +6,7 @@
 - Fuente: AGENTS.md v16.7, docs/PROJECT_START_HERE.md, .agents/TICKET_EXECUTION_POLICY.md, issues vivos y código del baseline. La auditoría del 15-10 es contexto histórico, no PASS actual.
 - Cola canónica de cinco P0 ContaGest (#661): **#751, #785, #774, #775, #776**. La posición histórica #001 de Hípico es **#1011**, una línea independiente y además un gate de política; no se debe inventar un envío automático a Messenger.
 - Este incremento sólo corrige defensas acotadas de #751/#785/#774 y caracteriza #775/#776/#1011. Ninguno de estos seis issues se cierra o se marca DONE por el PR.
-- Alcance de archivos: gobernanza y tests fiscales (#751); selección y tests de perfil (#774); sync no destructivo, helper y tests del plan (#785); este informe. Sin migración SQL, cambio de tasas legales, posting fiscal nuevo, pago real, acceso a datos de producción, despliegue o automatización de WhatsApp.
+- Alcance de archivos: gobernanza y tests fiscales (#751); selección y tests de perfil (#774); sync no destructivo, helper y tests del plan (#785); este informe. Con corrección acotada de sintaxis de una migración histórica #849 (requiere preflight de checksum antes del despliegue); sin cambio de tasas legales, posting fiscal nuevo, pago real, acceso a datos de producción, despliegue o automatización de WhatsApp.
 
 ## 2. Hallazgos source-grounded y cambios del incremento
 | Issue | Evidencia de arquitectura actual | Incremento | Aceptación restante |
@@ -125,3 +125,36 @@ La revisión de fuentes oficiales el 2026-11-16 ratificó NO-GO de automatizaci�
 - https://github.com/adelvisMartin/ContaGest/issues/842
 - https://github.com/adelvisMartin/ContaGest/issues/839
 - docs/audits/AUDITORIA_STAFF_CONTAGEST_CONTROL_HIPICO_2026-10-15.md
+
+
+## 9. Iteración PR #1287 — causas comprobadas, refactor y control del despliegue
+
+La evolución de este PR incorpora remediación de los primeros FAIL exact-SHA de GitHub Actions, **sin atribuirles PASS** hasta que se repitan sobre HEAD nuevo:
+
+| Causa probada en runs del SHA inicial `19ac7c1` | Archivo y corrección acotada | Regresión/cierre |
+| --- | --- | --- |
+| TS2554; createLedgerEntry requería transacción | bank-reconciliation.service.ts: envolver creación de asiento en prisma.$transaction, conservar idempotencia y posting separado | Exigir DB/ledger write-off, período cerrado, retry y concurrencia |
+| TS2339; invoice.exchangeRate no existe en PurchaseInvoice | fiscal-withholding-application.routes.ts: inspeccionar líneas del asiento original realmente persistido, todas VES con FX=1 y total positivo; guard puro y negativo #775 | `npm run test:ve-tax`, QA PostgreSQL de RETIVA y ledger |
+| TS2345; bruto/deducciones/net tipados opcionales | payroll.routes.ts: validación explícita, variables estrechadas antes de calcular y guardar | suite nómina + 422 sin efectos, DB con tenant A/B |
+| TS2322; auditoría catálogo no era Prisma JSON serializable tipado | service-catalog.service.ts: normalizar JSON antes de insertar audit en transacción | Typecheck y prueba con snapshot/audit real |
+| PostgreSQL 42601/P3018, trigger #849 línea 115 | La migración source contenía `LANGUAGE plpgsql AS $` y cierre `$;`; corregido a `$$` en ambos lados; regresión de delimitadores existente en la suite #849 | Desde cero PG17, revisión de checksums por entorno, runner E2E real |
+| npm audit: qs 6.16.0 vulnerable, GHSA-6pq8-jhm2-2vcw | package-lock.json fijado a qs 6.16.1, dentro del rango de Express/Body Parser, con SRI publicado | npm ci frozen, npm audit --omit=dev y smoke de HTTP |
+
+### Preflight OBLIGATORIO para migración histórica #849
+
+**No se ha consultado ninguna base de producción/staging. No se ha resuelto ni alterado el historial de migraciones de ellas.** El SQL anterior era sintácticamente inválido para PostgreSQL y los runners efímeros fallaron antes de aplicar #849; **eso no prueba que ninguna base persistente tenga el nombre marcado como aplicado, ni descarta bootstrap alternativo**.
+
+Antes de ejecutar cualquier `prisma migrate deploy` fuera de PostgreSQL efímero, el owner DBA debe leer (no mutar) `public."_prisma_migrations"` en ese ambiente, específicamente `migration_name`, `checksum`, `finished_at`, `rolled_back_at`, `logs` para `20261022171000_issue_849_service_catalog_foundation`, y verificar la existencia real de sus seis tablas, trigger, políticas y permisos. Comparar checksum contra el archivo anterior y este candidato.
+
+**Si aparece una fila aplicada, checksum inesperado, tablas creadas manualmente o deriva:** bloquear deploy; no sustituir artefactos, no usar `migrate resolve` a ciegas, no editar el historial ni eliminar datos; delegar reconciliación, backup + ruta de restore y plan forward-only al ticket #849/DBA. Corregir el archivo en Git **no** significa aprobar una migración reescrita en ambientes existentes. Si no está aplicada, probar migración desde cero y desde un upgrade sintético primero.
+
+### Revalidación requerida tras último commit
+
+- **Typecheck/build:** `npm ci --no-audit --no-fund && npm run typecheck && npm run build`.
+- **Dominio:** `node --experimental-strip-types --test tests/chart_template_additive_sync_v785.test.mjs tests/taxpayer_profile_activation_v774.test.mjs tests/fiscal_rule_governance_policy_v751.test.mjs tests/ve_iva_withholding_source_fx_v775.test.mjs`; `node --test tests/service_catalog_schema_v849.test.mjs`.
+- **Real PG17:** todos los SQL migrados desde cero, prueba de tenant A/B, RLS, immutable journal, write-off, IVA y reversos, idempotencia y limpieza garantizada.
+- **Browser:** Chromium de PR, matriz Firefox/WebKit, responsive/focus/loading/empty/error; Android y WhatsApp SOURCE reales siguen sin automatización.
+- **Security:** audit `qs`, consultas cross-tenant, control de URL/PII, dependencias y secretos.
+- **Release:** reexaminar `main` y candidate SHA y logs de ese mismo commit. Sin resultado exact-SHA, decisión BLOCKED/NOT_EXECUTED, no DONE.
+
+**Restricción de alcance:** estas correcciones de CI no entregan el DoD completo de #751/#774/#775/#776/#785 ni los gates físicos de Hípico. No convertir el PR en mega-refactor de todo el monorepo; futuros cambios deben estar ligados a evidencia y aceptar prueba completa.
