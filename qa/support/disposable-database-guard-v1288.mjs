@@ -23,7 +23,10 @@ export function assertQaDisposableDatabaseConfig(env) {
         !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) blocked();
     let name;
     try { name = decodeURIComponent(url.pathname.slice(1)); } catch { blocked(); }
-    if (!/^.+(?:_e2e|_drill|_restore)$/.test(name)) blocked();
+    // Database identifiers are not URL paths or arbitrary decoded strings.
+    // This prevents encoded separators/control characters and ambiguous names
+    // from being accepted merely because the last segment ends in _e2e.
+    if (!/^[A-Za-z0-9_]+(?:_e2e|_drill|_restore)$/.test(name)) blocked();
     targets.add(url.hostname.toLowerCase() + ':' + (url.port || '5432') + '/' + name);
     databaseName = name;
   }
