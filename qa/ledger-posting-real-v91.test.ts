@@ -196,6 +196,38 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
     });
   });
 
+  await t.test('legacy/manual drafts with an origin reference cannot be edited or deleted', async () => {
+    // An intentionally inconsistent legacy fixture bypasses the public draft
+    // constructor; its document-origin reference must remain protected.
+    const linked = await h.prisma.ledgerEntry.create({
+      data: {
+        tenantId:h.tenant.id, fiscalPeriod:PERIOD_MANUAL,
+        description:`${RUN} provenance protected`, source:'manual',
+        sourceId:`${RUN}-BUSINESS-ORIGIN`, posted:false,
+        lines:{create:[
+          {accountCode:`${RUN}.TMPD`,accountName:'Linked debit',debit:'1.00',credit:'0.00'},
+          {accountCode:`${RUN}.TMPC`,accountName:'Linked credit',debit:'0.00',credit:'1.00'}
+        ]}
+      }
+    });
+    await h.status(`/accounting/entries/${linked.id}`,409,{
+      method:'PATCH',body:JSON.stringify({
+        fiscalPeriod:PERIOD_MANUAL,description:`${RUN} unauthorized reclassification`,
+        lines:[
+          {accountCode:`${RUN}.TMPD`,accountName:'Linked debit',debit:'1.00'},
+          {accountCode:`${RUN}.TMPC`,accountName:'Linked credit',credit:'1.00'}
+        ]
+      })
+    });
+    await h.status(`/accounting/entries/${linked.id}`,409,{method:'DELETE'});
+    const persisted=await h.prisma.ledgerEntry.findFirst({
+      where:{id:linked.id,tenantId:h.tenant.id},include:{lines:true}
+    });
+    assert.equal(persisted?.sourceId,`${RUN}-BUSINESS-ORIGIN`,
+      'Unauthorized operations must preserve the business origin');
+    assert.equal(persisted?.lines.length,2,'Unauthorized edit must not alter ledger lines');
+  });
+
   await t.test('reversal creates a new POSTED inverse, leaves original intact and cannot chain', async () => {
     const originalBefore = await h.prisma.ledgerEntry.findUnique({ where: { id: manualPostedId }, include: { lines: true } });
     assert.ok(originalBefore);
