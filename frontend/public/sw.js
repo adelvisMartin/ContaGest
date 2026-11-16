@@ -56,13 +56,19 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
+const PRIVATE_QUERY_KEY = /^(?:t|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth|authorization|code|api[_-]?key|apikey|secret|password|session(?:[_-]?id)?|jwt|signature|sig|x-amz-(?:signature|credential)|x-goog-signature)$/i;
 function hasPrivateQueryParameter(url) {
-  // A token in a URL must never turn into a persistent cache key or an offline shell.
-  return [...url.searchParams.keys()].some((key) => /^(?:t|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth|authorization|code|api[_-]?key|apikey|secret|password|session(?:[_-]?id)?|jwt|signature|sig|x-amz-(?:signature|credential)|x-goog-signature)$/i.test(key));
+  // URLSearchParams decodes parameter names; avoid per-request array allocation.
+  for (const key of url.searchParams.keys()) {
+    if (PRIVATE_QUERY_KEY.test(key)) return true;
+  }
+  return false;
 }
 
 function isSensitiveRequest(url) {
-  const pathname = scopedPath(url);
+  let pathname;
+  try { pathname = decodeURIComponent(scopedPath(url)); }
+  catch { return true; } // Malformed escapes must not use offline cache.
   return hasPrivateQueryParameter(url)
     || pathname.startsWith('/api/')
     || pathname.startsWith('/auth/')
@@ -134,12 +140,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Scripts and styles must also be in the public allowlist.
+  if (!isPublicStaticAsset(url)) return;
+
   if (request.destination === 'script' || request.destination === 'style') {
     event.respondWith(networkFirst(request));
     return;
   }
-
-  if (!isPublicStaticAsset(url)) return;
 
   event.respondWith((async () => {
     const cached = await assetCacheMatch(request);
