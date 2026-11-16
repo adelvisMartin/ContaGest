@@ -139,3 +139,33 @@ npm run test:browser:hipico
 4. Inspeccionar el diff final, artifacts/secret scan, `main` actual y **todos los required checks del HEAD** antes de merge. El nuevo candidato es provisional; estado **PARTIAL/NO_MERGE**.
 
 **Rendimiento/cambio mínimo:** el match de parámetros consulta directamente el iterador de `URLSearchParams`; el helper `mayCachePublicResponse` sólo se consulta en respuestas elegibles y no introduce fetching adicional. Son mejoras de código, no mediciones de tiempo. El rollback revierte el commit respectivo sin alterar esquema ni datos, pero sólo con un reemplazo equivalente de las barreras de caché y seguridad.
+
+## Iteración III — aislamiento de caché entre productos y migración de entradas anteriores
+
+**Fecha:** 2026-11-16. **PR:** #1296. **Baseline fijo:** `main@e7706f3dac3ae4c677fcdff05a662765fa6bdcc6`. Esta iteración afecta `frontend/public/sw.js`, `frontend/public/hipico-control/sw.js`, `tests/pwa_private_query_guard_v1292.test.mjs` y el uso de importes estrechados en `backend/src/modules/payroll/payroll.routes.ts`. No incluye cambios de API, esquema, auth de backend, desbloqueo de SOURCE ni posting financiero nuevo.
+
+### Amenaza que se mitiga
+
+En un origen web compartido, la página controlada por el SW de Hípico puede iniciar peticiones de misma-origen fuera de `/hipico-control/`, mientras el SW general de ContaGest cubre la raíz; una navegación offline o un request autorizado mal encauzado podría recibir la shell de **otro producto**, o quedar cacheado bajo la shell incorrecta. La política anterior revisaba origen y rutas sensibles, pero no verificaba el límite de scope del SW Hípico ni la frontera `/hipico-control/` en el guard de ERP.
+
+- El SW ERP deja pasar a red sin interceptar `/hipico-control[/*]` y `/control-hipico[/*]` (incluido el alias); además, no aplica fallback a `/api` o `/auth` sin barra final.
+- El SW Hípico sólo intercepta peticiones cuya `url.pathname` está dentro de `self.registration.scope`. Las APIs globales fuera de scope dejan de pasar por su lógica de caché; la autoridad de API/backend sigue en servidor.
+- Ambos workers evitan CacheStorage cuando la solicitud aporta `Authorization`, `X-Api-Key` o `X-Hipico-Bridge-Token`. Ninguna cabecera o valor privado se registra en logs; el short-circuit evita crear un array en cada `fetch`.
+- En Hípico, aun una URL de asset permitido sólo se actualiza en runtime si la respuesta no declara `Cache-Control: private`, `no-store` ni `Vary: *`. La regla equivalente en ERP sigue vigente.
+- **Migración de caché crítica:** ERP `CACHE_VERSION` pasa de `v563-2` a `v563-3`; Hípico `SHELL_CACHE` de `shell-r38-...` a `shell-r39-...`. La activación de los trabajadores nuevos ya elimina cachés de sus propias versiones anteriores; reutilizar la clave vieja permitiría arrastrar entradas potencialmente privadas desde el worker anterior. No se borran cachés del otro producto ni se propone eliminar indiscriminadamente IndexedDB.
+- Nómina persiste las variables locales `gross/deductions/net` cuya presencia ya fue validada, en vez de propiedades de transporte tipadas como opcionales; misma ecuación exacta y mismo recorrido transaccional.
+
+### Evidencia y regresiones
+
+- La suite Node VM `tests/pwa_private_query_guard_v1292.test.mjs` se amplía para dos scopes, alias, requests con cabeceras privadas, respuestas HTTP privadas, disponibilidad de estáticos públicos, `activate` y `caches.delete` por namespace; ninguna prueba exige desactivar gates.
+- **VALIDACIÓN SINTÉTICA EJECUTADA** mediante JS sobre **fuentes reales recuperadas de GitHub** en SHA `5ad64862c18313c94fbe51b24f1b247d2d37ccf3`: 12/12 casos en harness con URL/CacheStorage/fetch simulados, sin ejecución de navegador ni Playwright. Resultados: scopes ERP/Hípico separados; auth-header no guarda ni lee caché; red privada no se cachea; assets públicos sí; precache offline recuperable; `activate` elimina versión anterior y conserva otra aplicación. Este resultado es `LOCAL_SYNTHETIC` solamente; **no es el PASS de `node --test` ni de CI del HEAD definitivo**.
+- **Verificación estática JS adicional** en `71b03b07d6f21b5190f4959fb39f620d8d610a53`: los dos workers compilaron sintácticamente; `muiRuntime.js` también compiló tras eliminar declaraciones de import/export sólo en el parser de prueba. No sustituye importación real por Vite o Playwright.
+- La máquina local carece de checkout, PostgreSQL, browser/Android y DNS para clonar GitHub (`Could not resolve host: github.com`). `npm ci`, lint, typecheck completo, build Vite, Playwright, PG17 efímero, apk e integración LAB física se mantienen `NOT_EXECUTED/BLOCKED`.
+- GitHub Actions del último HEAD deben revisarse y asociarse al SHA actual. `queued`, `pending` o `cancelled` no son PASS. No se ha solicitado merge ni se cierran issues.
+
+### Riesgos residuales y reversión
+
+- Cliente **que no se actualice** (sin red, instalación fallida, worker antiguo controlador) conserva el estado offline antiguo hasta una activación exitosa; exigir revocación/backend y matriz real `fresh login → offline → logout → switch owner/user/group` de #1292 antes de release.
+- La prueba simulada de caché no valida IndexedDB, contenido privado en respuestas HTML de precache, revocación remota, backup, Android físico ni RLS/tenant del backend. No declarar cumplimiento integral de #1292.
+- La rotación cambia la clave del caché, por tanto requiere reinstalación/recarga del shell público; está prevista como operación de actualización, no migración de datos. Revertir SW exigirá otra versión nueva de caché para no reabrir entradas inseguras. Mantener rollback de versiones y verificar reconexión antes de desplegar.
+- **Estado:** PARTIAL / NO_MERGE. #1292, #1291 y #892 abiertos; el conjunto fiscal/hipico del PR aún no cumple los diez tickets.
