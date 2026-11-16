@@ -48,7 +48,7 @@ test.describe('PWA offline #563', () => {
     await expect(page.locator('html')).toHaveAttribute('data-network-state', 'revalidating');
   });
 
-  test('logout purges the selected session only, including the current worker revision', async ({ page }) => {
+  test('logout and tenant switch purge only the selected session, including the current worker revision', async ({ page }) => {
     await page.goto('/');
     await waitForWorker(page);
     await importOfflineService(page);
