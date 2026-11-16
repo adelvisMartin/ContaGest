@@ -40,6 +40,14 @@ function hasPrivateRequestHeaders(request) {
 }
 function isRuntimeMetadata(url) { return url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json'); }
 function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
+function cacheablePublicResponse(response) {
+  if (!response.ok) return false;
+  // A static allowlisted URL can still receive an explicit private response.
+  const cacheControl = (response.headers.get('cache-control') || '').toLowerCase();
+  if (/(?:^|,)\s*(?:no-store|private)(?:\s*(?:,|=|$))/.test(cacheControl)) return false;
+  return !(response.headers.get('vary') || '').split(',')
+    .some((name) => name.trim() === '*');
+}
 function offlineNavigationShell(url) {
   return url.pathname.endsWith('/recovery.html') ? './recovery.html' : './index.html';
 }
@@ -84,7 +92,7 @@ self.addEventListener('fetch', (event) => {
     const cached = await cache.match(request);
     if (cached) return cached;
     const response = await fetch(request, { cache: 'no-store' });
-    if (response.ok) await cache.put(request, response.clone());
+    if (cacheablePublicResponse(response)) await cache.put(request, response.clone());
     return response;
   })());
 });
