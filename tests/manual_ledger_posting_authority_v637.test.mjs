@@ -90,7 +90,7 @@ test('#637 manual DRAFT deletion requires atomic audit and cannot drop protected
   const command=service.split('export async function deleteDraftLedgerEntry(')[1]?.split('export async function postLedgerEntry(')[0];
   assert.ok(command,'Manual draft deletion command must exist');
   const steps=['requirePostingActor(', 'prisma.$transaction(async (tx)', 'lockScopedLedgerEntry(tx,',
-    "assertLedgerActionAllowed(entry, 'delete')", "entry.source !== 'manual'",
+    "assertLedgerActionAllowed(entry, 'delete')", 'assertUnlinkedManualDraft(entry)',
     'assertPeriodOpen(', 'tx.auditLog.create({', 'tx.ledgerEntry.delete({'];
   let previous=-1;
   for (const step of steps) {
@@ -104,6 +104,20 @@ test('#637 manual DRAFT deletion requires atomic audit and cannot drop protected
   assert.match(migration,/OLD\."posted" IS FALSE/);
   assert.match(migration,/OLD\."source" = 'manual'/);
   assert.match(migration,/OLD\."sourceId" IS NULL/);
+  assert.match(migration,/OLD\."salesInvoiceId" IS NULL/,
+    'An invoice-linked manual draft must not be removed');
+  assert.match(migration,/OLD\."purchaseInvoiceId" IS NULL/,
+    'A purchase-linked manual draft must not be removed');
+  const guard=service.split('function assertUnlinkedManualDraft(')[1]?.split('export function assertLedgerActionAllowed(')[0];
+  assert.ok(guard,'Edit/delete provenance guard missing');
+  for(const linked of ['sourceId','salesInvoiceId','purchaseInvoiceId']){
+    assert.match(guard,new RegExp('entry\\.'+linked+'\\s*!==\\s*null'),
+      'Linked business origins must fail closed: '+linked);
+  }
+  const editCommand=service.split('export async function updateDraftLedgerEntry(')[1]
+    ?.split('export async function deleteDraftLedgerEntry(')[0];
+  assert.match(editCommand,/assertUnlinkedManualDraft\(entry\)/,
+    'Editing linked drafts must be denied');
   assert.match(migration,/a\."action" = 'ledger\.entry\.draft-deleted'/);
   assert.match(migration,/a\."userId" IS NOT NULL/);
   assert.match(migration,/a\.xmin::text\s*=\s*\(pg_current_xact_id\(\)::text::numeric % 4294967296\)::text/,
