@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { inspectReorderStockRows, prepareReorderStockPage } from '../backend/src/modules/reports/replenishment-candidates.ts';
+import { deriveReorderCandidates, inspectReorderStockRows, prepareReorderStockPage } from '../backend/src/modules/reports/replenishment-candidates.ts';
 
 const row = (overrides = {}) => ({
   productId:'id-a',sku:'SKU-A',name:'Producto',unit:'UND',
@@ -60,4 +60,24 @@ test('stock anomalies stay visible as exceptions, not misleading derived candida
 test('invalid second row aborts entire page without returning any candidate IDs',()=>{
   assert.throws(()=>prepareReorderStockPage([row(),row({productId:'id-b',sku:'SKU-B',
     shortfallExact:'2.001'})]),/REORDER_SHORTFALL_MISMATCH/);
+});
+
+test('the bounded reorder page validates inventory only once before projecting candidates',()=>{
+  const stockRow=row();
+  let stockReadCount=0;
+  Object.defineProperty(stockRow,'stockExact',{
+    enumerable:true,
+    get(){stockReadCount++;return '5.000';}
+  });
+  const result=prepareReorderStockPage([stockRow]);
+  assert.equal(stockReadCount,1,'stock preflight must not repeat after successful validation');
+  assert.deepEqual(result.salesCandidateIds,['id-a']);
+  assert.equal(result.reorderCandidates[0].minShortfallExact,'2.000');
+});
+
+test('the public candidate projector still rejects unvalidated stock and flags',()=>{
+  assert.throws(()=>deriveReorderCandidates([row({availableExact:'999.000'})]),/REORDER_AVAILABLE_MISMATCH/);
+  assert.throws(()=>deriveReorderCandidates([row({needsReorder:false})]),/REORDER_FLAG_MISMATCH/);
+  assert.equal(deriveReorderCandidates([row()])[0].manualApprovalRequired,true);
+  assert.equal(deriveReorderCandidates([row()])[0].autoPurchaseEnabled,false);
 });
