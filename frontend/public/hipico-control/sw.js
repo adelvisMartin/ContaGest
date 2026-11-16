@@ -34,6 +34,10 @@ function isSensitive(url) {
   catch { return true; } // Malformed escapes must not reach offline fallback.
   return /\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i.test(pathname);
 }
+function hasPrivateRequestHeaders(request) {
+  return ['authorization', 'x-api-key', 'x-hipico-bridge-token']
+    .some((name) => request.headers?.has?.(name));
+}
 function isRuntimeMetadata(url) { return url.pathname.endsWith('/runtime-config.js') || url.pathname.endsWith('/build-info.json'); }
 function isAllowedStatic(url) { return APP_SHELL_URLS.has(url.toString()); }
 function offlineNavigationShell(url) {
@@ -59,8 +63,10 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   const scope = new URL(self.registration.scope);
-  if (url.origin !== scope.origin) return;
-  if (isSensitive(url) || isRuntimeMetadata(url)) { event.respondWith(fetch(request, { cache: 'no-store' })); return; }
+  // Controlled clients can fetch same-origin ERP/API paths outside this
+  // registration scope. Those requests belong to the browser/other worker.
+  if (url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;
+  if (hasPrivateRequestHeaders(request) || isSensitive(url) || isRuntimeMetadata(url)) { event.respondWith(fetch(request, { cache: 'no-store' })); return; }
   if (request.mode === 'navigate') {
     event.respondWith((async () => {
       try { return await fetch(request, { cache: 'no-store' }); }
