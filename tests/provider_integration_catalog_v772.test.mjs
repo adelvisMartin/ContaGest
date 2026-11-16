@@ -68,6 +68,10 @@ test('must preserve normal public documentation links with harmless query and an
   assert.deepEqual(mutate(v => { v.providers[0].source = 'https://docs.frappe.io/framework/user/en/api/rest?lang=en#authentication'; }), []);
 });
 
+test('must apply the same provenance guard to license sources', () => {
+  rejected(v => { v.providers[0].licenseSource = 'https://repo.example.org/?authorization=example'; }, 'HTTPS_PROVENANCE');
+  rejected(v => { v.providers[0].licenseSource = 'https://api.internal../license'; }, 'HTTPS_PROVENANCE');
+});
 test('must reject unverified providers activated as candidate connectors', () => {
   rejected(v => { v.providers[5].decision = 'CONSUME_EXTERNAL_API'; }, 'DOCUMENTED_API');
   rejected(v => { v.providers[5].status = 'CANDIDATE'; }, 'UNVERIFIED_MUST_FAIL_CLOSED');
