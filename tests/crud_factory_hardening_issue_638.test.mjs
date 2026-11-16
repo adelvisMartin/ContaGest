@@ -258,12 +258,14 @@ test('#1288: real API regression harness refuses shared databases before opening
 test('#985/#1289 CI PostgreSQL and Quality Gate never mislabel merge-commit evidence as PR HEAD', () => {
   const quality = read('.github/workflows/pr-quality-gate-v1.yml');
   const commercial = read('.github/workflows/e2e-commercial-v23.yml');
-  assert.equal((quality.match(/ref: \\$\\{\\{ env\\.CANDIDATE_SHA \\}\\}/g) || []).length, 4,
+  const pinned = 'ref: ${{ env.CANDIDATE_SHA }}';
+  const checkoutAssertion = 'test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"';
+  assert.equal(quality.split(pinned).length - 1, 4,
     'static, PG, browser and security must all check out the PR HEAD');
-  assert.equal((quality.match(/name: Verify exact checked-out candidate/g) || []).length, 4);
-  assert.match(quality, /test "\\$\\(git rev-parse HEAD\\)" = "\\$CANDIDATE_SHA"/);
-  assert.match(commercial, /ref: \\$\\{\\{ env\\.CANDIDATE_SHA \\}\\}/);
-  assert.match(commercial, /name: Verificar que el checkout corresponde al HEAD esperado/);
-  assert.match(commercial, /e2e-commercial-v23-provenance\\.txt/);
+  assert.equal(quality.split('name: Verify exact checked-out candidate').length - 1, 4);
+  assert.ok(quality.includes(checkoutAssertion));
+  assert.ok(commercial.includes(pinned));
+  assert.ok(commercial.includes(checkoutAssertion));
+  assert.match(commercial, /e2e-commercial-v23-provenance\.txt/);
   assert.match(commercial, /postgres:17-alpine/);
 });
