@@ -187,14 +187,29 @@ test('#1292 cache deletion failure does not prevent independent IndexedDB cleanu
   assert.equal(dbDeleted, true);
 });
 
-test('#1292 only the PWA installer owns ERP service-worker updates and local cleanup', () => {
+test('#1292 Vite renders one ERP installer and only that installer registers the service worker', () => {
   const app = readFileSync(new URL('../frontend/src/app.js', import.meta.url), 'utf8');
   const installer = readFileSync(new URL('../frontend/public/pwa-install.js', import.meta.url), 'utf8');
-  assert.doesNotMatch(app, /serviceWorker\\.register\\s*\\(/);
-  assert.doesNotMatch(app, /serviceWorker\\.addEventListener\\(\\s*['"]controllerchange/);
-  assert.match(installer, /serviceWorker\\.register\\(SW_URL\\.href/);
-  assert.match(installer, /item\\.scope === appBase\\.href/);
-  assert.match(installer, /key\\.startsWith\\(['"]contagest-ve-['"]\\)/);
+  const vite = readFileSync(new URL('../frontend/vite.config.js', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+
+  // Execute the real Vite index.html transformation without bootstrapping Vite.
+  const start = vite.indexOf('const privateAppPlugin = {');
+  const end = vite.indexOf('\nexport default defineConfig(', start);
+  assert.ok(start >= 0 && end > start, 'private app HTML transform is present');
+  const transform = vm.runInNewContext(
+    vite.slice(start, end) + '\nprivateAppPlugin.transformIndexHtml.handler',
+    { canonicalFontStylesheet: 'https://example.test/fixture-font.css' }
+  );
+  const rendered = transform(html);
+  const installers = rendered.match(/<script\b[^>]*\bsrc=["'][^"']*pwa-install\.js["']/gi) || [];
+  assert.equal(installers.length, 1, 'Vite must not inject a second PWA script');
+
+  assert.doesNotMatch(app, /serviceWorker\.register\s*\(/);
+  assert.doesNotMatch(app, /serviceWorker\.addEventListener\(\s*['"]controllerchange/);
+  assert.match(installer, /serviceWorker\.register\(SW_URL\.href/);
+  assert.doesNotMatch(installer, /getRegistrations\s*\(/,
+    'local Chromium E2E must not lose its worker to dev-only cleanup');
 });
 
 test('#1292 ContaGest logout leaves Control Hipico tab-scoped state untouched', async () => {
