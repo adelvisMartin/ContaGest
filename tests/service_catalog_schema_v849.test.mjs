@@ -42,3 +42,10 @@ test('#849 revision trigger uses valid balanced PostgreSQL dollar quotes on fres
   assert.match(sql, /RAISE EXCEPTION 'SERVICE_CATALOG_REVISION_IMMUTABLE'[\\s\\S]*?END;\\s*\\$\\$;/);
   assert.doesNotMatch(sql, /LANGUAGE plpgsql AS \\$(?!\\$)/);
 });
+
+test('#849 does not recreate preexisting tenant + identity unique indexes', () => {
+  for (const table of ['Product', 'Employee']) {
+    assert.match(sql, new RegExp('CREATE UNIQUE INDEX IF NOT EXISTS "' +
+      table + '_tenantId_id_key" ON public\\."' + table + '"\\("tenantId","id"\\);'));
+  }
+});
