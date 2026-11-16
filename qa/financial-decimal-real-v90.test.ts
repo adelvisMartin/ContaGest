@@ -36,17 +36,11 @@ test('issue #90 decimal financial core reconciles API, domain and PostgreSQL exa
     payrollReceipts: [] as string[]
   };
 
-  t.after(async () => {
-    await h.prisma.payrollReceipt.deleteMany({ where: { id: { in: ids.payrollReceipts } } }).catch(() => undefined);
-    await h.prisma.payrollPeriod.deleteMany({ where: { id: { in: ids.payrollPeriods } } }).catch(() => undefined);
-    await h.prisma.employee.deleteMany({ where: { id: { in: ids.employees } } }).catch(() => undefined);
-    await h.prisma.bankMovement.deleteMany({ where: { id: { in: ids.bankMovements } } }).catch(() => undefined);
-    await h.prisma.bankAccount.deleteMany({ where: { id: { in: ids.bankAccounts } } }).catch(() => undefined);
-    await h.prisma.ledgerEntry.deleteMany({ where: { OR: [{ id: { in: ids.ledgers } }, { sourceId: { startsWith: RUN } }] } }).catch(() => undefined);
-    await h.prisma.salesInvoice.deleteMany({ where: { id: { in: ids.sales } } }).catch(() => undefined);
-    await h.prisma.purchaseInvoice.deleteMany({ where: { id: { in: ids.purchases } } }).catch(() => undefined);
-    await h.close();
-  });
+  // Never attempt bulk DELETE of POSTED ledgers, bank movements, invoices or
+  // payroll evidence: the domain correctly protects those rows at database
+  // level. The CI service/clone destroys this explicitly allowlisted database.
+  // Only close the server and clean up its synthetic sessions here.
+  t.after(async () => h.close());
 
   await prepareQaSemanticPosting(h);
   await prepareQaManualPostingAccounts(h, [
