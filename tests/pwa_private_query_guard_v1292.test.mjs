@@ -72,6 +72,9 @@ for (const spec of WORKERS) {
       const url = new URL('?'+query, spec.scope);
       assert.equal(worker.guard(url), false, query);
     }
+    for (const encoded of ['%61pi/v1/private', 'auth%2Fsession', '%E0%A4%A']) {
+      assert.equal(worker.guard(new URL(encoded, spec.scope)), true, encoded);
+    }
     assert.equal(worker.guard(new URL('api/v1/private', spec.scope)), true);
     assert.equal(worker.guard(new URL('index.html', spec.scope)), false);
   });
@@ -87,6 +90,18 @@ for (const spec of WORKERS) {
       assert.equal(worker.fetchCalls[0].cache, 'no-store');
     } else {
       assert.equal(worker.fetchCalls.length, 0);
+    }
+    assert.equal(worker.cacheWrites.length, 0);
+    assert.equal(worker.cacheReads.length, 0);
+  });
+
+  test('#1292 ' + spec.path + ': non-public scripts cannot be persisted by the SW', async () => {
+    const worker = makeWorker(spec);
+    const response = worker.fireFetch(new URL('private-output.js', spec.scope).href, 'script');
+    assert.equal(Boolean(response), spec.intercepts);
+    if (response) {
+      assert.equal((await response).status, 200);
+      assert.equal(worker.fetchCalls[0].cache, 'no-store');
     }
     assert.equal(worker.cacheWrites.length, 0);
     assert.equal(worker.cacheReads.length, 0);
