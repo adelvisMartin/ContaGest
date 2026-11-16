@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Prisma } from '@prisma/client';
 import type { NextFunction, Request, Response } from 'express';
 import { prisma } from '../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../shared/http.js';
@@ -60,13 +61,14 @@ type CrudRequest = Request & { context?: Partial<CrudContext> };
 
 // Only these five explicit tenant-owned models may use the generic adapter.
 // The cast bridges Prisma's differing delegate method overloads, not user input.
+type CrudDatabase = typeof prisma | Prisma.TransactionClient;
 const CRUD_DELEGATES = {
-  client: () => prisma.client,
-  supplier: () => prisma.supplier,
-  product: () => prisma.product,
-  bankAccount: () => prisma.bankAccount,
-  taxPeriod: () => prisma.taxPeriod
-} satisfies Record<CrudModel, unknown>;
+  client: (db: CrudDatabase) => db.client,
+  supplier: (db: CrudDatabase) => db.supplier,
+  product: (db: CrudDatabase) => db.product,
+  bankAccount: (db: CrudDatabase) => db.bankAccount,
+  taxPeriod: (db: CrudDatabase) => db.taxPeriod
+} satisfies Record<CrudModel, (db: CrudDatabase) => unknown>;
 
 function readCrudContext(req: Request): CrudContext {
   const context = (req as CrudRequest).context;
@@ -117,7 +119,7 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.get('/', asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
-    const delegate = getDelegate() as unknown as CrudDelegate;
+    const delegate = getDelegate(prisma) as unknown as CrudDelegate;
     let take: number;
     let skip: number;
     let q: string;
@@ -144,7 +146,7 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
-    const delegate = getDelegate() as unknown as CrudDelegate;
+    const delegate = getDelegate(prisma) as unknown as CrudDelegate;
     const data = await delegate.findFirst({ where: { id: parseCrudRouteId(req.params.id), tenantId: ctx.tenantId } });
     if (!data) throw new HttpError(404, `${options.entity} no encontrado`);
     ok(res, data);
@@ -152,32 +154,41 @@ export function createCrudRouter(options: CrudOptions) {
 
   router.post('/', mutationGate(options.model, 'create'), validateBody(options.schema.strict()), asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
-    const delegate = getDelegate() as unknown as CrudDelegate;
-    const data = await delegate.create({ data: { ...req.body, tenantId: ctx.tenantId } });
-    await writeAudit({ ...auditContext(ctx), action: 'create', entity: options.entity, entityId: data.id, after: data });
+    const data = await prisma.$transaction(async (tx) => {
+      const delegate = getDelegate(tx) as unknown as CrudDelegate;
+      const created = await delegate.create({ data: { ...req.body, tenantId: ctx.tenantId } });
+      await writeAudit({ ...auditContext(ctx), action: 'create', entity: options.entity, entityId: created.id, after: created }, tx);
+      return created;
+    });
     ok(res, data);
   }));
 
   router.put('/:id', mutationGate(options.model, 'update'), validateBody(options.schema.partial().strict()), asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
-    const delegate = getDelegate() as unknown as CrudDelegate;
     const where = { id: parseCrudRouteId(req.params.id), tenantId: ctx.tenantId };
-    const before = await delegate.findFirst({ where });
-    if (!before) throw new HttpError(404, `${options.entity} no encontrado`);
-    // Guard the mutation itself against a tenant change between read and write.
-    const data = await delegate.update({ where, data: req.body });
-    await writeAudit({ ...auditContext(ctx), action: 'update', entity: options.entity, entityId: data.id, before, after: data });
+    const data = await prisma.$transaction(async (tx) => {
+      const delegate = getDelegate(tx) as unknown as CrudDelegate;
+      const before = await delegate.findFirst({ where });
+      if (!before) throw new HttpError(404, `${options.entity} no encontrado`);
+      // The tenant-scoped mutation and its audit either both commit or both roll back.
+      const updated = await delegate.update({ where, data: req.body });
+      await writeAudit({ ...auditContext(ctx), action: 'update', entity: options.entity, entityId: updated.id, before, after: updated }, tx);
+      return updated;
+    });
     ok(res, data);
   }));
 
   router.delete('/:id', mutationGate(options.model, 'delete'), asyncHandler(async (req: Request, res: Response) => {
     const ctx = readCrudContext(req);
-    const delegate = getDelegate() as unknown as CrudDelegate;
     const where = { id: parseCrudRouteId(req.params.id), tenantId: ctx.tenantId };
-    const before = await delegate.findFirst({ where });
-    if (!before) throw new HttpError(404, `${options.entity} no encontrado`);
-    const data = await delegate.delete({ where });
-    await writeAudit({ ...auditContext(ctx), action: 'delete', entity: options.entity, entityId: data.id, before });
+    const data = await prisma.$transaction(async (tx) => {
+      const delegate = getDelegate(tx) as unknown as CrudDelegate;
+      const before = await delegate.findFirst({ where });
+      if (!before) throw new HttpError(404, `${options.entity} no encontrado`);
+      const deleted = await delegate.delete({ where });
+      await writeAudit({ ...auditContext(ctx), action: 'delete', entity: options.entity, entityId: deleted.id, before }, tx);
+      return deleted;
+    });
     ok(res, data);
   }));
 
