@@ -168,11 +168,34 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
       attempts: 0,
       authority
     };
-    // Store.add enforces write-once event identity. put() silently overwrote
-    // a pending event with new payload under the same idempotency key.
-    store.add(record);
+    // An existing idempotency key is a safe retry only for the exact same
+    // pending event. Use one readwrite transaction so competing tabs cannot
+    // overwrite or independently enqueue the same identity.
+    let storedRecord = record;
+    let conflict = false;
+    const lookup = store.get(id);
+    lookup.onsuccess = () => {
+      const existing = lookup.result;
+      if (!existing) {
+        store.add(record);
+        return;
+      }
+      if (existing.scopeToken !== record.scopeToken ||
+          existing.operation !== record.operation ||
+          existing.idempotencyKey !== record.idempotencyKey ||
+          JSON.stringify(existing.payload) !== JSON.stringify(record.payload)) {
+        conflict = true;
+        return;
+      }
+      storedRecord = existing;
+    };
     await transactionPromise(transaction);
-    return record;
+    if (conflict) {
+      const error = new Error('La clave de idempotencia pertenece a una operación diferente.');
+      error.code = 'OFFLINE_IDEMPOTENCY_CONFLICT';
+      throw error;
+    }
+    return storedRecord;
   } finally {
     database.close();
   }
