@@ -72,3 +72,93 @@ test('#1292 user menu warns instead of claiming cleanup success on logout reject
   assert.match(app, /No se pudo borrar toda la información offline/);
   assert.doesNotMatch(app, /if\(action==='logout'\)\{AuthService\.logout\(\);/);
 });
+
+test('#1292 tenant switch purges old synchronous state before hydrating the new session', async () => {
+  const events = [];
+  const previous = { tenantId: 'tenant-a', user: { id: 'user-a' } };
+  const newPayload = { tenantId: 'tenant-b', user: { id: 'user-a' } };
+  let activeSession = previous;
+  let sharedState = 'session-a';
+  const { switchTenant } = switchMethod({
+    AuthSession: { get: () => activeSession },
+    BackendApi: { request: async () => { events.push('server-switch'); return newPayload; } },
+    Store: { purgeSessionScope: () => { events.push('purge-old-store'); } },
+    purgeOfflineSession: () => {
+      events.push('purge-old-web-storage');
+      sharedState = null;
+      return Promise.resolve().then(() => events.push('async-old-cache-cleanup'));
+    },
+    normalizeSession: (session) => {
+      events.push('activate-new');
+      activeSession = session;
+      sharedState = 'session-b';
+      return session;
+    }
+  });
+  const next = await switchTenant('tenant-b');
+  assert.equal(next.tenantId, 'tenant-b');
+  assert.equal(sharedState, 'session-b', 'old purge must not wipe new global state');
+  assert.deepEqual(events, [
+    'server-switch', 'purge-old-store', 'purge-old-web-storage',
+    'activate-new', 'async-old-cache-cleanup'
+  ]);
+});
+
+test('#1292 blocked old-tenant storage cleanup still activates B but rejects switch confirmation', async () => {
+  const events = [];
+  const previous = { tenantId: 'tenant-a', user: { id: 'user-a' } };
+  let activeTenant = previous.tenantId;
+  const { switchTenant } = switchMethod({
+    AuthSession: { get: () => previous },
+    BackendApi: { request: async () => ({ tenantId: 'tenant-b', user: { id: 'user-a' } }) },
+    Store: { purgeSessionScope: () => events.push('old-state-removed') },
+    purgeOfflineSession: () => {
+      events.push('old-purge-started');
+      return Promise.reject(Object.assign(new Error('IDB blocked'), { code: 'OFFLINE_SESSION_PURGE_FAILED' }));
+    },
+    normalizeSession: (session) => { activeTenant = session.tenantId; events.push('activate-new'); return session; }
+  });
+  await assert.rejects(switchTenant('tenant-b'), (error) => error.code === 'OFFLINE_SESSION_PURGE_FAILED');
+  assert.equal(activeTenant, 'tenant-b', 'the backend-approved tenant identity remains current');
+  assert.deepEqual(events, ['old-state-removed', 'old-purge-started', 'activate-new']);
+});
+
+test('#1292 failed or malformed switch never removes current-tenant storage', async () => {
+  for (const payload of [null, {}, { tenant: {} }]) {
+    const events = [];
+    const { switchTenant } = switchMethod({
+      AuthSession: { get: () => ({ tenantId: 'tenant-a', user: { id: 'user-a' } }) },
+      BackendApi: { request: async () => payload },
+      Store: { purgeSessionScope: () => events.push('purge') },
+      purgeOfflineSession: async () => { events.push('offline'); },
+      normalizeSession: () => { events.push('normalize'); }
+    });
+    await assert.rejects(switchTenant('tenant-b'), /backend no devolvió una sesión con empresa activa/);
+    assert.deepEqual(events, []);
+  }
+});
+
+test('#1292 same-tenant refresh does not destroy its own offline state', async () => {
+  let purges = 0;
+  const nextPayload = { tenantId: 'tenant-a', user: { id: 'user-a' } };
+  const { switchTenant } = switchMethod({
+    AuthSession: { get: () => nextPayload },
+    BackendApi: { request: async () => nextPayload },
+    Store: { purgeSessionScope: () => { purges++; } },
+    purgeOfflineSession: async () => { purges++; },
+    normalizeSession: (session) => session
+  });
+  assert.equal((await switchTenant('tenant-a')).tenantId, 'tenant-a');
+  assert.equal(purges, 0);
+});
+
+const switchStart = auth.indexOf('  async switchTenant(tenantId){');
+const switchEnd = auth.indexOf(',\\n  async logout(){', switchStart);
+assert.ok(switchStart >= 0 && switchEnd > switchStart, 'authService tenant switch owner must exist');
+const originalSwitch = auth.slice(switchStart, switchEnd);
+
+function switchMethod(context) {
+  return {
+    switchTenant: vm.runInNewContext(`({${originalSwitch}}).switchTenant`, context)
+  };
+}
