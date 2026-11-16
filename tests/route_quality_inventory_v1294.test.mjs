@@ -4,7 +4,8 @@ import { PAGE_REGISTRY } from '../frontend/src/data/pageRegistry.js';
 import { MODULE_VISUAL_CATALOG } from '../qa/support/module-visual-catalog.mjs';
 import {
   buildRouteQualityBaseline,
-  ROUTE_PERFORMANCE_TARGETS
+  ROUTE_PERFORMANCE_TARGETS,
+  assertRouteQualityCliArgs
 } from '../scripts/route-quality-baseline-v1294.mjs';
 
 test('#773/#1294 runtime page registry yields exactly 60 traceable UX review rows', () => {
@@ -53,4 +54,12 @@ test('#1294 mismatched, duplicate and tampered route binding fail closed', () =>
   assert.throws(() => buildRouteQualityBaseline({ registry: traversal }), /ROUTE_MATRIX_UNSAFE_PAGE_BINDING/);
 
   assert.throws(() => buildRouteQualityBaseline({ sourceExists: () => false }), /ROUTE_MATRIX_PAGE_SOURCE_MISSING/);
+});
+
+test('#1294 CI --check CLI remains supported and rejects extra or unknown switches', () => {
+  assert.doesNotThrow(() => assertRouteQualityCliArgs([]));
+  assert.doesNotThrow(() => assertRouteQualityCliArgs(['--check']));
+  for (const args of [['--fix'], ['--help'], ['--check', '--check'], ['--check', '--fix']]) {
+    assert.throws(() => assertRouteQualityCliArgs(args), /ROUTE_MATRIX_UNSUPPORTED_ARGUMENT/);
+  }
 });
