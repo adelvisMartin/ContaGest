@@ -65,8 +65,12 @@ const MAX_LAB_CANONICAL_BYTES=16_384;
 const UNSAFE_LAB_FORMAT_CONTROLS=/[\u00ad\u034f\u061c\u180e\u200b\u200c\u200e\u200f\u202a-\u202e\u2060-\u2069\ufeff]/u;
 // A ZWJ between letters/numbers can hide commands; emoji sequences remain valid.
 const OBFUSCATED_LAB_WORD=/[\p{L}\p{N}]\u200d[\p{L}\p{N}]/u;
+// LAB read-only questions are Spanish/Latin-script. Mixed Cyrillic/Greek
+// characters can impersonate financial verbs that the classifier must reject.
+const MIXED_LAB_SCRIPTS=/(?=[\s\S]*\p{Script=Latin})(?=[\s\S]*[\p{Script=Cyrillic}\p{Script=Greek}])/u;
 function unsafeLabText(text) {
-  return UNSAFE_LAB_FORMAT_CONTROLS.test(text) || OBFUSCATED_LAB_WORD.test(text);
+  return UNSAFE_LAB_FORMAT_CONTROLS.test(text) || OBFUSCATED_LAB_WORD.test(text)
+    || MIXED_LAB_SCRIPTS.test(text);
 }
 // Bound decompressed UTF-8 bytes as they arrive, before allocating a full body.
 // Native fetch exposes body.getReader(); streamless test adapters use text().
@@ -115,9 +119,9 @@ const TOPIC={
   summary:/\b(?:resumen|resumeme|sintesis|recapitulacion)\b/
 };
 const MONEY=/\b(?:apostar|apuestas?|jugadas?|juega|consigue|pagos?|pagar|cobros?|cobrar|depositar|depositos?|retirar|retiros?|saldos?|abonar|liquidacion(?:es)?|liquidar|ganancias?|deudas?|transferencias?|cerrar|abrir|registrar|editar|actualizar|cancelar|confirmar|montos?|dineros?|premios?|bolivares?|balances?|bs|usdt)\b|\$/;
-const normalizeQuery=text=>String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+const normalizeQuery=text=>String(text||'').normalize('NFKC').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 export function labReadOnlyQueryPurpose(text,classification){
-  if(typeof text!=='string'||unsafeLabText(text))return null;
+  if(typeof text!=='string'||text.length>1200||unsafeLabText(text))return null;
   const value=normalizeQuery(text);
   if(!value||value.length>1200||MONEY.test(value)||
     classification?.risk==='monetary'||
@@ -138,7 +142,9 @@ export function resolveQuotedLabRaceScope(row,visibleRows){
   const sender=stableLabSenderKey(row.id);
   if(!sender)return null;
   const prior=visibleRows.find(previous=>previous?.id===quotedId);
-  if(!prior||prior.fromMe||prior.hasMedia||stableLabSenderKey(prior.id)!==sender)return null;
+  if(!prior||prior.fromMe||prior.hasMedia||stableLabSenderKey(prior.id)!==sender||
+     typeof prior.text!=='string'||typeof row.text!=='string'||
+     unsafeLabText(prior.text)||unsafeLabText(row.text))return null;
   const scope=explicitLabRaceScope(prior.text);
   if(!scope)return null;
   // Visible quoted messages bypass the confirmed-ACK hint journal. Subject
