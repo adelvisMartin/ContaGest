@@ -48,10 +48,10 @@ function makeWorker(spec, { offline = false, responseHeaders = {}, asPublicRespo
   const source = readFileSync(new URL('../' + spec.path, import.meta.url), 'utf8');
   vm.runInNewContext(source, context, { filename: spec.path });
   const guard = vm.runInNewContext(spec.guard, context);
-  const fireFetch = (url, mode = 'navigate') => {
+  const fireFetch = (url, mode = 'navigate', headers = {}) => {
     let reply;
     listeners.get('fetch')({
-      request: { method: 'GET', url, mode, destination: mode === 'navigate' ? 'document' : 'script' },
+      request: { method: 'GET', url, mode, destination: mode === 'navigate' ? 'document' : 'script', headers: new Headers(headers) },
       respondWith: (result) => { reply = Promise.resolve(result); },
     });
     return reply;
@@ -152,4 +152,43 @@ test('#1292 ERP SW never poisons its public shell with arbitrary route HTML', as
   const publicShell = makeWorker(spec, { asPublicResponse: true });
   assert.equal((await publicShell.fireFetch(spec.scope)).status, 200);
   assert.equal(publicShell.cacheWrites.length, 1, 'cacheable public entrypoint can still refresh the shell');
+});
+
+test('#1292 ERP SW does not supply Hipico offline shell or cache a different product', async () => {
+  const spec = WORKERS[0];
+  const worker = makeWorker(spec, { offline: true });
+  for (const path of ['hipico-control/', 'hipico-control/index.html', 'control-hipico/']) {
+    const url = new URL(path, spec.scope);
+    assert.equal(worker.guard(url), true, path);
+    assert.equal(worker.fireFetch(url.href), undefined, path);
+  }
+  assert.equal(worker.cacheReads.length, 0);
+  assert.equal(worker.cacheWrites.length, 0);
+});
+
+test('#1292 Hipico SW never intercepts same-origin ERP or external-scope navigations', () => {
+  const worker = makeWorker(WORKERS[1], { offline: true });
+  for (const url of ['https://qa.example.test/', 'https://qa.example.test/index.html',
+    'https://qa.example.test/api/v1/hipico-bot', 'https://qa.example.test/assets/app.js']) {
+    assert.equal(worker.fireFetch(url), undefined, url);
+  }
+  assert.equal(worker.cacheReads.length, 0);
+  assert.equal(worker.cacheWrites.length, 0);
+  assert.equal(worker.fetchCalls.length, 0);
+});
+
+test('#1292 requests bound to an authorization header are excluded from both offline caches', async () => {
+  for (const spec of WORKERS) {
+    for (const name of ['Authorization', 'X-Api-Key', 'X-Hipico-Bridge-Token']) {
+      const worker = makeWorker(spec, { offline: false, asPublicResponse: true });
+      const request = worker.fireFetch(new URL('index.html', spec.scope).href, 'navigate', { [name]: 'synthetic-credential' });
+      assert.equal(Boolean(request), spec.intercepts, spec.path + ':' + name);
+      if (request) {
+        assert.equal((await request).status, 200);
+        assert.equal(worker.fetchCalls[0]?.cache, 'no-store');
+      }
+      assert.equal(worker.cacheReads.length, 0, spec.path + ':' + name);
+      assert.equal(worker.cacheWrites.length, 0, spec.path + ':' + name);
+    }
+  }
 });
