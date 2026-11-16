@@ -20,6 +20,37 @@
 9. **Pruebas**: proyecto Node22/npm workspaces; `npm ci`, `npm run lint`, `npm run typecheck`, tests focales y `npm run build` según alcance. PostgreSQL17 aislado/efímero, fixtures A/B y limpieza. Chromium gate PR; Firefox/WebKit matriz según CI; auditoría 58 rutas y QA físicos cuando aplique. No skip/only/sleeps, no green artificial.
 10. **Cierre**: evidence ledger por candidate SHA: SOURCE_REVIEW, LOCAL_STATIC, LOCAL_UNIT, LOCAL_INTEGRATION, LOCAL_POSTGRES, LOCAL_BUILD, LOCAL_BROWSER_E2E, REMOTE_CI, REMOTE_DEPLOY, PHYSICAL_EXTERNAL. Sólo PASS ejecutado; BLOCKED/NOT_EXECUTED explícitos. Diff, secretos, impacto financiero/tenant, rollback, reviewer independiente. No cerrar issue por merge solamente.
 
+## Puerta 0 — bloqueo observado de CI en main (antes de fusionar cualquier lote)
+
+**CI rojo confirmado** en candidato documental PR #1295, SHA `6781c05ef1b75c72e1a347008f7753cde0365209`. El PR cambia sólo documentación; los fallos siguientes señalan código base compartido (inferencia, sin comparar corrida de main).
+
+- **FAIL TypeScript** (run `43894032558`, job `133392598402`): `bank-reconciliation.service.ts:395` TS2554; `fiscal-withholding-application.routes.ts:209` TS2339; `payroll.routes.ts:129` TS2345; `service-catalog.service.ts:30` TS2322.
+- **FAIL Browser QA PostgreSQL** (run `43894032603`, job `133392598434`): migración `20261022171000_issue_849_service_catalog_foundation`, `migration.sql:115–119` tiene `LANGUAGE plpgsql AS # Plan de ejecución 5×5 — ContaGest + Control Hípico (2026-11-16)
+
+> **Estado: PLAN / sin afirmar implementación o producción.** Inventario obtenido de GitHub: 101 issues abiertos antes del trabajo de planificación y 7 issues transversales nuevos (#1288–#1294): 108 en total. Se programan 105 en 21 bloques de cinco y 3 permanecen como autoridades/descubrimiento condicionado (#1010, #835, #712). Las prioridades y dependencias de cada issue prevalecen ante este orden; refrescar GitHub antes de cada lote.
+
+- Base inicial **main@e7706f3dac3ae4c677fcdff05a662765fa6bdcc6**; PR #1287 DRAFT/PARTIAL, HEAD exacto del PR debe refrescarse.
+- Productos: ContaGest ERP venezolano multi-tenant, Control Hípico con sus propios owners, PWA/APK, LAB; comparten repo, no confundir autoridades.
+- La viabilidad de terminar hoy es **condicional**: QA físico #119 y soak #120 exigen ejecución real de 24–72h, y #1011 mantiene Messenger SOURCE no autorizado. No eliminar estas puertas.
+- Cada bloque requiere 1 dueño exclusivo por ticket, PR de cambios integrados sin commits sobre main, pruebas proporcionales y serialización de merges. Una única PR por bloque es opción únicamente si los cinco scopes son realmente compatibles y todos satisfacen gates; si no, se dividen PRs.
+
+## Reglas operativas refinadas
+
+1. Leer ticket/AC, AGENTS.md, docs/PROJECT_START_HERE.md, arquitectura, contrato API, tests, CI y estado actual del repo, HEAD, claims/PR. Delimitar ownership y riesgo; nunca usar capturas de Dribbble/Pinterest como autoridad de negocio.
+2. Recorrido obligatorio por flujo: UI/evento → estado/cliente → API → service → persistencia → respuesta → UI; documentar pre/postcondiciones, tenant/owner, roles, dinero, auditoría, errores, offline y rollback.
+3. **UX**: una sola fuente CSS (seis owners declarados en AGENTS.md); escenarios loading/empty/error/success/disabled; accesibilidad teclado/foco/contraste/reduced-motion; light/dark, 360/390/430/768/1024/1440, sin UUIDs como títulos. Los 58 routes se auditan de forma individual y cada ticket actualiza su ownership y regresión; visuales sin funciones no se cierran.
+4. **Seguridad**: OWASP ASVS 5.0 + API Top 10 como checklist, no certificación. IAM/RBAC/tenant se valida SERVER-SIDE; se incluyen negativas A↔B, B↔A, rol revocado, recursos asociados, exports y background. Tokens/cookies/logs sin secretos. Protecciones SOURCE WhatsApp fail-closed.
+5. **Rendimiento**: medir antes; CWV LCP/INP/CLS, JS/CSS por ruta, p95 API, consulta EXPLAIN en DB sintética. Cambios mínimos (lazy route/charts si realmente disponibles, paginación/indexación justificada, caché tenant-scoped) y medir después sin alterar semántica.
+6. **Refactor progresivo**: no renombrar/eliminar un servicio o estilo hasta consumer proof + characterization; no segundo ledger ni ORM/DTO duplicado; persistencia estable, migrations aditivas, clean room y backout. main mejora sólo después de merges revisados en serie.
+7. **Agentes/skills**: router `node scripts/agent-ticket-router.mjs gates --base main --type <type>`; 2–4 ACTIVE project skills por riesgo, más executionCapabilities separadas. Siempre `contagest-erp-orchestrator` y `contagest-release-evidence`, incluir `contagest-appsec-review`/`contagest-secure-verification` para seguridad, `contagest-accounting-integrity` para dinero, `contagest-tenant-isolation-rbac` para cross-tenant, `contagest-db-migration-safety` para DB y `contagest-ui-audit`/`contagest-functional-module-audit` para UI cuando router lo seleccione. Agentes existentes: orchestrator, accounting, appsec-iam, backend-api, dbre, frontend-pwa-ux, hipico-reliability, hipico-lab-operations, integration-contracts, ci-triage, qa-release. No inventar perfiles externos.
+8. **MCP**: GitHub para historial/PR/CI y SHA; `.mcp.json` tiene Playwright MCP para navegador. Figma/Dribbble/Pinterest pueden ayudar al benchmark público, no se requieren credenciales ni scraping de sesiones privadas ni introducción de MCP adicional en runtime. Extraer sólo páginas/previews públicos conforme a licencias y términos.
+9. **Pruebas**: proyecto Node22/npm workspaces; `npm ci`, `npm run lint`, `npm run typecheck`, tests focales y `npm run build` según alcance. PostgreSQL17 aislado/efímero, fixtures A/B y limpieza. Chromium gate PR; Firefox/WebKit matriz según CI; auditoría 58 rutas y QA físicos cuando aplique. No skip/only/sleeps, no green artificial.
+10. **Cierre**: evidence ledger por candidate SHA: SOURCE_REVIEW, LOCAL_STATIC, LOCAL_UNIT, LOCAL_INTEGRATION, LOCAL_POSTGRES, LOCAL_BUILD, LOCAL_BROWSER_E2E, REMOTE_CI, REMOTE_DEPLOY, PHYSICAL_EXTERNAL. Sólo PASS ejecutado; BLOCKED/NOT_EXECUTED explícitos. Diff, secretos, impacto financiero/tenant, rollback, reviewer independiente. No cerrar issue por merge solamente.
+
+ ... `$;`, delimitador inválido, Prisma P3018 y PostgreSQL 42601. Fuente inspeccionada en main. Owner existente #849.
+- **Triage previo de cinco tickets, sin duplicar DoD:** #849 catálogo SQL; #743 conciliación bancaria; #775/#776 contrato de retenciones; #781 payroll. Confirmar dueño exacto de cada fallo; corregir en PR de código separado, respetar inmutabilidad de migraciones ya aplicadas y ejecutar PG real efímero + CI exact-SHA.
+- Estos tickets también aparecen en bloques posteriores: se **retiran de su posición posterior al resolverlos**, no cuentan dos veces. Recalcular paquetes tras nuevo main. Ningún otro lote puede declararse fusionable mientras la puerta 0 de CI siga FAIL.
+
 ## Bloques de ejecución
 
 | Lote | Área / secuencia exacta | Observación |
