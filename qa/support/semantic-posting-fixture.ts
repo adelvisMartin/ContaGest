@@ -43,7 +43,7 @@ export async function prepareQaManualPostingAccounts(
   accounts: readonly Readonly<{ code: string; nature: 'debit' | 'credit' }>[],
 ) {
   const db = await h.prisma.$queryRaw<Array<{ name: string }>>`SELECT current_database() AS name`;
-  assert.match(db[0]?.name || '', /^contagest_[a-z0-9_]+(?:_v\\d+|_e2e)$/i,
+  assert.match(db[0]?.name || '', /^contagest_[a-z0-9_]+(?:_v\d+|_e2e)$/i,
     'Manual chart fixture requires an isolated disposable QA database');
   assert.equal(new Set(accounts.map(account => account.code)).size, accounts.length,
     'Fixture must not contain duplicate account codes');
