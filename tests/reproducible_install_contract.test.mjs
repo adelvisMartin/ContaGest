@@ -52,3 +52,12 @@ test('Vercel auto-deploy budget is fail-closed in root and effective frontend pr
     'root Vercel auto-deploy must remain disabled, even on main');
   assertDeploymentBudget(frontendVercel, 'frontend/vercel.json');
 });
+
+test('GHSA-27r3-jxmh-p828 is remediated in the exact production transitive lock', () => {
+  const parser=lock.packages?.['node_modules/body-parser'];
+  assert.equal(parser?.version,'2.4.0','Production request parser must include the upstream DoS patch');
+  assert.equal(parser?.dependencies?.qs,'^6.16.1');
+  assert.equal(lock.packages?.['node_modules/qs']?.version,'6.16.1');
+  assert.equal(parser?.integrity,
+    'sha512-Ifk1KcLrxaGt1occQagQNFNNOqRt1LFuehEnHHzB8Z6cRgIxRU1TBaiIsUiCdA+gy5PL7Y1IX31DNKkRmxtXjQ==');
+});
