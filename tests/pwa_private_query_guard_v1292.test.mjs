@@ -145,7 +145,9 @@ test('#1292 ERP SW never stores HTTP private/no-store/Vary:* asset responses', a
   for (const headers of [
     { 'Cache-Control': 'private, max-age=3600' },
     { 'Cache-Control': 'public, no-store' },
-    { 'Vary': '*' }
+    { 'Vary': '*' },
+    { 'Vary': 'Accept-Encoding, Cookie' },
+    { 'Vary': 'Authorization' }
   ]) {
     const worker = makeWorker(spec, { responseHeaders: headers, asPublicResponse: true });
     const response = worker.fireFetch(new URL('assets/public.js', spec.scope).href, 'script');
@@ -218,7 +220,9 @@ test('#1292 Hipico SW honors private/no-store/Vary:* when populating runtime ass
   for (const headers of [
     { 'Cache-Control': 'private, max-age=3600' },
     { 'Cache-Control': 'public, no-store' },
-    { 'Vary': '*' }
+    { 'Vary': '*' },
+    { 'Vary': 'Accept-Encoding, Cookie' },
+    { 'Vary': 'Authorization' }
   ]) {
     const worker = makeWorker(spec, { responseHeaders: headers, cacheMiss: true });
     assert.equal((await worker.fireFetch(url, 'script')).status, 200);
@@ -278,4 +282,18 @@ test('#1292 ERP service-worker registration URL follows its cache-version migrat
   assert.ok(version, 'ERP cache namespace must have a fixed version');
   assert.ok(installer.includes(`./sw.js?v=${version[1]}`),
     'the installer must request the same security revision as the ERP SW');
+});
+
+test('#1292 public asset cache fetches do not carry login cookies or follow redirects', async () => {
+  for (const spec of WORKERS) {
+    const worker = makeWorker(spec, { cacheMiss: true, asPublicResponse: true });
+    const url = new URL(spec.intercepts ? 'assets/js/app.js' : 'assets/public.js', spec.scope).href;
+    const response = worker.fireFetch(url, 'script');
+    assert.ok(response, 'public static resource should be handled by its registered worker');
+    assert.equal((await response).status, 200);
+    assert.equal(worker.fetchCalls[0]?.cache, 'no-store');
+    assert.equal(worker.fetchCalls[0]?.credentials, 'omit', spec.path);
+    assert.equal(worker.fetchCalls[0]?.redirect, 'error', spec.path);
+    assert.equal(worker.cacheWrites.length, 1, 'public offline caching remains available');
+  }
 });
