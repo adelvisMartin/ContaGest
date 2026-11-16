@@ -15,11 +15,12 @@ const requiredRedactions = ['authorization','cookie','set-cookie','password','ap
 const sensitiveKey = /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|signature|(?:^|[_-])(?:auth(?:orization)?|session(?:[_-]?id)?|jwt|bearer|credential)(?:$|[_-]))/i;
 
 function hasSensitiveParameter(queryOrFragment) {
-  const part = queryOrFragment.includes('?')
-    ? queryOrFragment.slice(queryOrFragment.indexOf('?') + 1)
-    : queryOrFragment.replace(/^[?#]/, '');
-  for (const key of new URLSearchParams(part).keys()) {
-    if (sensitiveKey.test(key)) return true;
+  // URI fragments may contain query-shaped segments before AND after '?'.
+  // Inspect each segment, not just the suffix, to avoid dropping a token key.
+  for (const part of queryOrFragment.replace(/^[?#]/, '').split('?')) {
+    for (const key of new URLSearchParams(part).keys()) {
+      if (sensitiveKey.test(key)) return true;
+    }
   }
   return false;
 }
