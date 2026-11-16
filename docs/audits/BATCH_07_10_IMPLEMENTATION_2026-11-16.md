@@ -1,6 +1,6 @@
 # Lote 07–10 · trazabilidad técnica y entrega incremental (2026-11-16)
 
-**Repositorio:** `adelvisMartin/ContaGest` · **base inspeccionada:** `main@e7706f3dac3ae4c677fcdff05a662765fa6bdcc6` · **20 tickets solicitados** · **SOURCE_REUSE=NONE**.  
+**Repositorio:** `adelvisMartin/ContaGest` · **base inspeccionada:** `main@e7706f3dac3ae4c677fcdff05a662765fa6bdcc6` · **20 tickets solicitados** · **SOURCE_REUSE=NONE**.
 **Estado del lote:** **PARTIAL / NO_MERGE hasta checks del SHA candidato**. Este archivo no cierra ningún issue ni convierte presencia de source en flujo probado. Los dos productos comparten monorepo pero el lote enumera dominios **ContaGest**; Control Hípico permanece fuera de cambios de runtime y debe preservarse en los gates comunes.
 
 ## Alcance ejecutado por este PR
