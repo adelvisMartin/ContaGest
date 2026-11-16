@@ -7,12 +7,14 @@ on:
       - 'frontend/public/sw.js'
       - 'frontend/public/pwa-install.js'
       - 'frontend/src/services/authService.js'
+      - 'frontend/src/app.js'
       - 'frontend/src/services/pwaOfflineService.js'
       - 'frontend/index.html'
       - 'qa/pwa-offline-v563.spec.mjs'
       - 'tests/pwa_offline_v563_contract.test.mjs'
       - 'tests/pwa_private_query_guard_v1292.test.mjs'
       - 'tests/pwa_session_scope_v1292.test.mjs'
+      - 'tests/pwa_auth_logout_v1292.test.mjs'
       - 'docs/ADR_PWA_OFFLINE_V563.md'
       - '.github/workflows/pwa-offline-v563.yml'
   push:
@@ -39,6 +41,7 @@ jobs:
       - run: node --test tests/pwa_offline_v563_contract.test.mjs
       - run: node --test tests/pwa_private_query_guard_v1292.test.mjs
       - run: node --test tests/pwa_session_scope_v1292.test.mjs
+      - run: node --test tests/pwa_auth_logout_v1292.test.mjs
       - run: npm run build:frontend
 
   chromium:
