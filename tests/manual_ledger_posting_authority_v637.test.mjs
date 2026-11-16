@@ -118,6 +118,12 @@ test('#637 manual DRAFT deletion requires atomic audit and cannot drop protected
     ?.split('export async function deleteDraftLedgerEntry(')[0];
   assert.match(editCommand,/assertUnlinkedManualDraft\(entry\)/,
     'Editing linked drafts must be denied');
+  assert.match(migration,/pg_advisory_xact_lock\(hashtextextended\(/,
+    'DB delete must share the period-close advisory mutex');
+  assert.match(migration,/c\."module" IN \('accounting', 'all'\)/);
+  assert.match(migration,/c\."status" = 'closed'/);
+  assert.match(migration,/ACCOUNTING_PERIOD_CLOSED/,
+    'Closed-period draft deletion must fail closed at SQL boundary');
   assert.match(migration,/a\."action" = 'ledger\.entry\.draft-deleted'/);
   assert.match(migration,/a\."userId" IS NOT NULL/);
   assert.match(migration,/a\.xmin::text\s*=\s*\(pg_current_xact_id\(\)::text::numeric % 4294967296\)::text/,
