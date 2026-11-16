@@ -41,6 +41,12 @@ test('#1288 refuses production/test config drift and shared database identifiers
     { DATABASE_URL: 'postgresql://prod:synthetic@db.prod.test/prod' },
     { DATABASE_URL: 'postgresql://postgres:synthetic@127.0.0.1:5432/contagest' },
     { DATABASE_URL: 'postgresql://postgres:synthetic@127.0.0.1:5432/contagest_e2e%2Fother' },
+    // These previously matched the suffix despite hiding separators or controls.
+    { DATABASE_URL: 'postgresql://postgres:synthetic@127.0.0.1:5432/shared%2Fother_e2e' },
+    { DATABASE_URL: 'postgresql://postgres:synthetic@127.0.0.1:5432/shared%5Cother_e2e' },
+    { DATABASE_URL: 'postgresql://postgres:synthetic@127.0.0.1:5432/shared%0Aother_e2e' },
+    { DATABASE_URL: 'postgresql://postgres:synthetic@127.0.0.1:5432/shared%00other_e2e' },
+    { DATABASE_URL: 'postgresql://postgres:synthetic@127.0.0.1:5432/shared%2E%2Eother_e2e' },
     { DATABASE_URL: 'postgresql://postgres:synthetic@127.0.0.1:5432/contagest_e2e%ZZ' },
     { DATABASE_URL: 'sqlite:///contagest_e2e' }
   ];
