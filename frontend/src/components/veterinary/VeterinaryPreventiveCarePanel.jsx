@@ -141,7 +141,7 @@ export function VeterinaryPreventiveCarePanel({
         : {id:created.id,kind,label:created.clinicalData?.preventiveCare?.name||name.trim(),performedAt:created.clinicalData?.preventiveCare?.performedAt||created.createdAt,nextDueAt:created.clinicalData?.preventiveCare?.nextDueAt,source:created};
       // A failure in optional messaging must not report that clinical
       // persistence failed or invite a duplicate vaccine administration.
-      const {reminder,reminderNotConfirmed}=await scheduleOptionalPreventiveReminder(scheduleReminder,eventRecord);
+      const {reminder,reminderNotConfirmed}=await scheduleOptionalPreventiveReminder(scheduleReminder,eventRecord,reminderEnabled);
       onCreated?.({kind,record:created,reminder});
       if(reminderNotConfirmed)setReminderWarning(
         'El preventivo fue registrado. No se confirmó el recordatorio: verifica Comunicaciones antes de programarlo otra vez.'
