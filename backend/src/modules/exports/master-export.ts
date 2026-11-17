@@ -32,11 +32,15 @@ export function masterExportRows(entity: MasterExportEntity, records: readonly R
 // Keep all backend CSV exporters on the same cell policy. CSV quoting alone
 // cannot stop spreadsheet formula interpretation of untrusted text.
 const FORMULA_PREFIX = /^[\u0000-\u0020\u007f-\u009f\u00a0\u1680\u2000-\u200f\u2028-\u202e\u202f\u205f\u2060-\u2069\u3000\ufeff]*[=+\-@]/u;
+// Numeric columns leave masterExportRows as exact Decimal strings. A leading
+// minus sign is safe only for a complete decimal literal, never an expression.
+const PLAIN_SIGNED_DECIMAL = /^-(?:0|[1-9]\d*)(?:\.\d+)?$/;
 
 export function encodeMasterExportCsvCell(value: unknown): string {
   const text = value == null ? '' : String(value);
   const untrustedText = typeof value === 'string';
-  const safe = untrustedText && FORMULA_PREFIX.test(text) ? "'" + text : text;
+  const safe = untrustedText && FORMULA_PREFIX.test(text) && !PLAIN_SIGNED_DECIMAL.test(text)
+    ? "'" + text : text;
   return '"' + safe.replaceAll('"', '""') + '"';
 }
 
