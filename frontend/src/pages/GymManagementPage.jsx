@@ -9,6 +9,7 @@ import { rows, object, localDate, localDateTime, amount, memberOptions, trainerO
 import { Metric, RecordList, Section } from '../components/fitness/GymWorkspacePrimitives.jsx';
 import { GymTrainingPanel } from '../components/fitness/GymTrainingPanel.jsx';
 import { GymNutritionPanel } from '../components/fitness/GymNutritionPanel.jsx';
+import { FitnessProductivityTools } from '../components/fitness/FitnessProductivityTools.jsx';
 
 function DateOfBirthFields({form,setForm}){
   return <Box className="cg-gym-v1124-fields" sx={{display:'grid',gridTemplateColumns:'minmax(0,.7fr) minmax(0,1fr) minmax(0,1fr)',gap:1}}>
