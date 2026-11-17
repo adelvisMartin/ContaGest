@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Avatar, Box, Dialog, DialogActions, DialogContent, DialogTitle,
@@ -7,6 +7,8 @@ import {
 } from '@mui/material';
 import { CgButton, CgProvider, CgState, CgStatusChip, CgTextField } from '../components/ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService, VeterinaryService } from '../services/verticalService.js';
+import { AuthSession } from '../services/authSession.js';
+import { matchesActiveVeterinaryPatient } from '../components/veterinary/veterinary-patient-scope.mjs';
 import { VeterinaryWorkspace } from '../components/veterinary/VeterinaryWorkspace.jsx';
 import { VeterinaryLongitudinalRecord } from '../components/veterinary/VeterinaryLongitudinalRecord.jsx';
 import { VeterinaryPreventiveCarePanel } from '../components/veterinary/VeterinaryPreventiveCarePanel.jsx';
@@ -45,6 +47,13 @@ function TimelineItem({ icon, title, meta, body, tone='primary.main' }) {
   </Box>;
 }
 
+const emptyVeterinaryHistory=()=>({encounters:[],prescriptions:[],measurements:[],immunizations:[],labs:[],results:[],studies:[],hospitalizations:[],procedures:[]});
+const veterinarySessionScope=()=>{
+  const session=AuthSession.get();
+  const userId=session?.user?.id||session?.userId||'';
+  return session?.tenantId&&userId?session.tenantId+':'+userId:'';
+};
+
 function VeterinaryDossier({ ctx, state }) {
   const initialPatient = ctx?.query?.patient || '';
   const [patients,setPatients]=useState([]);
@@ -52,7 +61,9 @@ function VeterinaryDossier({ ctx, state }) {
   const [selectedId,setSelectedId]=useState(initialPatient);
   const [search,setSearch]=useState('');
   const [loading,setLoading]=useState(true);
-  const [history,setHistory]=useState({encounters:[],prescriptions:[],measurements:[],immunizations:[],labs:[],results:[],studies:[],hospitalizations:[],procedures:[]});
+  const [history,setHistory]=useState(emptyVeterinaryHistory);
+  const selectedIdRef=useRef(selectedId);
+  const historyEpochRef=useRef(0);
   const [loadError,setLoadError]=useState('');
   const [historyError,setHistoryError]=useState('');
   const [saveError,setSaveError]=useState('');
@@ -61,20 +72,38 @@ function VeterinaryDossier({ ctx, state }) {
   const selected=useMemo(()=>patients.find((item)=>item.id===selectedId)||null,[patients,selectedId]);
   const filtered=useMemo(()=>patients.filter((item)=>!search || [item.displayName,item.guardianName,item.microchip,item.species,item.breed].some((value)=>String(value||'').toLowerCase().includes(search.toLowerCase()))),[patients,search]);
 
+  function selectPatient(patientId) {
+    selectedIdRef.current=patientId;
+    historyEpochRef.current+=1;
+    setSelectedId(patientId);
+    setHistory(emptyVeterinaryHistory());
+    setHistoryError('');
+    setEditing(false);
+  }
+
+  const allowsResult=(patientId,epoch,scope)=>matchesActiveVeterinaryPatient({
+    requestPatientId:patientId,activePatientId:selectedIdRef.current,
+    requestEpoch:epoch,currentEpoch:historyEpochRef.current,
+    requestScope:scope,currentScope:veterinarySessionScope()
+  });
+
   async function loadPatients() {
     setLoading(true);
     setLoadError('');
+    const scope=veterinarySessionScope();
     try {
       const [patientResponse,professionalResponse]=await Promise.all([
         HealthVerticalService.patients({kind:'animal'}),
         HealthVerticalService.professionals()
       ]);
+      if(scope!==veterinarySessionScope())return false;
       const active=rows(patientResponse).filter((item)=>item.kind==='animal'&&item.active!==false);
       setPatients(active);
       setProfessionals(rows(professionalResponse));
-      if (!active.some((item)=>item.id===selectedId)) setSelectedId(active[0]?.id || '');
+      if (!active.some((item)=>item.id===selectedIdRef.current)) selectPatient(active[0]?.id || '');
       return true;
     } catch(error) {
+      if(scope!==veterinarySessionScope())return false;
       reportVeterinaryError('dossier.loadPatients',error);
       setLoadError(veterinaryErrorMessage(error));
       return false;
@@ -82,12 +111,10 @@ function VeterinaryDossier({ ctx, state }) {
   }
 
   async function loadHistory(patientId) {
-    if (!patientId) {
-      setHistoryError('');
-      setHistory({encounters:[],prescriptions:[],measurements:[],immunizations:[],labs:[],results:[],studies:[],hospitalizations:[],procedures:[]});
-      return true;
-    }
+    const epoch=++historyEpochRef.current,scope=veterinarySessionScope();
+    setHistory(emptyVeterinaryHistory());
     setHistoryError('');
+    if(!patientId||!scope)return false;
     try {
       const [encounters,prescriptions,measurements,immunizations,labs,results,studies,hospitalizations,procedures]=await Promise.all([
         HealthVerticalService.encounters(patientId),
@@ -100,9 +127,11 @@ function VeterinaryDossier({ ctx, state }) {
         VeterinaryService.hospitalizations({patientId}),
         VeterinaryService.procedures({patientId})
       ]);
+      if(!allowsResult(patientId,epoch,scope))return false;
       setHistory({encounters:rows(encounters),prescriptions:rows(prescriptions),measurements:rows(measurements),immunizations:rows(immunizations),labs:rows(labs),results:rows(results),studies:rows(studies),hospitalizations:rows(hospitalizations),procedures:rows(procedures)});
       return true;
-    } catch(error) {
+    }catch(error){
+      if(!allowsResult(patientId,epoch,scope))return false;
       reportVeterinaryError('dossier.loadHistory',error);
       setHistoryError(veterinaryErrorMessage(error));
       return false;
@@ -111,6 +140,24 @@ function VeterinaryDossier({ ctx, state }) {
 
   useEffect(()=>{void loadPatients();},[]);
   useEffect(()=>{void loadHistory(selectedId);},[selectedId]);
+  useEffect(()=>{
+    const reset=()=>{
+      historyEpochRef.current+=1;
+      selectedIdRef.current='';
+      setSelectedId('');
+      setPatients([]);
+      setProfessionals([]);
+      setHistory(emptyVeterinaryHistory());
+      setHistoryError('');
+    };
+    window.addEventListener('cg:pwa-session-changed',reset);
+    window.addEventListener('cg:auth-expired',reset);
+    return ()=>{
+      historyEpochRef.current+=1;
+      window.removeEventListener('cg:pwa-session-changed',reset);
+      window.removeEventListener('cg:auth-expired',reset);
+    };
+  },[]);
 
   const timeline=useMemo(()=>[
     ...history.encounters.map((item)=>({date:item.createdAt,icon:'fa-file-waveform',title:item.specialty||'Consulta clínica',meta:`Consulta · ${dateLabel(item.createdAt)} · ${item.professionalName||'Profesional'}`,body:[item.assessment,item.plan].filter(Boolean).join('\n')})),
@@ -171,7 +218,7 @@ function VeterinaryDossier({ ctx, state }) {
       <Box sx={{minWidth:0}}>
         <CgTextField size="small" fullWidth label="Buscar mascota" placeholder="Nombre, tutor o microchip" value={search} onChange={(event)=>setSearch(event.target.value)} slotProps={{input:{startAdornment:<InputAdornment position="start"><Icon name="fa-magnifying-glass"/></InputAdornment>}}}/>
         {loading ? <Box className="cg-vet-list-state">Cargando mascotas…</Box> : filtered.length ? <List dense className="cg-vet-patient-list" sx={{mt:.75,maxHeight:{xs:180,md:390},overflow:'auto'}}>
-          {filtered.map((item)=><ListItemButton key={item.id} selected={item.id===selectedId} onClick={()=>setSelectedId(item.id)} sx={{borderRadius:1}}>
+          {filtered.map((item)=><ListItemButton key={item.id} selected={item.id===selectedId} onClick={()=>selectPatient(item.id)} sx={{borderRadius:1}}>
             <ListItemAvatar><Avatar variant="rounded" src={item.photoUrl||''} sx={{width:30,height:30,borderRadius:'7px',bgcolor:'primary.main',fontSize:13}}>{item.displayName?.slice(0,1)}</Avatar></ListItemAvatar>
             <ListItemText primary={item.displayName||'Sin nombre'} secondary={`${item.species||'Mascota'} · ${item.guardianName||'Sin tutor'} · #${shortCode(item.id)}`} primaryTypographyProps={{fontSize:13,fontWeight:600}} secondaryTypographyProps={{fontSize:11,noWrap:true}}/>
           </ListItemButton>)}
@@ -195,16 +242,22 @@ function VeterinaryDossier({ ctx, state }) {
           encounters={history.encounters}
           prescriptions={history.prescriptions}
           measurements={history.measurements}
-          onMeasurementCreated={(created)=>setHistory((current)=>({...current,measurements:[...created,...current.measurements]}))}
+          onMeasurementCreated={(created)=>{
+            if(!Array.isArray(created)||!created.every((item)=>item.patientId===selectedIdRef.current))return;
+            setHistory((current)=>({...current,measurements:[...created,...current.measurements]}));
+          }}
         />
         <VeterinaryPreventiveCarePanel
           patient={selected}
           professionals={professionals}
           encounters={history.encounters}
           immunizations={history.immunizations}
-          onCreated={({kind,record})=>setHistory((current)=>kind==='vaccine'
-            ? {...current,immunizations:[record,...current.immunizations]}
-            : {...current,encounters:[record,...current.encounters]})}
+          onCreated={({kind,record})=>{
+            if(record?.patientId!==selectedIdRef.current||!veterinarySessionScope())return;
+            setHistory((current)=>kind==='vaccine'
+              ? {...current,immunizations:[record,...current.immunizations]}
+              : {...current,encounters:[record,...current.encounters]});
+          }}
         />
         <Box className="cg-vet-activity"><Stack direction="row" gap={.6} flexWrap="wrap"><CgStatusChip size="small" label={`${history.encounters.length} consultas`}/><CgStatusChip size="small" label={`${history.labs.length} órdenes`}/><CgStatusChip size="small" label={`${history.studies.length} estudios`}/><CgStatusChip size="small" label={`${history.procedures.length} procedimientos`}/></Stack></Box>
         <Box className="cg-vet-timeline">
