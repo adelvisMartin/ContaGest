@@ -23,12 +23,6 @@ function tenantId(req:any) {
   return id;
 }
 
-async function clearUserFailures(tenantRif:string,email:string) {
-  await prisma.authLoginAttempt.deleteMany({
-    where:{ tenantRif, email:email.trim().toLowerCase(), success:false }
-  });
-}
-
 async function serializeUsers(id:string) {
   const tenant = await prisma.tenant.findUnique({ where:{ id }, select:{ rif:true } });
   if (!tenant) throw new HttpError(404, 'Empresa no encontrada.');
@@ -124,11 +118,37 @@ router.patch('/users/:userId', asyncHandler(async (req,res) => {
       await tx.userRole.create({ data:{ userId:user.id, roleId:selectedRole.id } });
     }
     if (Object.keys(updateData).length) await tx.userProfile.update({ where:{ id:user.id }, data:updateData });
-  });
 
-  if (body.clearFailures || body.status === 'active' || body.newPassword) {
-    await clearUserFailures(user.tenant.rif, user.email);
-  }
+    // Role, credential and status changes invalidate every server-bound JWT
+    // for this user. Scope both user and tenant; do not revoke other tenants.
+    const revokeSessions = Boolean(body.newPassword || body.status || selectedRole);
+    if (revokeSessions) {
+      await tx.$executeRaw`
+        UPDATE public."UserSession"
+        SET "status"='revoked', "revokedAt"=COALESCE("revokedAt",now()), "updatedAt"=now()
+        WHERE "tenantId"=${id} AND "userId"=${user.id} AND "status"='active'
+      `;
+    }
+    const resetFailures = Boolean(body.clearFailures || body.status === 'active' || body.newPassword);
+    if (resetFailures) {
+      await tx.authLoginAttempt.deleteMany({
+        where:{ tenantRif:user.tenant.rif, email:user.email.trim().toLowerCase(), success:false }
+      });
+    }
+    // Audit and update commit together. Never persist a password, credential,
+    // token or its derived hash in audit payloads.
+    await tx.auditLog.create({ data: {
+      tenantId:id, userId:currentUserId || null, action:'security.user.updated',
+      entity:'UserProfile', entityId:user.id,
+      after:{
+        status:body.status ?? null, roleChanged:Boolean(selectedRole),
+        credentialRotated:Boolean(body.newPassword), sessionsRevoked:revokeSessions,
+        failureCounterReset:resetFailures
+      },
+      ipAddress:req.context?.ip || null,
+      userAgent:String(req.context?.userAgent || '').slice(0,240) || null
+    } });
+  });
 
   ok(res, {
     updated:true,
