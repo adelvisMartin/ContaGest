@@ -1,3 +1,5 @@
+import { labApprovedCanonicalInformationStatus } from './lab-canonical-query.mjs';
+
 // LAB presentation helper. This is not a domain decision engine; the backend is
 // the only source of canonical facts, local context only supplies safe guidance.
 export function selectLabAnswer({canonical=null,plan=null,localFallback=''}={}){
@@ -5,7 +7,7 @@ export function selectLabAnswer({canonical=null,plan=null,localFallback=''}={}){
     && typeof canonical.text==='string'
     && canonical.text.length>0
     && canonical.text.length<=1500
-    && /^[A-Z0-9_]{4,80}$/.test(String(canonical.reason||''));
+    && labApprovedCanonicalInformationStatus(canonical.reason);
   if(validCanonical)return{
     text:canonical.text,source:'LECTURA_CANÓNICA_LIMITADA',reason:canonical.reason
   };
