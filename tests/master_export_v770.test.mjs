@@ -118,3 +118,17 @@ test('source route binds tenant to DB predicates and uses per-entity permission 
   assert.match(route,/tx\.auditLog\.create/);
   assert.match(route,/no-store/);
 });
+
+test('negative Decimal values remain numeric while negative spreadsheet formulas remain escaped', () => {
+  const csv = masterExportPayload('products','csv',[
+    { sku:'SYN-NEGATIVE-1', cost:'-20.00', price:'-0.01', name:'-1+HYPERLINK("https://example.invalid")' }
+  ],meta).data;
+  assert.ok(csv.includes('"-20.00"'), 'the exact negative Decimal string remains a numeric CSV cell');
+  assert.ok(csv.includes('"-0.01"'));
+  assert.ok(csv.includes('"\'-1+HYPERLINK(""https://example.invalid"")"'), 'an expression retains its injection prefix');
+  for (const unsafe of ['-SUM(A1:A2)', '-1+2', '-1e2', ' -12.5', '\u200B-3']) {
+    assert.equal(encodeMasterExportCsvCell(unsafe).startsWith('"\''), true, unsafe);
+  }
+  assert.equal(encodeMasterExportCsvCell('-0'), '"-0"');
+  assert.equal(encodeMasterExportCsvCell('-12.25'), '"-12.25"');
+});
