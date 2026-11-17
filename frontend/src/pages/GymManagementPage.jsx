@@ -53,6 +53,7 @@ function GymWorkspace({state,context}){
   const [routineForm,setRoutineForm]=useState({memberId:'',trainerId:'',name:'',goal:'',level:'beginner',trainingMode:'hypertrophy',daysPerWeek:'3',exercises:[]});
   const [nutritionForm,setNutritionForm]=useState({memberId:'',trainerId:'',name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]});
   const [classForm,setClassForm]=useState({name:'',trainerId:'',startsAt:localDateTime(60),endsAt:localDateTime(120),capacity:'20',location:''});
+  const [bookingClassId,setBookingClassId]=useState('');
 
   const notify=(message,tone='success')=>Toast?.show?.(message,tone);
   const selectedMember=useMemo(()=>members.find((item)=>item.id===selectedMemberId)||null,[members,selectedMemberId]);
@@ -147,6 +148,18 @@ function GymWorkspace({state,context}){
       await loadAll({silent:true});
     }catch(cause){notify(cause?.message||'No se pudo registrar la entrada. Reintenta sin cambiar el cliente.','error');}
     finally{checkInFlight.current=false;setCheckingIn(false);}
+    })();
+  };
+
+  const reserveClass=(classId)=>{if(!selectedMemberId)return notify('Selecciona un cliente para reservar.','warning');
+    if(bookingClassId)return;
+    setBookingClassId(classId);
+    void (async()=>{try{
+      const booking=await GymVerticalService.bookClass({classId,memberId:selectedMemberId,status:'booked',allowWaitlist:true});
+      notify(booking.status==='waitlisted'?'Agregado a la lista de espera.':'Cupo reservado.','success');
+      await loadAll({silent:true,memberId:selectedMemberId});
+    }catch(cause){notify(cause?.message||'No se pudo reservar la clase.','error');}
+    finally{setBookingClassId('');}
     })();
   };
 
@@ -295,7 +308,7 @@ function GymWorkspace({state,context}){
   const readyForClass=members.length>0&&trainers.length>0;
   const panelClasses=<Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
     <Section title="Nueva clase" description="Programa capacidad, instructor y sala.">{!readyForClass?<CgState severity="warning" title="Configuración incompleta">{!members.length?'Falta registrar al menos un cliente. ':''}{!trainers.length?'Falta registrar al menos un instructor.':''}</CgState>:null}<Box component="form" onSubmit={submitClass} sx={{mt:1}}><Stack gap={1}><CgTextField size="small" label="Nombre de la clase" required value={classForm.name} onChange={(e)=>setClassForm({...classForm,name:e.target.value})}/><CgSelect label="Instructor" value={classForm.trainerId} onChange={(e)=>setClassForm({...classForm,trainerId:e.target.value})} options={trainerOpts}/><Box className="cg-gym-v1124-fields" sx={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:1}}><CgTextField size="small" label="Inicio" type="datetime-local" slotProps={{inputLabel:{shrink:true}}} value={classForm.startsAt} onChange={(e)=>setClassForm({...classForm,startsAt:e.target.value})}/><CgTextField size="small" label="Fin" type="datetime-local" slotProps={{inputLabel:{shrink:true}}} value={classForm.endsAt} onChange={(e)=>setClassForm({...classForm,endsAt:e.target.value})}/><CgTextField size="small" label="Cupo" type="number" value={classForm.capacity} onChange={(e)=>setClassForm({...classForm,capacity:e.target.value})}/><CgTextField size="small" label="Sala / sede" value={classForm.location} onChange={(e)=>setClassForm({...classForm,location:e.target.value})}/></Box><CgButton type="submit" disabled={!readyForClass}>Programar clase</CgButton></Stack></Box></Section>
-    <Section title="Próximas clases" description="Calendario operativo."><RecordList items={classes} empty="No hay clases próximas" render={(item)=><Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1}><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.startsAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {item.trainerName||'Sin instructor'} · {item.location||'Sin sala'}</Typography></Box><CgStatusChip label={`${Number(item.bookings||0)} / ${Number(item.capacity||0)}`} tone="info"/></Stack>}/></Section>
+    <Section title="Próximas clases" description="Reservas con aforo y lista de espera."><CgSelect label="Cliente para reservar" value={selectedMemberId} onChange={(event)=>setSelectedMemberId(event.target.value)} options={memberOpts}/><RecordList items={classes} empty="No hay clases próximas" render={(item)=><Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{xs:'stretch',sm:'center'}} gap={1}><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.startsAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {item.trainerName||'Sin instructor'} · {item.location||'Sin sala'}</Typography></Box><Stack direction="row" alignItems="center" gap={1}><CgStatusChip label={`${Number(item.bookings||0)} / ${Number(item.capacity||0)}`} tone="info"/><CgButton size="small" disabled={!selectedMemberId||bookingClassId!==''||item.status!=='scheduled'||new Date(item.startsAt)<=new Date()} onClick={()=>reserveClass(item.id)}>{bookingClassId===item.id?'Reservando…':'Reservar'}</CgButton></Stack></Stack>}/></Section>
   </Box>;
 
   const overview=<Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>

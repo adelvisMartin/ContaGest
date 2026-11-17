@@ -465,7 +465,8 @@ export const gymPaymentSchema = z.object({
 export const gymClassBookingSchema = z.object({
   classId: z.string().min(10),
   memberId: z.string().min(10),
-  status: z.enum(['booked', 'attended', 'cancelled', 'no_show']).default('booked')
+  status: z.enum(['booked', 'attended', 'cancelled', 'no_show']).default('booked'),
+  allowWaitlist: z.boolean().default(false)
 });
 
 export const gymMembershipStatusSchema = z.object({
