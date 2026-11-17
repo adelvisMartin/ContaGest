@@ -72,3 +72,14 @@ test('#852 effect replay also preserves original courtesy reason',()=>{
   assert.match(grant,/tx\.entitlementLedgerEvent\.findFirst\(/);
   assert.match(grant,/const identical=first\?\.reason===input\.reason/);
 });
+
+test('#852 read projection fails closed for oversized and invalid append-only histories',()=>{
+  const read=svc.split('export async function readCustomerRights(')[1]
+    .split('export async function consumeCustomerRightInBookingTransaction(')[0];
+  assert.match(read,/events:\{orderBy:\{sequence:'asc'\},take:10001\}/);
+  assert.match(read,/if\(row\.events\.length>10000\)/);
+  assert.match(read,/ENTITLEMENT_LEDGER_LIMIT/);
+  assert.match(read,/try\{[\s\S]*projectEntitlementLedger\([\s\S]*\}catch\{/);
+  assert.match(read,/ENTITLEMENT_LEDGER_DRIFT/);
+  assert.match(read,/denied\(409/);
+});
