@@ -54,3 +54,18 @@ test('empty series, absent summary fields or wrong row count never pass', () => 
   assert.equal(check(base, { ...summary, samples: 2 }), false);
   assert.equal(check(base, { ...summary, spoolChecks: undefined }), false);
 });
+
+test('#120 a healthy result must be a 2xx READY_SHADOW observation',()=>{
+  assert.equal(check([base[0],row(1,{health:{
+    ok:true,status:503,reason:'HEALTH_HTTP_FAILURE',latencyMs:5
+  }}),base[2]]),false);
+  assert.equal(check([base[0],row(1,{health:{
+    ok:true,status:200,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5
+  }}),base[2]]),false);
+  assert.equal(check([base[0],row(1,{health:{
+    ok:false,status:200,reason:'READY_SHADOW',latencyMs:5
+  }}),base[2]],{...summary,healthFailures:1}),false);
+  assert.equal(check([base[0],row(1,{health:{
+    ok:false,status:503,reason:'HEALTH_HTTP_FAILURE',latencyMs:5
+  }}),base[2]],{...summary,healthFailures:1}),true);
+});
