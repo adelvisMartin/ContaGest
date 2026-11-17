@@ -122,6 +122,29 @@ test('issue #95 transactional import pipeline on real PostgreSQL',async(t)=>{
     const batch=await preview(h,'clients',[{name:'Formula safe',rif:'=CMD-QA95'}]);const report=await h.ok(`/imports/${batch.id}/report`);assert.ok(report.csv.includes("'=CMD-QA95"));
   });
 
+  await t.test('#1313 malformed, excessively wide or nested rows never reach staging',async()=>{
+    const filename=`${RUN}-unsafe-input.csv`;
+    const invalidRows=[
+      [{rif:'J999999',name:'Synthetic',extra:{nested:{value:'not-a-cell'}}}],
+      [Object.fromEntries(Array.from({length:65},(_,i)=>[`column_${i}`,'x']))],
+      [{rif:'J999999',name:'x'.repeat(2_001)}],
+      [JSON.parse('{"rif":"J999999","name":"Synthetic","__proto__":{"administrator":true}}')],
+      [{rif:'J999999',name:'Synthetic',extra:['not','scalar']}],
+      [{rif:'J999999',name:'Synthetic',invalidHeader:'x'}].map((row)=>({
+        ...row, ['x'.repeat(121)]:'oversized key'
+      }))
+    ];
+    const before=await h.prisma.importBatch.count({where:{tenantId:h.tenant.id,filename}});
+    for(const rows of invalidRows){
+      const rejected=await h.status('/imports/preview',422,{
+        method:'POST',body:JSON.stringify({type:'clients',templateVersion:'v1',duplicatePolicy:'error',filename,rows})
+      });
+      assert.equal(rejected.payload?.message,'Datos inválidos');
+    }
+    assert.equal(await h.prisma.importBatch.count({where:{tenantId:h.tenant.id,filename}}),before);
+    assert.equal(({} as any).administrator,undefined);
+  });
+
   await t.test('#1313 failed dry-run audit must roll back its staged batch',async()=>{
     const filename=`${RUN}-failed-audit.csv`;
     await rejectScopedImportAudit(h,'import.dry-run',null,async()=>{
