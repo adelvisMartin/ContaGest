@@ -29,16 +29,23 @@ export function masterExportRows(entity: MasterExportEntity, records: readonly R
   );
 }
 
+// Keep all backend CSV exporters on the same cell policy. CSV quoting alone
+// cannot stop spreadsheet formula interpretation of untrusted text.
+const FORMULA_PREFIX = /^[\u0000-\u0020\u007f-\u009f\u00a0\u1680\u2000-\u200f\u2028-\u202e\u202f\u205f\u2060-\u2069\u3000\ufeff]*[=+\-@]/u;
+
+export function encodeMasterExportCsvCell(value: unknown): string {
+  const text = value == null ? '' : String(value);
+  const untrustedText = typeof value === 'string';
+  const safe = untrustedText && FORMULA_PREFIX.test(text) ? "'" + text : text;
+  return '"' + safe.replaceAll('"', '""') + '"';
+}
+
 export function masterExportCsv(entity: MasterExportEntity, rows: readonly Record<string, string | null>[]): string {
   const fields = MASTER_EXPORT_FIELDS[entity];
-  const safe = (value: string | null) => {
-    let text = value ?? '';
-    // Any spreadsheet formula prefix (including leading whitespace and
-    // control chars) must be escaped before RFC4180 quoting.
-    if (/^[\u0000-\u0020\u007f-\u009f\u00a0\u1680\u2000-\u200f\u2028-\u202e\u202f\u205f\u2060-\u2069\u3000\ufeff]*[=+\-@]/u.test(text)) text = "'" + text;
-    return '"' + text.replaceAll('"', '""') + '"';
-  };
-  return [fields.map(safe).join(','), ...rows.map((row) => fields.map((key) => safe(row[key] ?? null)).join(','))].join('\r\n');
+  return [
+    fields.map(encodeMasterExportCsvCell).join(','),
+    ...rows.map((row) => fields.map((key) => encodeMasterExportCsvCell(row[key] ?? null)).join(','),
+  ].join('\r\n');
 }
 
 export function masterExportPayload(entity: MasterExportEntity, format: MasterExportFormat,
