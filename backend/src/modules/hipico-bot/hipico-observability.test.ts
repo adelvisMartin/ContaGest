@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -5,6 +6,7 @@ import {
   buildObservationTrace,
   candidateSha,
   normalizeObservationEvent,
+  safeObservationReasonCode,
   sanitizeObservationMetadata
 } from './hipico-observability.js';
 
@@ -98,6 +100,38 @@ test('HIPICO #1314 metadata keys with prototype names cannot corrupt the support
   assert.equal(JSON.stringify(clean).includes('contaminated'),true);
   assert.equal(clean.constructor,'observed');
   assert.equal(clean.status,'SAFE');
+});
+
+test('HIPICO #1314 never persists opaque identifiers or error text in reason codes',()=>{
+  const sensitive=[
+    'Bearer '+ 'q'.repeat(43),
+    'provider-error: +584121234567',
+    'SESSION_584121234567',
+    'https://example.invalid/report?t='+'A'.repeat(43),
+    'jwt.'+'a'.repeat(25)+'.'+'b'.repeat(32)
+  ];
+  for(const raw of sensitive){
+    const safe=safeObservationReasonCode(raw);
+    assert.match(safe,/^REDACTED_REASON_[A-F0-9]{16}$/);
+    assert.equal(safe,safeObservationReasonCode(raw));
+    assert.equal(safe.includes('584121234567'),false);
+    const trace=buildObservationTrace({
+      ownerId:OWNER,groupKey:'lab:safe',groupId:'group-synthetic',sourceRef:'event-1'
+    });
+    const event=normalizeObservationEvent({
+      ...trace,stage:'DELIVERY_RECEIPT',outcome:'ERROR',reasonCode:raw
+    });
+    assert.equal(event.reasonCode,safe);
+    assert.equal(JSON.stringify(event).includes(raw),false);
+  }
+  assert.equal(safeObservationReasonCode('PROVIDER_ACCEPTED'),'PROVIDER_ACCEPTED');
+  assert.equal(safeObservationReasonCode('HTTP_429'),'HTTP_429');
+  assert.equal(safeObservationReasonCode(''),'UNSPECIFIED');
+});
+
+test('HIPICO #1314 support export sanitizes legacy event reason codes too',()=>{
+  const store=fs.readFileSync(new URL('./hipico-observability.store.ts',import.meta.url),'utf8');
+  assert.match(store,/reasonCode:safeObservationReasonCode\\(row\\.reason_code\\)/);
 });
 
 test('candidate SHA is accepted only when it is an exact git SHA',()=>{
