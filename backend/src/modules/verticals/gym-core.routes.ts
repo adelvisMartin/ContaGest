@@ -32,8 +32,8 @@ router.get('/gym/members', requirePermission('gym.manage'), asyncHandler(async (
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT m.*, ms."endsAt" AS "membershipEndsAt", ms."status" AS "membershipStatus", p."name" AS "planName"
     FROM public."GymMember" m
-    LEFT JOIN LATERAL (SELECT * FROM public."GymMembership" x WHERE x."memberId"=m."id" ORDER BY x."createdAt" DESC LIMIT 1) ms ON true
-    LEFT JOIN public."GymMembershipPlan" p ON p."id"=ms."planId"
+    LEFT JOIN LATERAL (SELECT * FROM public."GymMembership" x WHERE x."tenantId"=m."tenantId" AND x."memberId"=m."id" ORDER BY x."createdAt" DESC LIMIT 1) ms ON true
+    LEFT JOIN public."GymMembershipPlan" p ON p."tenantId"=ms."tenantId" AND p."id"=ms."planId"
     WHERE m."tenantId"=$1 AND ($2='%%' OR m."fullName" ILIKE $2 OR m."memberCode" ILIKE $2 OR COALESCE(m."email",'') ILIKE $2)
     ORDER BY m."status", m."fullName" LIMIT 1000
   `, ctx(req).tenantId, q);

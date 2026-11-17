@@ -12,7 +12,7 @@ router.get('/gym/payments', requirePermission('gym.manage'), asyncHandler(async 
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT p.*, m."fullName" AS "memberName", m."memberCode"
     FROM public."GymPayment" p
-    JOIN public."GymMember" m ON m."id" = p."memberId"
+    JOIN public."GymMember" m ON m."tenantId" = p."tenantId" AND m."id" = p."memberId"
     WHERE p."tenantId" = $1 AND ($2 = '' OR p."memberId" = $2)
     ORDER BY p."paidAt" DESC
     LIMIT 1000
@@ -62,7 +62,7 @@ router.get('/gym/classes/:classId/bookings', requirePermission('gym.manage'), as
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT b.*, m."fullName" AS "memberName", m."memberCode"
     FROM public."GymClassBooking" b
-    JOIN public."GymMember" m ON m."id" = b."memberId"
+    JOIN public."GymMember" m ON m."tenantId" = b."tenantId" AND m."id" = b."memberId"
     WHERE b."tenantId" = $1 AND b."classId" = $2
     ORDER BY b."bookedAt" ASC
   `, context(req).tenantId, req.params.classId);
