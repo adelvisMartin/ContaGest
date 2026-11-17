@@ -1,13 +1,11 @@
 import {Router} from 'express';
-import {z} from 'zod';
 import {prisma} from '../../database/prisma.js';
 import {asyncHandler,HttpError,ok} from '../../shared/http.js';
 import {requirePermission} from '../../shared/middleware/context.js';
 import {ctx} from './verticals.shared.js';
-import {dentalClinicalDataSchema,periodontalClinicalDataSchema} from './health.schemas.js';
+import {dentalClinicalDataSchema,periodontalClinicalDataSchema,dentalChartHistoryQuerySchema} from './health.schemas.js';
 
 const router=Router();
-const querySchema=z.object({patientId:z.string().trim().min(10).max(160)}).strict();
 
 type ChartRow={
   id:string;type:string;status:string;professionalId:string|null;
@@ -15,7 +13,7 @@ type ChartRow={
 };
 
 router.get('/health/dental/chart-history',requirePermission('health.manage'),asyncHandler(async(req,res)=>{
-  const parsed=querySchema.safeParse(req.query);
+  const parsed=dentalChartHistoryQuerySchema.safeParse(req.query);
   if(!parsed.success)throw new HttpError(422,'Filtro de historia odontológica inválido.');
   const tenantId=ctx(req).tenantId, patientId=parsed.data.patientId;
   const patient=await prisma.$queryRawUnsafe<Array<{id:string;kind:string}>>(

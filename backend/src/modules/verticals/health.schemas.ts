@@ -358,3 +358,6 @@ export const dentalTreatmentConsentSchema = z.object({
 export const consentRevocationSchema = z.object({
   reason: z.string().trim().min(5).max(500)
 });
+
+/** #747 history query contracts live with the clinical schema authority. */
+export const dentalChartHistoryQuerySchema=z.object({patientId:z.string().trim().min(10).max(160)}).strict();
