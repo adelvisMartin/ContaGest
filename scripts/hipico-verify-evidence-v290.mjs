@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { validHipicoDrRestoreEvidence } from './hipico-dr-restore-policy-v839.mjs';
+import { evidenceStatusesConflict } from './hipico-evidence-status-consistency-v839.mjs';
 import { validHipicoPhysicalMaterial } from './hipico-physical-material-integrity-v119.mjs';
 import { validSoakMetricEvidence } from './hipico-soak-metric-integrity-v120.mjs';
 import { validSoakSamplesProof } from './hipico-soak-samples-proof-v120.mjs';
@@ -284,6 +285,12 @@ async function findDescriptor(descriptor) {
   const schemaMatch = descriptor.schemas.length
     ? sameSha.filter((item) => descriptor.schemas.includes(String(item.data?.schema || '')))
     : sameSha;
+  // A stale or rerun FAIL must not be hidden by another PASS under the same SHA/schema.
+  if (evidenceStatusesConflict(schemaMatch, evidenceStatus)) {
+    return { id: descriptor.id, status: 'FAIL',
+      file: path.relative(evidenceRoot, schemaMatch[0].file),
+      reason: 'CONFLICTING_SAME_SHA_EVIDENCE' };
+  }
   const pass = schemaMatch.find((item) => evidenceStatus(item.data) === 'PASS');
   const selected = pass || schemaMatch[0] || sameSha[0] || candidates[0] || null;
   if (!selected) return { id: descriptor.id, status: 'NOT_EXECUTED', file: null, reason: 'EVIDENCE_MISSING' };
