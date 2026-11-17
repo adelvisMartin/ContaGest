@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import test, { after, before } from 'node:test';
 import type { Prisma } from '@prisma/client';
@@ -22,6 +22,7 @@ const runId = randomUUID().replace(/-/g, '').slice(0, 16);
 const tenantRif = `QA-762-${runId}`;
 let tenantId = '';
 let token = '';
+let sessionId = '';
 let server: ReturnType<ReturnType<typeof createApp>['listen']>;
 let baseUrl = '';
 
@@ -93,7 +94,21 @@ before(async () => {
       status: 'active'
     }
   });
-  token = signAccessToken({ id: user.id, email: user.email }, tenantId);
+  // Backend bearer authentication requires an active, revocable UserSession.
+  // Do not bypass the session binding in the production middleware for QA.
+  sessionId = randomUUID();
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+  const refreshHash = randomBytes(32).toString('hex');
+  const csrfHash = randomBytes(32).toString('hex');
+  await prisma.$executeRaw`
+    INSERT INTO public."UserSession"
+      ("id","userId","tenantId","refreshHash","csrfHash","status","rotationCounter",
+       "expiresAt","metadata","createdAt","updatedAt")
+    VALUES
+      (${sessionId},${user.id},${tenantId},${refreshHash},${csrfHash},'active',0,
+       ${expiresAt},'{"qaFixture":true,"suite":"document-sequence-v762"}'::jsonb,now(),now())
+  `;
+  token = signAccessToken({ id: user.id, email: user.email }, tenantId, sessionId);
 
   server = createApp().listen(0, '127.0.0.1');
   await new Promise<void>((resolve, reject) => {
@@ -106,8 +121,27 @@ before(async () => {
 
 after(async () => {
   if (server?.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (sessionId && tenantId) await prisma.$executeRaw`
+    DELETE FROM public."UserSession" WHERE "id"=${sessionId} AND "tenantId"=${tenantId}
+  `;
   if (tenantId) await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
   await prisma.$disconnect();
+});
+
+test('document sequence API uses a server-bound revocable bearer session', async () => {
+  assert.ok(sessionId && token && tenantId, 'fixture session must be created');
+  const rows = await prisma.$queryRaw<Array<{ id: string; status: string }>>`
+    SELECT "id","status" FROM public."UserSession"
+    WHERE "id"=${sessionId} AND "tenantId"=${tenantId} LIMIT 1
+  `;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].status, 'active');
+  // A signed token without sid is invalid even for a licensed admin.
+  const orphanToken = signAccessToken({ id: rows[0].id, email: 'no-session@invalid.example' }, tenantId);
+  const result = await fetch(`${baseUrl}/api/v1/document-sequences`, {
+    headers: { authorization: `Bearer ${orphanToken}` }
+  });
+  assert.equal(result.status, 401);
 });
 
 test('concurrent allocation is unique, gap-free for committed allocations, and tenant-scoped', async () => {
