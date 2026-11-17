@@ -130,6 +130,7 @@ test('issue #95 transactional import pipeline on real PostgreSQL',async(t)=>{
       [{rif:'J999999',name:'x'.repeat(2_001)}],
       [JSON.parse('{"rif":"J999999","name":"Synthetic","__proto__":{"administrator":true}}')],
       [{rif:'J999999',name:'Synthetic',extra:['not','scalar']}],
+      [JSON.parse('{"rif":"J999999","name":"Synthetic","bad\\u0000key":"x"}')],
       [{rif:'J999999',name:'Synthetic',invalidHeader:'x'}].map((row)=>({
         ...row, ['x'.repeat(121)]:'oversized key'
       }))
