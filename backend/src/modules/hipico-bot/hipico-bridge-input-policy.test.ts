@@ -102,3 +102,19 @@ test('history replay has a separate larger server-side throttle but is never unl
   assert.equal(historySyncRateCheck('source:p2',digest,2000).allowed,true);
   historySyncRateLimiter.reset();
 });
+
+test('bridge SOURCE/LAB identities cannot be forged by objects with toString',()=>{
+  const forge=(s:string)=>({toString:()=>s});
+  assert.equal(normalizeBridgeGroupId(forge(sourceGroupId)),'');
+  assert.equal(normalizeBridgeSender(forge('584121234567@c.us')),null);
+  const valid={groupId:sourceGroupId,channelRole:'source',
+    channelKey:'club-hipico-triple-crown-official',labChannelKey:'control-hipico-lab'};
+  assert.equal(validateBridgeGroupIdentity(valid,env),null);
+  for(const field of ['groupId','channelRole','channelKey','labChannelKey'] as const){
+    const forged={...valid,[field]:forge(valid[field])};
+    assert.equal(validateBridgeGroupIdentity(forged,env),'HIPICO_BRIDGE_GROUP_IDENTITY_MISMATCH',field);
+    assert.throws(()=>assertBridgeGroupIdentity(forged,env),
+      (error:any)=>error?.code==='HIPICO_TRANSPORT_REPLAY_MISMATCH',field);
+  }
+  assert.equal(validateBridgeGroupIdentity(null as any,env),'HIPICO_BRIDGE_GROUP_IDENTITY_MISMATCH');
+});
