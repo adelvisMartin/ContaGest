@@ -70,9 +70,17 @@ test('#746 payment insert and membership debit remain one tenant-scoped transact
     return Number(rows[0]?.balance);
   };
   assert.equal(await amount(),30);
-  const pending=await post({...payment,amount:10,status:'pending',reference:'pending-'+run});
+  const pending=await post({...payment,amount:'10.25',status:'pending',reference:'pending-'+run});
   assert.equal(pending.response.status,201);
+  assert.equal(Number(pending.data.amount),10.25);
   assert.equal(await amount(),30,'pending is not a paid balance effect');
+  // No implicit JS Number coercion or fractional-cent rounding is authorized.
+  for(const invalidAmount of [true,'1e2','0x10','0.001','1.234','0.00']){
+    const invalid=await post({...payment,amount:invalidAmount,
+      reference:'invalid-amount-'+run});
+    assert.equal(invalid.response.status,422,String(invalidAmount));
+  }
+  assert.equal(await amount(),30,'invalid amounts cannot mutate membership');
 
   const rejected=await post({...payment,memberId:otherMemberId,reference:'cross-member-'+run});
   assert.equal(rejected.response.status,404);
