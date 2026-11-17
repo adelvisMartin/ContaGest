@@ -18,6 +18,7 @@ import fiscalWithholdingApplicationRoutes from './fiscal-withholding-application
 import fiscalComplianceWorkflowRoutes from './fiscal-compliance-workflow.routes.js';
 import { assertFiscalEffectivePeriod } from './fiscal-effective-period-policy.js';
 import { captureTaxpayerProfileDraft, listTaxpayerProfileDrafts, transitionTaxpayerProfile, getEffectiveTaxpayerProfile } from './taxpayer-profile.repository.js';
+import { requiresVerifiedTaxpayerProfile } from './taxpayer-profile-activation-policy.js';
 import { prepareFiscalLegalSourceDraft } from './fiscal-legal-source-policy.js';
 import { createFiscalLegalSourceDraft, listFiscalLegalSources, reviewFiscalLegalSource } from './fiscal-legal-source.repository.js';
 import {
@@ -472,8 +473,7 @@ router.post('/documents/issue', requirePermission('fiscal.manage_documents'), va
     }
     const ruleKeys: string[] = [...new Set(req.body.ruleKeys as string[])].sort();
     const rules = await resolveFiscalRules(tx, { tenantId: ctx.tenantId, ruleKeys, effectiveAt });
-    const requiresProfile = ['iva','islr','retiva'].includes(req.body.module) ||
-      req.body.kind === 'withholding';
+    const requiresProfile = requiresVerifiedTaxpayerProfile(req.body.module, req.body.kind);
     const profile = requiresProfile
       ? await getEffectiveTaxpayerProfile(tx, ctx.tenantId, effectiveAt)
       : null;
