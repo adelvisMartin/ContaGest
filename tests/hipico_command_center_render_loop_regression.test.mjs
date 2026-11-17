@@ -50,7 +50,13 @@ test('Control Hípico invalidates the cached shell that contained the render loo
   // Verify new cache identity plus removal of all prior Hípico shell caches,
   // not a stale literal revision that would freeze offline upgrades.
   assert.doesNotMatch(code, /r29-auto-update-reload/);
-  assert.match(code, /shell-r38-consolidator-v4-1-3/);
+  // A patch release must rotate the shell cache beyond the known-bad revisions.
+  // Keep the lower bound pinned to the latest security revision, not an exact
+  // revision string that breaks whenever a safe cache rotation is shipped.
+  const cacheRevision = code.match(/const SHELL_CACHE = \`\\$\\{CACHE_VERSION\\}-shell-r(\\d+)-consolidator-v4-1-3\`;/);
+  assert.ok(cacheRevision, 'shell cache must remain versioned under CACHE_VERSION');
+  assert.ok(Number(cacheRevision[1]) >= 39,
+    'shell cache must not reuse revisions before the r39 private-cache migration');
   assert.match(code, /key\.startsWith\('hipico-control-'\)\s*&&\s*key\s*!==\s*SHELL_CACHE/);
   assert.match(code, /await self\.skipWaiting\(\)/);
   assert.match(code, /await self\.clients\.claim\(\)/);
