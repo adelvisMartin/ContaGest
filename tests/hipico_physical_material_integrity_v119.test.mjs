@@ -54,3 +54,16 @@ test('#119 rejects malformed or empty evidence manifests',async t=>{
     assert.equal(await validHipicoPhysicalMaterial(f.manifest,rows),false);
   }
 });
+
+test('#119 cannot pass with a nonexistent or symbolic-linked physical QA manifest',async t=>{
+  const f=fixture(t);
+  fs.unlinkSync(f.manifest);
+  assert.equal(await validHipicoPhysicalMaterial(f.manifest,f.rows),false);
+  fs.symlinkSync(f.proof,f.manifest);
+  assert.equal(await validHipicoPhysicalMaterial(f.manifest,f.rows),false);
+});
+
+test('#119 evidence verifier rejects a manifest directory instead of a regular JSON file',async t=>{
+  const f=fixture(t);
+  assert.equal(await validHipicoPhysicalMaterial(f.dir,f.rows),false);
+});
