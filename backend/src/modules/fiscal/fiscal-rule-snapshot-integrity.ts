@@ -2,7 +2,13 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 
 /** Preserve the original #561 canonicalization for existing stored hashes. */
 function canonicalize(value: unknown): unknown {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') return value;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  // JSON.stringify coerces NaN/Infinity to null; this would let distinct
+  // fiscal evidence produce the same supposedly immutable hash.
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('FISCAL_RULE_EVIDENCE_INTEGRITY');
+    return value;
+  }
   if (Array.isArray(value)) return value.map(canonicalize);
   if (typeof value === 'object') {
     const record = value as Record<string, unknown>;
