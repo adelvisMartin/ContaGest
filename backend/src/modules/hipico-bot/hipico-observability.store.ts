@@ -1,5 +1,5 @@
 import { prisma } from '../../database/prisma.js';
-import { normalizeObservationEvent, safeSupportId, type ObservationInput } from './hipico-observability.js';
+import { normalizeObservationEvent, safeSupportId, sanitizeObservationMetadata, type ObservationInput } from './hipico-observability.js';
 
 export async function observabilityReadiness(){
   try{
@@ -46,7 +46,7 @@ export async function hipicoSupportBundle(input:{ownerId:string;groupKey:string;
     events:rows.map((row)=>({
       requestId:row.request_id,correlationId:row.correlation_id,candidateSha:row.candidate_sha,
       stage:row.stage,outcome:row.outcome,reasonCode:row.reason_code,latencyMs:Number(row.latency_ms||0),
-      metadata:row.metadata||{},createdAt:row.created_at
+      metadata:sanitizeObservationMetadata(row.metadata||{}),createdAt:row.created_at
     }))
   };
 }
