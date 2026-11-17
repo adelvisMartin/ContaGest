@@ -29,3 +29,12 @@ test('#785 rejects nature mismatch and unknown role, does not infer codes', () =
 test('#785 rejects a self-referential parent even when account is marked postable',()=>{
   denied(()=>bind({...a,parentCode:a.code}));
 });
+
+test('#785 unnormalized chart-account codes and tenant identities cannot authorize posting',()=>{
+  for(const code of ['   ',' 1.01','1.01 ','\t1.01']){
+    denied(()=>bind({...a,code}));
+  }
+  for(const tenantId of ['   ','a ',' a']){
+    denied(()=>bind({...a,tenantId},{tenantId}));
+  }
+});
