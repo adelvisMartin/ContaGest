@@ -96,3 +96,9 @@ test('#1289 canonical hash preserves explicit sensitive-looking keys as data wit
   const original = JSON.parse('{"__proto__":1,"nested":{"__proto__":2}}');
   assert.equal(canonicalRequestJson(original), '{"__proto__":1,"nested":{"__proto__":2}}');
 });
+
+test('invalid Date values are canonical request errors rather than uncaught RangeError', () => {
+  const error = captureError(() => canonicalRequestHash({ issuedAt: new Date(Number.NaN) }));
+  assert.equal(error.status, 422);
+  assert.equal(error.details?.code, 'IDEMPOTENCY_REQUEST_NOT_CANONICAL');
+});
