@@ -13,6 +13,7 @@ import { DentalChartHistoryPanel } from '../components/dentistry/DentalChartHist
 import { DentalClinicalAlertsPanel } from '../components/dentistry/DentalClinicalAlertsPanel.jsx';
 import { TreatmentPlanPanel } from '../components/dentistry/TreatmentPlanPanel.jsx';
 import { DentalConsentPanel } from '../components/dentistry/DentalConsentPanel.jsx';
+import { DentalPrescriptionPanel } from '../components/dentistry/DentalPrescriptionPanel.jsx';
 import { DentalMediaPanel } from '../components/dentistry/DentalMediaPanel.jsx';
 import { DentalLifecycleActions } from '../components/dentistry/DentalLifecycleActions.jsx';
 import { DentalSchedulePanel } from '../components/dentistry/DentalSchedulePanel.jsx';
@@ -483,6 +484,13 @@ function DentistryWorkspace({ state, context }){
       consents={consents}
       onSign={signDentalConsent}
       onRevoke={revokeDentalConsent}
+    />
+
+    <DentalPrescriptionPanel
+      key={selectedPatientId || 'no-patient'}
+      patientId={selectedPatientId}
+      encounters={encounters}
+      professionalOptions={professionalOptions}
     />
 
     <DentalMediaPanel
