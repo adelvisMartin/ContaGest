@@ -75,7 +75,10 @@ function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (typeof value === 'object') {
     const source = value as Record<string, unknown>;
-    const result: JsonObject = {};
+    // A parsed JSON object may contain its own "__proto__" key. A normal
+    // object assignment silently mutates the canonical object's prototype and
+    // drops that key from JSON.stringify, conflating different money requests.
+    const result: JsonObject = Object.create(null);
     for (const key of Object.keys(source).sort()) {
       if (source[key] === undefined) continue;
       result[key] = canonicalize(source[key]);
