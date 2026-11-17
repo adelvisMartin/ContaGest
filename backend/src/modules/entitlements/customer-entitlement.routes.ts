@@ -5,6 +5,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
 import { createBenefit,grantCustomerRight,readCustomerRightsPage } from './customer-entitlement.service.js';
+import { customerRightsPage } from './customer-rights-pagination.mjs';
 
 const router=Router();
 router.use(requireTenant);
@@ -36,10 +37,19 @@ const grant=z.object({
   locationId:uuid.nullish()
 }).strict();
 router.get('/benefits',asyncHandler(async(req,res)=>{
+  const pagination=rightsPagination.parse(req.query);
+  // The benefit catalogue is tenant-scoped. A sentinel record detects an
+  // additional page without changing the array response contract.
   const rows=await prisma.benefitDefinition.findMany({
-    where:{tenantId:ctx(req).tenantId},orderBy:{createdAt:'desc'},take:100
+    where:{tenantId:ctx(req).tenantId},
+    orderBy:[{createdAt:'desc'},{id:'asc'}],
+    skip:pagination.skip,take:pagination.take+1
   });
-  ok(res,rows);
+  const page=customerRightsPage(rows,pagination);
+  res.setHeader('Cache-Control','private, no-store');
+  res.setHeader('X-Pagination-Has-More',page.hasMore?'true':'false');
+  if(page.nextSkip!==null)res.setHeader('X-Pagination-Next-Skip',String(page.nextSkip));
+  ok(res,page.items);
 }));
 router.post('/benefits',validateBody(create),asyncHandler(async(req,res)=>{
   ok(res,await createBenefit(ctx(req),req.body),201);
