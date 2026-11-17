@@ -176,13 +176,28 @@ async function validAccessToken() {
     return refreshed.access_token;
 }
 async function authorizedRequest(path, options = {}, retry = true) {
+    // A logout or user switch invalidates every outstanding private response:
+    // never deliver an old owner's workspace or retry a 401 with a new user.
+    const expectedEpoch = sessionEpoch;
+    const assertCurrentSession = () => {
+        if (expectedEpoch !== sessionEpoch || !cachedSession?.access_token) {
+            throw Object.assign(new Error("La sesión cambió. Inicia sesión nuevamente para continuar."), {
+                code: "HIPICO_SESSION_CHANGED", retryable: false
+            });
+        }
+    };
     const token = await validAccessToken();
+    assertCurrentSession();
     try {
-        return await request(path, Object.assign(Object.assign({}, options), { headers: authHeaders(token, options.headers || {}) }));
+        const response = await request(path, Object.assign(Object.assign({}, options), { headers: authHeaders(token, options.headers || {}) }));
+        assertCurrentSession();
+        return response;
     }
     catch (error) {
+        assertCurrentSession();
         if (retry && (error === null || error === void 0 ? void 0 : error.status) === 401 && (cachedSession === null || cachedSession === void 0 ? void 0 : cachedSession.refresh_token)) {
             const refreshed = await refreshCloudSession();
+            assertCurrentSession();
             if (refreshed === null || refreshed === void 0 ? void 0 : refreshed.access_token)
                 return authorizedRequest(path, options, false);
         }
