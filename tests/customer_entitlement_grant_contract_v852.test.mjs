@@ -97,3 +97,18 @@ test('#852 read projection fails closed for oversized and invalid append-only hi
   assert.match(read,/ENTITLEMENT_LEDGER_DRIFT/);
   assert.match(read,/denied\(409/);
 });
+
+
+test('#852 benefits pagination cannot silently hide the 101st tenant-owned product benefit',()=>{
+  const list=routes.split("router.get('/benefits'")[1].split("router.post('/benefits'")[0];
+  assert.match(list,/rightsPagination\.parse\(req\.query\)/);
+  assert.match(list,/where:\{tenantId:ctx\(req\)\.tenantId\}/);
+  assert.match(list,/orderBy:\[\{createdAt:'desc'\},\{id:'asc'\}\]/);
+  assert.match(list,/skip:pagination\.skip,take:pagination\.take\+1/);
+  assert.match(list,/customerRightsPage\(rows,pagination\)/);
+  assert.match(list,/X-Pagination-Has-More/);
+  assert.match(list,/X-Pagination-Next-Skip/);
+  assert.match(list,/private, no-store/);
+  assert.match(list,/ok\(res,page\.items\)/);
+  assert.doesNotMatch(list,/take:100\b/);
+});
