@@ -104,6 +104,32 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   projected=await h.ok('/service-catalog/public');
   const publicRow=projected.services.find((s:any)=>s.id===created.id);
   assert.ok(publicRow);
+
+  // Admin filters stay tenant-bound, bounded, and deterministic without
+  // changing the existing unfiltered list contract.
+  const matched=await h.ok(
+    `/service-catalog/services?status=active&categoryId=${category.id}&search=consulta`
+  );
+  assert.equal(matched.length,1);
+  assert.equal(matched[0].id,created.id);
+  const nonmatchingStatus=await h.ok(
+    `/service-catalog/services?status=draft&categoryId=${category.id}&search=consulta`
+  );
+  assert.equal(nonmatchingStatus.some((s:any)=>s.id===created.id),false);
+  assert.deepEqual(await h.ok(
+    `/service-catalog/services?categoryId=${randomUUID()}`
+  ),[]);
+  const matchedCategories=await h.ok(
+    '/service-catalog/categories?status=active&search=Atenci%C3%B3n&take=1'
+  );
+  assert.equal(matchedCategories.length,1);
+  assert.equal(matchedCategories[0].id,category.id);
+  const categoryResponse=await h.request('/service-catalog/categories?take=1');
+  const serviceResponse=await h.request('/service-catalog/services?take=1');
+  assert.equal(categoryResponse.response.headers.get('cache-control'),'private, no-store');
+  assert.equal(serviceResponse.response.headers.get('cache-control'),'private, no-store');
+  assert.ok(categoryResponse.data.length<=1);
+  assert.ok(serviceResponse.data.length<=1);
   const publicJson=JSON.stringify(publicRow);
   for(const forbidden of ['price','taxRate','cost','employeeId','createdBy','tenantId']) {
     assert.equal(Object.hasOwn(publicRow,forbidden),false,'public leak: '+forbidden);
