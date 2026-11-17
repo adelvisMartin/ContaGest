@@ -484,3 +484,26 @@ export const gymMembershipStatusSchema = z.object({
   status: z.enum(['active', 'expired', 'frozen', 'cancelled', 'pending']),
   endsAt: z.string().optional().nullable()
 });
+
+
+/** #799 equipment operational contract; routes only validate via these authorities. */
+const gymEquipmentRequestKeySchema=z.string().trim().regex(/^[A-Za-z0-9._:-]{12,128}$/);
+export const gymEquipmentSchema=z.object({
+  locationId:z.string().uuid(),code:z.string().trim().min(2).max(32),
+  name:z.string().trim().min(2).max(180),area:z.string().trim().max(120).optional().nullable()
+}).strict();
+export const gymEquipmentWorkOrderSchema=z.object({
+  kind:z.enum(['preventive','corrective','incident']),
+  title:z.string().trim().min(3).max(180),description:z.string().trim().max(2000).optional().nullable(),
+  scheduledAt:z.string().datetime({offset:true}).optional().nullable(),requestKey:gymEquipmentRequestKeySchema
+}).strict();
+export const gymEquipmentTransitionSchema=z.object({
+  toStatus:z.enum(['in_progress','resolved','cancelled']),
+  reason:z.string().trim().max(2000).optional().nullable(),
+  eventKey:gymEquipmentRequestKeySchema
+}).strict().superRefine((value,context)=>{
+  if(['resolved','cancelled'].includes(value.toStatus)&&!value.reason)
+    context.addIssue({code:'custom',path:['reason'],message:'Indica el motivo del cierre.'});
+});
+
+export const gymEquipmentLocationIdSchema=z.string().uuid();

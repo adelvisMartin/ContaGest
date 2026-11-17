@@ -1,36 +1,18 @@
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
-import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx, one } from './verticals.shared.js';
+import { gymEquipmentSchema, gymEquipmentWorkOrderSchema, gymEquipmentTransitionSchema, gymEquipmentLocationIdSchema } from './gym.schemas.js';
 
 const router=Router();
-const key=z.string().trim().regex(/^[A-Za-z0-9._:-]{12,128}$/);
-const equipmentSchema=z.object({
-  locationId:z.string().uuid(),code:z.string().trim().min(2).max(32),
-  name:z.string().trim().min(2).max(180),area:z.string().trim().max(120).optional().nullable()
-}).strict();
-const orderSchema=z.object({
-  kind:z.enum(['preventive','corrective','incident']),
-  title:z.string().trim().min(3).max(180),description:z.string().trim().max(2000).optional().nullable(),
-  scheduledAt:z.string().datetime({offset:true}).optional().nullable(),requestKey:key
-}).strict();
-const transitionSchema=z.object({
-  toStatus:z.enum(['in_progress','resolved','cancelled']),
-  reason:z.string().trim().max(2000).optional().nullable(),
-  eventKey:key
-}).strict().superRefine((value,context)=>{
-  if(['resolved','cancelled'].includes(value.toStatus)&&!value.reason)
-    context.addIssue({code:'custom',path:['reason'],message:'Indica el motivo del cierre.'});
-});
 const fingerprint=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 router.get('/gym/equipment',requirePermission('gym.manage'),asyncHandler(async(req,res)=>{
   const tenantId=ctx(req).tenantId;
   const locationId=typeof req.query.locationId==='string'?req.query.locationId.trim():'';
-  if(locationId&&!z.string().uuid().safeParse(locationId).success)
+  if(locationId&&!gymEquipmentLocationIdSchema.safeParse(locationId).success)
     throw new HttpError(422,'El filtro de sede es inválido.');
   const rows=await prisma.$queryRawUnsafe<any[]>(`
     SELECT e.*,l."name" AS "locationName",
@@ -56,7 +38,7 @@ router.get('/gym/equipment',requirePermission('gym.manage'),asyncHandler(async(r
 }));
 
 router.post('/gym/equipment',requirePermission('gym.manage'),asyncHandler(async(req,res)=>{
-  const b=equipmentSchema.parse(req.body||{});
+  const b=gymEquipmentSchema.parse(req.body||{});
   const tenantId=ctx(req).tenantId;
   const created=await prisma.$transaction(async(tx)=>{
     const locations=await tx.$queryRawUnsafe<Array<{id:string;status:string}>>(
@@ -97,7 +79,7 @@ router.get('/gym/equipment/:id/work-orders',requirePermission('gym.manage'),asyn
 }));
 
 router.post('/gym/equipment/:id/work-orders',requirePermission('gym.manage'),asyncHandler(async(req,res)=>{
-  const b=orderSchema.parse(req.body||{});
+  const b=gymEquipmentWorkOrderSchema.parse(req.body||{});
   const tenantId=ctx(req).tenantId,equipmentId=String(req.params.id);
   const hash=fingerprint({
     equipmentId,kind:b.kind,title:b.title,description:b.description||null,
@@ -142,7 +124,7 @@ router.post('/gym/equipment/:id/work-orders',requirePermission('gym.manage'),asy
 }));
 
 router.post('/gym/equipment/work-orders/:id/transitions',requirePermission('gym.manage'),asyncHandler(async(req,res)=>{
-  const b=transitionSchema.parse(req.body||{});
+  const b=gymEquipmentTransitionSchema.parse(req.body||{});
   const tenantId=ctx(req).tenantId,orderId=String(req.params.id);
   const hash=fingerprint({orderId,toStatus:b.toStatus,reason:b.reason||null});
   const outcome=await prisma.$transaction(async(tx)=>{

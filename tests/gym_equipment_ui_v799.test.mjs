@@ -6,6 +6,7 @@ const page=readFileSync('frontend/src/pages/GymManagementPage.jsx','utf8');
 const component=readFileSync('frontend/src/components/fitness/GymEquipmentPanel.jsx','utf8');
 const client=readFileSync('frontend/src/services/verticalService.js','utf8');
 const router=readFileSync('backend/src/modules/verticals/gym.routes.ts','utf8');
+const contracts=readFileSync('backend/src/modules/verticals/gym.schemas.ts','utf8');
 const api=readFileSync('backend/src/modules/verticals/gym-equipment.routes.ts','utf8');
 const sql=readFileSync('backend/prisma/migrations/20261117050500_gym_equipment_work_orders_v799/migration.sql','utf8');
 
@@ -37,5 +38,12 @@ test('#799 equipment uses canonical tenant FK, RLS and durable event log',()=>{
   assert.match(api,/pg_advisory_xact_lock/);
   assert.match(api,/FOR UPDATE/);
   assert.match(api,/requirePermission\('gym.manage'\)/);
+  assert.match(api,/from '.\/gym.schemas.js'/);
+  assert.doesNotMatch(api,/from 'zod'|\bz\.(?:object|enum|string)\(/);
+  for(const name of ['gymEquipmentSchema','gymEquipmentWorkOrderSchema',
+    'gymEquipmentTransitionSchema','gymEquipmentLocationIdSchema']){
+    assert.ok(contracts.includes('export const '+name),name);
+    assert.ok(api.includes(name),name);
+  }
   assert.doesNotMatch(api,/INSERT INTO public\."GymPayment"|UPDATE public\."Product"/);
 });
