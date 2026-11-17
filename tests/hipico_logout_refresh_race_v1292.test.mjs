@@ -33,7 +33,7 @@ function deferred() {
 const oldSession = { access_token: 'synthetic-old-access', refresh_token: 'synthetic-old-refresh' };
 const newSession = { access_token: 'synthetic-new-access', refresh_token: 'synthetic-new-refresh' };
 
-function harness({ refreshResponse, signupResponse = null, oldDiskLoad = null, holdSave = null, protectedResponse = null } = {}) {
+function harness({ refreshResponse, signinResponse = null, signupResponse = null, oldDiskLoad = null, holdSave = null, protectedResponse = null } = {}) {
   let stored = oldSession;
   const writes = [];
   const context = {
@@ -50,7 +50,7 @@ function harness({ refreshResponse, signupResponse = null, oldDiskLoad = null, h
     },
     request: async (url) => {
       if (url.includes('grant_type=refresh_token')) return refreshResponse.promise;
-      if (url.includes('grant_type=password')) return newSession;
+      if (url.includes('grant_type=password')) return signinResponse ? signinResponse.promise : newSession;
       if (url === '/auth/v1/signup') return signupResponse ? signupResponse.promise : newSession;
       if (url === '/auth/v1/logout') return {};
       if (url.startsWith('/rest/v1/')) return protectedResponse ? protectedResponse.promise : { ok: true };
@@ -164,4 +164,32 @@ test('#1292 a valid protected response remains readable without session transiti
   protectedResponse.resolve({ state: { synthetic: true } });
   const result = await pending;
   assert.equal(result.state.synthetic, true);
+});
+
+test('#1292 starting a new login makes the former owner inaccessible before the response', async () => {
+  const signinResponse = deferred(), refreshResponse = deferred();
+  const h = harness({ refreshResponse, signinResponse });
+  const switching = h.signIn('next@example.invalid','synthetic');
+  assert.equal(h.currentSession(), null, 'old access token must disappear in the same event turn');
+  await assert.rejects(() => h.authorizedRequest('/rest/v1/rpc/hipico_get_workspace'),
+    /La sesión de nube no está activa/);
+  const loadedDuringSwitch = await h.initializeCloudSession();
+  assert.equal(loadedDuringSwitch, null, 'pending IndexedDB purge must finish before reading');
+  assert.equal(h.stored(), null, 'former owner must not remain in durable storage');
+  signinResponse.resolve(newSession);
+  await switching;
+  assert.equal(h.currentSession()?.access_token, newSession.access_token);
+  assert.equal(h.stored()?.access_token, newSession.access_token);
+});
+
+test('#1292 starting sign-up also discards the former owner before waiting for network', async () => {
+  const signupResponse = deferred(), refreshResponse = deferred();
+  const h = harness({ refreshResponse, signupResponse });
+  const pending = h.signUp('next@example.invalid','synthetic');
+  assert.equal(h.currentSession(), null);
+  await h.initializeCloudSession();
+  assert.equal(h.stored(), null);
+  signupResponse.resolve(newSession);
+  await pending;
+  assert.equal(h.currentSession()?.access_token, newSession.access_token);
 });
