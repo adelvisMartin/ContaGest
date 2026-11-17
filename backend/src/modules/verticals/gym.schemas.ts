@@ -3,6 +3,7 @@ import { optionalText, dateText, jsonRecord } from './verticals.shared.js';
 import { gymProgressionConfigIssues, isRirRpePairCoherent } from './gym.progression.js';
 import { validGymCalendarDay } from './gym-calendar-date.js';
 import { validGymMealClockTime } from './gym-meal-clock.mjs';
+import { normalizeGymPaymentAmount } from './gym-payment-amount.mjs';
 
 /**
  * Validation authority for the Gym vertical.
@@ -462,10 +463,18 @@ export const classSchema = z.object({
 });
 
 
+const gymPaymentAmount=z.union([z.number().finite(),z.string()]).transform((value,ctx)=>{
+  try{return normalizeGymPaymentAmount(value);}
+  catch{
+    ctx.addIssue({code:z.ZodIssueCode.custom,message:'Importe de pago inválido: use máximo dos decimales.'});
+    return z.NEVER;
+  }
+});
+
 export const gymPaymentSchema = z.object({
   memberId: z.string().min(10),
   membershipId: z.string().optional().nullable(),
-  amount: z.coerce.number().positive().max(999999999),
+  amount: gymPaymentAmount,
   currency: z.string().trim().min(2).max(10).default('USD'),
   paidAt: z.string().optional(),
   method: z.string().trim().max(80).optional().nullable(),
