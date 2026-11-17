@@ -19,7 +19,8 @@ test('#747 current is derived from signed encounters only, fail-closed on ambigu
   assert.match(api,/patient\[0\]\.kind!=='human'/);
   assert.match(api,/dentalClinicalDataSchema\.safeParse/);
   assert.match(api,/periodontalClinicalDataSchema\.safeParse/);
-  assert.match(api,/record\.status!=='signed'/);
+  // The projection excludes amended versions when materializing its current state.
+  assert.match(api,/entry\.status!=='signed'/);
   assert.match(api,/if\(!unprojectable\.length\)/);
   assert.match(api,/records\.length>500/);
 });
