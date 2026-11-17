@@ -283,12 +283,11 @@ router.post('/accounts', validateBody(createAccountSchema), asyncHandler(async (
       await insertAuditLink(tx, { tenantId: ctx.tenantId, accountId: account.id, relatedMovementId: opening.id, kind: 'opening', reason: 'Saldo inicial registrado al crear la cuenta.', createdBy: ctx.userId });
     }
     const stored = await tx.bankAccount.findUniqueOrThrow({ where: { id: account.id } });
-    return { data: { ...serializeAccount(stored), openingMovementId }, resourceType: 'BankAccount', resourceId: account.id };
+    const data = { ...serializeAccount(stored), openingMovementId };
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'banking.account-opened', entity: 'BankAccount', entityId: account.id, after: data, ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return { data, resourceType: 'BankAccount', resourceId: account.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
-  if (!execution.replayed) {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'banking.account-opened', entity: 'BankAccount', entityId: (execution.data as any).id, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  }
   ok(res, execution.data, execution.responseCode);
 }));
 
@@ -337,12 +336,11 @@ router.post('/accounts/:id/opening-balance', validateBody(openingBalanceSchema),
     });
     await tx.bankAccount.update({ where: { id: account.id }, data: { balance: { increment: input.amount } } });
     await insertAuditLink(tx, { tenantId: ctx.tenantId, accountId: account.id, relatedMovementId: movement.id, kind: 'opening', reason: input.reason, createdBy: ctx.userId });
-    return { data: serializeMovement(movement), resourceType: 'BankMovement', resourceId: movement.id };
+    const data = serializeMovement(movement);
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'banking.opening-balance', entity: 'BankMovement', entityId: movement.id, after: { ...data, reason: input.reason }, ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return { data, resourceType: 'BankMovement', resourceId: movement.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
-  if (!execution.replayed) {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'banking.opening-balance', entity: 'BankMovement', entityId: (execution.data as any).id, after: { ...execution.data as any, reason: input.reason }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  }
   ok(res, execution.data, execution.responseCode);
 }));
 
@@ -400,33 +398,44 @@ router.post('/movements', validateBody(movementSchema), asyncHandler(async (req,
       include: { account: true }
     });
     await tx.bankAccount.update({ where: { id: account.id }, data: { balance: { increment: delta } } });
-    return { data: serializeMovement(movement), resourceType: 'BankMovement', resourceId: movement.id };
+    const data = serializeMovement(movement);
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.created', entity: 'BankMovement', entityId: movement.id, after: data, ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return { data, resourceType: 'BankMovement', resourceId: movement.id };
   });
 
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
   if (execution.replayed) {
+    // Replay emits an observational event only; it does not mutate financial state.
     await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'idempotency.replay', entity: 'BankMovement', entityId: (execution.data as any).id, after: { scope: 'banking.movements.create', recordId: execution.recordId, originalRequestId: execution.originalRequestId, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  } else {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.created', entity: 'BankMovement', entityId: (execution.data as any).id, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   }
   ok(res, execution.data, execution.responseCode);
 }));
 
 router.patch('/movements/:id/reconcile', validateBody(reconcileSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const existing = await prisma.bankMovement.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { account: true } });
-  if (!existing) throw new HttpError(404, 'Movimiento bancario no encontrado.');
-  const candidateLedgerId = req.body.matched ? (req.body.ledgerEntryId ?? existing.ledgerEntryId ?? null) : null;
-  if (candidateLedgerId) {
-    const ledger = await prisma.ledgerEntry.findFirst({ where: { id: candidateLedgerId, tenantId: ctx.tenantId } });
-    if (!ledger) throw new HttpError(404, 'Asiento contable no encontrado para el tenant activo.', { code: 'BANK_LEDGER_ENTRY_NOT_FOUND' });
-  }
-  const updated = await prisma.bankMovement.update({
-    where: { id: existing.id },
-    data: { matched: req.body.matched, ledgerEntryId: candidateLedgerId },
-    include: { account: true }
+  const updated = await prisma.$transaction(async (tx) => {
+    const candidate = await tx.bankMovement.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, select: { accountId: true } });
+    if (!candidate) throw new HttpError(404, 'Movimiento bancario no encontrado.');
+    // Serialize with reversal/correction, which lock the same bank account.
+    await lockAccount(tx, ctx.tenantId, candidate.accountId);
+    const existing = await tx.bankMovement.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { account: true } });
+    if (!existing) throw new HttpError(404, 'Movimiento bancario no encontrado.');
+    // Once a correction/reversal exists, reconciling its immutable source
+    // again would create inconsistent ledger-linked history.
+    await assertNotReversed(tx, ctx.tenantId, existing.id);
+    const candidateLedgerId = req.body.matched ? (req.body.ledgerEntryId ?? existing.ledgerEntryId ?? null) : null;
+    if (candidateLedgerId) {
+      const ledger = await tx.ledgerEntry.findFirst({ where: { id: candidateLedgerId, tenantId: ctx.tenantId } });
+      if (!ledger) throw new HttpError(404, 'Asiento contable no encontrado para el tenant activo.', { code: 'BANK_LEDGER_ENTRY_NOT_FOUND' });
+    }
+    const movement = await tx.bankMovement.update({
+      where: { id: existing.id },
+      data: { matched: req.body.matched, ledgerEntryId: candidateLedgerId },
+      include: { account: true }
+    });
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: req.body.matched ? 'bank.movement.reconciled' : 'bank.movement.unreconciled', entity: 'BankMovement', entityId: movement.id, before: serializeMovement(existing), after: serializeMovement(movement), ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return movement;
   });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: req.body.matched ? 'bank.movement.reconciled' : 'bank.movement.unreconciled', entity: 'BankMovement', entityId: updated.id, before: serializeMovement(existing), after: serializeMovement(updated), ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, serializeMovement(updated));
 }));
 
@@ -455,12 +464,11 @@ router.post('/movements/:id/reverse', validateBody(reversalSchema), asyncHandler
     await assertNotReversed(tx, ctx.tenantId, refreshed.id);
     const reversal = await createReversal(tx, refreshed, ctx.tenantId, ctx.userId, input.reason, input.date);
     await tx.bankAccount.update({ where: { id: refreshed.accountId }, data: { balance: { increment: subtract(ZERO, movementDelta(refreshed)) } } });
-    return { data: { ...serializeMovement(reversal), reversalOfId: refreshed.id, correctionReason: input.reason }, resourceType: 'BankMovement', resourceId: reversal.id };
+    const data = { ...serializeMovement(reversal), reversalOfId: refreshed.id, correctionReason: input.reason };
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.reversed', entity: 'BankMovement', entityId: refreshed.id, before: { id: refreshed.id }, after: data, ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return { data, resourceType: 'BankMovement', resourceId: reversal.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
-  if (!execution.replayed) {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.reversed', entity: 'BankMovement', entityId: req.params.id, before: { id: req.params.id }, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  }
   ok(res, execution.data, execution.responseCode);
 }));
 
@@ -507,21 +515,16 @@ router.post('/movements/:id/correct', validateBody(correctionSchema), asyncHandl
     await insertAuditLink(tx, { tenantId: ctx.tenantId, accountId: refreshed.accountId, originalMovementId: refreshed.id, relatedMovementId: correction.id, kind: 'correction', reason: input.reason, createdBy: ctx.userId });
     const netDelta = add(subtract(ZERO, movementDelta(refreshed)), replacementDelta);
     await tx.bankAccount.update({ where: { id: refreshed.accountId }, data: { balance: { increment: netDelta } } });
-    return {
-      data: {
-        originalId: refreshed.id,
-        reversal: { ...serializeMovement(reversal), reversalOfId: refreshed.id },
-        correction: { ...serializeMovement(correction), correctionOfId: refreshed.id },
-        reason: input.reason
-      },
-      resourceType: 'BankMovement',
-      resourceId: correction.id
+    const data = {
+      originalId: refreshed.id,
+      reversal: { ...serializeMovement(reversal), reversalOfId: refreshed.id },
+      correction: { ...serializeMovement(correction), correctionOfId: refreshed.id },
+      reason: input.reason
     };
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.corrected', entity: 'BankMovement', entityId: refreshed.id, before: { id: refreshed.id }, after: data, ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return { data, resourceType: 'BankMovement', resourceId: correction.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
-  if (!execution.replayed) {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.corrected', entity: 'BankMovement', entityId: req.params.id, before: { id: req.params.id }, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  }
   ok(res, execution.data, execution.responseCode);
 }));
 
