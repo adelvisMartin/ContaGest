@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
+import { hasPlatformAccess } from '../backend/src/shared/identity/platformAccess.ts';
 
 const RUN=`QA93-${Date.now().toString(36).toUpperCase()}`;
 const key=(name:string)=>`${RUN}-${name}-${randomUUID()}`;
@@ -264,6 +265,8 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
       `;
       await h.prisma.rolePermission.create({data:{roleId:role.id,permissionId:permission.id}});
       await h.prisma.userRole.create({data:{userId:identity.id,roleId:role.id}});
+      assert.equal(await hasPlatformAccess({userId:identity.id,tenantId:h.tenant.id}),true,
+        'Restricted fixture must pass platform license check to isolate banking RBAC failure');
       const restricted=await h.issueSessionTokenFor({id:identity.id,email:identity.email});
       const denied=await h.status('/banking/summary',403,{},restricted);
       assert.equal(JSON.stringify(denied.payload).includes('bankName'),false);
