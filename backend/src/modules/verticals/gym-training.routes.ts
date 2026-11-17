@@ -315,7 +315,8 @@ router.post('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandl
       SELECT "id","memberId" FROM public."GymRoutine"
       WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true LIMIT 1
     `,tenantId,b.routineId);
-    const routine=one(routineRows,'La rutina no pertenece al tenant activo.');
+    if(!routineRows.length)throw new HttpError(422,'La rutina no pertenece al tenant activo.');
+    const routine=routineRows[0];
     const lockKey=`gym-workout-session:${tenantId}:${routine.memberId}`;
     await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
     const activeRows=await tx.$queryRawUnsafe<Array<{id:string}>>(`
@@ -407,8 +408,9 @@ router.post('/gym/workout-sessions/:id/transition', requirePermission('gym.manag
     const session=one(sessions,'Sesión de entrenamiento no encontrada.');
     const prior=await tx.$queryRawUnsafe<Array<{
       id:string;sessionId:string;action:string;reason:string|null;
+      fromStatus:string;toStatus:string;actorId:string;createdAt:Date;
     }>>(`
-      SELECT "id","sessionId","action","reason"
+      SELECT "id","sessionId","action","reason","fromStatus","toStatus","actorId","createdAt"
       FROM public."GymWorkoutSessionTransition"
       WHERE "tenantId"=$1 AND "eventKey"=$2
     `,tenantId,b.eventKey);

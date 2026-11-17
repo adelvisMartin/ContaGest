@@ -50,6 +50,8 @@ test('Gym #792: pause/resume/abandon are atomic, replay-safe and audited',async(
   const replay=await change('pause',key);
   assert.equal(replay.response.status,200);
   assert.equal(replay.data.replayed,true);
+  assert.equal(replay.data.transition.actorId,h.admin.id);
+  assert.equal(replay.data.transition.toStatus,'paused');
   const conflict=await change('resume',key);
   assert.equal(conflict.response.status,409);
   await h.status('/verticals/gym/workout-sessions',409,{

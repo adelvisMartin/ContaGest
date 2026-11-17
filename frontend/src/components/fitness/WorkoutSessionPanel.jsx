@@ -217,7 +217,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
           <Typography variant="caption" color="text.secondary">Temporizador de descanso</Typography>
           <Typography variant="h4" sx={{fontVariantNumeric:'tabular-nums'}}>{secondsLabel(timerSeconds)}</Typography>
           <Stack direction="row" gap={.5} justifyContent="center">
-            <CgButton type="button" size="small" variant="outlined" onClick={()=>startRestTimer()} disabled={saving}>Iniciar</CgButton>
+            <CgButton type="button" size="small" variant="outlined" onClick={()=>startRestTimer()} disabled={saving||paused}>Iniciar</CgButton>
             <CgButton type="button" size="small" variant="outlined" onClick={()=>setTimerRunning(false)} disabled={!timerRunning}>Pausar</CgButton>
             <CgButton type="button" size="small" variant="outlined" onClick={()=>{setTimerRunning(false);setTimerSeconds(0);}}>Reiniciar</CgButton>
           </Stack>
@@ -281,7 +281,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
             <Typography variant="body2" fontWeight={700}>{routineRows.find((item)=>item.id===session.routineId)?.name||'Rutina'}</Typography>
             <Typography variant="caption" color="text.secondary">{new Date(session.startedAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {Array.isArray(session.sets)?session.sets.length:0} serie(s)</Typography>
           </Box>
-          <Stack direction="row" gap={.6} alignItems="center">{session.programSnapshot?.version?<CgStatusChip label={`v${session.programSnapshot.version}`} tone="info"/>:null}<CgStatusChip label={session.status==='completed'?'Completada':session.status==='paused'?'Pausada':session.status==='abandoned'?'Abandonada':'En curso'} tone={session.status==='completed'?'success':session.status==='abandoned'?'danger':'warning'}/></Stack>
+          <Stack direction="row" gap={.6} alignItems="center">{session.programSnapshot?.version?<CgStatusChip label={`v${session.programSnapshot.version}`} tone="info"/>:null}<CgStatusChip label={session.status==='completed'?'Completada':session.status==='paused'?'Pausada':session.status==='abandoned'?'Abandonada':'En curso'} tone={session.status==='completed'?'success':session.status==='abandoned'?'error':'warning'}/></Stack>
         </Stack>
       </Paper>):<CgEmptyState title="Sin sesiones" description="Las sesiones iniciadas aparecerán aquí."/>}
     </Stack>
