@@ -15,6 +15,7 @@ import {
   periodizationTemplateSchema,
   periodizationProgramSchema,
   workoutSessionSchema,
+  workoutSessionTransitionSchema,
   exerciseSubstitutionSchema,
   workoutSetSchema,
   performanceQuerySchema,
@@ -300,7 +301,7 @@ router.get('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandle
       ),'[]') AS sets
     FROM public."GymWorkoutSession" s
     WHERE s."tenantId"=$1 AND s."memberId"=$2
-    ORDER BY (s."status"='in_progress') DESC,s."startedAt" DESC
+    ORDER BY (s."status" IN ('in_progress','paused')) DESC,s."startedAt" DESC
     LIMIT 200
   `,tenantId,memberId);
   ok(res,rows);
@@ -319,7 +320,7 @@ router.post('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandl
     await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
     const activeRows=await tx.$queryRawUnsafe<Array<{id:string}>>(`
       SELECT "id" FROM public."GymWorkoutSession"
-      WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='in_progress' LIMIT 1
+      WHERE "tenantId"=$1 AND "memberId"=$2 AND "status" IN ('in_progress','paused') LIMIT 1
     `,tenantId,routine.memberId);
     if(activeRows.length)throw new HttpError(409,'El cliente ya tiene una sesión activa.');
     // Preserve the exact effective program revision and prescribed exercises.
@@ -366,6 +367,84 @@ router.post('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandl
     return one(rows);
   });
   ok(res,{...created,sets:[]},201);
+}));
+
+// #792: audit events and state changes share one canonical session row.
+router.get('/gym/workout-sessions/:id/transitions', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const sessionId=String(req.params.id);
+  const owned=await prisma.$queryRawUnsafe<Array<{id:string}>>(
+    'SELECT "id" FROM public."GymWorkoutSession" WHERE "tenantId"=$1 AND "id"=$2',
+    tenantId,sessionId
+  );
+  if(!owned.length)throw new HttpError(404,'Sesión no encontrada en la empresa.');
+  const events=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","sessionId","action","fromStatus","toStatus","reason","actorId","createdAt"
+    FROM public."GymWorkoutSessionTransition"
+    WHERE "tenantId"=$1 AND "sessionId"=$2
+    ORDER BY "createdAt" ASC,"id" ASC LIMIT 200
+  `,tenantId,sessionId);
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,events);
+}));
+
+router.post('/gym/workout-sessions/:id/transition', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const b=workoutSessionTransitionSchema.parse(req.body||{});
+  const tenantId=ctx(req).tenantId;
+  const actorId=ctx(req).userId;
+  if(!actorId)throw new HttpError(403,'No hay un usuario autorizado para la transición.');
+  const sessionId=String(req.params.id);
+  const reason=b.reason?.trim()||null;
+  const result=await prisma.$transaction(async tx=>{
+    // The event key also serializes requests that accidentally reuse the same
+    // key across different session IDs. No conflicting 500 from unique races.
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      `gym-workout-transition:${tenantId}:${b.eventKey}`);
+    const sessions=await tx.$queryRawUnsafe<Array<{id:string;status:string}>>(`
+      SELECT "id","status" FROM public."GymWorkoutSession"
+      WHERE "tenantId"=$1 AND "id"=$2 FOR UPDATE
+    `,tenantId,sessionId);
+    const session=one(sessions,'Sesión de entrenamiento no encontrada.');
+    const prior=await tx.$queryRawUnsafe<Array<{
+      id:string;sessionId:string;action:string;reason:string|null;
+    }>>(`
+      SELECT "id","sessionId","action","reason"
+      FROM public."GymWorkoutSessionTransition"
+      WHERE "tenantId"=$1 AND "eventKey"=$2
+    `,tenantId,b.eventKey);
+    if(prior.length){
+      if(prior[0].sessionId!==sessionId||prior[0].action!==b.action||(prior[0].reason||null)!==reason)
+        throw new HttpError(409,'La clave de transición pertenece a otra operación.');
+      const current=await tx.$queryRawUnsafe<any[]>(
+        'SELECT * FROM public."GymWorkoutSession" WHERE "tenantId"=$1 AND "id"=$2',
+        tenantId,sessionId
+      );
+      return {session:one(current),transition:prior[0],replayed:true};
+    }
+    const allowed=b.action==='pause'
+      ? session.status==='in_progress'
+      : b.action==='resume'
+        ? session.status==='paused'
+        : ['in_progress','paused'].includes(session.status);
+    if(!allowed)throw new HttpError(409,'El estado actual no permite esta transición.');
+    const nextStatus=b.action==='pause'?'paused':b.action==='resume'?'in_progress':'abandoned';
+    const changed=await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."GymWorkoutSession"
+      SET "status"=$3,"abandonedAt"=CASE WHEN $3='abandoned' THEN now() ELSE "abandonedAt" END,
+        "updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2 AND "status"=$4
+      RETURNING *
+    `,tenantId,sessionId,nextStatus,session.status);
+    if(changed.length!==1)throw new HttpError(409,'Conflicto de transición de entrenamiento.');
+    const transitions=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymWorkoutSessionTransition"
+        ("id","tenantId","sessionId","eventKey","action","fromStatus","toStatus","reason","actorId","createdAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,now())
+      RETURNING "id","sessionId","action","fromStatus","toStatus","reason","actorId","createdAt"
+    `,tenantId,sessionId,b.eventKey,b.action,session.status,nextStatus,reason,actorId);
+    return {session:one(changed),transition:one(transitions),replayed:false};
+  });
+  ok(res,result,result.replayed?200:201);
 }));
 
 router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), asyncHandler(async (req, res) => {

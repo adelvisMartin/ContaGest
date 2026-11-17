@@ -227,6 +227,15 @@ export const exerciseSubstitutionSchema = z.object({
   limit: z.coerce.number().int().min(1).max(10).default(5)
 });
 
+export const workoutSessionTransitionSchema = z.object({
+  action:z.enum(['pause','resume','abandon']),
+  eventKey:z.string().trim().regex(/^[A-Za-z0-9:_-]{12,128}$/),
+  reason:z.string().trim().max(500).optional().nullable()
+}).superRefine((value,refinement)=>{
+  if(value.action==='abandon'&&!value.reason?.trim())
+    refinement.addIssue({code:'custom',path:['reason'],message:'Indica el motivo de abandono.'});
+});
+
 export const workoutSetSchema = z.object({
   routineExerciseId: z.string().min(10),
   setNumber: z.coerce.number().int().min(1).max(100),

@@ -116,6 +116,8 @@ export const GymVerticalService = {
   startWorkoutSession(payload) { return BackendApi.post('/api/v1/verticals/gym/workout-sessions', payload); },
   recordWorkoutSet(sessionId, payload) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${pathId(sessionId)}/sets`, payload); },
   completeWorkoutSession(sessionId) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${pathId(sessionId)}/complete`, {}); },
+  transitionWorkoutSession(sessionId,payload) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${pathId(sessionId)}/transition`, payload); },
+  workoutSessionTransitions(sessionId) { return BackendApi.get(`/verticals/gym/workout-sessions/${pathId(sessionId)}/transitions`); },
   performance(memberId, filters = {}) { return BackendApi.get(`/verticals/gym/performance${query({ memberId, ...filters })}`); },
   suggestExerciseSubstitutions(payload) { return BackendApi.post('/api/v1/verticals/gym/exercise-substitutions/suggest', payload); },
   ingredients(params = {}) { return BackendApi.get(`/verticals/gym/ingredients${query(params)}`); },
