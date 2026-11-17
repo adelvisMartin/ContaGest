@@ -104,7 +104,7 @@ test('#120 rehashed sample stream cannot hide materially wrong RSS and heap endp
   // Report remains unchanged, but a sample-side memory spike at the boundary
   // with a newly computed digest must invalidate claimed net growth.
   check(f=>mutateRows(f,rows=>{rows[0].rssMb=1300;}));
-  check(f=>mutateRows(f,rows=>{rows.at(-1).heapUsedMb=120;}));
+  check(f=>mutateRows(f,rows=>{rows.at(-1).rssMb=400;rows.at(-1).heapUsedMb=300;}));
 });
 
 test('#120 sample boundary verification accepts reasonable between-probe memory variation',()=>{
