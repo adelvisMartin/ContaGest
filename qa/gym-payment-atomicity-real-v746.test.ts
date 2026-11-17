@@ -7,7 +7,7 @@ test('#746 payment insert and membership debit remain one tenant-scoped transact
   assert.notEqual(String(process.env.NODE_ENV||'').toLowerCase(),'production');
   assert.ok(!process.env.VERCEL&&!process.env.VERCEL_ENV,'Production DB forbidden for QA');
   const h=await createRealBackendHarness();
-  let memberId='',otherMemberId='',planId='';
+  let memberId='',otherMemberId='',planId='',foreignTenantId='',foreignMemberId='';
   t.after(async()=>{
     // All records in this fixture are run-owned; remove children before parents.
     if(memberId){
@@ -20,6 +20,9 @@ test('#746 payment insert and membership debit remain one tenant-scoped transact
     }
     if(otherMemberId)await h.prisma.$executeRawUnsafe(
       'DELETE FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,otherMemberId);
+    if(foreignMemberId)await h.prisma.$executeRawUnsafe(
+      'DELETE FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2',foreignTenantId,foreignMemberId);
+    if(foreignTenantId)await h.prisma.tenant.deleteMany({where:{id:foreignTenantId}});
     if(planId)await h.prisma.$executeRawUnsafe(
       'DELETE FROM public."GymMembershipPlan" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,planId);
     await h.close();
@@ -76,6 +79,26 @@ test('#746 payment insert and membership debit remain one tenant-scoped transact
   const missing=await post({...payment,membershipId:randomUUID(),reference:'missing-'+run});
   assert.equal(missing.response.status,404);
   assert.equal(await amount(),30);
+  // A payment without membership must still validate the member's own tenant.
+  const unknownMember=await post({...payment,memberId:randomUUID(),
+    membershipId:null,reference:'unknown-member-'+run});
+  assert.equal(unknownMember.response.status,404);
+  const foreign=await h.prisma.tenant.create({data:{
+    rif:'QA746-'+run.slice(0,12),name:'QA foreign Gym payment',
+    legalName:'QA foreign Gym',plan:'commercial',status:'active',settings:{}
+  }});
+  foreignTenantId=foreign.id;
+  foreignMemberId=randomUUID();
+  await h.prisma.$executeRawUnsafe(`
+    INSERT INTO public."GymMember"
+      ("id","tenantId","memberCode","fullName","emergencyContact","goals",
+       "status","joinedAt","createdAt","updatedAt")
+    VALUES ($1,$2,$3,$4,'{}'::jsonb,'[]'::jsonb,'active',now(),now(),now())
+  `,foreignMemberId,foreignTenantId,'QA-'+run,'QA external Gym member');
+  const crossTenant=await post({...payment,memberId:foreignMemberId,
+    membershipId:null,reference:'cross-tenant-'+run});
+  assert.equal(crossTenant.response.status,404);
+  assert.equal(await amount(),30,'invalid member references cannot debit membership');
 
   const concurrent=await Promise.all([
     post({...payment,amount:15,reference:'concurrent-a-'+run}),
