@@ -26,6 +26,8 @@ test('v23 evidence is PASS only after exact-scope restore verification',()=>{
     backupId:'hipico-backup-001',
     restoreTestId:'hipico-restore-001',
     targetDatabase:'postgres',
+    restoreDatabase:'qa_hipico_restore',
+    restoreHost:'127.0.0.1',
     scope:'hipico-canonical-v12-v27',
     migrationChain:'v12-v27',
     tableManifestSha256:TABLE_SHA,
@@ -51,6 +53,8 @@ test('v23 evidence fails closed on count mismatch, orphan FK, invalid SHA or wro
     backupId:'hipico-backup-001',
     restoreTestId:'hipico-restore-001',
     targetDatabase:'postgres',
+    restoreDatabase:'qa_hipico_restore',
+    restoreHost:'127.0.0.1',
     scope:'hipico-canonical-v12-v27',
     migrationChain:'v12-v27',
     tableManifestSha256:TABLE_SHA,
@@ -67,6 +71,12 @@ test('v23 evidence fails closed on count mismatch, orphan FK, invalid SHA or wro
   assert.equal(buildBackupEvidence({...base,candidateSha:'abc'}).status,'FAIL');
   assert.equal(buildBackupEvidence({...base,scope:'contagest-prisma-data'}).status,'FAIL');
   assert.equal(buildBackupEvidence({...base,restoreVerified:false}).status,'FAIL');
+  assert.equal(buildBackupEvidence({...base,restoreDatabase:'production'}).status,'FAIL');
+  assert.equal(buildBackupEvidence({...base,restoreDatabase:'postgres'}).status,'FAIL');
+  assert.equal(buildBackupEvidence({...base,restoreHost:'database.example'}).status,'FAIL');
+  assert.equal(buildBackupEvidence({...base,restoreHost:null}).status,'FAIL');
+  assert.equal(buildBackupEvidence({...base,restoredCounts:{...counts(1),hipico_outbox:null}}).status,'FAIL');
+  assert.equal(buildBackupEvidence({...base,restoredCounts:{...counts(1),hipico_outbox:'1'}}).status,'FAIL');
 });
 
 test('v23 backup script is dedicated-role, SELECT-only, inventory-driven and encrypts before off-site copy',async()=>{
