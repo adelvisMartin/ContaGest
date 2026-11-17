@@ -140,7 +140,9 @@ after(async () => {
   if (sessionId && tenantId) await prisma.$executeRaw`
     DELETE FROM public."UserSession" WHERE "id"=${sessionId} AND "tenantId"=${tenantId}
   `;
-  if (tenantId) await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
+  // Audited financial/legal operations intentionally create immutable AuditLog rows.
+  // Do not invoke a forbidden tenant cascade: GitHub Actions destroys this
+  // dedicated isolated PostgreSQL service after the run, including all fixtures.
   await prisma.$disconnect();
 });
 
