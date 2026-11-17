@@ -428,9 +428,16 @@ export async function flushOfflineOutbox(session, sender, options = {}) {
       results.push({id:record.id,delivered:true,status:'synced',response});
     }catch(error){
       if(record.operation==='gym.workout.set'&&error?.code!=='OFFLINE_SESSION_CHANGED'){
-        try{await updateGymOutboxFailure(session,record.id,error);}
-        catch{
-          results.push({id:record.id,delivered:false,status:'failed',error:'OFFLINE_OUTBOX_STATE_WRITE_FAILED'});
+        // A network error can arrive AFTER logout or tenant switch. Do not
+        // reopen an old IndexedDB scope after purge has started.
+        try{
+          assertCurrentOfflineSession(session);
+          await updateGymOutboxFailure(session,record.id,error);
+        }
+        catch(updateError){
+          results.push({id:record.id,delivered:false,status:'failed',
+            error:updateError?.code==='OFFLINE_SESSION_CHANGED'
+              ?'OFFLINE_SESSION_CHANGED':'OFFLINE_OUTBOX_STATE_WRITE_FAILED'});
           break;
         }
       }

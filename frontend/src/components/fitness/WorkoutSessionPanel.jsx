@@ -72,20 +72,24 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
 
   const notify=(message,tone='success')=>{if(typeof Toast==='function')Toast(message,tone);};
 
+  const memberLoadGeneration=useRef(0);
   async function load(){
-    if(!memberId){setSessions([]);return;}
+    const generation=++memberLoadGeneration.current;
+    setSessions([]);
+    if(!memberId){setLoading(false);return;}
     setLoading(true);setError('');
     try{
       const response=await GymVerticalService.workoutSessions(memberId);
-      setSessions(rows(response));
+      if(generation===memberLoadGeneration.current)setSessions(rows(response));
     }catch(cause){
-      setError(cause?.message||'No se pudieron cargar las sesiones.');
+      if(generation===memberLoadGeneration.current)
+        setError(cause?.message||'No se pudieron cargar las sesiones.');
     }finally{
-      setLoading(false);
+      if(generation===memberLoadGeneration.current)setLoading(false);
     }
   }
 
-  useEffect(()=>{void load();},[memberId]);
+  useEffect(()=>{void load();return()=>{memberLoadGeneration.current+=1;setSessions([]);};},[memberId]);
 
   async function startSession(){
     if(!routineId){setError('Selecciona una rutina.');return;}

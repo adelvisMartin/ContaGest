@@ -7,7 +7,9 @@ const client=readFileSync('frontend/src/services/gymWorkoutOfflineService.js','u
 const offline=readFileSync('frontend/src/services/pwaOfflineService.js','utf8');
 
 test('#797 UI queues before sending; only server ACK counts as synced',()=>{
-  assert.ok(panel.indexOf('GymWorkoutOfflineService.queueSet(')<panel.indexOf('GymWorkoutOfflineService.sync('));
+  const recordSet=panel.slice(panel.indexOf("async function recordSet("),panel.indexOf("async function completeSession("));
+  assert.ok(recordSet.indexOf('GymWorkoutOfflineService.queueSet(')>=0);
+  assert.ok(recordSet.indexOf('GymWorkoutOfflineService.queueSet(')<recordSet.indexOf('GymWorkoutOfflineService.sync('));
   assert.match(panel,/outcome\?\.delivered/);
   assert.match(panel,/pending/i);
   assert.match(panel,/syncing/);
