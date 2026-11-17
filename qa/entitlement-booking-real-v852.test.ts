@@ -66,6 +66,24 @@ test('#852 manual grant → unique right → booking/consume same tx → rollbac
   const balances=await h.ok(`/customer-entitlements/clients/${client.id}`);
   assert.equal(balances.find((x:any)=>x.id===grant.id).remaining,'3.000');
 
+  // The second entitlement proves stable continuation without hiding rights
+  // or changing the existing array response contract.
+  const secondGrant=await h.ok('/customer-entitlements/manual-grants',{
+    method:'POST',body:JSON.stringify({...body,effectKey:'qa852:page:'+label})
+  });
+  const firstPage=await h.request(`/customer-entitlements/clients/${client.id}?take=1&skip=0`);
+  assert.equal(firstPage.response.status,200);
+  assert.equal(firstPage.response.headers.get('X-Pagination-Has-More'),'true');
+  assert.equal(firstPage.response.headers.get('X-Pagination-Next-Skip'),'1');
+  assert.equal(firstPage.response.headers.get('Cache-Control'),'private, no-store');
+  assert.equal(firstPage.data.length,1);
+  const nextPage=await h.request(`/customer-entitlements/clients/${client.id}?take=1&skip=1`);
+  assert.equal(nextPage.response.status,200);
+  assert.equal(nextPage.response.headers.get('X-Pagination-Has-More'),'false');
+  assert.equal(nextPage.response.headers.get('X-Pagination-Next-Skip'),null);
+  assert.deepEqual(new Set([firstPage.data[0].id,nextPage.data[0].id]),new Set([grant.id,secondGrant.id]));
+  await h.status(`/customer-entitlements/clients/${client.id}?take=0`,400);
+
   const startsAtUtc=new Date('2026-11-01T12:00:00.000Z');
   const endsAtUtc=new Date('2026-11-01T12:30:00.000Z');
   const createBooking=async(tx:any,bookingId:string,key:string)=>{
