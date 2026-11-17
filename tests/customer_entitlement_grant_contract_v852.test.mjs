@@ -73,6 +73,20 @@ test('#852 effect replay also preserves original courtesy reason',()=>{
   assert.match(grant,/const identical=first\?\.reason===input\.reason/);
 });
 
+test('#852 paged reads remain tenant-scoped, bounded and preserve the array API',()=>{
+  const page=svc.split('export async function readCustomerRightsPage(')[1]
+    .split('export async function consumeCustomerRightInBookingTransaction(')[0];
+  assert.match(page,/customerRightsPage\(\[\],pagination\)/);
+  assert.match(page,/tenantId:ctx\.tenantId,beneficiaryId:clientId/);
+  assert.match(page,/skip:pagination\.skip,take:pagination\.take\+1/);
+  assert.match(page,/items:page\.items/);
+  assert.match(routes,/rightsPagination\.parse\(req\.query\)/);
+  assert.match(routes,/X-Pagination-Has-More/);
+  assert.match(routes,/X-Pagination-Next-Skip/);
+  assert.match(routes,/ok\(res,page\.items\)/);
+  assert.match(routes,/private, no-store/);
+});
+
 test('#852 read projection fails closed for oversized and invalid append-only histories',()=>{
   const read=svc.split('export async function readCustomerRights(')[1]
     .split('export async function consumeCustomerRightInBookingTransaction(')[0];
