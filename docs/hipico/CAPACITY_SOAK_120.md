@@ -137,3 +137,9 @@ El verifier de release v290 descubre `soak-evidence.json` como evidencia opciona
 ## Estado actual
 
 El harness implementa los gates y la integridad de evidence, pero este cambio **no afirma** que ya hayan ocurrido las 24–72 h, los restart/reconnect físicos ni el Physical QA real. #120 debe seguir abierto hasta obtener evidencia material del candidato definitivo.
+
+## Reloj monotónico y consistencia temporal
+
+El runner mide la duración real transcurrida mediante `performance.now()` (reloj monotónico): un ajuste NTP/manual de `Date.now()` no puede adelantar ni acortar las 24 horas mínimas. Las muestras usan `elapsedMs` monotónico y mantienen `at`, `startedAt` y `completedAt` UTC para auditoría. El verificador de `samples.jsonl` comprueba la concordancia entre ambas líneas temporales y falla cerrado ante un salto de reloj significativo; no se convierte el soak en PASS sólo por acumular tiempo de pared.
+
+Esto es endurecimiento del harness, **no evidencia de que se haya ejecutado un soak real**.
