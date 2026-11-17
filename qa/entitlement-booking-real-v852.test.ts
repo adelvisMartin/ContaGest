@@ -82,7 +82,7 @@ test('#852 manual grant → unique right → booking/consume same tx → rollbac
   assert.equal(nextPage.response.headers.get('X-Pagination-Has-More'),'false');
   assert.equal(nextPage.response.headers.get('X-Pagination-Next-Skip'),null);
   assert.deepEqual(new Set([firstPage.data[0].id,nextPage.data[0].id]),new Set([grant.id,secondGrant.id]));
-  await h.status(`/customer-entitlements/clients/${client.id}?take=0`,400);
+  await h.status(`/customer-entitlements/clients/${client.id}?take=0`,422);
 
   const startsAtUtc=new Date('2026-11-01T12:00:00.000Z');
   const endsAtUtc=new Date('2026-11-01T12:30:00.000Z');
