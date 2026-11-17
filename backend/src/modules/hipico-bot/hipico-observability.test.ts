@@ -78,6 +78,17 @@ test('HIPICO #1314 sanitizes sensitive metadata keys without leaking identity',(
   assert.equal(rendered.includes('private'),false);
 });
 
+test('HIPICO #1314 sanitizes bare JWTs nested in operational status fields',()=>{
+  const jwt=['a'.repeat(24),'b'.repeat(24),'c'.repeat(24)].join('.');
+  const event=sanitizeObservationMetadata({
+    detail:`Probe token: ${jwt}`, nested:{trace:jwt}, elapsed:12
+  }) as Record<string,unknown>;
+  const out=JSON.stringify(event);
+  assert.equal(out.includes(jwt),false);
+  assert.equal(event.elapsed,12);
+  assert.match(out,/\[REDACTED_TOKEN\]/);
+});
+
 test('HIPICO #1314 metadata keys with prototype names cannot corrupt the support bundle',()=>{
   const input=JSON.parse('{"__proto__":{"contaminated":true},"constructor":"observed","status":"SAFE"}');
   const clean=sanitizeObservationMetadata(input) as Record<string,unknown>;
