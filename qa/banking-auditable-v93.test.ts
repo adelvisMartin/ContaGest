@@ -51,6 +51,12 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     assert.equal(links.length,1);
     assert.equal(links[0].kind,'opening');
     assert.equal(links[0].relatedMovementId,movements[0].id);
+    const audits=await h.prisma.auditLog.findMany({where:{
+      tenantId:h.tenant.id,action:'banking.account-opened',entityId:first.id
+    }});
+    assert.equal(audits.length,1,'Same idempotent opening must create exactly one audit event');
+    assert.equal(audits[0].userId,h.admin.id);
+    assert.equal(JSON.stringify(audits[0]).includes(requestHeaders['Idempotency-Key']),false);
   });
 
   await t.test('income and expense reversals preserve originals and restore the exact balance',async()=>{
