@@ -102,6 +102,14 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
     }
     if (existing?.status==='attended'||existing?.status==='no_show')
       throw new HttpError(409,'La asistencia finalizada no puede reescribirse.');
+    // Attendance is a real event, never a prediction. Preserve the ability
+    // to backfill historical classes without introducing artificial grace
+    // periods, but reject premature attendance and no-show decisions.
+    const now = new Date();
+    if (body.status==='attended'&&klass.startsAt>now)
+      throw new HttpError(409,'No se puede registrar asistencia antes del inicio de la clase.');
+    if (body.status==='no_show'&&klass.endsAt>now)
+      throw new HttpError(409,'No se puede marcar ausencia antes de finalizar la clase.');
     let desiredStatus:string=body.status;
     if (body.status==='booked') {
       if (existing && !['cancelled','waitlisted'].includes(existing.status))
