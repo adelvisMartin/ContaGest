@@ -9,6 +9,7 @@ import { MediaService } from '../services/mediaService.js';
 import { ToothSurfaceSelector } from '../components/dentistry/ToothSurfaceSelector.jsx';
 import { PERMANENT_TEETH, PRIMARY_TEETH } from '../components/dentistry/dentalCatalog.js';
 import { PeriodontalChartPanel } from '../components/dentistry/PeriodontalChartPanel.jsx';
+import { DentalChartHistoryPanel } from '../components/dentistry/DentalChartHistoryPanel.jsx';
 import { TreatmentPlanPanel } from '../components/dentistry/TreatmentPlanPanel.jsx';
 import { DentalConsentPanel } from '../components/dentistry/DentalConsentPanel.jsx';
 import { DentalMediaPanel } from '../components/dentistry/DentalMediaPanel.jsx';
@@ -448,6 +449,11 @@ function DentistryWorkspace({ state, context }){
       professionalOptions={professionalOptions}
       encounters={encounters}
       onCreate={createPeriodontalChart}
+    />
+
+    <DentalChartHistoryPanel
+      patientId={selectedPatientId}
+      refreshKey={encounters.map((item)=>String(item.id)+':'+String(item.status)).join('|')}
     />
 
     <TreatmentPlanPanel

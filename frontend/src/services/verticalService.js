@@ -4,6 +4,7 @@ import { query, pathId, createWithPhoto } from './verticalService.helpers.js';
 
 export const HealthVerticalService = {
   summary() { return BackendApi.get('/verticals/health/summary'); },
+  dentalChartHistory(patientId) { return BackendApi.get('/verticals/health/dental/chart-history?patientId='+encodeURIComponent(patientId)); },
   async patients(params = {}) { return MediaService.signRecords(await BackendApi.get(`/verticals/health/patients${query(params)}`)); },
   createPatient(payload) { return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/health/patients', data), payload, 'care-patient', 'displayName'); },
   updatePatient(id, payload) { return BackendApi.request(`/verticals/health/patients/${pathId(id)}`, { method:'PATCH', body:payload }); },
