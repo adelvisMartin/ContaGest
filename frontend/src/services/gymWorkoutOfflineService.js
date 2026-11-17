@@ -2,8 +2,9 @@ import { AuthSession } from './authSession.js';
 import { BackendApi } from './backendApi.js';
 import {
   enqueueOfflineOperation,flushOfflineOutbox,listOfflineWorkoutQueue,
-  discardReviewedWorkoutEvent
+  discardReviewedWorkoutEvent,sessionScope
 } from './pwaOfflineService.js';
+import {withGymWorkoutSyncLock} from './gymWorkoutSyncLock.js';
 
 // The canonical #797 queue lives only in pwaOfflineService. This adapter
 // neither persists credentials nor invents a second workout authority.
@@ -29,7 +30,9 @@ export const GymWorkoutOfflineService={
   },
   async sync({force=false}={}){
     const session=currentSession();
-    return flushOfflineOutbox(session,async({operation,path,method,payload,idempotencyKey})=>{
+    // Two tabs must not race through the same outbox snapshot when the browser
+    // supports Web Locks. The backend eventKey still protects all browsers.
+    return withGymWorkoutSyncLock(sessionScope(session),()=>flushOfflineOutbox(session,async({operation,path,method,payload,idempotencyKey})=>{
       if(operation!=='gym.workout.set')throw new Error('Operación offline no autorizada.');
       // Method and URL are resolved inside the source-controlled allowlist.
       const {sessionId: _pathParameter,...set}=payload;
@@ -39,7 +42,7 @@ export const GymWorkoutOfflineService={
       // BackendApi.request rejects non-2xx and ok:false; only then is the
       // transport explicitly acknowledged for durable IndexedDB deletion.
       return {ok:true};
-    },{operations:['gym.workout.set'],force});
+    },{operations:['gym.workout.set'],force}));
   },
   async discardAfterReview(id){
     return discardReviewedWorkoutEvent(currentSession(),id);
