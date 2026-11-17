@@ -420,6 +420,9 @@ router.patch('/movements/:id/reconcile', validateBody(reconcileSchema), asyncHan
     await lockAccount(tx, ctx.tenantId, candidate.accountId);
     const existing = await tx.bankMovement.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { account: true } });
     if (!existing) throw new HttpError(404, 'Movimiento bancario no encontrado.');
+    // Once a correction/reversal exists, reconciling its immutable source
+    // again would create inconsistent ledger-linked history.
+    await assertNotReversed(tx, ctx.tenantId, existing.id);
     const candidateLedgerId = req.body.matched ? (req.body.ledgerEntryId ?? existing.ledgerEntryId ?? null) : null;
     if (candidateLedgerId) {
       const ledger = await tx.ledgerEntry.findFirst({ where: { id: candidateLedgerId, tenantId: ctx.tenantId } });
