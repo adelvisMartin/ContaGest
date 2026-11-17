@@ -12,3 +12,17 @@ test('#776/#778 ISLR and IGTF documents cannot mix unrelated fiscal rule familie
   bad({module:'igtf',kind:'invoice',ruleKeys:['igtf.payment','islr.services']});
   assert.doesNotThrow(()=>assertFiscalDocumentRuleFamily({...valid,module:'igtf',ruleKeys:['igtf.payment']}));
 });
+
+test('#775/#776/#778 reviewed fiscal issuance cannot mix unrelated tax families',()=>{
+  bad({module:'iva',ruleKeys:['iva.general','igtf.payment']});
+  bad({module:'iva',ruleKeys:['iva.general','municipal.local']});
+  bad({module:'retiva',kind:'withholding',ruleKeys:['ret_iva.purchase','igtf.payment']});
+  bad({module:'retiva',kind:'withholding',ruleKeys:['ret_iva.purchase','islr.services']});
+  bad({module:'municipal',ruleKeys:['municipal.local','islr.services']});
+  assert.doesNotThrow(()=>assertFiscalDocumentRuleFamily({
+    ...valid,module:'iva',ruleKeys:['iva.general','ret_iva.purchase','islr.service']
+  }));
+  assert.doesNotThrow(()=>assertFiscalDocumentRuleFamily({
+    ...valid,module:'retiva',kind:'withholding',ruleKeys:['iva.general','ret_iva.purchase']
+  }));
+});
