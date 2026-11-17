@@ -1,5 +1,8 @@
 # Plan de ejecución 5×5 — ContaGest + Control Hípico (2026-11-16)
 
+> **Histórico (2026-11-16).** Este plan conserva el contexto, pero varios issues listados ya están cerrados y faltan tickets nuevos. Usar la [versión reconciliada 2026-11-17 con 105 OPEN, 21 lotes de cinco](EXECUTION_5X5_2026-11-17.md), el inventario vivo de GitHub y `AGENTS.md`; no aplicar los lotes de esta tabla como backlog actual sin reconciliación.
+
+
 > **Estado: PLAN / sin afirmar implementación o producción.** Inventario obtenido de GitHub: 101 issues abiertos antes del trabajo de planificación y 7 issues transversales nuevos (#1288–#1294): 108 en total. Se programan 105 en 21 bloques de cinco y 3 permanecen como autoridades/descubrimiento condicionado (#1010, #835, #712). Las prioridades y dependencias de cada issue prevalecen ante este orden; refrescar GitHub antes de cada lote.
 
 - Base inicial **main@e7706f3dac3ae4c677fcdff05a662765fa6bdcc6**; PR #1287 DRAFT/PARTIAL, HEAD exacto del PR debe refrescarse.
