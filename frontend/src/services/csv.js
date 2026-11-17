@@ -3,7 +3,7 @@ import { downloadText } from '../utils/dom.js';
 // A spreadsheet may interpret text starting with these symbols as a formula,
 // even when preceded by invisible whitespace. Keep the original cell value
 // intact for CSV consumers; prefix a literal apostrophe only in the export.
-const FORMULA_PREFIX = /^[\u0000-\u0020\u007f-\u009f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*[=+\-@]/u;
+const FORMULA_PREFIX = /^[\u0000-\u0020\u007f-\u009f\u00a0\u1680\u2000-\u200f\u2028-\u202e\u202f\u205f\u2060-\u2069\u3000\ufeff]*[=+\-@]/u;
 
 export function encodeCsvCell(value) {
   const raw = String(value ?? '');
