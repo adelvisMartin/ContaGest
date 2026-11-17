@@ -136,6 +136,33 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     assert.equal(projected?.integrity,'ok');
   });
 
+  await t.test('#1289 concurrent reversal and reconciliation cannot both authorize the same original movement',async()=>{
+    const account=await h.ok('/banking/accounts',{
+      method:'POST',headers:headers('RACE-AUDIT-ACCOUNT'),
+      body:body({bankName:`${RUN} Race`,accountNo:`${RUN}-RACE`,currency:'USD',openingBalance:'0'})
+    });
+    accountIds.push(account.id);
+    const original=await h.ok('/banking/movements',{
+      method:'POST',headers:headers('RACE-AUDIT-MOVEMENT'),
+      body:body({accountId:account.id,description:`${RUN} race source`,type:'income',currency:'USD',amount:'5.00'})
+    });
+    movementIds.push(original.id);
+    const [reconciliation,reversal]=await Promise.all([
+      h.request(`/banking/movements/${original.id}/reconcile`,{method:'PATCH',body:body({matched:true})}),
+      h.request(`/banking/movements/${original.id}/reverse`,{method:'POST',
+        headers:headers('RACE-REVERSE'),body:body({reason:'QA concurrent reversal guard'})})
+    ]);
+    const statuses=[reconciliation.response.status,reversal.response.status].sort((x,y)=>x-y);
+    assert.deepEqual(statuses,[200,409],'Both operations must not succeed');
+    if(reversal.response.ok)movementIds.push(reversal.data.id);
+    const stored=await h.prisma.bankMovement.findUniqueOrThrow({where:{id:original.id}});
+    const link=await h.prisma.$queryRaw<Array<{id:string}>>`
+      SELECT "id" FROM "BankMovementAuditLink"
+      WHERE "tenantId"=${h.tenant.id} AND "originalMovementId"=${original.id} AND "kind"='reversal'`;
+    assert.equal(Number(stored.matched)+Number(link.length>0),1,
+      'An original must be reconciled or reversed, never both');
+  });
+
   await t.test('#1289 audit insert failure atomically rolls back movement, balance and idempotency reservation',async()=>{
     // This trigger targets only synthetic data in the isolated PG17 test database;
     // always remove it, including if the assertion or request fails.
