@@ -45,7 +45,7 @@ export function GymNutritionPanel({
     <Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'minmax(0,1.35fr) minmax(320px,.65fr)'},gap:1.25}}>
       <Section title={nutritionForm.supersedesId?'Nueva versión del plan alimenticio':'Plan alimenticio completo'} description="7/14/28 días, recetas, porciones, preparación y alternativas explícitas.">
         <Box component="form" onSubmit={submitNutrition}><Stack gap={1}>
-          <CgSelect label="Cliente" value={nutritionForm.memberId} onChange={(e)=>setNutritionForm({...nutritionForm,memberId:e.target.value})} options={memberOpts}/>
+          <CgSelect label="Cliente" value={nutritionForm.memberId} disabled={Boolean(nutritionForm.supersedesId)} onChange={(e)=>setNutritionForm({...nutritionForm,memberId:e.target.value})} options={memberOpts}/>
           <CgSelect label="Responsable" value={nutritionForm.trainerId} onChange={(e)=>setNutritionForm({...nutritionForm,trainerId:e.target.value})} options={trainerOpts}/>
           <CgTextField size="small" label="Nombre" required value={nutritionForm.name} onChange={(e)=>setNutritionForm({...nutritionForm,name:e.target.value})}/>
           <CgTextField size="small" label="Objetivo" value={nutritionForm.goal} onChange={(e)=>setNutritionForm({...nutritionForm,goal:e.target.value})}/>
@@ -56,13 +56,13 @@ export function GymNutritionPanel({
             <CgTextField size="small" label="Fin del plan" type="date" slotProps={{inputLabel:{shrink:true}}} value={nutritionForm.endsAt} onChange={(e)=>setNutritionForm({...nutritionForm,endsAt:e.target.value})}/>
           </Box>
           <CompleteMealPlanBuilder durationDays={nutritionForm.durationDays} onDurationChange={(durationDays)=>setNutritionForm({...nutritionForm,durationDays,meals:(nutritionForm.meals||[]).filter((meal)=>Number(meal.dayIndex)<=durationDays)})} value={nutritionForm.meals} onChange={(meals)=>setNutritionForm({...nutritionForm,meals})} ingredients={ingredients} recipes={nutritionRecipes} disabled={!members.length}/>
-          <Stack direction={{xs:'column',sm:'row'}} gap={.8}><CgButton type="submit" disabled={!members.length||!nutritionForm.meals.length}>{nutritionForm.supersedesId?'Guardar nueva versión':'Crear plan alimenticio'}</CgButton>{nutritionForm.supersedesId?<CgButton type="button" variant="outlined" onClick={()=>setNutritionForm({...nutritionForm,supersedesId:null})}>Cancelar nueva versión</CgButton>:null}</Stack>
+          <Stack direction={{xs:'column',sm:'row'}} gap={.8}><CgButton type="submit" disabled={!members.length||!nutritionForm.meals.length}>{nutritionForm.supersedesId?'Guardar nueva versión':'Crear plan alimenticio'}</CgButton>{nutritionForm.supersedesId?<CgButton type="button" variant="outlined" onClick={()=>setNutritionForm({...nutritionForm,memberId:selectedMemberId||nutritionForm.memberId,supersedesId:null,name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:'',endsAt:'',meals:[]})}>Cancelar nueva versión</CgButton>:null}</Stack>
         </Stack></Box>
       </Section>
       <Section title="Planes activos" description={selectedMember?`Seguimiento de ${selectedMember.fullName}`:'Selecciona un cliente.'}>{memberTracking}<Box mt={1}><RecordList items={nutrition} empty="No hay planes nutricionales del cliente seleccionado" assetKey="nutrition" render={(item)=><Stack direction="row" justifyContent="space-between" gap={1}><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{item.goal||'Plan nutricional'} · {item.durationDays||7} días · {Array.isArray(item.meals)?item.meals.length:0} comidas</Typography></Box><Stack direction="row" alignItems="center" gap={.6}><CgStatusChip label={`v${item.version||1}`} tone="info"/><CgStatusChip label={item.active===false?'Histórico':'Activo'} tone={item.active===false?'warning':'success'}/><CgButton type="button" size="small" variant="outlined" disabled={Number(item.version||1)!==latestByKey.get(item.planKey||item.id)} onClick={()=>beginVersion(item)}>Nueva versión</CgButton></Stack></Stack>}/></Box></Section>
     </Box>
     <NutritionShoppingListPanel plans={nutrition}/>
-    <NutritionSnapshotPanel plans={nutrition}/>
+    <NutritionSnapshotPanel plans={nutrition} memberId={selectedMemberId}/>
     <IntegratedAdherencePanel memberId={selectedMemberId} Toast={Toast}/>
   </Stack>;
 }
