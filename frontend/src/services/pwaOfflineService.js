@@ -253,6 +253,9 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
   if (!/^[A-Za-z0-9._:-]{8,128}$/.test(key)) throw new Error('idempotencyKey inválida para operaciones offline reintentables.');
   const database = await openOutbox(session);
   try {
+    // Logout/tenant switch may occur while IndexedDB.open is pending.
+    // Do not create a transaction using an obsolete authenticated scope.
+    assertCurrentOfflineSession(session);
     const transaction = database.transaction('outbox', 'readwrite');
     const store = transaction.objectStore('outbox');
     const id = `${sessionScope(session)}:${operation}:${key}`;
@@ -326,6 +329,9 @@ export function assertOfflineDeliveryAcknowledged(response) {
 async function readOutbox(session) {
   const database = await openOutbox(session);
   try {
+    // Logout/tenant switch may occur while IndexedDB.open is pending.
+    // Do not create a transaction using an obsolete authenticated scope.
+    assertCurrentOfflineSession(session);
     const transaction = database.transaction('outbox', 'readonly');
     const request = transaction.objectStore('outbox').getAll();
     const records = await new Promise((resolve, reject) => {
@@ -342,6 +348,9 @@ async function readOutbox(session) {
 async function deleteOutboxRecord(session, id) {
   const database = await openOutbox(session);
   try {
+    // Logout/tenant switch may occur while IndexedDB.open is pending.
+    // Do not create a transaction using an obsolete authenticated scope.
+    assertCurrentOfflineSession(session);
     const transaction = database.transaction('outbox', 'readwrite');
     transaction.objectStore('outbox').delete(id);
     await transactionPromise(transaction);
@@ -358,6 +367,7 @@ async function updateGymOutboxFailure(session,id,error){
   if(typeof indexedDB==='undefined')return;
   const database=await openOutbox(session);
   try{
+    assertCurrentOfflineSession(session);
     const transaction=database.transaction('outbox','readwrite');
     const store=transaction.objectStore('outbox');
     const lookup=store.get(id);
