@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
 
 const RUN=`QA95-${Date.now().toString(36).toUpperCase()}`;
@@ -9,10 +10,38 @@ async function preview(h:any,type:string,rows:any[],duplicatePolicy='error',file
   return h.ok('/imports/preview',{method:'POST',body:JSON.stringify({type,rows,duplicatePolicy,templateVersion:'v1',filename})});
 }
 
+
+// Only runs in the workflow's disposable PostgreSQL17 database, after the
+// real-backend harness verifies its database identity. Triggers are removed
+// even when the endpoint or assertion fails.
+async function rejectScopedImportAudit(h:any,action:'import.dry-run'|'import.commit',entityId:string|null,run:()=>Promise<void>){
+  const name='qa1313_'+randomUUID().replaceAll('-','');
+  const tenant=h.tenant.id;
+  try {
+    await h.prisma.$executeRawUnsafe(`
+      CREATE FUNCTION public."${name}"() RETURNS trigger LANGUAGE plpgsql AS $
+      BEGIN
+        IF NEW."tenantId"='${tenant}' AND NEW."action"='${action}'
+          AND (${entityId? `NEW."entityId"='${entityId}'` : 'TRUE'}) THEN
+          RAISE EXCEPTION 'QA_IMPORT_AUDIT_FAILURE';
+        END IF;
+        RETURN NEW;
+      END;
+      $`);
+    await h.prisma.$executeRawUnsafe(`
+      CREATE TRIGGER "${name}" BEFORE INSERT ON public."AuditLog"
+      FOR EACH ROW EXECUTE FUNCTION public."${name}"()`);
+    await run();
+  } finally {
+    await h.prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${name}" ON public."AuditLog"`);
+    await h.prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public."${name}"()`);
+  }
+}
+
 test('issue #95 transactional import pipeline on real PostgreSQL',async(t)=>{
   const h=await createRealBackendHarness();
   const tenantB=await h.prisma.tenant.create({data:{rif:`${RUN}-TENANT-B`,name:`${RUN} Tenant B`,legalName:`${RUN} Tenant B`}});
-  const clientRifs=[`${RUN}-CLI-1`,`${RUN}-CLI-2`,`${RUN}-ROLL-A`,`${RUN}-ROLL-B`,`${RUN}-DUP`];
+  const clientRifs=[`${RUN}-CLI-1`,`${RUN}-CLI-2`,`${RUN}-ROLL-A`,`${RUN}-ROLL-B`,`${RUN}-DUP`,`${RUN}-AUDIT-ROLLBACK`];
   const supplierRifs=[`${RUN}-SUP-1`];const skus=[`${RUN}-SKU-1`];const accountCodes=[`${RUN}.100`,`${RUN}.110`];const employeeIds=[`${RUN}-EMP-1`];
 
   t.after(async()=>{
@@ -91,6 +120,38 @@ test('issue #95 transactional import pipeline on real PostgreSQL',async(t)=>{
 
   await t.test('report neutralizes spreadsheet formula injection',async()=>{
     const batch=await preview(h,'clients',[{name:'Formula safe',rif:'=CMD-QA95'}]);const report=await h.ok(`/imports/${batch.id}/report`);assert.ok(report.csv.includes("'=CMD-QA95"));
+  });
+
+  await t.test('#1313 failed dry-run audit must roll back its staged batch',async()=>{
+    const filename=`${RUN}-failed-audit.csv`;
+    await rejectScopedImportAudit(h,'import.dry-run',null,async()=>{
+      await h.status('/imports/preview',500,{
+        method:'POST',
+        body:JSON.stringify({type:'clients',templateVersion:'v1',filename,duplicatePolicy:'error',
+          rows:[{name:'Synthetic client',rif:`${RUN}-AUDIT-ROLLBACK`}]})
+      });
+    });
+    assert.equal(await h.prisma.importBatch.count({where:{tenantId:h.tenant.id,filename}}),0,
+      'Staging must not commit without its audit');
+    assert.equal(await h.prisma.client.count({where:{tenantId:h.tenant.id,rif:`${RUN}-AUDIT-ROLLBACK`}}),0);
+  });
+
+  await t.test('#1313 failed commit audit must roll back imported records and idempotency',async()=>{
+    const batch=await preview(h,'clients',[{name:'Audit rollback client',rif:`${RUN}-AUDIT-ROLLBACK`}]);
+    assert.equal(batch.status,'validated');
+    const retryHeaders=headers('IMPORT-AUDIT-FAIL');
+    await rejectScopedImportAudit(h,'import.commit',batch.id,async()=>{
+      await h.status(`/imports/${batch.id}/commit`,500,{
+        method:'POST',headers:retryHeaders,
+        body:JSON.stringify({confirm:true,checksum:batch.checksum})
+      });
+    });
+    assert.equal(await h.prisma.client.count({where:{tenantId:h.tenant.id,rif:`${RUN}-AUDIT-ROLLBACK`}}),0);
+    const staged=await h.prisma.importBatch.findFirstOrThrow({where:{id:batch.id,tenantId:h.tenant.id}});
+    assert.equal(staged.status,'validated','A failed audit must not mark a batch completed');
+    assert.equal(await h.prisma.idempotencyRecord.count({where:{
+      tenantId:h.tenant.id,requestId:retryHeaders['x-request-id']
+    }}),0,'Failed import must not reserve an idempotency key');
   });
 
   await t.test('audit trail records dry-run and successful commit without row PII',async()=>{
