@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
 import { projectEntitlementLedger } from './entitlement-ledger-projection.mjs';
+import { customerRightsPage } from './customer-rights-pagination.mjs';
 
 export type CustomerRightActor=Readonly<{tenantId:string;userId?:string;ip?:string;userAgent?:string}>;
 const code=(key:string)=>({code:key});
@@ -135,7 +136,17 @@ export async function grantCustomerRight(ctx:CustomerRightActor,input:ManualGran
     return {entitlement,replayed:false};
   });
 }
+// Compatibility seam for existing domain callers: the legacy function still returns
+// an array. HTTP callers use the page variant to expose the continuation token.
 export async function readCustomerRights(ctx:CustomerRightActor,clientId:string){
+  return (await readCustomerRightsPage(ctx,clientId,{skip:0,take:100})).items;
+}
+
+export async function readCustomerRightsPage(
+  ctx:CustomerRightActor,clientId:string,pagination:Readonly<{skip:number;take:number}>
+){
+  // Domain callers may bypass HTTP Zod. Do not fetch unbounded DB records.
+  customerRightsPage([],pagination);
   const client=await prisma.client.findFirst({where:{tenantId:ctx.tenantId,id:clientId},select:{id:true}});
   if(!client)denied(404,'Beneficiario no encontrado.','ENTITLEMENT_BENEFICIARY_NOT_FOUND');
   const rows=await prisma.customerEntitlement.findMany({
@@ -143,9 +154,11 @@ export async function readCustomerRights(ctx:CustomerRightActor,clientId:string)
     // The projection authorizes at most 10k events. Fetch one additional
     // record to detect overflow without loading an unbounded relation.
     include:{events:{orderBy:{sequence:'asc'},take:10001}},
-    orderBy:[{validUntil:'asc'},{id:'asc'}],take:100
+    orderBy:[{validUntil:'asc'},{id:'asc'}],
+    skip:pagination.skip,take:pagination.take+1
   });
-  return rows.map(row=>{
+  const page=customerRightsPage(rows,pagination);
+  const items=page.items.map(row=>{
     if(row.events.length>10000)
       denied(409,'Historial de derechos demasiado largo.','ENTITLEMENT_LEDGER_LIMIT');
     let projected:ReturnType<typeof projectEntitlementLedger>;
@@ -169,6 +182,7 @@ export async function readCustomerRights(ctx:CustomerRightActor,clientId:string)
       remaining:projected.remaining,readOnly:true
     });
   });
+  return {items,hasMore:page.hasMore,nextSkip:page.nextSkip};
 }
 
 /**
