@@ -26,7 +26,7 @@ export function prepareTaxpayerProfileDraft(
      !(clock instanceof Date)||!Number.isFinite(clock.getTime()))fail();
   if(Object.keys(input).some(k=>!['effectiveFrom','effectiveTo','jurisdiction','taxpayerCategory','activityCodes','sourceReference','sourceContentSha256'].includes(k))||
     !validUtc(input.effectiveFrom)||
-    (input.effectiveTo!=null&&(!validUtc(input.effectiveTo)||input.effectiveTo<=input.effectiveFrom))||
+    (input.effectiveTo!=null&&(!validUtc(input.effectiveTo)||Date.parse(input.effectiveTo)<=Date.parse(input.effectiveFrom)))||
     !named(input.jurisdiction,120)||!named(input.taxpayerCategory,80)||
     !named(input.sourceReference,240)||
     typeof input.sourceContentSha256!=='string'||!SHA.test(input.sourceContentSha256)||
