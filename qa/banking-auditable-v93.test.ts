@@ -158,7 +158,7 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     const rowId=movement.id.replaceAll("'","''");
     try {
       await h.prisma.$executeRawUnsafe(`
-        CREATE FUNCTION public."${gate}"() RETURNS trigger LANGUAGE plpgsql AS $
+        CREATE FUNCTION public."${gate}"() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
           IF NEW."action"='bank.movement.reconciled'
             AND NEW."entityId"='${rowId}' THEN
@@ -166,7 +166,7 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
           END IF;
           RETURN NEW;
         END;
-        $`);
+        $$`);
       await h.prisma.$executeRawUnsafe(`
         CREATE TRIGGER "${gate}" BEFORE INSERT ON public."AuditLog"
         FOR EACH ROW EXECUTE FUNCTION public."${gate}"()`);
@@ -226,7 +226,7 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     const tenant=h.tenant.id.replaceAll("'","''");
     try {
       await h.prisma.$executeRawUnsafe(`
-        CREATE FUNCTION public."${auditFixture}"() RETURNS trigger LANGUAGE plpgsql AS $
+        CREATE FUNCTION public."${auditFixture}"() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
           IF NEW."tenantId"='${tenant}' AND NEW."action"='bank.movement.created'
             AND NEW."after"->>'description'='${escapedMarker}' THEN
@@ -234,7 +234,7 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
           END IF;
           RETURN NEW;
         END;
-        $`);
+        $$`);
       await h.prisma.$executeRawUnsafe(`
         CREATE TRIGGER "${auditFixture}" BEFORE INSERT ON public."AuditLog"
         FOR EACH ROW EXECUTE FUNCTION public."${auditFixture}"()`);
