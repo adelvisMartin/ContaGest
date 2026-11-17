@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import test, { after, before } from 'node:test';
 import type { Prisma } from '@prisma/client';
@@ -22,6 +22,8 @@ const runId = randomUUID().replace(/-/g, '').slice(0, 16);
 const tenantRif = `QA-762-${runId}`;
 let tenantId = '';
 let token = '';
+let legacyUnboundToken = '';
+let sessionId = '';
 let server: ReturnType<ReturnType<typeof createApp>['listen']>;
 let baseUrl = '';
 
@@ -93,7 +95,18 @@ before(async () => {
       status: 'active'
     }
   });
-  token = signAccessToken({ id: user.id, email: user.email }, tenantId);
+  // A signed JWT without a persisted server session is invalid by design.
+  // Seed a genuine, tenant-scoped session in this disposable PostgreSQL database.
+  sessionId = randomUUID();
+  const fixtureHash = (kind: string) => createHash('sha256').update(`qa762:${kind}:${runId}`).digest('hex');
+  await prisma.$executeRaw`
+    INSERT INTO public."UserSession"
+      ("id","userId","tenantId","refreshHash","csrfHash","status","rotationCounter","expiresAt","lastSeenAt","lastIp","lastUserAgent","metadata","createdAt","updatedAt")
+    VALUES
+      (${sessionId},${user.id},${tenantId},${fixtureHash('refresh')},${fixtureHash('csrf')},'active',0,${new Date(Date.now() + 60 * 60 * 1000)},now(),NULL,NULL,${JSON.stringify({ fixture: 'document-sequence-v762' })}::jsonb,now(),now())
+  `;
+  legacyUnboundToken = signAccessToken({ id: user.id, email: user.email }, tenantId);
+  token = signAccessToken({ id: user.id, email: user.email }, tenantId, sessionId);
 
   server = createApp().listen(0, '127.0.0.1');
   await new Promise<void>((resolve, reject) => {
@@ -102,12 +115,42 @@ before(async () => {
   });
   const address = server.address() as AddressInfo;
   baseUrl = `http://127.0.0.1:${address.port}`;
+
+  // Use the same public legal-consent workflow required of real licensed users.
+  // The suite must never bypass the production legal acceptance middleware.
+  const legal = await expectOk('/legal/status');
+  const currentRequired = legal.data.documents
+    .filter((doc: { required: boolean }) => doc.required)
+    .map((doc: { code: string; version: string; hash: string }) => ({ code: doc.code, version: doc.version, hash: doc.hash }));
+  assert.ok(currentRequired.length > 0, 'current legal documents are required for licensed customers');
+  await expectOk('/legal/accept', {
+    method: 'POST',
+    body: JSON.stringify({
+      documents: currentRequired,
+      necessaryCookiesAcknowledged: true,
+      analyticsCookies: false,
+      marketingCookies: false,
+      locale: 'es-VE'
+    })
+  });
 });
 
 after(async () => {
   if (server?.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (sessionId && tenantId) await prisma.$executeRaw`
+    DELETE FROM public."UserSession" WHERE "id"=${sessionId} AND "tenantId"=${tenantId}
+  `;
   if (tenantId) await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => undefined);
   await prisma.$disconnect();
+});
+
+test('signed JWT without UserSession binding fails closed at the API boundary', async () => {
+  const response = await fetch(`${baseUrl}/api/v1/document-sequences/${SALES_INVOICE_SEQUENCE_KEY}`, {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${legacyUnboundToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ prefix: 'SHOULD-NOT-APPLY-' })
+  });
+  assert.equal(response.status, 401, 'a signature alone must not bypass server-side revocation');
 });
 
 test('concurrent allocation is unique, gap-free for committed allocations, and tenant-scoped', async () => {
