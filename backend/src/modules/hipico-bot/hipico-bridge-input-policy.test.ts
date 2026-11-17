@@ -40,6 +40,8 @@ test('bridge sender normalization rejects control characters',()=>{
 test('bridge sender identities cannot be visually spoofed or truncated into aliases',()=>{
   for(const control of ['\u200B','\u202E','\u2069','\uFEFF']){
     assert.equal(normalizeBridgeSender(`participant${control}-7@lid`),null);
+    assert.equal(normalizeBridgeSender(`${control}participant-7@lid`),null);
+    assert.equal(normalizeBridgeSender(`participant-7@lid${control}`),null);
   }
   assert.equal(normalizeBridgeSender('a'.repeat(221)+'@lid'),null);
   assert.equal(normalizeBridgeSender('a'.repeat(220)+'@lid'),'a'.repeat(220));
