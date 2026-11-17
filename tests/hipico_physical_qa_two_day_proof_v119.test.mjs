@@ -30,6 +30,7 @@ function fixture() {
     assert.equal(step.status,0,step.stderr);
   }
   const raw=JSON.parse(fs.readFileSync(file,'utf8'));
+  raw.startedAt=new Date(Date.now()-4*86400000).toISOString();
   for(const env of raw.environments){
     for(const entry of catalog.scenarios){
       const isOne=entry.id===one,isTwo=entry.id===two;
