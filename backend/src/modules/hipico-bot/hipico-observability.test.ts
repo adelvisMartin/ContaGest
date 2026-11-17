@@ -131,7 +131,7 @@ test('HIPICO #1314 never persists opaque identifiers or error text in reason cod
 
 test('HIPICO #1314 support export sanitizes legacy event reason codes too',()=>{
   const store=fs.readFileSync(new URL('./hipico-observability.store.ts',import.meta.url),'utf8');
-  assert.match(store,/reasonCode:safeObservationReasonCode\\(row\\.reason_code\\)/);
+  assert.match(store,/reasonCode:safeObservationReasonCode\(row\.reason_code\)/);
 });
 
 test('candidate SHA is accepted only when it is an exact git SHA',()=>{
