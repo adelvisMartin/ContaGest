@@ -9,6 +9,7 @@ import { nextPeriodizationVersion } from './gym-program-version.js';
 import { parseGymExerciseFilters } from './gym-exercise-filters.js';
 import { gymPerformanceSessionDay } from './gym-performance-day.mjs';
 import { gymEpleyEstimate } from './gym-performance-estimate.mjs';
+import { gymHistoricalPlanCoverage, gymHistoricalSetAdherence } from './gym-performance-adherence.mjs';
 import { parseGymMemberQuery } from './gym-member-query.js';
 import {
   exerciseLibrarySchema,
@@ -597,7 +598,7 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
   if(!memberRows.length)throw new HttpError(404,'El cliente no pertenece al tenant activo.');
 
   const sessions=await prisma.$queryRawUnsafe<any[]>(`
-    SELECT s."id",s."routineId",s."startedAt",s."completedAt",r."daysPerWeek"
+    SELECT s."id",s."routineId",s."startedAt",s."completedAt",s."routineSnapshot",r."daysPerWeek"
     FROM public."GymWorkoutSession" s
     JOIN public."GymRoutine" r
       ON r."tenantId"=s."tenantId" AND r."id"=s."routineId"
@@ -624,16 +625,10 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     ORDER BY ws."recordedAt" ASC,ws."id" ASC
   `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
 
-  const planRows=await prisma.$queryRawUnsafe<any[]>(`
-    SELECT r."id" AS "routineId",COALESCE(sum(re."sets"),0)::int AS "plannedSets"
-    FROM public."GymRoutine" r
-    LEFT JOIN public."GymRoutineExercise" re
-      ON re."tenantId"=r."tenantId" AND re."routineId"=r."id"
-    WHERE r."tenantId"=$1 AND r."memberId"=$2
-    GROUP BY r."id"
-  `,tenantId,q.memberId);
-  const plannedByRoutine=new Map(planRows.map((row:any)=>[String(row.routineId),Number(row.plannedSets||0)]));
-  const plannedSets=sessions.reduce((total:any,session:any)=>total+Number(plannedByRoutine.get(String(session.routineId))||0),0);
+  // #789 captured prescriptions when the session started. Do not recalculate
+  // historical adherence from today's mutable routine or invent legacy plans.
+  const coverage=gymHistoricalPlanCoverage(sessions);
+  const {plannedSets,unknownPlanSessions,planComplete}=coverage;
 
   const byExerciseMap=new Map<string,any>();
   const byMuscleMap=new Map<string,any>();
@@ -687,7 +682,7 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
   const trainingDays=new Set(sessions.map((session:any)=>gymPerformanceSessionDay(session.startedAt))).size;
   const completedSessions=sessions.length;
   const sessionsPerWeek=periodDays>0?Number((completedSessions/(periodDays/7)).toFixed(2)):0;
-  const setAdherencePct=plannedSets>0?Number((Math.min(1,completedSets/plannedSets)*100).toFixed(1)):0;
+  const setAdherencePct=gymHistoricalSetAdherence(completedSets,coverage);
   const roundMetrics=(item:any)=>({...item,totalVolume:Number(Number(item.totalVolume||0).toFixed(2))});
 
   const byExercise=[...byExerciseMap.values()]
@@ -721,6 +716,8 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
       trainingDays,
       sessionsPerWeek,
       plannedSets,
+      unknownPlanSessions,
+      planComplete,
       completedSets,
       skippedSets,
       setAdherencePct,
@@ -733,6 +730,7 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
       timeZone:'UTC',
       estimated1Rm:{formula:'Epley',version:1,validReps:{min:1,max:12},unit:'kg'},
       totalVolume:{formula:'sum(loadKg * reps) over completed sets',unit:'kg·rep'},
+      setAdherence:{formula:'completedSets / sum(snapshot exercise sets)',source:'GymWorkoutSession.routineSnapshot',legacy:'unavailable'},
       source:'GymWorkoutSet / completed GymWorkoutSession',
       dates:'WorkoutSession.startedAt'
     },
