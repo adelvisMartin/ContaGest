@@ -79,7 +79,7 @@ test('#852 paged reads remain tenant-scoped, bounded and preserve the array API'
   assert.match(page,/customerRightsPage\(\[\],pagination\)/);
   assert.match(page,/tenantId:ctx\.tenantId,beneficiaryId:clientId/);
   assert.match(page,/skip:pagination\.skip,take:pagination\.take\+1/);
-  assert.match(page,/items:page\.items/);
+  assert.match(page,/const items=page\.items\.map/);
   assert.match(routes,/rightsPagination\.parse\(req\.query\)/);
   assert.match(routes,/X-Pagination-Has-More/);
   assert.match(routes,/X-Pagination-Next-Skip/);
