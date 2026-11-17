@@ -35,7 +35,7 @@ export function masterExportCsv(entity: MasterExportEntity, rows: readonly Recor
     let text = value ?? '';
     // Any spreadsheet formula prefix (including leading whitespace and
     // control chars) must be escaped before RFC4180 quoting.
-    if (/^[\s\u0000-\u001f]*[=+\-@]/.test(text)) text = "'" + text;
+    if (/^[\u0000-\u0020\u007f-\u009f\u00a0\u1680\u2000-\u200f\u2028-\u202e\u202f\u205f\u2060-\u2069\u3000\ufeff]*[=+\-@]/u.test(text)) text = "'" + text;
     return '"' + text.replaceAll('"', '""') + '"';
   };
   return [fields.map(safe).join(','), ...rows.map((row) => fields.map((key) => safe(row[key] ?? null)).join(','))].join('\r\n');
