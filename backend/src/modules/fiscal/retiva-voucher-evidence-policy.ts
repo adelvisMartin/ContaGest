@@ -33,8 +33,8 @@ export function assertRetivaVoucherEvidence(v:RetivaVoucherEvidence):RetivaVouch
     !(v.invoiceControlNumber===null||label(v.invoiceControlNumber,120))||
     !instant(v.invoiceDate)||!instant(v.recognizedAt)||
     (v.deliveredAt!==null&&!instant(v.deliveredAt))||
-    v.recognizedAt<v.invoiceDate||
-    (v.deliveredAt!==null&&v.deliveredAt<v.recognizedAt)||
+    Date.parse(v.recognizedAt)<Date.parse(v.invoiceDate)||
+    (v.deliveredAt!==null&&Date.parse(v.deliveredAt)<Date.parse(v.recognizedAt))||
     !safe(v.taxableMinor)||!safe(v.invoiceVatMinor)||!safe(v.withheldVatMinor)||
     v.withheldVatMinor>v.invoiceVatMinor||
     !label(v.applicationId,128)||!sha.test(v.applicationEvidenceSha256))forbidden();
