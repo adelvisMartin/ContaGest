@@ -26,6 +26,11 @@ export async function validHipicoPhysicalMaterial(manifestFile, evidenceRows) {
       !Array.isArray(evidenceRows) || evidenceRows.length === 0 ||
       evidenceRows.length > 10000) return false;
   try {
+    // A proof cannot authorize release without its own manifest on disk.
+    // In particular, a caller must not be able to supply a nonexistent path
+    // in a valid artifact directory and obtain a false physical-QA PASS.
+    const manifestStat = await fsp.lstat(manifestFile);
+    if (!manifestStat.isFile() || manifestStat.isSymbolicLink()) return false;
     const base = path.dirname(path.resolve(manifestFile));
     const realBase = await fsp.realpath(base);
     const verified = new Map();
