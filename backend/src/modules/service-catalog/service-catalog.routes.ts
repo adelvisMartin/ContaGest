@@ -47,6 +47,18 @@ const listQuery=z.object({
   take:z.coerce.number().int().min(1).max(100).default(50),
   skip:z.coerce.number().int().min(0).max(100000).default(0)
 }).strict();
+// Keep legacy default page sizes while allowing bounded, tenant-scoped filters.
+const categoryListQuery=z.object({
+  take:z.coerce.number().int().min(1).max(100).default(100),
+  skip:z.coerce.number().int().min(0).max(100000).default(0),
+  status:z.enum(['active','archived']).optional(),
+  search:z.string().trim().min(1).max(80).optional()
+}).strict();
+const serviceListQuery=listQuery.extend({
+  status:z.enum(['draft','active','archived']).optional(),
+  categoryId:uuid.optional(),
+  search:z.string().trim().min(1).max(80).optional()
+}).strict();
 function params(req:any){
   const parsed=uuid.safeParse(req.params.id);
   if(!parsed.success)throw new HttpError(422,'Identificador de servicio inválido.');
@@ -60,9 +72,14 @@ function assignment(req:any,key:'employeeId'|'locationId'){
 
 router.get('/categories',asyncHandler(async(req,res)=>{
   const tenantId=ctx(req).tenantId;
-  ok(res,await prisma.serviceCatalogCategory.findMany({
-    where:{tenantId},orderBy:[{displayOrder:'asc'},{name:'asc'}],take:100
-  }));
+  const {take,skip,status,search}=categoryListQuery.parse(req.query);
+  const rows=await prisma.serviceCatalogCategory.findMany({
+    where:{tenantId,...(status?{status}:{}),
+      ...(search?{name:{contains:search,mode:'insensitive' as const}}:{})},
+    orderBy:[{displayOrder:'asc'},{name:'asc'},{id:'asc'}],take,skip
+  });
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,rows);
 }));
 router.post('/categories',validateBody(category),asyncHandler(async(req,res)=>{
   ok(res,await createServiceCategory(ctx(req),req.body),201);
@@ -80,11 +97,15 @@ router.get('/public',asyncHandler(async(req,res)=>{
   ok(res,projectPublicServiceCatalog({tenantId,rows}));
 }));
 router.get('/services',asyncHandler(async(req,res)=>{
-  const {take,skip}=listQuery.parse(req.query);
-  ok(res,await prisma.serviceDefinition.findMany({
-    where:{tenantId:ctx(req).tenantId},
+  const {take,skip,status,categoryId,search}=serviceListQuery.parse(req.query);
+  const rows=await prisma.serviceDefinition.findMany({
+    where:{tenantId:ctx(req).tenantId,...(status?{status}:{}),
+      ...(categoryId?{categoryId}:{}),
+      ...(search?{name:{contains:search,mode:'insensitive' as const}}:{})},
     orderBy:[{name:'asc'},{id:'asc'}],take,skip
-  }));
+  });
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,rows);
 }));
 router.post('/services',validateBody(service),asyncHandler(async(req,res)=>{
   ok(res,await createCatalogService(ctx(req),req.body),201);
