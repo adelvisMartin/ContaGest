@@ -10,9 +10,9 @@ const panel=()=>fs.readFileSync('frontend/src/components/dentistry/DentalConsent
 
 test('16/51 dental consent serializes signed plans without deserializing PostgreSQL void',()=>{
   const code=fs.readFileSync('backend/src/modules/verticals/health-extended.routes.ts','utf8');
-  assert.match(code,/pg_advisory_xact_lock\\(hashtextextended\\(\\$1,0\\)\\)::text AS locked/);
+  assert.match(code,/pg_advisory_xact_lock\(hashtextextended\(\$1,0\)\)::text AS locked/);
   assert.match(code,/metadata.*treatmentPlanEncounterId/s);
-  assert.match(code,/latest\\?\\.status==='signed'/);
+  assert.match(code,/latest\?\.status==='signed'/);
 });
 
 test('16/51 signs dental consent only through the specialized server-authoritative route',()=>{
