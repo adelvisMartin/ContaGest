@@ -56,12 +56,15 @@ export function assertBridgeGroupIdentity(payload:BridgeIdentityPayload,env:Runt
   throw Object.assign(new Error(code),{code});
 }
 
+const UNSAFE_SENDER_CONTROLS=/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/u;
+
 export function normalizeBridgeSender(senderId:string){
   const raw=String(senderId||'').trim();
-  if(!raw)return null;
-  const canonical=raw.replace(/@.*$/,'').trim().slice(0,MAX_CANONICAL_SENDER_LENGTH);
-  if(!canonical)return null;
-  if(/[\u0000-\u001F\u007F]/.test(canonical))return null;
+  // Reject spoofing controls before removing a transport suffix. Truncating
+  // long identities would alias distinct senders to the same audit/rate key.
+  if(!raw||UNSAFE_SENDER_CONTROLS.test(raw))return null;
+  const canonical=raw.replace(/@.*$/,'').trim();
+  if(!canonical||canonical.length>MAX_CANONICAL_SENDER_LENGTH)return null;
   return canonical;
 }
 
