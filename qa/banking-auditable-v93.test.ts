@@ -119,6 +119,47 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     assert.equal(projected?.integrity,'ok');
   });
 
+  await t.test('#1289 audit insert failure atomically rolls back movement, balance and idempotency reservation',async()=>{
+    // This trigger targets only synthetic data in the isolated PG17 test database;
+    // always remove it, including if the assertion or request fails.
+    const auditFixture='qa1289_'+randomUUID().replaceAll('-','_');
+    const marker=`${RUN} atomic-audit-rollback`;
+    const account=await h.ok('/banking/accounts',{
+      method:'POST',headers:headers('ATOMIC-AUDIT-ACCOUNT'),
+      body:body({bankName:`${RUN} Atomic`,accountNo:`${RUN}-ATOMIC`,currency:'USD',openingBalance:'0'})
+    });
+    accountIds.push(account.id);
+    const idempotencyHeader=headers('ATOMIC-AUDIT-MOVEMENT');
+    const escapedMarker=marker.replaceAll("'","''");
+    const tenant=h.tenant.id.replaceAll("'","''");
+    try {
+      await h.prisma.$executeRawUnsafe(`
+        CREATE FUNCTION public."${auditFixture}"() RETURNS trigger LANGUAGE plpgsql AS $
+        BEGIN
+          IF NEW."tenantId"='${tenant}' AND NEW."action"='bank.movement.created'
+            AND NEW."after"->>'description'='${escapedMarker}' THEN
+            RAISE EXCEPTION 'QA_SYNTHETIC_AUDIT_REJECT';
+          END IF;
+          RETURN NEW;
+        END;
+        $`);
+      await h.prisma.$executeRawUnsafe(`
+        CREATE TRIGGER "${auditFixture}" BEFORE INSERT ON public."AuditLog"
+        FOR EACH ROW EXECUTE FUNCTION public."${auditFixture}"()`);
+      await h.status('/banking/movements',500,{
+        method:'POST',headers:idempotencyHeader,
+        body:body({accountId:account.id,description:marker,type:'income',currency:'USD',amount:'17.49'})
+      });
+    } finally {
+      await h.prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${auditFixture}" ON public."AuditLog"`);
+      await h.prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public."${auditFixture}"()`);
+    }
+    const accountAfter=await h.prisma.bankAccount.findUniqueOrThrow({where:{id:account.id}});
+    assert.equal(String(accountAfter.balance),'0','Failed audit must not change account balance');
+    assert.equal(await h.prisma.bankMovement.count({where:{tenantId:h.tenant.id,description:marker}}),0);
+    assert.equal(await h.prisma.idempotencyRecord.count({where:{tenantId:h.tenant.id,requestId:idempotencyHeader['x-request-id']}}),0);
+  });
+
   await t.test('audit log captures the financial lifecycle actor/reason events',async()=>{
     const rows=await h.prisma.auditLog.findMany({where:{tenantId:h.tenant.id,action:{in:['bank.movement.created','bank.movement.reversed','bank.movement.corrected','bank.movement.reconciled','bank.movement.unreconciled','banking.account-opened']}}});
     assert.ok(rows.some((row)=>row.action==='bank.movement.reversed'));
