@@ -53,8 +53,8 @@ test('neutralizes spreadsheet formulas even after whitespace/control prefixes', 
 
 test('spreadsheet CSV guard rejects Unicode invisible prefixes and C1 controls', () => {
   const csv = masterExportCsv('clients', [{ rif:'\u0085=1+1', name:'\u200B@SUM(A1:A2)' }]);
-  assert.ok(csv.includes('"\\'\u0085=1+1"'));
-  assert.ok(csv.includes('"\\'\u200B@SUM(A1:A2)"'));
+  assert.ok(csv.includes(`"'\u0085=1+1"`));
+  assert.ok(csv.includes(`"'\u200B@SUM(A1:A2)"`));
 });
 
 test('CSV header and row keys stay in declared canonical order', () => {
