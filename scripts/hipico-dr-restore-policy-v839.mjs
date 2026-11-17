@@ -3,6 +3,7 @@
 // A caller's environment flag never substitutes for an exact-SHA artifact.
 const SHA40=/^[a-f0-9]{40}$/i;
 const SHA64=/^[a-f0-9]{64}$/i;
+const CANONICAL_UTC=/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
 
 export function validHipicoDrRestoreEvidence(data, expectedInventorySha256, canonicalTables) {
   if (!data || data.schema!=='hipico-schema-backup-evidence.v17' ||
@@ -22,7 +23,9 @@ export function validHipicoDrRestoreEvidence(data, expectedInventorySha256, cano
       !String(data.backupId||'').trim() ||
       !String(data.restoreTestId||'').trim() ||
       !String(data.targetDatabase||'').trim() ||
+      !CANONICAL_UTC.test(String(data.checkedAt||'')) ||
       !Number.isFinite(Date.parse(String(data.checkedAt||''))) ||
+      new Date(data.checkedAt).toISOString()!==data.checkedAt ||
       Date.parse(data.checkedAt)>Date.now()+60000 ||
       !Array.isArray(data.presentTables) ||
       data.presentTables.length!==25 ||

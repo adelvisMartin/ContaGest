@@ -51,3 +51,11 @@ test('#839 release verifier obtains DR PASS only from exact-SHA validated restor
   assert.match(report,/stableRequired = \[\.\.\.codeReviewRequired[^\n]+drRestore/);
   assert.doesNotMatch(report,/HIPICO_GATE_DR_RESTORE/);
 });
+
+test('#839 rejects ambiguous, noncanonical and calendar-invalid DR evidence timestamps',()=>{
+  for(const checkedAt of [
+    '2026-11-17','2026-11-17T12:00:00Z','2026-11-17T12:00:00+00:00',
+    '2026-11-17T12:00:00.000+00:00','2026-02-30T12:00:00.000Z',
+    '2026-11-17T12:00:00','invalid'
+  ]) assert.equal(validHipicoDrRestoreEvidence({...fixture(),checkedAt},tableHash,tables),false,checkedAt);
+});

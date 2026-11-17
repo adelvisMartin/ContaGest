@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { validHipicoDrRestoreEvidence } from './hipico-dr-restore-policy-v839.mjs';
+import { validHipicoPhysicalMaterial } from './hipico-physical-material-integrity-v119.mjs';
 import { validSoakMetricEvidence } from './hipico-soak-metric-integrity-v120.mjs';
 import { validSoakSamplesProof } from './hipico-soak-samples-proof-v120.mjs';
 
@@ -277,7 +278,7 @@ const optionalDescriptors = [
   }
 ];
 
-function findDescriptor(descriptor) {
+async function findDescriptor(descriptor) {
   const candidates = parsed.filter((item) => item.name === descriptor.name);
   const sameSha = candidates.filter((item) => evidenceSha(item.data) === sha);
   const schemaMatch = descriptor.schemas.length
@@ -298,6 +299,10 @@ function findDescriptor(descriptor) {
   if (typeof descriptor.validate === 'function' && descriptor.validate(selected.data) !== true) {
     return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'EVIDENCE_CONTRACT_MISMATCH' };
   }
+  if (descriptor.id === 'physicalQa' &&
+      !(await validHipicoPhysicalMaterial(selected.file, selected.data?.evidenceFiles))) {
+    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'PHYSICAL_MATERIAL_NOT_VERIFIED' };
+  }
   // #120: a syntactically valid samplesSha256 does not prove that the actual
   // producer's samples.jsonl exists, was preserved, or matches the summary.
   // A missing/tampered/duplicated or discontinuous sample log is fail-closed.
@@ -315,8 +320,10 @@ function findDescriptor(descriptor) {
   };
 }
 
-const required = requiredDescriptors.map(findDescriptor);
-const optional = optionalDescriptors.map(findDescriptor);
+const [required, optional] = await Promise.all([
+  Promise.all(requiredDescriptors.map(findDescriptor)),
+  Promise.all(optionalDescriptors.map(findDescriptor))
+]);
 const screenshots = files.filter((file) => file.endsWith('.png') && file.includes(`${path.sep}hipico-v105${path.sep}${sha}${path.sep}`));
 const browserStatus = screenshots.length ? 'PASS' : 'NOT_EXECUTED';
 const browser = {
