@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 const session={tenantId:'tenant-A',user:{id:'user-A'}};
 const file=readFileSync(new URL('../frontend/src/services/pwaOfflineService.js',import.meta.url),'utf8');
 test('#797 inherited JS property names must never become offline permissions',async()=>{
-  for(const operation of ['constructor','toString','__proto__','valueOf','hasOwnProperty','gym.workout.set']){
+  for(const operation of ['constructor','toString','__proto__','valueOf','hasOwnProperty']){
     await assert.rejects(enqueueOfflineOperation({session,operation,payload:{},idempotencyKey:'sample-key-123'}),e=>e?.code==='OFFLINE_OPERATION_NOT_ALLOWED');
   }
   assert.deepEqual(Object.keys(OUTBOX_ALLOWLIST),['analytics.event','gym.workout.set']);

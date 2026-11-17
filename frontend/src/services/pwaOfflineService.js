@@ -47,6 +47,17 @@ function validateWorkoutSetPayload(payload){
   if(payload.status==='completed'&&
     (!Number.isSafeInteger(payload.reps)||payload.reps<0||payload.reps>500))
     throw offlineError('OFFLINE_WORKOUT_PAYLOAD_INVALID','La serie requiere repeticiones válidas.');
+  const numbers=[
+    ['loadKg',0,5000,false],['rir',0,10,false],['rpe',1,10,false],
+    ['restSeconds',0,3600,true]
+  ];
+  if(numbers.some(([field,min,max,integer])=>payload[field]!=null&&
+     (typeof payload[field]!=='number'||!Number.isFinite(payload[field])||
+       payload[field]<min||payload[field]>max||(integer&&!Number.isSafeInteger(payload[field]))))||
+     (payload.notes!=null&&(typeof payload.notes!=='string'||payload.notes.length>2000))||
+     (payload.substitutionReason!=null&&(typeof payload.substitutionReason!=='string'||payload.substitutionReason.length>500))||
+     (payload.performedExerciseId!=null&&!GYM_SET_UUID.test(String(payload.performedExerciseId))))
+    throw offlineError('OFFLINE_WORKOUT_PAYLOAD_INVALID','Valores de la serie fuera de rango.');
   let encoded;
   try{encoded=JSON.stringify(payload);}catch{encoded=null;}
   if(!encoded||encoded.length>8192)
@@ -374,6 +385,16 @@ export async function listOfflineWorkoutQueue(session){
     sessionId:record.payload?.sessionId,routineExerciseId:record.payload?.routineExerciseId,
     setNumber:record.payload?.setNumber
   }));
+}
+
+export async function discardReviewedWorkoutEvent(session,id){
+  assertCurrentOfflineSession(session);
+  const records=await readOutbox(session);
+  const record=records.find((row)=>row.id===id&&row.operation==='gym.workout.set');
+  if(!record||!['conflict','failed'].includes(record.status))
+    throw offlineError('OFFLINE_DISCARD_NOT_ALLOWED','Solo se pueden descartar eventos con conflicto o fallo definitivo.');
+  await deleteOutboxRecord(session,id);
+  return {discarded:true,sessionId:record.payload?.sessionId,setNumber:record.payload?.setNumber};
 }
 
 export async function flushOfflineOutbox(session, sender, options = {}) {
