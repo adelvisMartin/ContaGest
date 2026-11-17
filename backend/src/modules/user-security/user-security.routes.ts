@@ -145,8 +145,8 @@ router.patch('/users/:userId', asyncHandler(async (req,res) => {
         credentialRotated:Boolean(body.newPassword), sessionsRevoked:revokeSessions,
         failureCounterReset:resetFailures
       },
-      ipAddress:req.context?.ip || null,
-      userAgent:String(req.context?.userAgent || '').slice(0,240) || null
+      ipAddress:(req as any).context?.ip || null,
+      userAgent:String((req as any).context?.userAgent || '').slice(0,240) || null
     } });
   });
 
