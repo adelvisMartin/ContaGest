@@ -283,12 +283,11 @@ router.post('/accounts', validateBody(createAccountSchema), asyncHandler(async (
       await insertAuditLink(tx, { tenantId: ctx.tenantId, accountId: account.id, relatedMovementId: opening.id, kind: 'opening', reason: 'Saldo inicial registrado al crear la cuenta.', createdBy: ctx.userId });
     }
     const stored = await tx.bankAccount.findUniqueOrThrow({ where: { id: account.id } });
-    return { data: { ...serializeAccount(stored), openingMovementId }, resourceType: 'BankAccount', resourceId: account.id };
+    const data = { ...serializeAccount(stored), openingMovementId };
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'banking.account-opened', entity: 'BankAccount', entityId: account.id, after: data, ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return { data, resourceType: 'BankAccount', resourceId: account.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
-  if (!execution.replayed) {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'banking.account-opened', entity: 'BankAccount', entityId: (execution.data as any).id, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  }
   ok(res, execution.data, execution.responseCode);
 }));
 
@@ -337,12 +336,11 @@ router.post('/accounts/:id/opening-balance', validateBody(openingBalanceSchema),
     });
     await tx.bankAccount.update({ where: { id: account.id }, data: { balance: { increment: input.amount } } });
     await insertAuditLink(tx, { tenantId: ctx.tenantId, accountId: account.id, relatedMovementId: movement.id, kind: 'opening', reason: input.reason, createdBy: ctx.userId });
-    return { data: serializeMovement(movement), resourceType: 'BankMovement', resourceId: movement.id };
+    const data = serializeMovement(movement);
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'banking.opening-balance', entity: 'BankMovement', entityId: movement.id, after: { ...data, reason: input.reason }, ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return { data, resourceType: 'BankMovement', resourceId: movement.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
-  if (!execution.replayed) {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'banking.opening-balance', entity: 'BankMovement', entityId: (execution.data as any).id, after: { ...execution.data as any, reason: input.reason }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  }
   ok(res, execution.data, execution.responseCode);
 }));
 
@@ -400,14 +398,15 @@ router.post('/movements', validateBody(movementSchema), asyncHandler(async (req,
       include: { account: true }
     });
     await tx.bankAccount.update({ where: { id: account.id }, data: { balance: { increment: delta } } });
-    return { data: serializeMovement(movement), resourceType: 'BankMovement', resourceId: movement.id };
+    const data = serializeMovement(movement);
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.created', entity: 'BankMovement', entityId: movement.id, after: data, ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return { data, resourceType: 'BankMovement', resourceId: movement.id };
   });
 
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
   if (execution.replayed) {
+    // Replay emits an observational event only; it does not mutate financial state.
     await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'idempotency.replay', entity: 'BankMovement', entityId: (execution.data as any).id, after: { scope: 'banking.movements.create', recordId: execution.recordId, originalRequestId: execution.originalRequestId, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  } else {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.created', entity: 'BankMovement', entityId: (execution.data as any).id, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   }
   ok(res, execution.data, execution.responseCode);
 }));
@@ -455,12 +454,11 @@ router.post('/movements/:id/reverse', validateBody(reversalSchema), asyncHandler
     await assertNotReversed(tx, ctx.tenantId, refreshed.id);
     const reversal = await createReversal(tx, refreshed, ctx.tenantId, ctx.userId, input.reason, input.date);
     await tx.bankAccount.update({ where: { id: refreshed.accountId }, data: { balance: { increment: subtract(ZERO, movementDelta(refreshed)) } } });
-    return { data: { ...serializeMovement(reversal), reversalOfId: refreshed.id, correctionReason: input.reason }, resourceType: 'BankMovement', resourceId: reversal.id };
+    const data = { ...serializeMovement(reversal), reversalOfId: refreshed.id, correctionReason: input.reason };
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.reversed', entity: 'BankMovement', entityId: refreshed.id, before: { id: refreshed.id }, after: data, ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return { data, resourceType: 'BankMovement', resourceId: reversal.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
-  if (!execution.replayed) {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.reversed', entity: 'BankMovement', entityId: req.params.id, before: { id: req.params.id }, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  }
   ok(res, execution.data, execution.responseCode);
 }));
 
@@ -507,21 +505,16 @@ router.post('/movements/:id/correct', validateBody(correctionSchema), asyncHandl
     await insertAuditLink(tx, { tenantId: ctx.tenantId, accountId: refreshed.accountId, originalMovementId: refreshed.id, relatedMovementId: correction.id, kind: 'correction', reason: input.reason, createdBy: ctx.userId });
     const netDelta = add(subtract(ZERO, movementDelta(refreshed)), replacementDelta);
     await tx.bankAccount.update({ where: { id: refreshed.accountId }, data: { balance: { increment: netDelta } } });
-    return {
-      data: {
-        originalId: refreshed.id,
-        reversal: { ...serializeMovement(reversal), reversalOfId: refreshed.id },
-        correction: { ...serializeMovement(correction), correctionOfId: refreshed.id },
-        reason: input.reason
-      },
-      resourceType: 'BankMovement',
-      resourceId: correction.id
+    const data = {
+      originalId: refreshed.id,
+      reversal: { ...serializeMovement(reversal), reversalOfId: refreshed.id },
+      correction: { ...serializeMovement(correction), correctionOfId: refreshed.id },
+      reason: input.reason
     };
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.corrected', entity: 'BankMovement', entityId: refreshed.id, before: { id: refreshed.id }, after: data, ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return { data, resourceType: 'BankMovement', resourceId: correction.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
-  if (!execution.replayed) {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'bank.movement.corrected', entity: 'BankMovement', entityId: req.params.id, before: { id: req.params.id }, after: execution.data, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  }
   ok(res, execution.data, execution.responseCode);
 }));
 
