@@ -140,18 +140,28 @@ export async function readCustomerRights(ctx:CustomerRightActor,clientId:string)
   if(!client)denied(404,'Beneficiario no encontrado.','ENTITLEMENT_BENEFICIARY_NOT_FOUND');
   const rows=await prisma.customerEntitlement.findMany({
     where:{tenantId:ctx.tenantId,beneficiaryId:clientId},
-    include:{events:{orderBy:{sequence:'asc'}}},
+    // The projection authorizes at most 10k events. Fetch one additional
+    // record to detect overflow without loading an unbounded relation.
+    include:{events:{orderBy:{sequence:'asc'},take:10001}},
     orderBy:[{validUntil:'asc'},{id:'asc'}],take:100
   });
   return rows.map(row=>{
-    const projected=projectEntitlementLedger({
-      tenantId:ctx.tenantId,entitlementId:row.id,beneficiaryId:clientId,
-      events:row.events.map(event=>({
-        id:event.id,tenantId:event.tenantId,entitlementId:event.entitlementId,
-        beneficiaryId:clientId,sequence:event.sequence,type:event.type,
-        quantity:event.quantity.toFixed(3),effectKey:event.effectKey
-      }))
-    });
+    if(row.events.length>10000)
+      denied(409,'Historial de derechos demasiado largo.','ENTITLEMENT_LEDGER_LIMIT');
+    let projected:ReturnType<typeof projectEntitlementLedger>;
+    try{
+      projected=projectEntitlementLedger({
+        tenantId:ctx.tenantId,entitlementId:row.id,beneficiaryId:clientId,
+        events:row.events.map(event=>({
+          id:event.id,tenantId:event.tenantId,entitlementId:event.entitlementId,
+          beneficiaryId:clientId,sequence:event.sequence,type:event.type,
+          quantity:event.quantity.toFixed(3),effectKey:event.effectKey
+        }))
+      });
+    }catch{
+      // Never return a plausible but incorrect balance on corrupt/missing events.
+      denied(409,'Integridad del historial de derechos no verificable.','ENTITLEMENT_LEDGER_DRIFT');
+    }
     return Object.freeze({
       id:row.id,benefitId:row.benefitId,sourceType:row.sourceType,
       snapshot:row.snapshot,validFrom:row.validFrom,validUntil:row.validUntil,
