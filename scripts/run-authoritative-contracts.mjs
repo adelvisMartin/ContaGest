@@ -33,6 +33,7 @@ const required59=[
   'tests/forms_interaction_issue_620.test.mjs',
   'tests/enterprise_data_ui_issue_621.test.mjs',
   'tests/gym_workspace_mount_contract.test.mjs',
+  'tests/communication_template_filter_accessibility.test.mjs',
   'tests/clean_code_refactor_authority_issue_622.test.mjs',
   'tests/agent_system_v3_issue_623.test.mjs',
   'tests/access_license_policy_issue_698.test.mjs',
