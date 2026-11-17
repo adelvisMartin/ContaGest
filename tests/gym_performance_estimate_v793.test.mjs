@@ -10,7 +10,7 @@ test('#793 Epley v1: deterministic, 2-decimal estimates',()=>{
 });
 test('#793 Epley: out-of-range / nonfinite / noninteger stays unknown',()=>{
   for(const [load,reps] of [
-    [0,8],[-10,5],[Infinity,5],[NaN,5],[100,0],[100,13],
+    [0,8],[-10,5],[Infinity,5],[NaN,5],[Number.MAX_VALUE,12],[100,0],[100,13],
     [100,2.5],[100,Infinity],[100,NaN]
   ])assert.equal(gymEpleyEstimate(load,reps),null);
 });

@@ -3,5 +3,7 @@
 export function gymEpleyEstimate(loadKg,reps) {
   if(!Number.isFinite(loadKg)||loadKg<=0||
      !Number.isSafeInteger(reps)||reps<1||reps>12)return null;
-  return Number((loadKg*(1+reps/30)).toFixed(2));
+  const estimate=loadKg*(1+reps/30);
+  if(!Number.isFinite(estimate))return null;
+  return Number(estimate.toFixed(2));
 }
