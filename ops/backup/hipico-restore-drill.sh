@@ -21,15 +21,17 @@ done
 head_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
 [[ "$head_sha" == "${HIPICO_CANDIDATE_SHA,,}" ]] || { echo "Candidate checkout mismatch." >&2; exit 4; }
 
-readarray -t url_parts < <(node --input-type=module - "$HIPICO_RESTORE_DATABASE_URL" <<'NODE'
-const u=new URL(process.argv[2]);
-console.log(u.hostname.toLowerCase());
-console.log(u.pathname.replace(/^\//,''));
-NODE
-)
+# Reject query-string hostaddr/service redirection and libpq PG* overrides
+# before decryption, psql or any destructive restore operation. The validator
+# reads the DSN from env so secrets never appear in node's process argv.
+restore_parts="$(node scripts/hipico-restore-target-policy-v842.mjs)" || {
+  echo "Restore target preflight denied an unsafe connection." >&2
+  exit 5
+}
+mapfile -t url_parts <<< "$restore_parts"
 restore_host="${url_parts[0]}"
 restore_database="${url_parts[1]}"
-[[ "$restore_host" == "127.0.0.1" || "$restore_host" == "localhost" || "$restore_host" == "::1" ]] || {
+[[ "$restore_host" == "127.0.0.1" || "$restore_host" == "localhost" || "$restore_host" == "[::1]" ]] || {
   echo "Restore target must be local." >&2; exit 5;
 }
 [[ "$restore_database" =~ (_drill|_restore)$ ]] || { echo "Restore DB must end in _drill or _restore." >&2; exit 5; }
