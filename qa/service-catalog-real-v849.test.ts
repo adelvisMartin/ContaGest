@@ -46,6 +46,19 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   });
   assert.equal(created.status,'draft');
   assert.equal(created.version,1);
+  // Unpublished fixture also makes pagination observable without disturbing
+  // the normal catalog's publication and version lifecycle.
+  const extraCategory=await h.ok('/service-catalog/categories',{
+    method:'POST',body:JSON.stringify({
+      slug:'other-'+suffix,name:'Servicios secundarios QA'
+    })
+  });
+  const extraService=await h.ok('/service-catalog/services',{
+    method:'POST',body:JSON.stringify({
+      name:'Servicio secundario QA '+suffix,categoryId:extraCategory.id,
+      productId:ownProduct.id,modality:'remote',durationMinutes:20
+    })
+  });
   let projected=await h.ok('/service-catalog/public');
   assert.equal(projected.services.some((s:any)=>s.id===created.id),false);
 
@@ -130,6 +143,22 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   assert.equal(serviceResponse.response.headers.get('cache-control'),'private, no-store');
   assert.ok(categoryResponse.data.length<=1);
   assert.ok(serviceResponse.data.length<=1);
+  assert.equal(categoryResponse.response.headers.get('X-Pagination-Has-More'),'true');
+  assert.equal(serviceResponse.response.headers.get('X-Pagination-Has-More'),'true');
+  assert.equal(categoryResponse.response.headers.get('X-Pagination-Next-Skip'),'1');
+  assert.equal(serviceResponse.response.headers.get('X-Pagination-Next-Skip'),'1');
+  const nextCategory=await h.request('/service-catalog/categories?take=1&skip=1');
+  const nextService=await h.request('/service-catalog/services?take=1&skip=1');
+  assert.equal(nextCategory.response.headers.get('X-Pagination-Has-More'),'false');
+  assert.equal(nextService.response.headers.get('X-Pagination-Has-More'),'false');
+  assert.deepEqual(new Set([categoryResponse.data[0].id,nextCategory.data[0].id]),
+    new Set([category.id,extraCategory.id]));
+  assert.deepEqual(new Set([serviceResponse.data[0].id,nextService.data[0].id]),
+    new Set([created.id,extraService.id]));
+  const publicPage=await h.request('/service-catalog/public?take=1');
+  assert.equal(publicPage.response.headers.get('X-Pagination-Has-More'),'false');
+  assert.equal(publicPage.response.headers.get('Cache-Control'),'private, no-store');
+  assert.equal(publicPage.data.services.length,1);
   const publicJson=JSON.stringify(publicRow);
   for(const forbidden of ['price','taxRate','cost','employeeId','createdBy','tenantId']) {
     assert.equal(Object.hasOwn(publicRow,forbidden),false,'public leak: '+forbidden);
