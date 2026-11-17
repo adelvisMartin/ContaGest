@@ -28,10 +28,11 @@ export function sanitizeObservationMetadata(value:unknown,depth=0):unknown{
   if(typeof value==='string'){
     // Metadata keys are not trusted. A harmless-looking "detail" can hold a
     // private report capability, an address, a phone/JID, or an auth header.
-    const text=String(redactTelemetryValue(value.slice(0,500)));
+    const text=String(redactTelemetryValue(value));
     return text
       .replace(/\b[A-Za-z0-9_.+-]{3,}@(?:c\.us|s\.whatsapp\.net|lid|g\.us)\b/gi,'[REDACTED_IDENTIFIER]')
-      .replace(/\b\d{10,}\b/g,'[REDACTED_IDENTIFIER]');
+      .replace(/\b\d{10,}\b/g,'[REDACTED_IDENTIFIER]')
+      .slice(0,500);
   }
   if(depth>=4)return'[TRUNCATED]';
   if(Array.isArray(value))return value.slice(0,20).map((item)=>sanitizeObservationMetadata(item,depth+1));
