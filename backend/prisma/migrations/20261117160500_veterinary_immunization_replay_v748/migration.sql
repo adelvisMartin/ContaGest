@@ -9,7 +9,7 @@ ALTER TABLE public."CareImmunization"
   CHECK (
     ("requestKey" IS NULL AND "requestFingerprint" IS NULL)
     OR
-    ("requestKey" IS NOT NULL AND "requestFingerprint" ~ '^[a-f0-9]{64}$')
+    ("requestKey" IS NOT NULL AND "requestFingerprint" IS NOT NULL AND "requestFingerprint" ~ '^[a-f0-9]{64}$')
   );
 
 CREATE UNIQUE INDEX IF NOT EXISTS "CareImmunization_tenant_request_key_unique"
