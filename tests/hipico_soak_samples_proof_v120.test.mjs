@@ -25,7 +25,9 @@ function setup(change = () => {}) {
   const report = {
     startedAt: new Date(START).toISOString(),
     completedAt: new Date(START + 24 * 3600_000).toISOString(),
-    summaryInput: {samples: COUNT, healthChecks: COUNT, healthFailures: 0,
+    summaryInput: {samples: COUNT,
+      rssStartMb:128,rssEndMb:128,heapStartMb:64,heapEndMb:64,
+      healthChecks: COUNT, healthFailures: 0,
       spoolChecks: COUNT, spoolAvailableChecks: COUNT,
       maxSpoolBytes: 1024, maxBacklogAgeSeconds: 2,
       unexpectedDuplicateResponses: 0, lostDecisions: 0, contextLeaks: 0},
@@ -91,4 +93,31 @@ test('#120 historical lost/duplicate counters cannot be cleared before release s
     for(let i=101;i<rows.length;i++)rows[i].lostDecisions=1;
   }));
   check(f => mutateRows(f, rows => {rows[100].duplicateResponses = 1;}));
+});
+
+
+test('#120 rehashed sample stream cannot hide materially wrong RSS and heap endpoints',()=>{
+  check(f=>{f.report.summaryInput.rssStartMb=900;});
+  check(f=>{f.report.summaryInput.rssEndMb=2000;});
+  check(f=>{f.report.summaryInput.heapStartMb=800;});
+  check(f=>{f.report.summaryInput.heapEndMb=1100;});
+  // Report remains unchanged, but a sample-side memory spike at the boundary
+  // with a newly computed digest must invalidate claimed net growth.
+  check(f=>mutateRows(f,rows=>{rows[0].rssMb=1300;}));
+  check(f=>mutateRows(f,rows=>{rows.at(-1).heapUsedMb=120;}));
+});
+
+test('#120 sample boundary verification accepts reasonable between-probe memory variation',()=>{
+  check(f=>{
+    f.report.summaryInput.rssStartMb=150;
+    f.report.summaryInput.rssEndMb=110;
+    f.report.summaryInput.heapStartMb=78;
+    f.report.summaryInput.heapEndMb=50;
+  },true);
+  check(f=>mutateRows(f,rows=>{
+    rows[0].rssMb=160;
+    rows[0].heapUsedMb=80;
+    rows.at(-1).rssMb=165;
+    rows.at(-1).heapUsedMb=83;
+  }),true);
 });
