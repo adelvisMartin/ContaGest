@@ -12,6 +12,7 @@ function validObservation(overrides={}){
     role:{
       exists:true,
       connectedUser:'hipico_backup',
+      sessionUser:'hipico_backup',
       login:true,
       superuser:false,
       createdb:false,
@@ -55,6 +56,13 @@ test('v24 role verification fails closed if the observed database connection is 
   for(const connectedUser of ['postgres','service_role',null]){
     const obs=validObservation();
     obs.role.connectedUser=connectedUser;
+    const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,mode:'STEADY_STATE',now:NOW});
+    assert.equal(report.status,'FAIL');
+    assert.ok(report.findings.includes('BACKUP_CONNECTION_ROLE_MISMATCH'));
+  }
+  for(const sessionUser of ['postgres','service_role',null]){
+    const obs=validObservation();
+    obs.role.sessionUser=sessionUser;
     const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,mode:'STEADY_STATE',now:NOW});
     assert.equal(report.status,'FAIL');
     assert.ok(report.findings.includes('BACKUP_CONNECTION_ROLE_MISMATCH'));
