@@ -30,6 +30,8 @@ export function sanitizeObservationMetadata(value:unknown,depth=0):unknown{
     // private report capability, an address, a phone/JID, or an auth header.
     const text=String(redactTelemetryValue(value));
     return text
+      // Bare JWTs in an innocuous "detail" field must not survive redaction.
+      .replace(/[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/g,'[REDACTED_TOKEN]')
       .replace(/\b[A-Za-z0-9_.+-]{3,}@(?:c\.us|s\.whatsapp\.net|lid|g\.us)\b/gi,'[REDACTED_IDENTIFIER]')
       .replace(/\b\d{10,}\b/g,'[REDACTED_IDENTIFIER]')
       .slice(0,500);
