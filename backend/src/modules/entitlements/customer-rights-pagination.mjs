@@ -1,7 +1,10 @@
 // @ts-check
 // A bounded sentinel page avoids silently hiding later customer entitlements.
-// @param {unknown[]} rows Already filtered and ordered by the tenant-scoped DB query.
-// @param {{skip:number,take:number}} page
+/**
+ * @template T
+ * @param {T[]} rows Already tenant-filtered and deterministically ordered.
+ * @param {{skip:number,take:number}} page
+ */
 export function customerRightsPage(rows, page) {
   if (!Array.isArray(rows) || !page ||
       !Number.isSafeInteger(page.skip) || page.skip < 0 || page.skip > 100000 ||
