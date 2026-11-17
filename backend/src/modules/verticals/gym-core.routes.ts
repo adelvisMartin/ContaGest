@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
@@ -78,40 +79,78 @@ router.post('/gym/plans', requirePermission('gym.manage'), asyncHandler(async (r
 
 router.post('/gym/memberships', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const b = membershipSchema.parse(req.body || {});
-  const planRows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM public."GymMembershipPlan" WHERE "id"=$1 AND "tenantId"=$2 LIMIT 1`, b.planId, ctx(req).tenantId);
-  const plan = one(planRows, 'Plan no encontrado.');
-  const start = new Date(b.startsAt);
-  const end = b.endsAt ? new Date(b.endsAt) : new Date(start.getTime() + Number(plan.durationDays) * 86400000);
-  await prisma.$executeRawUnsafe(`UPDATE public."GymMembership" SET "status"='expired', "updatedAt"=now() WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='active'`, ctx(req).tenantId, b.memberId);
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."GymMembership" ("id","tenantId","memberId","planId","startsAt","endsAt","status","remainingAccesses","balance","autoRenew","createdAt","updatedAt")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,$4::timestamptz,$5::timestamptz,'active',$6,$7,$8,now(),now()) RETURNING *
-  `, ctx(req).tenantId,b.memberId,b.planId,start.toISOString(),end.toISOString(),plan.accessLimit||null,b.balance,b.autoRenew);
-  ok(res, one(rows), 201);
+  const tenantId = ctx(req).tenantId;
+  // All membership activation and check-in mutations for a member lock this
+  // tenant-scoped row first. Expiring + inserting must commit together.
+  const membership = await prisma.$transaction(async tx => {
+    const members = await tx.$queryRawUnsafe<Array<{id:string;status:string}>>(
+      'SELECT "id","status" FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2 FOR UPDATE',
+      tenantId,b.memberId
+    );
+    if (!members.length) throw new HttpError(404, 'Miembro no encontrado en esta empresa.');
+    if (members[0].status !== 'active') throw new HttpError(409, 'El miembro no está habilitado para activar membresías.');
+    const planRows = await tx.$queryRawUnsafe<Array<{id:string;durationDays:number;accessLimit:number|null;active:boolean}>>(
+      'SELECT "id","durationDays","accessLimit","active" FROM public."GymMembershipPlan" WHERE "id"=$1 AND "tenantId"=$2 FOR SHARE',
+      b.planId,tenantId
+    );
+    const plan = one(planRows, 'Plan no encontrado en esta empresa.');
+    if (!plan.active) throw new HttpError(409, 'El plan de membresía no está disponible.');
+    const start = new Date(b.startsAt);
+    const end = b.endsAt ? new Date(b.endsAt) : new Date(start.getTime() + Number(plan.durationDays) * 86400000);
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start)
+      throw new HttpError(422, 'El período de la membresía no es válido.');
+    await tx.$executeRawUnsafe(
+      'UPDATE public."GymMembership" SET "status"=\'expired\', "updatedAt"=now() WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"=\'active\'',
+      tenantId,b.memberId
+    );
+    const rows = await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymMembership" ("id","tenantId","memberId","planId","startsAt","endsAt","status","remainingAccesses","balance","autoRenew","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4::timestamptz,$5::timestamptz,'active',$6,$7,$8,now(),now()) RETURNING *
+    `, tenantId,b.memberId,b.planId,start.toISOString(),end.toISOString(),plan.accessLimit,b.balance,b.autoRenew);
+    return one(rows);
+  }, {isolationLevel:Prisma.TransactionIsolationLevel.ReadCommitted});
+  ok(res, membership, 201);
 }));
 
 router.post('/gym/checkins', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const b = checkInSchema.parse(req.body || {});
   const tenantId = ctx(req).tenantId;
-  // Lock the member row first to serialize concurrent check-ins for this member.
-  // All reads and writes use the same tenant-scoped SERIALIZABLE transaction.
+  // A tenant-scoped persisted key and its canonical request fingerprint allow
+  // a successful or rejected attempt to be replayed without a second debit.
+  // Legacy API callers may omit the key; they retain legacy non-retry-safe behavior.
+  const fingerprint = b.requestKey ? createHash('sha256')
+    .update(JSON.stringify({memberId:b.memberId,method:b.method,device:b.device||null,notes:b.notes||null}))
+    .digest('hex') : null;
   const outcome = await prisma.$transaction(async tx => {
-    const members = await tx.$queryRawUnsafe<Array<{id:string}>>(`
-      SELECT "id" FROM public."GymMember"
-      WHERE "tenantId"=$1 AND "id"=$2
-      LIMIT 1 FOR UPDATE
+    const members = await tx.$queryRawUnsafe<Array<{id:string;status:string}>>(`
+      SELECT "id","status" FROM public."GymMember"
+      WHERE "tenantId"=$1 AND "id"=$2 FOR UPDATE
     `, tenantId, b.memberId);
     if (!members.length) throw new HttpError(404, 'Miembro no encontrado en esta empresa.');
-    const membershipRows = await tx.$queryRawUnsafe<Array<{id:string;remainingAccesses:number|null}>>(`
+    if (b.requestKey) {
+      const prior = await tx.$queryRawUnsafe<Array<{
+        id:string;tenantId:string;memberId:string;membershipId:string|null;
+        checkedInAt:Date;method:string;device:string|null;result:string;notes:string|null;
+        requestFingerprint:string|null
+      }>>(`
+        SELECT "id","tenantId","memberId","membershipId","checkedInAt","method","device","result","notes","requestFingerprint"
+        FROM public."GymCheckIn" WHERE "tenantId"=$1 AND "requestKey"=$2 LIMIT 1
+      `,tenantId,b.requestKey);
+      if (prior.length) {
+        const {requestFingerprint, ...saved} = prior[0];
+        if (requestFingerprint !== fingerprint) throw new HttpError(409, 'La clave de entrada ya se usó con otros datos.');
+        return {...saved, membershipValid:saved.result==='accepted', replayed:true};
+      }
+    }
+    const membershipRows = members[0].status === 'active' ? await tx.$queryRawUnsafe<Array<{id:string;remainingAccesses:number|null}>>(`
       SELECT "id","remainingAccesses" FROM public."GymMembership"
       WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='active'
-        AND "startsAt"<=now() AND "endsAt">=now()
+        AND "startsAt"<=now() AND "endsAt">now()
         AND ("remainingAccesses" IS NULL OR "remainingAccesses">0)
       ORDER BY "endsAt" DESC, "id" DESC LIMIT 1 FOR UPDATE
-    `, tenantId, b.memberId);
+    `, tenantId, b.memberId) : [];
     const membership = membershipRows[0];
-    // Rejected attempts are recorded, but never consume access.
-    // Retry idempotency is BLOCKED until GymCheckIn has a durable request key.
+    // Rejected attempts are durable and replayable but never consume access.
     if (membership?.remainingAccesses != null) {
       const affected = await tx.$executeRawUnsafe(`
         UPDATE public."GymMembership"
@@ -123,12 +162,13 @@ router.post('/gym/checkins', requirePermission('gym.manage'), asyncHandler(async
     }
     const result = membership ? 'accepted' : 'rejected';
     const rows = await tx.$queryRawUnsafe<any[]>(`
-      INSERT INTO public."GymCheckIn" ("id","tenantId","memberId","membershipId","checkedInAt","method","device","result","notes")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,now(),$4,$5,$6,$7) RETURNING *
-    `, tenantId,b.memberId,membership?.id||null,b.method,b.device||null,result,b.notes||null);
-    return {...one(rows), membershipValid:Boolean(membership)};
-  }, {isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
-  ok(res, outcome, outcome.membershipValid ? 201 : 200);
+      INSERT INTO public."GymCheckIn" ("id","tenantId","memberId","membershipId","checkedInAt","method","device","result","notes","requestKey","requestFingerprint")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,now(),$4,$5,$6,$7,$8,$9)
+      RETURNING "id","tenantId","memberId","membershipId","checkedInAt","method","device","result","notes"
+    `, tenantId,b.memberId,membership?.id||null,b.method,b.device||null,result,b.notes||null,b.requestKey||null,fingerprint);
+    return {...one(rows), membershipValid:Boolean(membership), replayed:false};
+  }, {isolationLevel:Prisma.TransactionIsolationLevel.ReadCommitted});
+  ok(res, outcome, outcome.replayed ? 200 : outcome.membershipValid ? 201 : 200);
 }));
 
 router.get('/gym/assessments', requirePermission('gym.manage'), asyncHandler(async (req, res) => {

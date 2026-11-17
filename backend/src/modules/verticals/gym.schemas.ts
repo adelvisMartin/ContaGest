@@ -57,7 +57,8 @@ export const checkInSchema = z.object({
   memberId: z.string().min(10),
   method: z.enum(['manual','qr','barcode','nfc']).default('manual'),
   device: optionalText,
-  notes: optionalText
+  notes: optionalText,
+  requestKey: z.string().trim().regex(/^[A-Za-z0-9:_-]{12,128}$/).optional()
 });
 
 export const assessmentSchema = z.object({
