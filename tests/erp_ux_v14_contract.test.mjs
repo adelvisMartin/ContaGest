@@ -112,7 +112,7 @@ test('MUI runtime parses as JavaScript before Vite browser QA',()=>{
 test('Gym workspace resolves its productivity tools without a runtime ReferenceError',()=>{
   const page=read('frontend','src','pages','GymManagementPage.jsx');
   const tools=read('frontend','src','components','fitness','FitnessProductivityTools.jsx');
-  assert.match(page,/import\\s*\\{\\s*FitnessProductivityTools\\s*\\}\\s*from\\s*['"]\\.\\.\\/components\\/fitness\\/FitnessProductivityTools\\.jsx['"]/);
-  assert.match(page,/<FitnessProductivityTools\\b/);
-  assert.match(tools,/export\\s+function\\s+FitnessProductivityTools\\s*\\(/);
+  assert.match(page,/import\s*\{\s*FitnessProductivityTools\s*\}\s*from\s*['"]\.\.\/components\/fitness\/FitnessProductivityTools\.jsx['"]/);
+  assert.match(page,/<FitnessProductivityTools\b/);
+  assert.match(tools,/export\s+function\s+FitnessProductivityTools\s*\(/);
 });
