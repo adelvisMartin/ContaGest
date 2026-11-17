@@ -77,7 +77,7 @@ const SAFE_REASON_CODE=/^[A-Z0-9][A-Z0-9_:-]{0,159}$/;
 export function safeObservationReasonCode(value:unknown):string{
   const candidate=String(value??'').trim();
   if(!candidate)return 'UNSPECIFIED';
-  if(SAFE_REASON_CODE.test(candidate)&&!/\\d{10,}/.test(candidate))return candidate;
+  if(SAFE_REASON_CODE.test(candidate)&&!/\d{10,}/.test(candidate))return candidate;
   return 'REDACTED_REASON_'+hash(candidate).slice(0,16).toUpperCase();
 }
 
