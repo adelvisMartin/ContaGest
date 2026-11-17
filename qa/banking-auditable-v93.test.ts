@@ -245,6 +245,47 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     assert.equal(await h.prisma.idempotencyRecord.count({where:{tenantId:h.tenant.id,requestId:idempotencyHeader['x-request-id']}}),0);
   });
 
+  await t.test('#1288 authenticated platform operator without banking permission is denied',async()=>{
+    const identity=await h.prisma.userProfile.create({data:{
+      tenantId:h.tenant.id,email:`${RUN.toLowerCase()}-restricted@example.invalid`,
+      fullName:'QA restricted banking operator',status:'active'
+    }});
+    let roleId:string|null=null;
+    try {
+      const permission=await h.prisma.permission.findUniqueOrThrow({where:{key:'platform.manage'}});
+      const role=await h.prisma.role.create({data:{
+        tenantId:h.tenant.id,name:`${RUN}-RESTRICTED`,description:'Synthetic platform role lacking banking.manage'
+      }});
+      roleId=role.id;
+      // Role.scope exists in canonical PostgreSQL schema but has not yet
+      // propagated to the generated Prisma Role client in all deployments.
+      await h.prisma.$executeRaw`
+        UPDATE public."Role" SET "scope"='platform' WHERE "id"=${role.id} AND "tenantId"=${h.tenant.id}
+      `;
+      await h.prisma.rolePermission.create({data:{roleId:role.id,permissionId:permission.id}});
+      await h.prisma.userRole.create({data:{userId:identity.id,roleId:role.id}});
+      const restricted=await h.issueSessionTokenFor({id:identity.id,email:identity.email});
+      const denied=await h.status('/banking/summary',403,{},restricted);
+      assert.equal(JSON.stringify(denied.payload).includes('bankName'),false);
+      await h.status('/banking/movements',403,{},restricted);
+      await h.status('/banking/accounts',403,{
+        method:'POST',body:body({bankName:'Synthetic forbidden',accountNo:'ABC-1234',currency:'USD',openingBalance:'0'})
+      },restricted);
+    } finally {
+      // The fixture is private to this test run. Remove every scoped row even
+      // when an assertion fails, before the outer harness disposes its session.
+      await h.prisma.$executeRaw`
+        DELETE FROM public."UserSession" WHERE "tenantId"=${h.tenant.id} AND "userId"=${identity.id}
+      `;
+      await h.prisma.userRole.deleteMany({where:{userId:identity.id}});
+      if(roleId){
+        await h.prisma.rolePermission.deleteMany({where:{roleId}});
+        await h.prisma.role.delete({where:{id:roleId}});
+      }
+      await h.prisma.userProfile.delete({where:{id:identity.id}});
+    }
+  });
+
   await t.test('#1288 revoked and absent server sessions cannot access financial summaries',async()=>{
     const syntheticToken=await h.issueSessionTokenFor({id:h.admin.id,email:h.admin.email});
     await h.ok('/banking/summary',{},syntheticToken);
