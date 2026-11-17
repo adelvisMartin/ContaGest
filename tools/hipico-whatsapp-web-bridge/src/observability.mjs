@@ -7,6 +7,10 @@ const PHONE = /\+?\d[\d\s().-]{7,}\d/g;
 const JID = /(?:\d{5,}(?:-\d+)?@g\.us|\d{5,}@s\.whatsapp\.net)/gi;
 const BEARER = /Bearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const SIGNED_URL = /https?:\/\/\S+[?&](?:token|signature|sig|key|expires)=[^\s&]+\S*/gi;
+// #1018/#1314: report-share bearer capabilities use the short query key 't'.
+// Redact the exact 43-character capability even in relative request paths.
+const REPORT_SHARE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+const REPORT_SHARE_PARAM = /([?&]t=)[A-Za-z0-9_-]{43}(?=$|[&#\\s"'<>])/gi;
 const DEFAULT_ALLOWLIST = ['health.json', 'retry-state.json', 'dom-diagnostic.json'];
 const DIRECT_IDENTITY_KEYS = new Set([
   'activesourcetitle', 'sourcematches', 'sourcegroupid', 'sourcegroupkey', 'sourcegroupname',
@@ -45,7 +49,8 @@ export function correlationId(prefix = 'hipico') {
 }
 
 export function redactDiagnostic(value, key = '') {
-  if (SECRET_KEYS.test(key)) return '[REDACTED]';
+  if (SECRET_KEYS.test(key) || (normalizedDiagnosticKey(key) === 't' &&
+      typeof value === 'string' && REPORT_SHARE_TOKEN.test(value))) return '[REDACTED]';
   if (contentKey(key)) return value == null ? value : '[CONTENT_REDACTED]';
   if (identityKey(key)) return identityTag(value);
   if (Array.isArray(value)) return value.map((item) => redactDiagnostic(item));
@@ -56,6 +61,7 @@ export function redactDiagnostic(value, key = '') {
     return value
       .replace(BEARER, 'Bearer [REDACTED]')
       .replace(SIGNED_URL, '[SIGNED_URL_REDACTED]')
+      .replace(REPORT_SHARE_PARAM, '$1[REDACTED]')
       .replace(JID, '[WHATSAPP_ID]')
       .replace(PHONE, '[PHONE]');
   }
