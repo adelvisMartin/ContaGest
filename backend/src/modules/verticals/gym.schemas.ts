@@ -407,6 +407,7 @@ export const nutritionMealSchema = z.object({
 
 export const completeNutritionSchema = z.object({
   memberId:z.string().min(10),
+  supersedesId:z.string().min(10).optional().nullable(),
   trainerId:z.string().optional().nullable(),
   name:z.string().trim().min(2).max(180),
   goal:optionalText,

@@ -51,7 +51,7 @@ function GymWorkspace({state,context}){
   const pendingCheckIn=useRef(null);
   const [assessmentForm,setAssessmentForm]=useState({memberId:'',trainerId:'',weightKg:'',heightCm:'',bodyFatPct:'',muscleMassKg:'',notes:''});
   const [routineForm,setRoutineForm]=useState({memberId:'',trainerId:'',name:'',goal:'',level:'beginner',trainingMode:'hypertrophy',daysPerWeek:'3',exercises:[]});
-  const [nutritionForm,setNutritionForm]=useState({memberId:'',trainerId:'',name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]});
+  const [nutritionForm,setNutritionForm]=useState({memberId:'',trainerId:'',supersedesId:null,name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]});
   const [classForm,setClassForm]=useState({name:'',trainerId:'',startsAt:localDateTime(60),endsAt:localDateTime(120),capacity:'20',location:''});
   const [bookingClassId,setBookingClassId]=useState('');
 
@@ -241,8 +241,8 @@ function GymWorkspace({state,context}){
     if(meals.some((meal)=>!meal.recipeId&&!meal.items.length))throw new Error('Cada comida necesita una receta o ingredientes directos.');
     if(meals.some((meal)=>meal.items.some((item)=>!item.ingredientId||!Number.isFinite(item.quantity)||item.quantity<=0||!item.unit)))throw new Error('Cada ingrediente necesita identidad, cantidad positiva y unidad.');
     await GymVerticalService.createNutrition({...nutritionForm,durationDays,targetCalories:Number(nutritionForm.targetCalories||0)||null,waterMl:Number(nutritionForm.waterMl||0)||null,meals});
-    setNutritionForm((current)=>({...current,name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]}));
-  },'Plan alimenticio completo creado.',()=>loadAll({silent:true,memberId:nutritionForm.memberId}));};
+    setNutritionForm((current)=>({...current,supersedesId:null,name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]}));
+  },nutritionForm.supersedesId?'Nueva versión del plan alimenticio guardada.':'Plan alimenticio completo creado.',()=>loadAll({silent:true,memberId:nutritionForm.memberId}));};
 
   const submitClass=(event)=>{event.preventDefault();if(!classForm.trainerId)return notify('Selecciona un instructor.','warning');void execute(
     ()=>GymVerticalService.createClass({...classForm,capacity:Number(classForm.capacity||20)}),'Clase programada.',()=>loadAll({silent:true})

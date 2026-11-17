@@ -432,6 +432,32 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
       SELECT "id" FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
     `,tenantId,b.memberId);
     if(!memberRows.length)throw new HttpError(422,'El cliente no pertenece al tenant activo.');
+    // New versions share the original planKey but no meals/nutrient rows.
+    // Acquire the key lock before version read and superseding prior revision.
+    let planKey:string|null=null;
+    let version=1;
+    if(b.supersedesId){
+      const sources=await tx.$queryRawUnsafe<Array<{id:string;memberId:string;planKey:string;version:number}>>(`
+        SELECT "id","memberId","planKey","version" FROM public."GymNutritionPlan"
+        WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
+      `,tenantId,b.supersedesId);
+      const source=one(sources,'Plan origen no encontrado en esta empresa.');
+      if(source.memberId!==b.memberId)
+        throw new HttpError(422,'No se pueden mezclar planes de distintos miembros.');
+      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        'gym-nutrition-version:'+tenantId+':'+source.planKey);
+      const latest=await tx.$queryRawUnsafe<Array<{maxVersion:number}>>(`
+        SELECT COALESCE(MAX("version"),0)::int AS "maxVersion"
+        FROM public."GymNutritionPlan" WHERE "tenantId"=$1 AND "planKey"=$2
+      `,tenantId,source.planKey);
+      const current=latest[0]?.maxVersion;
+      if(!Number.isSafeInteger(current)||current<1||current>=2147483647)
+        throw new HttpError(409,'La secuencia de versiones del plan no es segura.');
+      if(source.version!==current)
+        throw new HttpError(409,'El plan origen tiene una versión posterior; actualiza antes de continuar.');
+      planKey=source.planKey;
+      version=current+1;
+    }
     if(b.trainerId){
       const trainerRows=await tx.$queryRawUnsafe<any[]>(`
         SELECT "id" FROM public."GymTrainer" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1
@@ -485,10 +511,16 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
     }
 
     const planRows = await tx.$queryRawUnsafe<any[]>(`
-      INSERT INTO public."GymNutritionPlan" ("id","tenantId","memberId","trainerId","name","goal","durationDays","targetCalories","proteinG","carbsG","fatG","waterMl","notes","startsAt","endsAt","active","createdAt","updatedAt")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date,$14::date,true,now(),now()) RETURNING *
-    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.durationDays,b.targetCalories||null,b.proteinG||null,b.carbsG||null,b.fatG||null,b.waterMl||null,b.notes||null,b.startsAt||null,b.endsAt||null);
+      INSERT INTO public."GymNutritionPlan" ("id","tenantId","memberId","trainerId","name","goal","durationDays","targetCalories","proteinG","carbsG","fatG","waterMl","notes","startsAt","endsAt","planKey","version","supersedesId","active","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::date,$14::date,COALESCE($15,gen_random_uuid()::text),$16,$17,true,now(),now()) RETURNING *
+    `, tenantId,b.memberId,b.trainerId||null,b.name,b.goal||null,b.durationDays,b.targetCalories||null,b.proteinG||null,b.carbsG||null,b.fatG||null,b.waterMl||null,b.notes||null,b.startsAt||null,b.endsAt||null,planKey,version,b.supersedesId||null);
     const createdPlan = one(planRows);
+    if(b.supersedesId){
+      await tx.$executeRawUnsafe(`
+        UPDATE public."GymNutritionPlan" SET "active"=false,"updatedAt"=now()
+        WHERE "tenantId"=$1 AND "planKey"=$2 AND "id"<>$3 AND "active"=true
+      `,tenantId,createdPlan.planKey,createdPlan.id);
+    }
     for (const meal of b.meals) {
       const mealRows=await tx.$queryRawUnsafe<any[]>(`
         INSERT INTO public."GymMeal" ("id","tenantId","nutritionPlanId","dayIndex","dayOfWeek","sortOrder","mealType","plannedAt","recipeId","servings","preparation","items","calories","proteinG","carbsG","fatG","notes")
