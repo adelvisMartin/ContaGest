@@ -1,3 +1,4 @@
+import { createCrossBrowserRouteGrep } from '../scripts/erp-cross-browser-filter-v6375.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
@@ -45,4 +46,15 @@ test('63/75 compatibility evidence is exact-SHA, deterministic and fail-closed',
   assert.doesNotMatch(workflow,/continue-on-error:\s*true/);
   assert.doesNotMatch(runner,/--project=chromium/);
   assert.doesNotMatch(runner,/waitForTimeout|--grep-invert|\.skip\(|\.only\(/);
+});
+
+test('63/75 discovers selected Playwright routes with project/file title prefixes',()=>{
+  const grep=createCrossBrowserRouteGrep(['ventas','dashboard']);
+  const matches=new RegExp(grep);
+  assert.match('qa/exhaustive-route-v164.spec.mjs firefox ventas · deep desktop/mobile light/dark audit',matches);
+  assert.match('dashboard · deep desktop/mobile light/dark audit',matches);
+  assert.doesNotMatch('qa/exhaustive-route-v164.spec.mjs firefox libro-ventas · deep desktop/mobile light/dark audit',matches);
+  assert.doesNotMatch('qa/exhaustive-route-v164.spec.mjs firefox inventario · deep desktop/mobile light/dark audit',matches);
+  assert.throws(()=>createCrossBrowserRouteGrep([]),/empty/);
+  assert.throws(()=>createCrossBrowserRouteGrep(['.*']),/Invalid route/);
 });
