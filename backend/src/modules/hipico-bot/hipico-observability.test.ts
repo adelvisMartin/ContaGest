@@ -60,6 +60,13 @@ test('HIPICO #1314 redacts private report URLs and sender identifiers hidden in 
   assert.match(String(clean.detail),/\[REDACTED\]/);
 });
 
+test('HIPICO #1314 redacts capability crossing the original 500-character boundary',()=>{
+  const token='B'.repeat(43);
+  const clean=sanitizeObservationMetadata('a'.repeat(480)+'?t='+token);
+  assert.equal(String(clean).includes(token.slice(0,10)),false);
+  assert.equal(String(clean).length<=500,true);
+});
+
 test('HIPICO #1314 sanitizes sensitive metadata keys without leaking identity',()=>{
   const clean=sanitizeObservationMetadata({
     'owner-584121234567': 'synthetic', status:'SAFE', details: { message:'private', 'participant-7@lid': 'secret' }
