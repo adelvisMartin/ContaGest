@@ -17,6 +17,26 @@ function utcMs(value) {
   return Number.isFinite(ms) && new Date(ms).toISOString() === value ? ms : null;
 }
 
+function coherentMemoryBoundary(summary,first,last) {
+  // The producer takes start/end process.memoryUsage() snapshots just outside
+  // the loop. Each row is sampled near (not at) those boundaries. Allow GC
+  // and one polling interval of activity, but reject grossly fictional peaks
+  // or growth summaries even when the sample checksum was recomputed.
+  const pairs=[
+    [summary?.rssStartMb,first?.rssMb],
+    [summary?.rssEndMb,last?.rssMb],
+    [summary?.heapStartMb,first?.heapUsedMb],
+    [summary?.heapEndMb,last?.heapUsedMb]
+  ];
+  return pairs.every(([reported,observed])=>{
+    if(typeof reported!=='number'||typeof observed!=='number'||
+       !Number.isFinite(reported)||!Number.isFinite(observed)||
+       reported<=0||observed<=0)return false;
+    const tolerance=Math.max(64,Math.max(reported,observed)*0.1);
+    return Math.abs(reported-observed)<=tolerance;
+  });
+}
+
 export function validSoakSamplesProof(manifestPath, report, sampleSeconds = 30) {
   try {
     const count = report?.summaryInput?.samples;
@@ -62,7 +82,9 @@ export function validSoakSamplesProof(manifestPath, report, sampleSeconds = 30) 
       priorElapsed = elapsed;
       observed.push(sample);
     }
-    return end - priorAt <= maxGap && validSoakSampleSummary(observed, report.summaryInput);
+    return end - priorAt <= maxGap &&
+      validSoakSampleSummary(observed, report.summaryInput) &&
+      coherentMemoryBoundary(report.summaryInput,observed[0],observed.at(-1));
   } catch {
     // Malformed, missing, symlink or inaccessible evidence is not a release PASS.
     return false;
