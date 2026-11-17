@@ -36,7 +36,7 @@ export function assertSemanticPostingRoles(
         typeof row.name !== 'string' || !row.name.trim() ||
         row.nature !== SEMANTIC_POSTING_NATURE[row.role] ||
         row.active !== true || row.allowPosting !== true ||
-        (row.parentCode !== null && typeof row.parentCode !== 'string')) fail();
+        (row.parentCode !== null && (typeof row.parentCode !== 'string' || row.parentCode === row.accountCode))) fail();
     byRole[row.role] = Object.freeze({ ...row });
   }
   if (requiredRoles.some(role => !byRole[role])) fail();
