@@ -51,6 +51,6 @@ test('baseline updater refuses CI and reports missing baselines instead of fabri
 });
 
 test('PWA caches v4.1.3 convergence authority under a rotated shell', () => {
-  assert.match(sw, /shell-r38-consolidator-v4-1-3/);
+  assert.match(sw, /shell-r39-consolidator-v4-1-3/);
   assert.match(sw, /ui-system-v4-convergence\.css/);
 });
