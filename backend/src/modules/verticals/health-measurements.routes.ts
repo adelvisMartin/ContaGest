@@ -53,7 +53,7 @@ router.post('/health/measurements/veterinary-vitals', requirePermission('health.
   const body=veterinaryVitalBatchSchema.parse(req.body||{});
   const result=await prisma.$transaction(async(tx)=>{
     await tx.$queryRawUnsafe<any[]>(`
-      SELECT pg_advisory_xact_lock(hashtextextended($1,0))
+      SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked
     `,`${tenantId}:veterinary-vitals:${body.patientId}:${body.batchId}`);
 
     const patientRows=await tx.$queryRawUnsafe<any[]>(`
@@ -84,7 +84,12 @@ router.post('/health/measurements/veterinary-vitals', requirePermission('health.
     `,tenantId,body.patientId,body.batchId);
     if(existing.length){
       const byKind=new Map(existing.map((item)=>[String(item.kind),item]));
-      const sameRequest=existing.length===body.measurements.length&&body.measurements.every((item)=>{
+      const sameContext=existing.every((previous)=>{
+        const metadata=previous.metadata&&typeof previous.metadata==='object'?previous.metadata:{};
+        return String(previous.encounterId||'')===String(body.encounterId||'')
+          && (metadata.requestMeasuredAt??null)===(body.measuredAt??null);
+      });
+      const sameRequest=sameContext&&existing.length===body.measurements.length&&body.measurements.every((item)=>{
         const previous=byKind.get(item.kind);
         return previous&&Number(previous.value)===item.value&&String(previous.unit)===item.unit;
       });
@@ -95,7 +100,7 @@ router.post('/health/measurements/veterinary-vitals', requirePermission('health.
     const measuredAt=body.measuredAt||new Date().toISOString();
     const created:any[]=[];
     for(const item of body.measurements){
-      const metadata={source:'veterinary-longitudinal-record',batchId:body.batchId};
+      const metadata={source:'veterinary-longitudinal-record',batchId:body.batchId,requestMeasuredAt:body.measuredAt??null};
       const rows=await tx.$queryRawUnsafe<any[]>(`
         INSERT INTO public."CareMeasurement"
           ("id","tenantId","patientId","encounterId","kind","value","unit","measuredAt","metadata")
