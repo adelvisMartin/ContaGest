@@ -108,3 +108,11 @@ test('MUI runtime parses as JavaScript before Vite browser QA',()=>{
   assert.equal(checked.error,undefined,checked.error?.message);
   assert.equal(checked.status,0,checked.stderr||checked.stdout||'MUI runtime parse failed');
 });
+
+test('Gym workspace resolves its productivity tools without a runtime ReferenceError',()=>{
+  const page=read('frontend','src','pages','GymManagementPage.jsx');
+  const tools=read('frontend','src','components','fitness','FitnessProductivityTools.jsx');
+  assert.match(page,/import\s*\{\s*FitnessProductivityTools\s*\}\s*from\s*['"]\.\.\/components\/fitness\/FitnessProductivityTools\.jsx['"]/);
+  assert.match(page,/<FitnessProductivityTools\b/);
+  assert.match(tools,/export\s+function\s+FitnessProductivityTools\s*\(/);
+});
