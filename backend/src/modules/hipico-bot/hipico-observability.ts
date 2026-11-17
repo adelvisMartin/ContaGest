@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { redactTelemetryValue } from '../../shared/observability/redaction.js';
 
 export const OBSERVABILITY_STAGES=[
   'INBOUND','NORMALIZATION','PARSER','CONTEXT','RISK_POLICY','AGENT_DECISION',
@@ -7,7 +8,7 @@ export const OBSERVABILITY_STAGES=[
 export type ObservationStage=(typeof OBSERVABILITY_STAGES)[number];
 export type ObservationOutcome='SUCCESS'|'HELD'|'DENIED'|'ERROR'|'DUPLICATE'|'RETRY'|'SKIPPED';
 
-const SENSITIVE_KEY=/(authorization|cookie|token|secret|password|api.?key|raw|body|text|message|destination|sender|recipient|phone|jid|payload|participant)/i;
+const SENSITIVE_KEY=/(authorization|cookie|token|secret|password|api.?key|raw|body|text|message|destination|sender|recipient|phone|jid|payload|participant|^t$)/i;
 const SHA=/^[a-f0-9]{40}$/i;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -25,9 +26,12 @@ export function candidateSha(env:Record<string,string|undefined>=process.env){
 export function sanitizeObservationMetadata(value:unknown,depth=0):unknown{
   if(value==null||typeof value==='boolean'||typeof value==='number')return value;
   if(typeof value==='string'){
-    const text=value.slice(0,500);
-    if(/Bearer\s+[A-Za-z0-9._~+\/-]+/i.test(text)||/^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\./.test(text))return'[REDACTED]';
-    return text;
+    // Metadata keys are not trusted. A harmless-looking "detail" can hold a
+    // private report capability, an address, a phone/JID, or an auth header.
+    const text=String(redactTelemetryValue(value.slice(0,500)));
+    return text
+      .replace(/\b[A-Za-z0-9_.+-]{3,}@(?:c\.us|s\.whatsapp\.net|lid|g\.us)\b/gi,'[REDACTED_IDENTIFIER]')
+      .replace(/\b\d{10,}\b/g,'[REDACTED_IDENTIFIER]');
   }
   if(depth>=4)return'[TRUNCATED]';
   if(Array.isArray(value))return value.slice(0,20).map((item)=>sanitizeObservationMetadata(item,depth+1));
@@ -35,7 +39,9 @@ export function sanitizeObservationMetadata(value:unknown,depth=0):unknown{
     const out:Record<string,unknown>={};
     for(const [key,item] of Object.entries(value as Record<string,unknown>).slice(0,40)){
       if(SENSITIVE_KEY.test(key))continue;
-      out[key.slice(0,80)]=sanitizeObservationMetadata(item,depth+1);
+      const safeKey=String(sanitizeObservationMetadata(key,depth+1)).slice(0,80);
+      if(!safeKey||safeKey.includes('[REDACTED'))continue;
+      out[safeKey]=sanitizeObservationMetadata(item,depth+1);
     }
     return out;
   }
