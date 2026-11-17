@@ -10,7 +10,7 @@ const SIGNED_URL = /https?:\/\/\S+[?&](?:token|signature|sig|key|expires)=[^\s&]
 // #1018/#1314: report-share bearer capabilities use the short query key 't'.
 // Redact the exact 43-character capability even in relative request paths.
 const REPORT_SHARE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
-const REPORT_SHARE_PARAM = /([?&]t=)[A-Za-z0-9_-]{43}(?=$|[&#\\s"'<>])/gi;
+const REPORT_SHARE_PARAM = /([?&]t=)[A-Za-z0-9_-]{43}(?=$|[&#\s"'<>])/gi;
 const DEFAULT_ALLOWLIST = ['health.json', 'retry-state.json', 'dom-diagnostic.json'];
 const DIRECT_IDENTITY_KEYS = new Set([
   'activesourcetitle', 'sourcematches', 'sourcegroupid', 'sourcegroupkey', 'sourcegroupname',
