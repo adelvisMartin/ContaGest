@@ -127,6 +127,11 @@ export async function refreshCloudSession() {
 export async function initializeCloudSession() {
     var _a;
     const expectedEpoch = sessionEpoch;
+    // A user switch may have queued a private-store purge. Never rehydrate
+    // the former owner from IndexedDB while that purge is still pending.
+    await sessionWriteQueue;
+    if (expectedEpoch !== sessionEpoch)
+        return currentSession();
     const loaded = await loadCloudSession();
     if (expectedEpoch !== sessionEpoch)
         return currentSession();
@@ -216,6 +221,11 @@ export async function signIn(email, password) {
     const credentials = validateCredentials(email, password);
     const expectedEpoch = ++sessionEpoch;
     refreshPromise = null;
+    // Switching users must invalidate the previous token synchronously;
+    // a new protected read must never observe the old owner mid-login.
+    cachedSession = null;
+    await persistSession(null, expectedEpoch);
+    if (expectedEpoch !== sessionEpoch) return null;
     const data = await request("/auth/v1/token?grant_type=password", {
         method: "POST",
         headers: authHeaders(null),
@@ -227,6 +237,9 @@ export async function signUp(email, password) {
     const credentials = validateCredentials(email, password);
     const expectedEpoch = ++sessionEpoch;
     refreshPromise = null;
+    cachedSession = null;
+    await persistSession(null, expectedEpoch);
+    if (expectedEpoch !== sessionEpoch) return null;
     const data = await request("/auth/v1/signup", {
         method: "POST",
         headers: authHeaders(null),
