@@ -20,6 +20,8 @@ test('#746 payment and membership balance persist in one transaction',()=>{
 });
 
 test('#746 cannot apply a membership payment outside its tenant and member',()=>{
+  assert.match(payment,/SELECT "id" FROM public\."GymMember" WHERE "tenantId"=\$1 AND "id"=\$2 FOR SHARE/);
+  assert.match(payment,/if \(memberRows.length !== 1\)/);
   assert.match(payment,/WHERE "id"=\$1 AND "tenantId"=\$2 AND "memberId"=\$3 FOR UPDATE/);
   assert.match(payment,/WHERE "id"=\$1 AND "tenantId"=\$3 AND "memberId"=\$4/);
   assert.match(payment,/if \(!membershipRows\.length\)/);
