@@ -7,6 +7,7 @@ import { evaluateGymProgression } from './gym.progression.js';
 import { nextPeriodizationVersion } from './gym-program-version.js';
 import { parseGymExerciseFilters } from './gym-exercise-filters.js';
 import { gymPerformanceSessionDay } from './gym-performance-day.mjs';
+import { gymEpleyEstimate } from './gym-performance-estimate.mjs';
 import { parseGymMemberQuery } from './gym-member-query.js';
 import {
   exerciseLibrarySchema,
@@ -35,9 +36,7 @@ const decoratePeriodizationProgram = (row:any) => {
   };
 };
 
-const epleyEstimate = (load:number,reps:number) => reps>=1&&reps<=12&&load>0
-  ? Number((load*(1+reps/30)).toFixed(2))
-  : null;
+
 
 
 // Inventory planning input only: an exercise's equipment label is not
@@ -573,7 +572,7 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
 
   const tenantId=ctx(req).tenantId;
   const memberRows=await prisma.$queryRawUnsafe<any[]>(`
-    SELECT "id" FROM public."GymMember"
+    SELECT "id","goals" FROM public."GymMember"
     WHERE "tenantId"=$1 AND "id"=$2
     LIMIT 1
   `,tenantId,q.memberId);
@@ -604,7 +603,7 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
       ON e."tenantId"=re."tenantId" AND e."id"=COALESCE(ws."performedExerciseId",re."exerciseId")
     WHERE ws."tenantId"=$1 AND s."memberId"=$2 AND s."status"='completed'
       AND s."startedAt">=$3::timestamptz AND s."startedAt"<$4::timestamptz
-    ORDER BY ws."recordedAt" ASC
+    ORDER BY ws."recordedAt" ASC,ws."id" ASC
   `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
 
   const planRows=await prisma.$queryRawUnsafe<any[]>(`
@@ -630,7 +629,7 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     const exerciseName=String(row.exerciseName||'Ejercicio');
     const muscleGroup=String(row.muscleGroup||'Sin grupo');
     if(!byExerciseMap.has(exerciseId))byExerciseMap.set(exerciseId,{
-      exerciseId,exerciseName,muscleGroup,completedSets:0,skippedSets:0,totalVolume:0,maxLoadKg:0,maxReps:0,bestEstimated1RmKg:null,lastPerformedAt:null
+      exerciseId,exerciseName,muscleGroup,completedSets:0,skippedSets:0,totalVolume:0,maxLoadKg:0,maxReps:0,bestEstimated1RmKg:null,bestEstimated1RmSource:null,lastPerformedAt:null
     });
     if(!byMuscleMap.has(muscleGroup))byMuscleMap.set(muscleGroup,{muscleGroup,completedSets:0,skippedSets:0,totalVolume:0});
     const exercise=byExerciseMap.get(exerciseId);
@@ -645,13 +644,19 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     const load=Number(row.loadKg||0);
     const reps=Number(row.reps||0);
     const volume=load>0&&reps>0?load*reps:0;
-    const estimated=epleyEstimate(load,reps);
+    const estimated=gymEpleyEstimate(load,reps);
     totalVolume+=volume;
     exercise.totalVolume+=volume;
     muscle.totalVolume+=volume;
     exercise.maxLoadKg=Math.max(exercise.maxLoadKg,load);
     exercise.maxReps=Math.max(exercise.maxReps,reps);
-    exercise.bestEstimated1RmKg=estimated==null?exercise.bestEstimated1RmKg:Math.max(Number(exercise.bestEstimated1RmKg||0),estimated);
+    if(estimated!=null && (exercise.bestEstimated1RmKg==null || estimated>exercise.bestEstimated1RmKg)){
+      exercise.bestEstimated1RmKg=estimated;
+      exercise.bestEstimated1RmSource={
+        setId:String(row.id),sessionId:String(row.sessionId),
+        recordedAt:row.recordedAt,loadKg:load,reps
+      };
+    }
     exercise.lastPerformedAt=row.recordedAt;
 
     const date=gymPerformanceSessionDay(row.startedAt);
@@ -673,6 +678,24 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
   const byMuscleGroup=[...byMuscleMap.values()].map(roundMetrics).sort((a,b)=>b.totalVolume-a.totalVolume||a.muscleGroup.localeCompare(b.muscleGroup));
   const dailyTrend=[...dailyMap.values()].map(roundMetrics).sort((a,b)=>a.date.localeCompare(b.date));
 
+  // Assessment is the existing authoritative longitudinal source. Never
+  // mirror medical notes or issue clinical interpretations from Gym metrics.
+  const assessmentRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","measuredAt","weightKg","heightCm","bodyFatPct","muscleMassKg",
+      "waistCm","hipCm","chestCm","armCm","thighCm"
+    FROM public."GymAssessment"
+    WHERE "tenantId"=$1 AND "memberId"=$2
+      AND "measuredAt">=$3::timestamptz AND "measuredAt"<$4::timestamptz
+    ORDER BY "measuredAt" DESC,"id" DESC LIMIT 201
+  `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
+  const measurements=assessmentRows.slice(0,200).reverse().map((row:any)=>({
+    assessmentId:String(row.id),measuredAt:row.measuredAt,
+    ...Object.fromEntries(
+      ['weightKg','heightCm','bodyFatPct','muscleMassKg','waistCm','hipCm',
+        'chestCm','armCm','thighCm'].map((key)=>[key,row[key]==null?null:Number(row[key])])
+    )
+  }));
+
   ok(res,{
     period:{from,to,days:periodDays},
     summary:{
@@ -687,7 +710,17 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     },
     byExercise,
     byMuscleGroup,
-    dailyTrend
+    dailyTrend,
+    provenance:{
+      timeZone:'UTC',
+      estimated1Rm:{formula:'Epley',version:1,validReps:{min:1,max:12},unit:'kg'},
+      totalVolume:{formula:'sum(loadKg * reps) over completed sets',unit:'kg·rep'},
+      source:'GymWorkoutSet / completed GymWorkoutSession',
+      dates:'WorkoutSession.startedAt'
+    },
+    measurements:{items:measurements,truncated:assessmentRows.length>200,
+      source:'GymAssessment',timeZone:'UTC'},
+    goals:{current:Array.isArray(memberRows[0]?.goals)?memberRows[0].goals:[],historical:false}
   });
 }));
 

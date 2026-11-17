@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Box, Divider, Paper, Stack, Typography } from '@mui/material';
 import { CgButton, CgEmptyState, CgState, CgStatusChip, CgTextField } from '../ui/cg/CgPrimitives.jsx';
 import { GymVerticalService } from '../../services/verticalService.js';
@@ -17,10 +17,10 @@ function Metric({label,value,hint}){
   </Paper>;
 }
 
-function MiniBarChart({items=[],labelKey,valueKey,title,valueLabel}){
+function MiniBarChart({items=[],labelKey,valueKey,title,valueLabel,emptyDescription='Completa sesiones dentro del período seleccionado.'}){
   const visible=items.slice(-30);
   const max=Math.max(1,...visible.map((item)=>number(item[valueKey])));
-  if(!visible.length)return <CgEmptyState title="Sin datos para graficar" description="Completa sesiones dentro del período seleccionado."/>;
+  if(!visible.length)return <CgEmptyState title="Sin datos para graficar" description={emptyDescription}/>;
   return <Box role="img" aria-label={title}>
     <Box sx={{height:150,display:'flex',alignItems:'flex-end',gap:.45,overflowX:'auto',pb:.5}}>
       {visible.map((item,index)=>{
@@ -40,28 +40,35 @@ export function PerformanceHistoryPanel({memberId=''}) {
   const [from,setFrom]=useState(defaultFrom());
   const [to,setTo]=useState(defaultTo());
   const [data,setData]=useState(null);
+  const [loadedMemberId,setLoadedMemberId]=useState('');
+  const requestId=useRef(0);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState('');
 
   async function load(){
-    if(!memberId){setData(null);return;}
+    const current=++requestId.current;
+    if(!memberId){setData(null);setLoadedMemberId('');return;}
     setLoading(true);setError('');
     try{
       const response=await GymVerticalService.performance(memberId,{from,to});
-      setData(response?.data||response||null);
+      if(current===requestId.current){
+        setData(response?.data||response||null);setLoadedMemberId(memberId);
+      }
     }catch(cause){
-      setError(cause?.message||'No se pudo cargar el historial de rendimiento.');
+      if(current===requestId.current)setError(cause?.message||'No se pudo cargar el historial de rendimiento.');
     }finally{
-      setLoading(false);
+      if(current===requestId.current)setLoading(false);
     }
   }
 
-  useEffect(()=>{void load();},[memberId]);
+  useEffect(()=>{void load();return()=>{requestId.current+=1;};},[memberId]);
 
-  const summary=data?.summary||{};
-  const byExercise=Array.isArray(data?.byExercise)?data.byExercise:[];
-  const byMuscleGroup=Array.isArray(data?.byMuscleGroup)?data.byMuscleGroup:[];
-  const dailyTrend=Array.isArray(data?.dailyTrend)?data.dailyTrend:[];
+  const visibleData=loadedMemberId===memberId?data:null;
+  const summary=visibleData?.summary||{};
+  const byExercise=Array.isArray(visibleData?.byExercise)?visibleData.byExercise:[];
+  const byMuscleGroup=Array.isArray(visibleData?.byMuscleGroup)?visibleData.byMuscleGroup:[];
+  const dailyTrend=Array.isArray(visibleData?.dailyTrend)?visibleData.dailyTrend:[];
+  const measurements=Array.isArray(visibleData?.measurements?.items)?visibleData.measurements.items:[];
 
   const muscleChart=useMemo(()=>byMuscleGroup
     .map((item)=>({label:item.muscleGroup||'Sin grupo',volume:item.totalVolume}))
@@ -88,7 +95,7 @@ export function PerformanceHistoryPanel({memberId=''}) {
     {error?<Box mt={1}><CgState severity="error" title="No se pudo cargar performance">{error}</CgState></Box>:null}
     {loading?<Box mt={1}><CgState severity="info" title="Actualizando">Calculando métricas desde sesiones y series.</CgState></Box>:null}
 
-    {data?<>
+    {visibleData?<>
       <Box sx={{display:'grid',gridTemplateColumns:{xs:'repeat(2,minmax(0,1fr))',lg:'repeat(5,minmax(0,1fr))'},gap:.8,mt:1.2}}>
         <Metric label="Sesiones completadas" value={summary.completedSessions||0}/>
         <Metric label="Frecuencia" value={`${format1(summary.sessionsPerWeek)} / semana`} hint={`${summary.trainingDays||0} día(s) con entrenamiento`}/>
@@ -124,10 +131,21 @@ export function PerformanceHistoryPanel({memberId=''}) {
               <CgStatusChip label={`PR reps: ${item.maxReps||0}`} tone="info"/>
               <CgStatusChip label={item.bestEstimated1RmKg?`e1RM: ${format1(item.bestEstimated1RmKg)} kg`:'e1RM: N/A'} tone={item.bestEstimated1RmKg?'warning':'default'}/>
             </Stack>
+          {item.bestEstimated1RmSource?<Typography variant="caption" color="text.secondary">
+            Serie origen e1RM: {new Date(item.bestEstimated1RmSource.recordedAt).toLocaleDateString('es-VE')} · {format1(item.bestEstimated1RmSource.loadKg)} kg × {item.bestEstimated1RmSource.reps} repeticiones
+          </Typography>:null}
           </Stack>
         </Paper>):<CgEmptyState title="Sin PRs calculables" description="Las series completadas aparecerán aquí."/>}
       </Stack>
+      <Paper variant="outlined" sx={{p:1.2,mt:1.2,minWidth:0}}>
+        <Typography variant="subtitle1" fontWeight={700}>Evolución corporal (no clínica)</Typography>
+        <Typography variant="caption" color="text.secondary">Evaluaciones del período vinculadas a los registros originales, en kg y fechas UTC.</Typography>
+        <Box mt={1}><MiniBarChart items={measurements.filter((item)=>item.weightKg!=null).map((item)=>({date:String(item.measuredAt).slice(0,10),weightKg:item.weightKg}))} labelKey="date" valueKey="weightKg" title="Evolución de peso corporal" valueLabel="kg" emptyDescription="Registra evaluaciones corporales dentro del período."/></Box>
+        {visibleData?.measurements?.truncated?<CgState severity="warning" title="Historial limitado">Se muestran las 200 mediciones más recientes del período.</CgState>:null}
+        {visibleData?.goals?.current?.length?<Typography variant="caption" color="text.secondary" display="block" mt={1}>Objetivos actuales: {visibleData.goals.current.join(', ')} · no representan historial de objetivos.</Typography>:null}
+      </Paper>
       <Typography variant="caption" color="text.secondary" display="block" mt={1}>e1RM es una estimación Epley y sólo se calcula con carga positiva y series de 1–12 repeticiones; no sustituye un 1RM medido.</Typography>
+      <Typography variant="caption" color="text.secondary" display="block" mt={.5}>Fórmula: {visibleData?.provenance?.estimated1Rm?.formula||'Epley'} v{visibleData?.provenance?.estimated1Rm?.version||1} · periodo UTC · cálculos basados en series completadas.</Typography>
     </>:<CgEmptyState title="Sin historial" description="Completa una sesión para habilitar las métricas de rendimiento."/>}
   </Paper>;
 }
