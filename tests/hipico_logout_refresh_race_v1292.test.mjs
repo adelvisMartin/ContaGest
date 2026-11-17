@@ -18,8 +18,9 @@ const program = [
   segment('export async function initializeCloudSession', 'export function currentSession'),
   segment('export function currentSession', 'export function sessionRole'),
   segment('export async function signIn(', 'export async function signUp('),
+  segment('export async function signUp(', 'export async function signOut()'),
   segment('export async function signOut()', 'export function isTransientCloudError('),
-  '({ currentSession, signOut, signIn, refreshCloudSession, initializeCloudSession, epoch: () => sessionEpoch })'
+  '({ currentSession, signOut, signIn, signUp, refreshCloudSession, initializeCloudSession, epoch: () => sessionEpoch })'
 ].join('\n');
 
 function deferred() {
@@ -31,7 +32,7 @@ function deferred() {
 const oldSession = { access_token: 'synthetic-old-access', refresh_token: 'synthetic-old-refresh' };
 const newSession = { access_token: 'synthetic-new-access', refresh_token: 'synthetic-new-refresh' };
 
-function harness({ refreshResponse, oldDiskLoad = null, holdSave = null } = {}) {
+function harness({ refreshResponse, signupResponse = null, oldDiskLoad = null, holdSave = null } = {}) {
   let stored = oldSession;
   const writes = [];
   const context = {
@@ -49,6 +50,7 @@ function harness({ refreshResponse, oldDiskLoad = null, holdSave = null } = {}) 
     request: async (url) => {
       if (url.includes('grant_type=refresh_token')) return refreshResponse.promise;
       if (url.includes('grant_type=password')) return newSession;
+      if (url === '/auth/v1/signup') return signupResponse ? signupResponse.promise : newSession;
       if (url === '/auth/v1/logout') return {};
       throw new Error('Unexpected synthetic request: ' + url);
     }
@@ -111,6 +113,18 @@ test('#1292 old IndexedDB load cannot restore a session after logout', async () 
   await h.signOut();
   oldDiskLoad.resolve(oldSession);
   await initialize;
+  assert.equal(h.currentSession(), null);
+  assert.equal(h.stored(), null);
+});
+
+test('#1292 a delayed sign-up cannot return a stale authenticated result after logout', async () => {
+  const refreshResponse = deferred();
+  const signupResponse = deferred();
+  const h = harness({ refreshResponse, signupResponse });
+  const signingUp = h.signUp('new@example.invalid', 'synthetic');
+  await h.signOut();
+  signupResponse.resolve(newSession);
+  assert.equal(await signingUp, null);
   assert.equal(h.currentSession(), null);
   assert.equal(h.stored(), null);
 });
