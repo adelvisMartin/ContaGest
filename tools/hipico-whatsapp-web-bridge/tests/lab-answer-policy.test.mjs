@@ -52,3 +52,21 @@ test('live Bridge passes selected canonical response text to its LAB-only transp
   assert.match(block,/Respuesta: /);
   assert.match(s,/sendTextInCurrentLab\(localLabTestReply\(row, classification, plan, canonical\), tag\)/);
 });
+
+test('#892 unknown canonical status cannot override conservative LAB guidance', () => {
+  const answer = selectLabAnswer({
+    canonical: { available: true, reason: 'FAKE_BACKEND_SUCCESS', text: 'Resultado oficial inventado.' },
+    plan: { guidance: 'Requiere verificación con fuentes canónicas.' },
+  });
+  assert.equal(answer.source, 'ORIENTACIÓN_LOCAL_SIN_DATOS_CANÓNICOS');
+  assert.equal(answer.text, 'Requiere verificación con fuentes canónicas.');
+  assert.doesNotMatch(answer.text, /Resultado oficial inventado/);
+});
+
+test('#892 known informational statuses remain usable without enabling SOURCE or money effects', () => {
+  const answer = selectLabAnswer({
+    canonical: { available: true, reason: 'CANONICAL_RACE_SUMMARY', text: 'Resumen interno de carrera, sin oficialidad externa.' },
+  });
+  assert.equal(answer.source, 'LECTURA_CANÓNICA_LIMITADA');
+  assert.equal(answer.reason, 'CANONICAL_RACE_SUMMARY');
+});
