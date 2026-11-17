@@ -11,7 +11,7 @@ test('neutralizes formula prefixes after whitespace, BOM and C0/C1 controls', ()
   for (const payload of [
     '=HYPERLINK("https://invalid.example","open")',
     '+SUM(A1:A2)', '-CMD', '@SUM(1,2)', '\t=1+1',
-    '\ufeff  @SUM(1,2)', '\u00a0-5', '\u2007+1', '\r\n=1+1', '\u0085=1'
+    '\ufeff  @SUM(1,2)', '\u00a0-5', '\u2007+1', '\u200b=2', '\u2060+1', '\r\n=1+1', '\u0085=1'
   ]) {
     const encoded = encodeCsvCell(payload);
     assert.equal(encoded, `"'${payload.replaceAll('"', '""')}"`, JSON.stringify(payload));
