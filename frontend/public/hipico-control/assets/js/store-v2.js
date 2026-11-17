@@ -343,16 +343,35 @@ export async function bindCloudIdentity(userId) {
   const next = String(userId || "").trim(); if (!next) return { changed: false, ownerId: null };
   const previous = String(await getSetting("cloudOwnerId", "") || "");
   if (previous && previous !== next) {
-    await flushWorkspaceWrites(); const current = await getRecord("workspaces", WORKSPACE_ID);
-    if (current?.workspace) { await putRecord("workspaces", { ...current, id: `archived:${previous}:${Date.now()}`, archivedAt: nowIso(), ownerId: previous }); await deleteRecord("workspaces", WORKSPACE_ID); }
-    await clearStore("outbox"); await clearStore("snapshots"); lastWorkspaceSnapshot = null;
+    // A previous cloud owner's local snapshots and archived workspace must
+    // not remain readable after a different user authenticates on this device.
+    await flushWorkspaceWrites();
+    await clearStore("workspaces"); await clearStore("outbox"); await clearStore("snapshots");
+    lastWorkspaceSnapshot = null;
     await putRecord("syncMeta", { key: "identitySwitch", previousOwnerId: previous, nextOwnerId: next, switchedAt: nowIso() });
   }
   await setSetting("cloudOwnerId", next); return { changed: Boolean(previous && previous !== next), ownerId: next };
 }
 export async function loadCloudSession() { const session = await getSetting("cloudSession", null); if (session?.user?.id) await bindCloudIdentity(session.user.id); return session; }
 export async function saveCloudSession(session) { if (session?.user?.id) await bindCloudIdentity(session.user.id); return setSetting("cloudSession", session); }
-export async function clearPrivateSessionState() { await flushWorkspaceWrites(); await setSetting("cloudSession", null); await clearStore("outbox"); await putRecord("syncMeta", { key: "sessionCleared", clearedAt: nowIso() }); }
+export async function clearPrivateSessionState() {
+  await flushWorkspaceWrites();
+  const cloudOwner = await getSetting("cloudOwnerId", null);
+  const cloudSession = await getSetting("cloudSession", null);
+  const hadCloudIdentity = Boolean(cloudOwner || cloudSession?.access_token || cloudSession?.refresh_token);
+  await setSetting("cloudSession", null);
+  if (hadCloudIdentity) {
+    // Cloud logout is a private-data purge, not merely removal of the bearer.
+    // Preserve local-only mode when no cloud identity was ever bound.
+    await clearStore("workspaces");
+    await clearStore("snapshots");
+    lastWorkspaceSnapshot = null;
+    await setSetting("cloudOwnerId", null);
+    await setSetting("mode", null);
+  }
+  await clearStore("outbox");
+  await putRecord("syncMeta", { key: "sessionCleared", clearedAt: nowIso() });
+}
 function canonicalize(value) {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (!value || typeof value !== "object") return value;
