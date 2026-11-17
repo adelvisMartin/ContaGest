@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -59,6 +59,12 @@ const serviceListQuery=listQuery.extend({
   categoryId:uuid.optional(),
   search:z.string().trim().min(1).max(80).optional()
 }).strict();
+function setPageHeaders(res:Response,count:number,take:number,skip:number){
+  const hasMore=count>take;
+  res.setHeader('Cache-Control','private, no-store');
+  res.setHeader('X-Pagination-Has-More',hasMore?'true':'false');
+  if(hasMore)res.setHeader('X-Pagination-Next-Skip',String(skip+take));
+}
 function params(req:any){
   const parsed=uuid.safeParse(req.params.id);
   if(!parsed.success)throw new HttpError(422,'Identificador de servicio inválido.');
@@ -76,10 +82,10 @@ router.get('/categories',asyncHandler(async(req,res)=>{
   const rows=await prisma.serviceCatalogCategory.findMany({
     where:{tenantId,...(status?{status}:{}),
       ...(search?{name:{contains:search,mode:'insensitive' as const}}:{})},
-    orderBy:[{displayOrder:'asc'},{name:'asc'},{id:'asc'}],take,skip
+    orderBy:[{displayOrder:'asc'},{name:'asc'},{id:'asc'}],take:take+1,skip
   });
-  res.setHeader('Cache-Control','private, no-store');
-  ok(res,rows);
+  setPageHeaders(res,rows.length,take,skip);
+  ok(res,rows.slice(0,take));
 }));
 router.post('/categories',validateBody(category),asyncHandler(async(req,res)=>{
   ok(res,await createServiceCategory(ctx(req),req.body),201);
@@ -91,10 +97,10 @@ router.get('/public',asyncHandler(async(req,res)=>{
     where:{tenantId,status:'active',visibility:'public'},
     select:{id:true,tenantId:true,categoryId:true,name:true,description:true,status:true,
       visibility:true,version:true,modality:true,durationMinutes:true},
-    orderBy:[{name:'asc'},{id:'asc'}],take:pagination.take,skip:pagination.skip
+    orderBy:[{name:'asc'},{id:'asc'}],take:pagination.take+1,skip:pagination.skip
   });
-  res.setHeader('Cache-Control','private, no-store');
-  ok(res,projectPublicServiceCatalog({tenantId,rows}));
+  setPageHeaders(res,rows.length,pagination.take,pagination.skip);
+  ok(res,projectPublicServiceCatalog({tenantId,rows:rows.slice(0,pagination.take)}));
 }));
 router.get('/services',asyncHandler(async(req,res)=>{
   const {take,skip,status,categoryId,search}=serviceListQuery.parse(req.query);
@@ -102,10 +108,10 @@ router.get('/services',asyncHandler(async(req,res)=>{
     where:{tenantId:ctx(req).tenantId,...(status?{status}:{}),
       ...(categoryId?{categoryId}:{}),
       ...(search?{name:{contains:search,mode:'insensitive' as const}}:{})},
-    orderBy:[{name:'asc'},{id:'asc'}],take,skip
+    orderBy:[{name:'asc'},{id:'asc'}],take:take+1,skip
   });
-  res.setHeader('Cache-Control','private, no-store');
-  ok(res,rows);
+  setPageHeaders(res,rows.length,take,skip);
+  ok(res,rows.slice(0,take));
 }));
 router.post('/services',validateBody(service),asyncHandler(async(req,res)=>{
   ok(res,await createCatalogService(ctx(req),req.body),201);
