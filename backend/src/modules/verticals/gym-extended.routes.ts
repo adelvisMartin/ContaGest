@@ -22,40 +22,42 @@ router.get('/gym/payments', requirePermission('gym.manage'), asyncHandler(async 
 
 router.post('/gym/payments', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const body = gymPaymentSchema.parse(req.body || {});
-  const membershipRows = body.membershipId
-    ? await prisma.$queryRawUnsafe<any[]>(`
-        SELECT "id", "balance" FROM public."GymMembership"
-        WHERE "id" = $1 AND "tenantId" = $2 AND "memberId" = $3 LIMIT 1
-      `, body.membershipId, context(req).tenantId, body.memberId)
-    : [];
-  if (body.membershipId && !membershipRows.length) throw new HttpError(404, 'Membresía no encontrada para este cliente.');
+  const tenantId = context(req).tenantId;
+  // Posting a payment and applying its membership balance effect are one
+  // transaction. Lock the tenant/member-owned membership before either write.
+  const payment = await prisma.$transaction(async tx => {
+    if (body.membershipId) {
+      const membershipRows = await tx.$queryRawUnsafe<Array<{id:string}>>(`
+        SELECT "id" FROM public."GymMembership"
+        WHERE "id"=$1 AND "tenantId"=$2 AND "memberId"=$3 FOR UPDATE
+      `,body.membershipId,tenantId,body.memberId);
+      if (!membershipRows.length)
+        throw new HttpError(404, 'Membresía no encontrada para este cliente.');
+    }
 
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."GymPayment"
-      ("id", "tenantId", "memberId", "membershipId", "amount", "currency", "paidAt", "method", "reference", "status", "createdAt")
-    VALUES
-      (gen_random_uuid()::text, $1, $2, $3, $4, $5, COALESCE($6::timestamptz, now()), $7, $8, $9, now())
-    RETURNING *
-  `,
-    context(req).tenantId,
-    body.memberId,
-    body.membershipId || null,
-    body.amount,
-    body.currency,
-    body.paidAt || null,
-    body.method || null,
-    body.reference || null,
-    body.status
-  );
+    const rows = await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymPayment"
+        ("id","tenantId","memberId","membershipId","amount","currency","paidAt",
+         "method","reference","status","createdAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,
+              COALESCE($6::timestamptz,now()),$7,$8,$9,now())
+      RETURNING *
+    `,tenantId,body.memberId,body.membershipId||null,body.amount,body.currency,
+      body.paidAt||null,body.method||null,body.reference||null,body.status);
 
-  if (body.membershipId && body.status === 'paid') {
-    await prisma.$executeRawUnsafe(`
-      UPDATE public."GymMembership"
-      SET "balance" = GREATEST(0, "balance" - $2), "updatedAt" = now()
-      WHERE "id" = $1 AND "tenantId" = $3
-    `, body.membershipId, body.amount, context(req).tenantId);
-  }
-  ok(res, one(rows), 201);
+    if (body.membershipId && body.status === 'paid') {
+      const changed = await tx.$executeRawUnsafe(`
+        UPDATE public."GymMembership"
+        SET "balance"=GREATEST(0,"balance"-$2),"updatedAt"=now()
+        WHERE "id"=$1 AND "tenantId"=$3 AND "memberId"=$4
+      `,body.membershipId,body.amount,tenantId,body.memberId);
+      // Even an unexpected update failure must roll back the inserted payment.
+      if (changed !== 1)
+        throw new HttpError(409, 'No se pudo aplicar el pago a la membresía.');
+    }
+    return one(rows);
+  });
+  ok(res,payment,201);
 }));
 
 router.get('/gym/classes/:classId/bookings', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
