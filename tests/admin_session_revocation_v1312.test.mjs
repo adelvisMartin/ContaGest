@@ -20,7 +20,7 @@ test('#1312 backend JWT revocation is checked against UserSession on each author
 });
 
 test('#1312 admin privilege and password mutations revoke all active sessions in the same transaction', () => {
-  assert.match(patch, /requirePermission\('admin\.manage'\)/, 'guard must apply to route router');
+  assert.match(source, /router\.use\(requireTenant, requirePermission\('admin\.manage'\)\)/, 'guard must apply to route router');
   assert.match(transaction, /const revokeSessions = Boolean\(body\.newPassword \|\| body\.status \|\| selectedRole\)/);
   assert.match(transaction, /await tx\.\$executeRaw`\s*UPDATE public\."UserSession"/);
   assert.match(transaction, /SET "status"='revoked', "revokedAt"=COALESCE\("revokedAt",now\(\)\)/);
