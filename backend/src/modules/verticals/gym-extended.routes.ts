@@ -119,11 +119,20 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
         SELECT count(*)::int AS taken FROM public."GymClassBooking"
         WHERE "tenantId"=$1 AND "classId"=$2 AND "status" IN ('booked','attended')
       `,tenantId,body.classId);
+      // FIFO applies only to members still eligible on the class date.
       const firstWaiting=await tx.$queryRawUnsafe<Array<{id:string}>>(`
-        SELECT "id" FROM public."GymClassBooking"
-        WHERE "tenantId"=$1 AND "classId"=$2 AND "status"='waitlisted'
-        ORDER BY "bookedAt","id" LIMIT 1 FOR UPDATE
-      `,tenantId,body.classId);
+        SELECT b."id" FROM public."GymClassBooking" b
+        JOIN public."GymMember" m ON m."tenantId"=b."tenantId"
+          AND m."id"=b."memberId" AND m."status"='active'
+        WHERE b."tenantId"=$1 AND b."classId"=$2 AND b."status"='waitlisted'
+          AND EXISTS (
+            SELECT 1 FROM public."GymMembership" ms
+            WHERE ms."tenantId"=b."tenantId" AND ms."memberId"=b."memberId"
+              AND ms."status"='active'
+              AND ms."startsAt"<=$3::timestamptz AND ms."endsAt">$3::timestamptz
+          )
+        ORDER BY b."bookedAt",b."id" LIMIT 1 FOR UPDATE OF b
+      `,tenantId,body.classId,klass.startsAt);
       if (!Number.isSafeInteger(occupied[0]?.taken))
         throw new HttpError(409,'No es posible confirmar el aforo de la clase.');
       const available=occupied[0].taken<klass.capacity;
@@ -157,12 +166,21 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
     `,tenantId,body.classId,body.memberId,desiredStatus);
     if (!rows.length) throw new HttpError(409,'Conflicto de empresa en reserva.');
     let promotedBookingId:string|null=null;
-    if (desiredStatus==='cancelled'&&existing?.status==='booked'&&klass.status==='scheduled') {
+    if (desiredStatus==='cancelled'&&existing?.status==='booked'
+        &&klass.status==='scheduled'&&klass.startsAt>new Date()) {
       const waiting=await tx.$queryRawUnsafe<Array<{id:string}>>(`
-        SELECT "id" FROM public."GymClassBooking"
-        WHERE "tenantId"=$1 AND "classId"=$2 AND "status"='waitlisted'
-        ORDER BY "bookedAt","id" LIMIT 1 FOR UPDATE
-      `,tenantId,body.classId);
+        SELECT b."id" FROM public."GymClassBooking" b
+        JOIN public."GymMember" m ON m."tenantId"=b."tenantId"
+          AND m."id"=b."memberId" AND m."status"='active'
+        WHERE b."tenantId"=$1 AND b."classId"=$2 AND b."status"='waitlisted'
+          AND EXISTS (
+            SELECT 1 FROM public."GymMembership" ms
+            WHERE ms."tenantId"=b."tenantId" AND ms."memberId"=b."memberId"
+              AND ms."status"='active'
+              AND ms."startsAt"<=$3::timestamptz AND ms."endsAt">$3::timestamptz
+          )
+        ORDER BY b."bookedAt",b."id" LIMIT 1 FOR UPDATE OF b
+      `,tenantId,body.classId,klass.startsAt);
       if (waiting.length) {
         const promoted=await tx.$queryRawUnsafe<Array<{id:string}>>(`
           UPDATE public."GymClassBooking" SET "status"='booked'

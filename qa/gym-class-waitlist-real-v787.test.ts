@@ -62,4 +62,31 @@ test('Gym #787 PG17: capacity, FIFO waitlist and promotion',async(t)=>{
   assert.equal(bookings.find((x:any)=>x.memberId===waitingId).status,'booked');
   assert.equal(bookings.find((x:any)=>x.memberId===members[2]).status,'waitlisted');
   assert.equal(bookings.filter((x:any)=>x.status==='booked').length,1);
+
+  // New class: first-in-line loses eligibility before the confirmed seat is
+  // cancelled. Do not silently promote the frozen membership; use the next
+  // eligible member without overwriting the original waitlist history.
+  const start2=new Date(Date.now()+3*86400000);
+  const end2=new Date(start2.getTime()+3600000);
+  const second=await h.ok('/verticals/gym/classes',{method:'POST',body:JSON.stringify({
+    ...body,name:'QA 787 freeze '+run,
+    startsAt:start2.toISOString(),endsAt:end2.toISOString(),location:'QA second room '+run
+  })});
+  classIds.push(second.id);
+  const bookSecond=(memberId:string,status='booked')=>h.request('/verticals/gym/classes/bookings',{
+    method:'POST',body:JSON.stringify({classId:second.id,memberId,status,allowWaitlist:true})
+  });
+  const lead=await bookSecond(members[0]);assert.equal(lead.data.status,'booked');
+  const early=await bookSecond(members[1]);assert.equal(early.data.status,'waitlisted');
+  const later=await bookSecond(members[2]);assert.equal(later.data.status,'waitlisted');
+  await h.prisma.$executeRawUnsafe(
+    'UPDATE public."GymMembership" SET "status"=\'frozen\' WHERE "tenantId"=$1 AND "memberId"=$2',
+    h.tenant.id,members[1]
+  );
+  const freed=await bookSecond(members[0],'cancelled');
+  assert.equal(freed.response.status,201);
+  assert.equal(freed.data.promotedBookingId,later.data.id);
+  const all=await h.ok('/verticals/gym/classes/'+second.id+'/bookings');
+  assert.equal(all.find((x:any)=>x.memberId===members[1]).status,'waitlisted');
+  assert.equal(all.find((x:any)=>x.memberId===members[2]).status,'booked');
 });
