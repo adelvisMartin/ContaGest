@@ -51,6 +51,7 @@ const required59=[
   'tests/crud_factory_hardening_issue_638.test.mjs',
   'tests/qa_disposable_database_guard_v1288.test.mjs',
   'tests/frontend_csv_formula_guard_v1313.test.mjs',
+  'tests/qa_audit_rollback_trigger_contract_v1289_1313.test.mjs',
   'tests/entitlement_ledger_projection_v852.test.mjs',
   'tests/architecture_ownership_issue_653.test.mjs',
   'tests/production_convergence_v627.test.mjs',
