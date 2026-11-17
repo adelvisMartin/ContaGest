@@ -51,6 +51,12 @@ test('Gym #787 PG17: capacity, FIFO waitlist and promotion',async(t)=>{
   assert.deepEqual(race.map(x=>x.data.status).sort(),['booked','waitlisted']);
   const bookedId=race.find(x=>x.data.status==='booked')!.data.memberId;
   const waitingId=race.find(x=>x.data.status==='waitlisted')!.data.memberId;
+  const prematureAttendance=await post(bookedId,'attended');
+  const prematureNoShow=await post(bookedId,'no_show');
+  assert.equal(prematureAttendance.response.status,409,'future class cannot be marked attended');
+  assert.equal(prematureNoShow.response.status,409,'future class cannot be marked no-show');
+  const unchanged=await h.ok('/verticals/gym/classes/'+klass.id+'/bookings');
+  assert.equal(unchanged.find((row:any)=>row.memberId===bookedId).status,'booked');
   const replay=await post(waitingId);
   assert.equal(replay.response.status,200);
   assert.equal(replay.data.id,race.find(x=>x.data.status==='waitlisted')!.data.id);
