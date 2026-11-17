@@ -37,7 +37,10 @@ export function sanitizeObservationMetadata(value:unknown,depth=0):unknown{
   if(depth>=4)return'[TRUNCATED]';
   if(Array.isArray(value))return value.slice(0,20).map((item)=>sanitizeObservationMetadata(item,depth+1));
   if(typeof value==='object'){
-    const out:Record<string,unknown>={};
+    // Untrusted observation fields may include "__proto__"/"constructor".
+    // A prototype-free JSON map preserves their literal meaning without
+    // changing the prototype of a support bundle or dropping a field.
+    const out:Record<string,unknown>=Object.create(null);
     for(const [key,item] of Object.entries(value as Record<string,unknown>).slice(0,40)){
       if(SENSITIVE_KEY.test(key))continue;
       const safeKey=String(sanitizeObservationMetadata(key,depth+1)).slice(0,80);
