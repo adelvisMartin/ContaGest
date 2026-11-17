@@ -10,5 +10,5 @@ test('#810 veterinary vitals use typed PostgreSQL lock and fail-closed context r
  assert.match(code,/metadata\.requestMeasuredAt/);
  assert.match(code,/requestMeasuredAt:body\.measuredAt\?\?null/);
  assert.match(code,/body\.patientId/);
- assert.match(code,/status\?200:201/);
+ assert.match(code,/result\.replayed\?200:201/);
 });
