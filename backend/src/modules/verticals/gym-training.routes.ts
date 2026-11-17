@@ -81,7 +81,7 @@ router.post('/gym/exercises', requirePermission('gym.manage'), asyncHandler(asyn
   const tenantId=ctx(req).tenantId;
   const b=exerciseLibrarySchema.parse(req.body||{});
   const created=await prisma.$transaction(async tx=>{
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
       'gym-exercise-name:'+tenantId+':'+b.name.trim().toLowerCase());
     const existing=await tx.$queryRawUnsafe<any[]>(`
     SELECT "id" FROM public."GymExercise"
@@ -108,7 +108,7 @@ router.patch('/gym/exercises/:id', requirePermission('gym.manage'), asyncHandler
   const b=exerciseLibraryPatchSchema.parse(req.body||{});
   const updated=await prisma.$transaction(async tx=>{
   if(b.name){
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
       'gym-exercise-name:'+tenantId+':'+b.name.trim().toLowerCase());
     const duplicate=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymExercise"
@@ -157,7 +157,7 @@ router.post('/gym/periodization/templates', requirePermission('gym.manage'), asy
   const tenantId=ctx(req).tenantId;
   const created=await prisma.$transaction(async(tx)=>{
     const lockKey=`gym-periodization-template:${tenantId}:${b.name.trim().toLocaleLowerCase('es')}`;
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',lockKey);
     const duplicate=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymPeriodizationTemplate"
       WHERE "tenantId"=$1 AND lower(btrim("name"))=lower(btrim($2))
@@ -255,7 +255,7 @@ router.post('/gym/periodization/programs/:id/version', requirePermission('gym.ma
     }
 
     const lockKey=`gym-periodization-program:${tenantId}:${source.programKey}`;
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',lockKey);
     const versionRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT COALESCE(MAX("version"),0)::int AS "maxVersion"
       FROM public."GymPeriodizationProgram"
@@ -318,7 +318,7 @@ router.post('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandl
     if(!routineRows.length)throw new HttpError(422,'La rutina no pertenece al tenant activo.');
     const routine=routineRows[0];
     const lockKey=`gym-workout-session:${tenantId}:${routine.memberId}`;
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',lockKey);
     const activeRows=await tx.$queryRawUnsafe<Array<{id:string}>>(`
       SELECT "id" FROM public."GymWorkoutSession"
       WHERE "tenantId"=$1 AND "memberId"=$2 AND "status" IN ('in_progress','paused') LIMIT 1
@@ -399,7 +399,7 @@ router.post('/gym/workout-sessions/:id/transition', requirePermission('gym.manag
   const result=await prisma.$transaction(async tx=>{
     // The event key also serializes requests that accidentally reuse the same
     // key across different session IDs. No conflicting 500 from unique races.
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
       `gym-workout-transition:${tenantId}:${b.eventKey}`);
     const sessions=await tx.$queryRawUnsafe<Array<{id:string;status:string}>>(`
       SELECT "id","status" FROM public."GymWorkoutSession"
@@ -459,7 +459,7 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
     if(eventKey){
       // Lock identity before the session row; concurrent and cross-session
       // replays cannot race the unique constraint or debit twice.
-      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
         `gym-workout-set-event:${tenantId}:${eventKey}`);
       const previous=await tx.$queryRawUnsafe<any[]>(`
         SELECT * FROM public."GymWorkoutSet"

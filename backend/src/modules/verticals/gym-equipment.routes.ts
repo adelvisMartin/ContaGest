@@ -104,7 +104,7 @@ router.post('/gym/equipment/:id/work-orders',requirePermission('gym.manage'),asy
     scheduledAt:b.scheduledAt||null
   });
   const outcome=await prisma.$transaction(async(tx)=>{
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
       'gym:equipment:order:'+tenantId+':'+b.requestKey);
     const previous=await tx.$queryRawUnsafe<Array<any>>(
       'SELECT * FROM public."GymEquipmentWorkOrder" WHERE "tenantId"=$1 AND "requestKey"=$2',
@@ -146,7 +146,7 @@ router.post('/gym/equipment/work-orders/:id/transitions',requirePermission('gym.
   const tenantId=ctx(req).tenantId,orderId=String(req.params.id);
   const hash=fingerprint({orderId,toStatus:b.toStatus,reason:b.reason||null});
   const outcome=await prisma.$transaction(async(tx)=>{
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
       'gym:equipment:event:'+tenantId+':'+b.eventKey);
     const previous=await tx.$queryRawUnsafe<Array<any>>(
       'SELECT * FROM public."GymEquipmentWorkOrderEvent" WHERE "tenantId"=$1 AND "eventKey"=$2',

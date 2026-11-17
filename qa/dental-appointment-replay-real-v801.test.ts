@@ -20,7 +20,7 @@ test('#801 PostgreSQL: concurrent dental replay inserts one appointment',async(t
     }finally{await h.close();}
   });
   const patients=await h.prisma.$queryRawUnsafe<Array<{id:string}>>(
-    'INSERT INTO public."CarePatient" ("tenantId","kind","displayName") VALUES ($1,\\'human\\',$2) RETURNING "id"',
+    "INSERT INTO public.\"CarePatient\" (\"tenantId\",\"kind\",\"displayName\") VALUES ($1,'human',$2) RETURNING \"id\"",
     h.tenant.id,'QA dental replay '+tag
   );
   patientId=patients[0].id;

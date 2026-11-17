@@ -20,7 +20,7 @@ test('#799 Gym equipment tab has routed backend and real CRUD client',()=>{
 test('#799 UI has actual submission/transition, useful states and session isolation',()=>{
   for(const token of ['addEquipment(event)','addOrder(event)','transition(order,toStatus)',
     'Consultando equipos','No se pudo completar','Operación guardada',
-    'disabled={busy','cg:pwa-session-changed','requestVersion','sessionScope()'])
+    'disabled={busy','cg:pwa-session-changed','version.current','orderVersion.current','sessionScope()'])
     assert.ok(component.includes(token),token);
   assert.doesNotMatch(component,/innerHTML|querySelector|<style|waitForTimeout/);
 });

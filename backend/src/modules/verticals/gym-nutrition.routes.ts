@@ -444,7 +444,7 @@ router.post('/gym/nutrition', requirePermission('gym.manage'), asyncHandler(asyn
       const source=one(sources,'Plan origen no encontrado en esta empresa.');
       if(source.memberId!==b.memberId)
         throw new HttpError(422,'No se pueden mezclar planes de distintos miembros.');
-      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
         'gym-nutrition-version:'+tenantId+':'+source.planKey);
       const latest=await tx.$queryRawUnsafe<Array<{maxVersion:number}>>(`
         SELECT COALESCE(MAX("version"),0)::int AS "maxVersion"
