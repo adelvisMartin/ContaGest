@@ -99,7 +99,7 @@ export function PerformanceHistoryPanel({memberId=''}) {
       <Box sx={{display:'grid',gridTemplateColumns:{xs:'repeat(2,minmax(0,1fr))',lg:'repeat(5,minmax(0,1fr))'},gap:.8,mt:1.2}}>
         <Metric label="Sesiones completadas" value={summary.completedSessions||0}/>
         <Metric label="Frecuencia" value={`${format1(summary.sessionsPerWeek)} / semana`} hint={`${summary.trainingDays||0} día(s) con entrenamiento`}/>
-        <Metric label="Adherencia de series" value={`${format1(summary.setAdherencePct)}%`} hint={`${summary.completedSets||0}/${summary.plannedSets||0} series prescritas`}/>
+        <Metric label="Adherencia de series" value={summary.setAdherencePct==null?'N/D':`${format1(summary.setAdherencePct)}%`} hint={summary.unknownPlanSessions?`${summary.unknownPlanSessions} sesión(es) sin prescripción histórica verificable`:`${summary.completedSets||0}/${summary.plannedSets||0} series prescritas`}/>
         <Metric label="Volumen total" value={format1(summary.totalVolume)} hint="kg·rep"/>
         <Metric label="Series omitidas" value={summary.skippedSets||0}/>
       </Box>
