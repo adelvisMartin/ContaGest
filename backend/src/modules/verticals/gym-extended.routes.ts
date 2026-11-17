@@ -26,6 +26,15 @@ router.post('/gym/payments', requirePermission('gym.manage'), asyncHandler(async
   // Posting a payment and applying its membership balance effect are one
   // transaction. Lock the tenant/member-owned membership before either write.
   const payment = await prisma.$transaction(async tx => {
+    // Some payments do not reference a membership. The member must still
+    // belong to the authenticated tenant; a bare foreign member UUID is not
+    // sufficient authority to create a payment or store personal data.
+    const memberRows = await tx.$queryRawUnsafe<Array<{id:string}>>(
+      'SELECT "id" FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2 FOR SHARE',
+      tenantId,body.memberId
+    );
+    if (memberRows.length !== 1)
+      throw new HttpError(404, 'Miembro no encontrado en esta empresa.');
     if (body.membershipId) {
       const membershipRows = await tx.$queryRawUnsafe<Array<{id:string}>>(`
         SELECT "id" FROM public."GymMembership"
