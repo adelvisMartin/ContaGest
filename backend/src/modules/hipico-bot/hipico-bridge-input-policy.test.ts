@@ -37,6 +37,15 @@ test('bridge sender normalization rejects control characters',()=>{
   assert.equal(normalizeBridgeSender('participant\u0007@c.us'),null);
 });
 
+test('bridge sender identities cannot be visually spoofed or truncated into aliases',()=>{
+  for(const control of ['\u200B','\u202E','\u2069','\uFEFF']){
+    assert.equal(normalizeBridgeSender(`participant${control}-7@lid`),null);
+  }
+  assert.equal(normalizeBridgeSender('a'.repeat(221)+'@lid'),null);
+  assert.equal(normalizeBridgeSender('a'.repeat(220)+'@lid'),'a'.repeat(220));
+  assert.equal(normalizeBridgeSender('participant-7@lid'),'participant-7');
+});
+
 test('SOURCE and LAB identity accepts modern and legacy WhatsApp group JIDs only',()=>{
   assert.equal(normalizeBridgeGroupId(sourceGroupId),sourceGroupId);
   assert.equal(normalizeBridgeGroupId(labGroupId),labGroupId);
