@@ -19,7 +19,7 @@ async function rejectScopedImportAudit(h:any,action:'import.dry-run'|'import.com
   const tenant=h.tenant.id;
   try {
     await h.prisma.$executeRawUnsafe(`
-      CREATE FUNCTION public."${name}"() RETURNS trigger LANGUAGE plpgsql AS $
+      CREATE FUNCTION public."${name}"() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         IF NEW."tenantId"='${tenant}' AND NEW."action"='${action}'
           AND (${entityId? `NEW."entityId"='${entityId}'` : 'TRUE'}) THEN
@@ -27,7 +27,7 @@ async function rejectScopedImportAudit(h:any,action:'import.dry-run'|'import.com
         END IF;
         RETURN NEW;
       END;
-      $`);
+      $$`);
     await h.prisma.$executeRawUnsafe(`
       CREATE TRIGGER "${name}" BEFORE INSERT ON public."AuditLog"
       FOR EACH ROW EXECUTE FUNCTION public."${name}"()`);
