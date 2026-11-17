@@ -54,6 +54,7 @@ export function classifyBackupRoleVerification({
   const role=observation.role||{};
   if(role.exists!==true)findings.push('ROLE_MISSING');
   if(role.exists===true){
+    if(role.connectedUser!=='hipico_backup'||role.sessionUser!=='hipico_backup')findings.push('BACKUP_CONNECTION_ROLE_MISMATCH');
     if(role.login!==true)findings.push('ROLE_LOGIN_REQUIRED');
     if(role.superuser===true)findings.push('ROLE_SUPERUSER_FORBIDDEN');
     if(role.createdb===true)findings.push('ROLE_CREATEDB_FORBIDDEN');
@@ -144,6 +145,8 @@ export async function observeBackupRole({
 
     const roleResult=await client.query(`
       select
+        current_user as connected_user,
+        session_user as session_user,
         rolcanlogin as login,
         rolsuper as superuser,
         rolcreatedb as createdb,
@@ -164,6 +167,8 @@ export async function observeBackupRole({
         crossScopeGrants:[],
         role:{
           exists:false,
+          connectedUser:null,
+          sessionUser:null,
           login:false,
           superuser:false,
           createdb:false,
@@ -301,6 +306,8 @@ export async function observeBackupRole({
       defaultPrivileges:defaultPrivilegeResult.rows.map((row)=>row.object_type),
       role:{
         exists:true,
+        connectedUser:roleRow.connected_user,
+        sessionUser:roleRow.session_user,
         login:roleRow.login===true,
         superuser:roleRow.superuser===true,
         createdb:roleRow.createdb===true,
