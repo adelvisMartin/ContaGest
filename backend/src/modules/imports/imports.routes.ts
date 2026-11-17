@@ -28,7 +28,7 @@ const importRowSchema = z.custom<Record<string, unknown>>((value) => {
   return columns.every(([key, cell]) =>
     key.length > 0 && key.length <= 120 &&
     !/^(?:__proto__|prototype|constructor)$/.test(key) &&
-    !/[\\u0000-\\u001f\\u007f]/u.test(key) &&
+    !/[\u0000-\u001f\u007f]/u.test(key) &&
     (cell === null || typeof cell === 'boolean' ||
       (typeof cell === 'number' && Number.isFinite(cell)) ||
       (typeof cell === 'string' && cell.length <= 2_000))
