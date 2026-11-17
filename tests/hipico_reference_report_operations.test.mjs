@@ -1,3 +1,4 @@
+import { assertHipicoShellCacheRotated } from './support/hipico-shell-cache-contract.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -204,7 +205,7 @@ test('offline precache and Android packaging require all three read-only modules
   const sw=read('frontend/public/hipico-control/sw.js');
   const android=read('android/hipico-control-v1130/scripts/sync-web.mjs');
   const app=read('frontend/public/hipico-control/assets/js/app.js');
-  assert.match(sw,/shell-r38-consolidator-v4-1-3/);
+  assertHipicoShellCacheRotated(sw);
   for(const name of ['reference-report-operations.js','reference-report-projections.js','reference-report-ui.js']){
     assert.ok(sw.includes("'./assets/js/"+name+"'"),name+' missing PWA cache');
     assert.ok(android.includes("'assets/js/"+name+"'"),name+' missing Android parity');

@@ -1,3 +1,4 @@
+import { assertHipicoShellCacheRotated } from './support/hipico-shell-cache-contract.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -51,6 +52,6 @@ test('baseline updater refuses CI and reports missing baselines instead of fabri
 });
 
 test('PWA caches v4.1.3 convergence authority under a rotated shell', () => {
-  assert.match(sw, /shell-r38-consolidator-v4-1-3/);
+  assertHipicoShellCacheRotated(sw);
   assert.match(sw, /ui-system-v4-convergence\.css/);
 });

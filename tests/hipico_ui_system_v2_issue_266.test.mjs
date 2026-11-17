@@ -1,3 +1,4 @@
+import { assertHipicoShellCacheRotated } from './support/hipico-shell-cache-contract.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import test from 'node:test';
@@ -92,7 +93,7 @@ test('offline cache rotates r38 and never stores sensitive routes or obsolete CS
   const sw = await read(root + '/sw.js');
   for (const file of ['app.css', ...modules]) assert.ok(sw.includes('assets/css/' + file), 'missing offline style ' + file);
   for (const file of obsolete) assert.equal(sw.includes('assets/css/' + file), false, 'obsolete cached style ' + file);
-  assert.match(sw, /shell-r38-consolidator-v4-1-3/);
+  assertHipicoShellCacheRotated(sw);
   assert.match(sw, /key\.startsWith\('hipico-control-'\) && key !== SHELL_CACHE/);
   assert.match(sw, /isSensitive\(url\)\s*\|\|\s*isRuntimeMetadata\(url\)/);
   assert.match(sw, /fetch\(request, \{ cache: 'no-store' \}\)/);
