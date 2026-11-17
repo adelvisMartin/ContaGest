@@ -78,6 +78,17 @@ test('HIPICO #1314 sanitizes sensitive metadata keys without leaking identity',(
   assert.equal(rendered.includes('private'),false);
 });
 
+test('HIPICO #1314 metadata keys with prototype names cannot corrupt the support bundle',()=>{
+  const input=JSON.parse('{"__proto__":{"contaminated":true},"constructor":"observed","status":"SAFE"}');
+  const clean=sanitizeObservationMetadata(input) as Record<string,unknown>;
+  assert.equal(({} as any).contaminated,undefined);
+  assert.equal(Object.getPrototypeOf(clean),null);
+  assert.equal(Object.hasOwn(clean,'__proto__'),true);
+  assert.equal(JSON.stringify(clean).includes('contaminated'),true);
+  assert.equal(clean.constructor,'observed');
+  assert.equal(clean.status,'SAFE');
+});
+
 test('candidate SHA is accepted only when it is an exact git SHA',()=>{
   assert.equal(candidateSha({HIPICO_CANDIDATE_SHA:'a'.repeat(40)}),'a'.repeat(40));
   assert.equal(candidateSha({HIPICO_CANDIDATE_SHA:'main',GITHUB_SHA:'b'.repeat(40)}),'b'.repeat(40));
