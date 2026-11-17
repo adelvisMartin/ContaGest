@@ -7,13 +7,18 @@ test('Gym #746: memberships atomic; check-in replay and concurrency use durable 
   assert.notEqual(String(process.env.NODE_ENV||'').toLowerCase(),'production');
   const h=await createRealBackendHarness();
   const run=randomUUID();
-  let memberId='',planId='';
+  let memberId='',planId='',secondMemberId='';
   t.after(async()=>{
     await h.close().catch(()=>undefined);
     if(memberId){
       await h.prisma.$executeRawUnsafe('DELETE FROM public."GymCheckIn" WHERE "tenantId"=$1 AND "memberId"=$2',h.tenant.id,memberId).catch(()=>undefined);
       await h.prisma.$executeRawUnsafe('DELETE FROM public."GymMembership" WHERE "tenantId"=$1 AND "memberId"=$2',h.tenant.id,memberId).catch(()=>undefined);
       await h.prisma.$executeRawUnsafe('DELETE FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,memberId).catch(()=>undefined);
+    }
+    if(secondMemberId){
+      await h.prisma.$executeRawUnsafe('DELETE FROM public."GymCheckIn" WHERE "tenantId"=$1 AND "memberId"=$2',h.tenant.id,secondMemberId).catch(()=>undefined);
+      await h.prisma.$executeRawUnsafe('DELETE FROM public."GymMembership" WHERE "tenantId"=$1 AND "memberId"=$2',h.tenant.id,secondMemberId).catch(()=>undefined);
+      await h.prisma.$executeRawUnsafe('DELETE FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,secondMemberId).catch(()=>undefined);
     }
     if(planId)await h.prisma.$executeRawUnsafe('DELETE FROM public."GymMembershipPlan" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,planId).catch(()=>undefined);
   });
@@ -73,4 +78,41 @@ test('Gym #746: memberships atomic; check-in replay and concurrency use durable 
     method:'POST',body:JSON.stringify({memberId:randomUUID(),method:'manual',requestKey:randomUUID()})
   });
   assert.equal(other.response.status,404,'unowned member may not be checked in');
+
+  // The index is unique by tenant+key, not by tenant+member+key. Two members
+  // racing with a shared key must return one persisted result and one 409,
+  // never a DB unique-constraint 500 or two debits.
+  const memberB=await h.ok('/verticals/gym/members',{
+    method:'POST',body:JSON.stringify({
+      memberCode:randomUUID(),fullName:'QA 746 Second Member',status:'active',
+      goals:[],emergencyContact:{}
+    })
+  });
+  secondMemberId=String(memberB.id);
+  const membershipB=await h.ok('/verticals/gym/memberships',{
+    method:'POST',body:JSON.stringify({
+      memberId:secondMemberId,planId,
+      startsAt:new Date(Date.now()-60000).toISOString(),autoRenew:false,balance:0
+    })
+  });
+  const sharedKey=randomUUID();
+  const crossMember=await Promise.all([
+    post(sharedKey),
+    h.request('/verticals/gym/checkins',{method:'POST',body:JSON.stringify({
+      memberId:secondMemberId,method:'manual',device:'qa-746',requestKey:sharedKey
+    })})
+  ]);
+  const statuses=crossMember.map(x=>x.response.status);
+  assert.equal(statuses.filter(status=>status===409).length,1);
+  assert.equal(statuses.filter(status=>status===200||status===201).length,1);
+  const keyed=await h.prisma.$queryRawUnsafe<Array<{id:string;memberId:string;result:string}>>(
+    'SELECT "id","memberId","result" FROM public."GymCheckIn" WHERE "tenantId"=$1 AND "requestKey"=$2',
+    h.tenant.id,sharedKey
+  );
+  assert.equal(keyed.length,1);
+  const bBalance=await h.prisma.$queryRawUnsafe<Array<{remainingAccesses:number}>>(
+    'SELECT "remainingAccesses" FROM public."GymMembership" WHERE "tenantId"=$1 AND "id"=$2',
+    h.tenant.id,membershipB.id
+  );
+  assert.equal(bBalance[0].remainingAccesses,keyed[0].memberId===secondMemberId?1:2);
 });
