@@ -301,6 +301,9 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
       storedRecord = existing;
     };
     await transactionPromise(transaction);
+    // The session may change AFTER IndexedDB.open and while the transaction
+    // completes. Do not acknowledge an enqueue to the new tenant/user.
+    assertCurrentOfflineSession(session);
     if (conflict) {
       const error = new Error('La clave de idempotencia pertenece a una operación diferente.');
       error.code = 'OFFLINE_IDEMPOTENCY_CONFLICT';
@@ -339,6 +342,9 @@ async function readOutbox(session) {
       request.onerror = () => reject(request.error || new Error('No se pudo leer el outbox.'));
     });
     await transactionPromise(transaction);
+    // A read whose transaction finishes after logout/tenant switch must not
+    // surface the previous session's workout data to the new UI.
+    assertCurrentOfflineSession(session);
     return records.filter((record) => record.scopeToken === sessionScope(session));
   } finally {
     database.close();
