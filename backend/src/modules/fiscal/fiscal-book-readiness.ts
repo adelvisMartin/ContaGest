@@ -19,15 +19,15 @@ export function buildFiscalBookReadiness(input: Readonly<{
   tenantId: string; fiscalPeriod: string; book: FiscalBookKind;
   rows: readonly FiscalSourceRow[];
 }>) {
-  if (!input || typeof input.tenantId !== 'string' || !input.tenantId.trim() ||
+  if (!input || typeof input.tenantId !== 'string' || !input.tenantId.trim() || input.tenantId.trim() !== input.tenantId ||
       !PERIOD.test(input.fiscalPeriod) || !['sales', 'purchases'].includes(input.book) ||
       !Array.isArray(input.rows) || input.rows.length > 500) blocked();
   const seen = new Set<string>();
   const numbers = new Set<string>();
   const evidence = input.rows.map((row) => {
     if (!row || row.tenantId !== input.tenantId ||
-        typeof row.id !== 'string' || !row.id.trim() || seen.has(row.id) ||
-        typeof row.number !== 'string' || !row.number.trim() || numbers.has(row.number) ||
+        typeof row.id !== 'string' || !row.id.trim() || row.id.trim() !== row.id || seen.has(row.id) ||
+        typeof row.number !== 'string' || !row.number.trim() || row.number.trim() !== row.number || numbers.has(row.number) ||
         !['draft', 'issued', 'paid', 'cancelled', 'overdue'].includes(row.status) ||
         typeof row.issueDate !== 'string' || !SHA_DATE.test(row.issueDate) ||
         !Number.isFinite(Date.parse(row.issueDate)) ||
