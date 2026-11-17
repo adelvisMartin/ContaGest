@@ -67,6 +67,10 @@ El script `ops/backup/hipico-backup-postgres.sh` ahora exige **antes de consulta
 
 Para la certificación final del estado de producción debe usarse `HIPICO_BACKUP_MODE=STEADY_STATE`; el modo `PRE_ROLLOUT` sirve exclusivamente para despliegues graduales y no demuestra 25/25 tablas. No guardar DSN, destinatarios `age` ni secretos en issues o artefactos. Ejecutar backup cifrado + transferencia off-site con destino autorizado y posteriormente `ops/backup/hipico-restore-drill.sh` sobre PG17 local desechable. El PASS exige conteos, integridad referencial, hash de inventario y tiempos RPO/RTO reales asociados al candidate.
 
+La conexión de recuperación `HIPICO_RESTORE_DATABASE_URL` debe ser una URI `postgresql://` o `postgres://` con usuario explícito, host `localhost`/`127.0.0.1`/`[::1]`, nombre de base acabado en `_drill` o `_restore` y **sin parámetros de consulta ni fragmento**. `scripts/hipico-restore-target-policy-v842.mjs` rechaza igualmente `PGHOST`, `PGHOSTADDR`, `PGSERVICE`, `PGSERVICEFILE`, `PGPORT` y `PGDATABASE` heredados; evita que libpq redirija una operación destructiva fuera del destino comprobado. La URL se lee del entorno, no se envía en argv de Node ni se imprime. Se permite `PGPASSWORD` cuando corresponda.
+
+El producer `hipico-schema-backup-evidence.v17` incorpora `restoreHost` y `restoreDatabase`, diferentes de `targetDatabase` (nombre de la **base de origen**, conservado por compatibilidad). El gate #839 exige que el destino de restauración sea local, desechable y distinto de la base de origen. Artefactos previos sin esa identidad de recuperación deben considerarse insuficientes para un nuevo GO exact-SHA y regenerarse mediante un drill real.
+
 La existencia de los scripts y sus pruebas de regresión **no certifica** que el rol esté activado en producción ni que un backup remoto haya sido restaurado. Sin esas operaciones #842 continúa `NOT_EXECUTED/BLOCKED_INFRASTRUCTURE`.
 
 ## Después del rollout: STEADY_STATE
