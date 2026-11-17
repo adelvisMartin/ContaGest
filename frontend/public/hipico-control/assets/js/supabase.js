@@ -217,7 +217,9 @@ export async function signUp(email, password) {
         headers: authHeaders(null),
         body: JSON.stringify(Object.assign(Object.assign({}, credentials), { data: { app: "hipico-control" } }))
     });
-    if (data?.access_token && expectedEpoch === sessionEpoch)
+    if (expectedEpoch !== sessionEpoch)
+        return null;
+    if (data?.access_token)
         await persistSession(data, expectedEpoch);
     return data;
 }
