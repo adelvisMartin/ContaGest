@@ -49,10 +49,11 @@ test('#797 ambiguous responses cannot be acknowledged',()=>{
  for(const response of [null,undefined,false,{},'OK',{ok:false},{delivered:false},{status:400}])
   assert.throws(()=>h.assertOfflineDeliveryAcknowledged(response),/OFFLINE_DELIVERY_NOT_ACKNOWLEDGED/);
 });
-test('#797 gym workout mutation remains disabled absent idempotent server consumer',async()=>{
+test('#797 only durable workout SET (not session creation) is enabled',async()=>{
  const h=harness([]);
  assert.doesNotMatch(source,/['"]gym\.workout['"]\s*:/);
  assert.match(source,/'analytics.event': Object\.freeze/);
+ assert.match(source,/'gym.workout.set': Object\.freeze/);
  await assert.rejects(h.enqueueOfflineOperation({session:h.session,operation:'gym.workout.create',
     payload:{sessionId:'x'},idempotencyKey:'EVENT-0003'}),error=>error.code==='OFFLINE_OPERATION_NOT_ALLOWED');
 });
