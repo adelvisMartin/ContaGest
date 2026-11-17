@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { MASTER_EXPORT_FIELDS, masterExportCell, masterExportRows, masterExportCsv, masterExportPayload } from '../backend/src/modules/exports/master-export.ts';
+import { MASTER_EXPORT_FIELDS, masterExportCell, masterExportRows, masterExportCsv, masterExportPayload, encodeMasterExportCsvCell } from '../backend/src/modules/exports/master-export.ts';
 
 const meta = Object.freeze({ skip: 0, take: 100, hasMore: false, exportedAt: '2026-10-15T00:00:00.000Z' });
 
@@ -55,6 +55,22 @@ test('spreadsheet CSV guard rejects Unicode invisible prefixes and C1 controls',
   const csv = masterExportCsv('clients', [{ rif:'\u0085=1+1', name:'\u200B@SUM(A1:A2)' }]);
   assert.ok(csv.includes(`"'\u0085=1+1"`));
   assert.ok(csv.includes(`"'\u200B@SUM(A1:A2)"`));
+});
+
+test('generic and master backend CSV cells share Unicode-safe formula mitigation', () => {
+  for (const input of ['\u200B=1+1','\u2060@SUM(A1:A2)','\t-HYPERLINK("x")']) {
+    assert.equal(encodeMasterExportCsvCell(input), `"'${input.replaceAll('"','""')}"`);
+  }
+  assert.equal(encodeMasterExportCsvCell(-20), '"-20"');
+  assert.equal(encodeMasterExportCsvCell('normal'), '"normal"');
+});
+
+test('generic backend CSV endpoint uses audited shared cell policy and no-store', () => {
+  const route=readFileSync(new URL('../backend/src/modules/exports/exports.routes.ts',import.meta.url),'utf8');
+  assert.match(route,/const escapeCsv = encodeMasterExportCsvCell/);
+  assert.match(route,/router\.use\(\(_req, res, next\) =>/);
+  assert.match(route,/cache-control', 'no-store, max-age=0'/);
+  assert.match(route,/x-content-type-options', 'nosniff'/);
 });
 
 test('CSV header and row keys stay in declared canonical order', () => {
