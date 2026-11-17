@@ -42,6 +42,27 @@ test('#852 manual grant → unique right → booking/consume same tx → rollbac
   })});
   assert.match(String(benefit.quantity),/^3(?:\.0{1,3})?$/);
 
+  // Benefit listing is paged: a second benefit must remain discoverable
+  // without changing the legacy array response.
+  const otherBenefit=await h.ok('/customer-entitlements/benefits',{
+    method:'POST',body:JSON.stringify({
+      productId:product.id,name:'Otro beneficio QA '+label,scope:'ALL',quantity:'1.000'
+    })
+  });
+  const firstBenefitPage=await h.request('/customer-entitlements/benefits?take=1&skip=0');
+  assert.equal(firstBenefitPage.response.status,200);
+  assert.equal(firstBenefitPage.response.headers.get('X-Pagination-Has-More'),'true');
+  assert.equal(firstBenefitPage.response.headers.get('X-Pagination-Next-Skip'),'1');
+  assert.equal(firstBenefitPage.response.headers.get('Cache-Control'),'private, no-store');
+  const nextBenefitPage=await h.request('/customer-entitlements/benefits?take=1&skip=1');
+  assert.equal(nextBenefitPage.response.status,200);
+  assert.equal(nextBenefitPage.response.headers.get('X-Pagination-Has-More'),'false');
+  assert.equal(nextBenefitPage.response.headers.get('X-Pagination-Next-Skip'),null);
+  assert.deepEqual(new Set([firstBenefitPage.data[0].id,nextBenefitPage.data[0].id]),
+    new Set([benefit.id,otherBenefit.id]));
+  await h.status('/customer-entitlements/benefits?take=0',422);
+  await h.status('/customer-entitlements/benefits?skip=-1',422);
+
   const effectKey='qa852:grant:'+label;
   const validFrom='2026-10-01T00:00:00.000Z';
   const validUntil='2027-03-01T00:00:00.000Z';
