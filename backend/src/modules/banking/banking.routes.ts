@@ -413,19 +413,26 @@ router.post('/movements', validateBody(movementSchema), asyncHandler(async (req,
 
 router.patch('/movements/:id/reconcile', validateBody(reconcileSchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const existing = await prisma.bankMovement.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { account: true } });
-  if (!existing) throw new HttpError(404, 'Movimiento bancario no encontrado.');
-  const candidateLedgerId = req.body.matched ? (req.body.ledgerEntryId ?? existing.ledgerEntryId ?? null) : null;
-  if (candidateLedgerId) {
-    const ledger = await prisma.ledgerEntry.findFirst({ where: { id: candidateLedgerId, tenantId: ctx.tenantId } });
-    if (!ledger) throw new HttpError(404, 'Asiento contable no encontrado para el tenant activo.', { code: 'BANK_LEDGER_ENTRY_NOT_FOUND' });
-  }
-  const updated = await prisma.bankMovement.update({
-    where: { id: existing.id },
-    data: { matched: req.body.matched, ledgerEntryId: candidateLedgerId },
-    include: { account: true }
+  const updated = await prisma.$transaction(async (tx) => {
+    const candidate = await tx.bankMovement.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, select: { accountId: true } });
+    if (!candidate) throw new HttpError(404, 'Movimiento bancario no encontrado.');
+    // Serialize with reversal/correction, which lock the same bank account.
+    await lockAccount(tx, ctx.tenantId, candidate.accountId);
+    const existing = await tx.bankMovement.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { account: true } });
+    if (!existing) throw new HttpError(404, 'Movimiento bancario no encontrado.');
+    const candidateLedgerId = req.body.matched ? (req.body.ledgerEntryId ?? existing.ledgerEntryId ?? null) : null;
+    if (candidateLedgerId) {
+      const ledger = await tx.ledgerEntry.findFirst({ where: { id: candidateLedgerId, tenantId: ctx.tenantId } });
+      if (!ledger) throw new HttpError(404, 'Asiento contable no encontrado para el tenant activo.', { code: 'BANK_LEDGER_ENTRY_NOT_FOUND' });
+    }
+    const movement = await tx.bankMovement.update({
+      where: { id: existing.id },
+      data: { matched: req.body.matched, ledgerEntryId: candidateLedgerId },
+      include: { account: true }
+    });
+    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: req.body.matched ? 'bank.movement.reconciled' : 'bank.movement.unreconciled', entity: 'BankMovement', entityId: movement.id, before: serializeMovement(existing), after: serializeMovement(movement), ipAddress: ctx.ip, userAgent: ctx.userAgent }, tx);
+    return movement;
   });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: req.body.matched ? 'bank.movement.reconciled' : 'bank.movement.unreconciled', entity: 'BankMovement', entityId: updated.id, before: serializeMovement(existing), after: serializeMovement(updated), ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, serializeMovement(updated));
 }));
 
