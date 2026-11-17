@@ -106,8 +106,24 @@ router.post('/health/appointments', requirePermission('health.manage'), asyncHan
   const actor={userId:ctx(req).userId||null,email:ctx(req).email||null};
   const b = appointmentSchema.parse(req.body || {});
   if(!['scheduled','confirmed','waitlisted'].includes(b.status))throw new HttpError(422,'La cita debe empezar programada, confirmada o en espera.');
+  // Keep other Care appointment types backwards compatible.
+  const {requestKey,...appointmentData}=b;
+  const requestFingerprint=b.type==='dentistry'&&requestKey
+    ?createHash('sha256').update(JSON.stringify(appointmentData)).digest('hex'):null;
   const created=await prisma.$transaction(async (tx)=>{
     await lockAppointmentSchedule(tx,tenantId);
+    if(b.type==='dentistry'&&requestKey){
+      const previous=await tx.$queryRawUnsafe<any[]>(`
+        SELECT * FROM public."CareAppointment"
+        WHERE "tenantId"=$1 AND "type"='dentistry'
+          AND "schedulingMeta"->>'requestKey'=$2 LIMIT 1
+      `,tenantId,requestKey);
+      if(previous.length){
+        if(previous[0].schedulingMeta?.requestFingerprint!==requestFingerprint)
+          throw new HttpError(409,'La clave de reserva corresponde a una solicitud diferente.');
+        return {appointment:previous[0],replayed:true};
+      }
+    }
     const patientRows=await tx.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true LIMIT 1`,tenantId,b.patientId);
     if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
     if(b.professionalId){
@@ -120,6 +136,8 @@ router.post('/health/appointments', requirePermission('health.manage'), asyncHan
     const schedulingMeta={
       createdAt:new Date().toISOString(),
       createdBy:actor,
+      ...(b.type==='dentistry'&&requestKey
+        ?{requestKey,requestFingerprint}:{}),
       ...(b.status==='waitlisted'?{waitlist:{requestedAt:new Date().toISOString(),requestedBy:actor}}:{})
     };
     const rows = await tx.$queryRawUnsafe<any[]>(`
@@ -129,9 +147,9 @@ router.post('/health/appointments', requirePermission('health.manage'), asyncHan
         (gen_random_uuid()::text,$1,$2,$3,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10,'pending',$11::timestamptz,$12::jsonb,$13,now(),now())
       RETURNING *
     `,tenantId,b.patientId,b.professionalId||null,b.startsAt,b.endsAt,b.type,b.status,b.reason||null,b.channel,b.room||null,b.recallDueAt||null,JSON.stringify(schedulingMeta),b.notes||null);
-    return one(rows);
+    return {appointment:one(rows),replayed:false};
   });
-  ok(res, created, 201);
+  ok(res,{...created.appointment,replayed:created.replayed},created.replayed?200:201);
 }));
 
 router.patch('/health/appointments/:id', requirePermission('health.manage'), asyncHandler(async (req, res) => {

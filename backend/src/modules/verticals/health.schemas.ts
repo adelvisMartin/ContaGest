@@ -51,7 +51,8 @@ export const appointmentSchema = z.object({
   channel: z.enum(['onsite','telemedicine','home_visit']).default('onsite'),
   room: optionalText,
   recallDueAt: dateText.optional().nullable(),
-  notes: optionalText
+  notes: optionalText,
+  requestKey: z.string().uuid().optional()
 }).superRefine((value, refinement) => {
   const startsAt=new Date(value.startsAt).getTime();
   const endsAt=new Date(value.endsAt).getTime();
