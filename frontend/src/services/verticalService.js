@@ -90,6 +90,11 @@ export const VeterinaryService = {
 
 export const GymVerticalService = {
   summary() { return BackendApi.get('/verticals/gym/summary'); },
+  equipment(filters={}) { return BackendApi.get('/verticals/gym/equipment'+query(filters)); },
+  createEquipment(payload) { return BackendApi.post('/api/v1/verticals/gym/equipment',payload); },
+  equipmentWorkOrders(id) { return BackendApi.get('/verticals/gym/equipment/'+pathId(id)+'/work-orders'); },
+  createEquipmentWorkOrder(id,payload) { return BackendApi.post('/api/v1/verticals/gym/equipment/'+pathId(id)+'/work-orders',payload); },
+  transitionEquipmentWorkOrder(id,payload) { return BackendApi.post('/api/v1/verticals/gym/equipment/work-orders/'+pathId(id)+'/transitions',payload); },
   async members(params = {}) { return MediaService.signRecords(await BackendApi.get(`/verticals/gym/members${query(params)}`)); },
   createMember(payload) { return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/gym/members', data), payload, 'gym-member', 'fullName'); },
   trainers() { return BackendApi.get('/verticals/gym/trainers'); },

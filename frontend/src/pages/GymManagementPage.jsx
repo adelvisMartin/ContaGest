@@ -9,6 +9,7 @@ import { rows, object, localDate, localDateTime, amount, memberOptions, trainerO
 import { Metric, RecordList, Section } from '../components/fitness/GymWorkspacePrimitives.jsx';
 import { GymTrainingPanel } from '../components/fitness/GymTrainingPanel.jsx';
 import { GymNutritionPanel } from '../components/fitness/GymNutritionPanel.jsx';
+import { GymEquipmentPanel } from '../components/fitness/GymEquipmentPanel.jsx';
 
 function DateOfBirthFields({form,setForm}){
   return <Box className="cg-gym-v1124-fields" sx={{display:'grid',gridTemplateColumns:'minmax(0,.7fr) minmax(0,1fr) minmax(0,1fr)',gap:1}}>
@@ -319,7 +320,8 @@ function GymWorkspace({state,context}){
     <Section wide title="Próximas clases" description="Agenda disponible para operación diaria." action={<CgButton variant="outlined" onClick={()=>selectTab('classes')}>Programar clase</CgButton>}><RecordList items={classes} empty="No hay clases próximas" render={(item)=><Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between"><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.startsAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {item.trainerName||'Sin instructor'}</Typography></Box><Typography variant="body2">{Number(item.bookings||0)} / {Number(item.capacity||0)}</Typography></Stack>}/></Section>
   </Box>;
 
-  const panels={overview,members:panelMembers,trainers:panelTrainers,assessments:panelAssessments,routines:panelRoutines,nutrition:panelNutrition,classes:panelClasses};
+  const panelEquipment=<GymEquipmentPanel/>;
+  const panels={overview,members:panelMembers,trainers:panelTrainers,assessments:panelAssessments,routines:panelRoutines,nutrition:panelNutrition,classes:panelClasses,equipment:panelEquipment};
 
   if (!serverVerified) return <Stack className="cg-vertical-page cg-gym-page" gap={1.5}>
     <CgPageHeader eyebrow="Vertical Fitness" title="Datos del gimnasio pendientes de verificación" description="No mostramos perfiles, evaluaciones ni rutinas almacenadas sin comprobar la sesión y la respuesta actual del servidor."/>
@@ -338,7 +340,7 @@ function GymWorkspace({state,context}){
       <Metric label="Ingresos del mes" value={`$ ${Number(summary.revenueThisMonth||0).toLocaleString('es-VE',{minimumFractionDigits:2})}`} hint="Pagos confirmados" tone="secondary"/>
     </Box>
     <Section title="Coaching y retención" description="Señales operativas para seguimiento antes de perder una membresía."><Box className="cg-gym-v1124-grid cg-gym-retention-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(3,1fr)'},gap:1}}><Metric label="Renovaciones próximas" value={Number(summary.memberships?.expiring||0)}/><Metric label="Clases ≥ 80%" value={highOccupancy}/><Metric label="Clientes con coaching" value={Number(summary.members?.active||0)}/></Box></Section>
-    <Paper className="cg-gym-v1124-tabs" variant="outlined" sx={{px:1,minWidth:0,maxWidth:'100%',overflow:'hidden'}}><Tabs sx={{minWidth:0,maxWidth:'100%'}} value={tab} onChange={(_e,value)=>selectTab(value)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>{[['overview','Operación'],['members','Clientes'],['trainers','Instructores'],['assessments','Evaluaciones'],['routines','Rutinas'],['nutrition','Nutrición'],['classes','Clases']].map(([value,label])=><Tab key={value} value={value} label={label}/>)}</Tabs></Paper>
+    <Paper className="cg-gym-v1124-tabs" variant="outlined" sx={{px:1,minWidth:0,maxWidth:'100%',overflow:'hidden'}}><Tabs sx={{minWidth:0,maxWidth:'100%'}} value={tab} onChange={(_e,value)=>selectTab(value)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>{[['overview','Operación'],['members','Clientes'],['trainers','Instructores'],['assessments','Evaluaciones'],['routines','Rutinas'],['nutrition','Nutrición'],['classes','Clases'],['equipment','Equipos']].map(([value,label])=><Tab key={value} value={value} label={label}/>)}</Tabs></Paper>
     <Box data-gym-panel={tab}>{panels[tab]||overview}</Box>
   </Stack>;
 }
