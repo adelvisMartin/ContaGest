@@ -204,6 +204,22 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     assert.equal(await h.prisma.idempotencyRecord.count({where:{tenantId:h.tenant.id,requestId:idempotencyHeader['x-request-id']}}),0);
   });
 
+  await t.test('#1288 revoked and absent server sessions cannot access financial summaries',async()=>{
+    const syntheticToken=await h.issueSessionTokenFor({id:h.admin.id,email:h.admin.email});
+    await h.ok('/banking/summary',{},syntheticToken);
+    const claims=JSON.parse(Buffer.from(syntheticToken.split('.')[1],'base64url').toString('utf8'));
+    assert.match(String(claims.sid||''),/^[a-f0-9-]{36}$/i);
+    const changed=await h.prisma.$executeRaw`
+      UPDATE public."UserSession"
+      SET "status"='revoked',"revokedAt"=now(),"updatedAt"=now()
+      WHERE "id"=${claims.sid} AND "tenantId"=${h.tenant.id}
+    `;
+    assert.equal(Number(changed),1);
+    await h.status('/banking/summary',401,{},syntheticToken);
+    await h.status('/banking/movements',401,{},syntheticToken);
+    await h.status('/banking/summary',401,{},'');
+  });
+
   await t.test('audit log captures the financial lifecycle actor/reason events',async()=>{
     const rows=await h.prisma.auditLog.findMany({where:{tenantId:h.tenant.id,action:{in:['bank.movement.created','bank.movement.reversed','bank.movement.corrected','bank.movement.reconciled','bank.movement.unreconciled','banking.account-opened']}}});
     assert.ok(rows.some((row)=>row.action==='bank.movement.reversed'));
