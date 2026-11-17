@@ -4,6 +4,7 @@ import trainingRoutes from './gym-training.routes.js';
 import nutritionRoutes from './gym-nutrition.routes.js';
 import adherenceRoutes from './gym-adherence.routes.js';
 import classRoutes from './gym-classes.routes.js';
+import equipmentRoutes from './gym-equipment.routes.js';
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use(trainingRoutes);
 router.use(nutritionRoutes);
 router.use(adherenceRoutes);
 router.use(classRoutes);
+router.use(equipmentRoutes);
 
 export default router;
