@@ -71,7 +71,11 @@ function canonicalize(value: unknown): unknown {
     return Object.is(value, -0) ? 0 : value;
   }
   if (typeof value === 'bigint') return value.toString();
-  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Date) {
+    if (!Number.isFinite(value.getTime())) throw new HttpError(422,
+      'El request contiene una fecha inválida.', { code: 'IDEMPOTENCY_REQUEST_NOT_CANONICAL' });
+    return value.toISOString();
+  }
   if (Array.isArray(value)) return value.map(canonicalize);
   if (typeof value === 'object') {
     const source = value as Record<string, unknown>;
