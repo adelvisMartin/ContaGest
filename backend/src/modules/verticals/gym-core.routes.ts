@@ -122,6 +122,15 @@ router.post('/gym/checkins', requirePermission('gym.manage'), asyncHandler(async
     .update(JSON.stringify({memberId:b.memberId,method:b.method,device:b.device||null,notes:b.notes||null}))
     .digest('hex') : null;
   const outcome = await prisma.$transaction(async tx => {
+    if (b.requestKey) {
+      // Keys are tenant-wide, not member-wide. Different member locks do not
+      // serialize colliding keys; let the second writer see the committed
+      // fingerprint and return 409 rather than surfacing a unique-index 500.
+      await tx.$queryRawUnsafe<Array<{locked:string|null}>>(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
+        `gym-checkin:v746:${tenantId}:${b.requestKey}`
+      );
+    }
     const members = await tx.$queryRawUnsafe<Array<{id:string;status:string}>>(`
       SELECT "id","status" FROM public."GymMember"
       WHERE "tenantId"=$1 AND "id"=$2 FOR UPDATE
