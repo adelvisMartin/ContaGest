@@ -106,6 +106,23 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     const foreignAccount=await h.prisma.bankAccount.create({data:{tenantId:tenantB.id,bankName:`${RUN} Foreign`,accountNo:`${RUN}-FOREIGN`,currency:'USD',balance:0}});accountIds.push(foreignAccount.id);
     const foreignMovement=await h.prisma.bankMovement.create({data:{tenantId:tenantB.id,accountId:foreignAccount.id,description:`${RUN} foreign`,credit:'1.00',debit:'0.00'}});movementIds.push(foreignMovement.id);
     await h.status(`/banking/movements/${foreignMovement.id}/reverse`,404,{method:'POST',headers:headers('FOREIGN'),body:body({reason:'QA cross tenant denied'})});
+    // #1288: test every cross-tenant banking mutation/read entrypoint, not
+    // only the reversal endpoint. All attempts operate as tenant A.
+    await h.status('/banking/movements',404,{method:'POST',headers:headers('FOREIGN-ACCOUNT-CREATE'),
+      body:body({accountId:foreignAccount.id,description:`${RUN} forbidden foreign insert`,type:'income',currency:'USD',amount:'999.00'})});
+    await h.status(`/banking/movements/${foreignMovement.id}/reconcile`,404,{method:'PATCH',
+      body:body({matched:true})});
+    await h.status(`/banking/movements/${foreignMovement.id}/correct`,404,{method:'POST',headers:headers('FOREIGN-CORRECT'),
+      body:body({reason:'QA cross tenant correction denied',description:'foreign correction',type:'income',amount:'1.00'})});
+    await h.status(`/banking/movements/${foreignMovement.id}`,404,{method:'DELETE'});
+    const filtered=await h.ok(`/banking/movements?accountId=${foreignAccount.id}`);
+    assert.equal(filtered.length,0,'Foreign account must not leak through search');
+    const overview=await h.ok('/banking/summary');
+    assert.equal(overview.accounts.some((row:any)=>row.id===foreignAccount.id),false);
+    assert.equal(overview.movements.some((row:any)=>row.id===foreignMovement.id),false);
+    const foreignUnchanged=await h.prisma.bankMovement.findUniqueOrThrow({where:{id:foreignMovement.id}});
+    assert.equal(String(foreignUnchanged.credit),'1');
+    assert.equal(foreignUnchanged.matched,false);
 
     const account=await h.ok('/banking/accounts',{method:'POST',headers:headers('CONC-ACCOUNT'),body:body({bankName:`${RUN} Concurrent`,accountNo:`${RUN}-CONCURRENT`,currency:'USD',openingBalance:'0'})});accountIds.push(account.id);
     const results=await Promise.all(Array.from({length:10},(_,index)=>h.ok('/banking/movements',{method:'POST',headers:headers(`CONC-${index}`),body:body({accountId:account.id,description:`${RUN} concurrent ${index}`,type:'income',currency:'USD',amount:'0.10'})})));
