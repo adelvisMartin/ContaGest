@@ -1,5 +1,5 @@
 import crypto, { randomUUID } from 'node:crypto';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../http.js';
 
@@ -71,6 +71,9 @@ function canonicalize(value: unknown): unknown {
     return Object.is(value, -0) ? 0 : value;
   }
   if (typeof value === 'bigint') return value.toString();
+  // Zod finance schemas intentionally return Prisma.Decimal; hash its decimal
+  // value, not its implementation-specific digit/coefficient object shape.
+  if (Prisma.Decimal.isDecimal(value)) return value.toString();
   if (value instanceof Date) return value.toISOString();
   if (Array.isArray(value)) return value.map(canonicalize);
   if (typeof value === 'object') {
