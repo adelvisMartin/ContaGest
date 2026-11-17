@@ -35,6 +35,8 @@ function validObservation(overrides={}){
       backupPolicy:i%2===0
     })),
     crossScopeGrants:[],
+    authScopeAccess:[],
+    defaultPrivileges:[],
     ...overrides
   };
 }
@@ -214,4 +216,60 @@ test('v24 workflow is manual verification-only and never provisions',async()=>{
   assert.match(workflow,/node scripts\/hipico-backup-role-verify-v24\.mjs/);
   assert.doesNotMatch(workflow,/provision-hipico-backup-role\.sh/);
   assert.match(workflow,/actions\/upload-artifact/);
+});
+
+
+test('v24 unknown privileged flags cannot prove a least-privilege connection',()=>{
+  for(const [flag,error] of [
+    ['superuser','ROLE_SUPERUSER_FORBIDDEN'],['createdb','ROLE_CREATEDB_FORBIDDEN'],
+    ['createrole','ROLE_CREATEROLE_FORBIDDEN'],['replication','ROLE_REPLICATION_FORBIDDEN'],
+    ['bypassrls','ROLE_BYPASSRLS_FORBIDDEN'],
+    ['serviceRoleMember','SERVICE_ROLE_MEMBERSHIP_FORBIDDEN'],
+    ['schemaCreate','PUBLIC_SCHEMA_CREATE_FORBIDDEN']
+  ])for(const value of [undefined,null,true]){
+    const observation=validObservation();
+    observation.role[flag]=value;
+    const report=classifyBackupRoleVerification({candidateSha:SHA,observation,now:NOW});
+    assert.equal(report.status,'FAIL',flag);
+    assert.ok(report.findings.includes(error),flag);
+  }
+});
+
+test('v24 unknown grants, auth schema or default grants evidence must not report PASS',()=>{
+  for(const [key,code] of [
+    ['crossScopeGrants','CROSS_SCOPE_GRANTS_NOT_VERIFIED'],
+    ['authScopeAccess','AUTH_SCOPE_ACCESS_NOT_VERIFIED'],
+    ['defaultPrivileges','DEFAULT_PRIVILEGES_NOT_VERIFIED']
+  ])for(const value of [undefined,null]){
+    const obs=validObservation();obs[key]=value;
+    const result=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(result.status,'FAIL',key);
+    assert.ok(result.findings.includes(code));
+  }
+});
+
+test('v24 table privilege proof must explicitly include all permission and RLS fields',()=>{
+  for(const [key,code] of [
+    ['mutablePrivileges','MUTABLE_PRIVILEGES_NOT_VERIFIED'],
+    ['rls','RLS_STATE_NOT_VERIFIED'],
+    ['backupPolicy','BACKUP_POLICY_NOT_VERIFIED']
+  ]){
+    const obs=validObservation();delete obs.observedTables[0][key];
+    const result=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(result.status,'FAIL',key);
+    assert.ok(result.findings.some(f=>f.startsWith(code)),key);
+  }
+});
+
+test('v24 must reject duplicate/invalid table inventory and malformed observations',()=>{
+  for(const change of [
+    obs=>obs.expectedTables[24]=obs.expectedTables[0],
+    obs=>obs.expectedTables[24]='other_schema',
+    obs=>obs.observedTables[24]={...obs.observedTables[0]},
+    obs=>obs.observedTables[24]=null
+  ]){
+    const obs=validObservation();change(obs);
+    const result=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(result.status,'FAIL');
+  }
 });

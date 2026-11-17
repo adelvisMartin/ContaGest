@@ -56,24 +56,30 @@ export function classifyBackupRoleVerification({
   if(role.exists===true){
     if(role.connectedUser!=='hipico_backup'||role.sessionUser!=='hipico_backup')findings.push('BACKUP_CONNECTION_ROLE_MISMATCH');
     if(role.login!==true)findings.push('ROLE_LOGIN_REQUIRED');
-    if(role.superuser===true)findings.push('ROLE_SUPERUSER_FORBIDDEN');
-    if(role.createdb===true)findings.push('ROLE_CREATEDB_FORBIDDEN');
-    if(role.createrole===true)findings.push('ROLE_CREATEROLE_FORBIDDEN');
+    if(role.superuser!==false)findings.push('ROLE_SUPERUSER_FORBIDDEN');
+    if(role.createdb!==false)findings.push('ROLE_CREATEDB_FORBIDDEN');
+    if(role.createrole!==false)findings.push('ROLE_CREATEROLE_FORBIDDEN');
     if(role.inherit!==false)findings.push('ROLE_INHERIT_FORBIDDEN');
-    if(role.replication===true)findings.push('ROLE_REPLICATION_FORBIDDEN');
-    if(role.bypassrls===true)findings.push('ROLE_BYPASSRLS_FORBIDDEN');
-    if(role.serviceRoleMember===true)findings.push('SERVICE_ROLE_MEMBERSHIP_FORBIDDEN');
+    if(role.replication!==false)findings.push('ROLE_REPLICATION_FORBIDDEN');
+    if(role.bypassrls!==false)findings.push('ROLE_BYPASSRLS_FORBIDDEN');
+    if(role.serviceRoleMember!==false)findings.push('SERVICE_ROLE_MEMBERSHIP_FORBIDDEN');
     if(role.schemaUsage!==true)findings.push('PUBLIC_SCHEMA_USAGE_REQUIRED');
-    if(role.schemaCreate===true)findings.push('PUBLIC_SCHEMA_CREATE_FORBIDDEN');
+    if(role.schemaCreate!==false)findings.push('PUBLIC_SCHEMA_CREATE_FORBIDDEN');
     if(role.databaseConnect!==true)findings.push('DATABASE_CONNECT_REQUIRED');
   }
 
   const expected=Array.isArray(observation.expectedTables)?observation.expectedTables:[];
   const observed=Array.isArray(observation.observedTables)?observation.observedTables:[];
   if(expected.length!==25)findings.push(`INVENTORY_COUNT_INVALID:${expected.length}`);
+  if(new Set(expected).size!==expected.length || expected.some(name=>typeof name!=='string'||!/^hipico_[a-z0-9_]+$/.test(name)))
+    findings.push('INVENTORY_NOT_UNIQUE_OR_INVALID');
   if(observed.length!==expected.length)findings.push(`OBSERVED_TABLE_COUNT_MISMATCH:${observed.length}:${expected.length}`);
 
-  const observedByTable=new Map(observed.map((item)=>[item.table,item]));
+  const validObserved=observed.every(item=>item&&typeof item.table==='string');
+  if(!validObserved)findings.push('TABLE_OBSERVATION_INVALID');
+  if(validObserved && new Set(observed.map(item=>item.table)).size!==observed.length)
+    findings.push('TABLE_OBSERVATION_DUPLICATE');
+  const observedByTable=new Map(observed.filter(item=>item&&typeof item.table==='string').map((item)=>[item.table,item]));
   for(const table of expected){
     const item=observedByTable.get(table);
     if(!item){
@@ -86,12 +92,18 @@ export function classifyBackupRoleVerification({
       continue;
     }
     if(item.select!==true)findings.push(`SELECT_REQUIRED:${table}`);
+    if(!Array.isArray(item.mutablePrivileges))findings.push(`MUTABLE_PRIVILEGES_NOT_VERIFIED:${table}`);
+    if(item.rls!==true && item.rls!==false)findings.push(`RLS_STATE_NOT_VERIFIED:${table}`);
+    if(item.backupPolicy!==true && item.backupPolicy!==false)findings.push(`BACKUP_POLICY_NOT_VERIFIED:${table}`);
     for(const privilege of Array.isArray(item.mutablePrivileges)?item.mutablePrivileges:[]){
       findings.push(`MUTABLE_PRIVILEGE:${table}:${privilege}`);
     }
     if(item.rls===true&&item.backupPolicy!==true)findings.push(`RLS_POLICY_MISSING:${table}`);
   }
 
+  if(!Array.isArray(observation.crossScopeGrants))findings.push('CROSS_SCOPE_GRANTS_NOT_VERIFIED');
+  if(!Array.isArray(observation.authScopeAccess))findings.push('AUTH_SCOPE_ACCESS_NOT_VERIFIED');
+  if(!Array.isArray(observation.defaultPrivileges))findings.push('DEFAULT_PRIVILEGES_NOT_VERIFIED');
   for(const crossScopeGrant of Array.isArray(observation.crossScopeGrants)?observation.crossScopeGrants:[]){
     findings.push(`CROSS_SCOPE_GRANT:${crossScopeGrant}`);
   }
