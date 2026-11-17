@@ -10,6 +10,9 @@ const api=readFileSync('backend/src/modules/verticals/gym-equipment.routes.ts','
 const sql=readFileSync('backend/prisma/migrations/20261117050500_gym_equipment_work_orders_v799/migration.sql','utf8');
 
 test('#799 Gym equipment tab has routed backend and real CRUD client',()=>{
+  // The previously removed import crashed the whole Gym workspace at render.
+  assert.match(page,/import \{ FitnessProductivityTools \} from/);
+  assert.match(page,/<FitnessProductivityTools/);
   assert.match(page,/equipment:panelEquipment/);
   assert.match(page,/\['equipment','Equipos'\]/);
   assert.match(router,/router\.use\(equipmentRoutes\)/);
