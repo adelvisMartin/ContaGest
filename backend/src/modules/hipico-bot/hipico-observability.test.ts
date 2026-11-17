@@ -42,6 +42,35 @@ test('metadata sanitizer removes credentials and message/identity payloads recur
   assert.equal((clean.list as any[])[0].code,'E1');
 });
 
+test('HIPICO #1314 redacts private report URLs and sender identifiers hidden in metadata values',()=>{
+  const token='A'.repeat(43);
+  const raw='GET /api/v1/hipico/report-shares/public?t='+token+' from 584121234567@c.us';
+  const clean=sanitizeObservationMetadata({
+    detail:raw, note:'Contact +584121234567', actor:'participant-7@lid',
+    url:'https://example.invalid/share?%74='+token, t:token,
+    trace:'safe', evidence:[{code:'HUMAN_REQUIRED', info:'Bearer '+token}]
+  }) as Record<string,unknown>;
+  const output=JSON.stringify(clean);
+  for(const forbidden of [token,'584121234567','participant-7@lid']){
+    assert.equal(output.includes(forbidden),false,forbidden);
+  }
+  assert.equal(clean.trace,'safe');
+  assert.equal((clean.evidence as any[])[0].code,'HUMAN_REQUIRED');
+  assert.equal(Object.hasOwn(clean,'t'),false);
+  assert.match(String(clean.detail),/\[REDACTED\]/);
+});
+
+test('HIPICO #1314 sanitizes sensitive metadata keys without leaking identity',()=>{
+  const clean=sanitizeObservationMetadata({
+    'owner-584121234567': 'synthetic', status:'SAFE', details: { message:'private', 'participant-7@lid': 'secret' }
+  }) as Record<string,unknown>;
+  const rendered=JSON.stringify(clean);
+  assert.equal(rendered.includes('584121234567'),false);
+  assert.equal(rendered.includes('participant-7@lid'),false);
+  assert.equal(clean.status,'SAFE');
+  assert.equal(rendered.includes('private'),false);
+});
+
 test('candidate SHA is accepted only when it is an exact git SHA',()=>{
   assert.equal(candidateSha({HIPICO_CANDIDATE_SHA:'a'.repeat(40)}),'a'.repeat(40));
   assert.equal(candidateSha({HIPICO_CANDIDATE_SHA:'main',GITHUB_SHA:'b'.repeat(40)}),'b'.repeat(40));
