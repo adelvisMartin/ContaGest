@@ -1,10 +1,24 @@
 import { downloadText } from '../utils/dom.js';
 
+// A spreadsheet may interpret text starting with these symbols as a formula,
+// even when preceded by invisible whitespace. Keep the original cell value
+// intact for CSV consumers; prefix a literal apostrophe only in the export.
+const FORMULA_PREFIX = /^[\u0000-\u0020\u007f-\u009f\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*[=+\-@]/u;
+
+export function encodeCsvCell(value) {
+  const raw = String(value ?? '');
+  const numeric = (typeof value === 'number' && Number.isFinite(value)) || typeof value === 'bigint';
+  const safe = !numeric && FORMULA_PREFIX.test(raw) ? `'${raw}` : raw;
+  return `"${safe.replaceAll('"', '""')}"`;
+}
+
 export function toCsv(rows = []) {
   if (!rows.length) return '';
   const headers = Object.keys(rows[0]);
-  const escape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
-  return [headers.join(','), ...rows.map((row) => headers.map((key) => escape(row[key])).join(','))].join('\n');
+  return [
+    headers.map(encodeCsvCell).join(','),
+    ...rows.map((row) => headers.map((key) => encodeCsvCell(row[key])).join(','))
+  ].join('\r\n');
 }
 
 export function downloadCsv(filename, rows) {
