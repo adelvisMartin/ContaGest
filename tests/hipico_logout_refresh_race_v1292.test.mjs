@@ -17,10 +17,11 @@ const program = [
   segment('export async function refreshCloudSession', 'export async function initializeCloudSession'),
   segment('export async function initializeCloudSession', 'export function currentSession'),
   segment('export function currentSession', 'export function sessionRole'),
+  segment('async function validAccessToken()', 'function validateCredentials('),
   segment('export async function signIn(', 'export async function signUp('),
   segment('export async function signUp(', 'export async function signOut()'),
   segment('export async function signOut()', 'export function isTransientCloudError('),
-  '({ currentSession, signOut, signIn, signUp, refreshCloudSession, initializeCloudSession, epoch: () => sessionEpoch })'
+  '({ currentSession, signOut, signIn, signUp, refreshCloudSession, initializeCloudSession, authorizedRequest, epoch: () => sessionEpoch })'
 ].join('\n');
 
 function deferred() {
@@ -32,7 +33,7 @@ function deferred() {
 const oldSession = { access_token: 'synthetic-old-access', refresh_token: 'synthetic-old-refresh' };
 const newSession = { access_token: 'synthetic-new-access', refresh_token: 'synthetic-new-refresh' };
 
-function harness({ refreshResponse, signupResponse = null, oldDiskLoad = null, holdSave = null } = {}) {
+function harness({ refreshResponse, signupResponse = null, oldDiskLoad = null, holdSave = null, protectedResponse = null } = {}) {
   let stored = oldSession;
   const writes = [];
   const context = {
@@ -52,6 +53,7 @@ function harness({ refreshResponse, signupResponse = null, oldDiskLoad = null, h
       if (url.includes('grant_type=password')) return newSession;
       if (url === '/auth/v1/signup') return signupResponse ? signupResponse.promise : newSession;
       if (url === '/auth/v1/logout') return {};
+      if (url.startsWith('/rest/v1/')) return protectedResponse ? protectedResponse.promise : { ok: true };
       throw new Error('Unexpected synthetic request: ' + url);
     }
   };
@@ -127,4 +129,39 @@ test('#1292 a delayed sign-up cannot return a stale authenticated result after l
   assert.equal(await signingUp, null);
   assert.equal(h.currentSession(), null);
   assert.equal(h.stored(), null);
+});
+
+test('#1292 protected data received after logout must never reach the UI', async () => {
+  const refreshResponse = deferred();
+  const protectedResponse = deferred();
+  const h = harness({ refreshResponse, protectedResponse });
+  const pending = h.authorizedRequest('/rest/v1/rpc/hipico_get_workspace');
+  await h.signOut();
+  protectedResponse.resolve({ state: { privateOwnerData: 'old-user' } });
+  await assert.rejects(pending, (error) => error.code === 'HIPICO_SESSION_CHANGED');
+  assert.equal(h.currentSession(), null);
+  assert.equal(h.stored(), null);
+});
+
+test('#1292 a late 401 cannot refresh or retry under a different logged-in user', async () => {
+  const refreshResponse = deferred();
+  const protectedResponse = deferred();
+  const h = harness({ refreshResponse, protectedResponse });
+  const pending = h.authorizedRequest('/rest/v1/rpc/hipico_get_workspace');
+  await h.signOut();
+  await h.signIn('new@example.invalid', 'synthetic');
+  protectedResponse.reject(Object.assign(new Error('Expired'), { status: 401 }));
+  await assert.rejects(pending, (error) => error.code === 'HIPICO_SESSION_CHANGED');
+  assert.equal(h.currentSession()?.access_token, newSession.access_token);
+  assert.equal(h.stored()?.access_token, newSession.access_token);
+});
+
+test('#1292 a valid protected response remains readable without session transition', async () => {
+  const refreshResponse = deferred();
+  const protectedResponse = deferred();
+  const h = harness({ refreshResponse, protectedResponse });
+  const pending = h.authorizedRequest('/rest/v1/rpc/hipico_get_workspace');
+  protectedResponse.resolve({ state: { synthetic: true } });
+  const result = await pending;
+  assert.equal(result.state.synthetic, true);
 });
