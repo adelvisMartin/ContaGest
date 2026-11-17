@@ -61,3 +61,12 @@
 - https://cheatsheetseries.owasp.org/cheatsheets/CSV_Injection_Prevention_Cheat_Sheet.html
 
 **Fuera de alcance del documento:** ejecutar pentest contra cuentas reales, enlazar WhatsApp SOURCE sin permiso, mover secretos a un MCP ajeno o afirmar cumplimiento legal por un checklist.
+
+## Concurrencia y RLS: evidencia de documentación oficial (PG17/Prisma6)
+La dependencia realmente declarada por `backend/package.json` en `main@03834a6c...` es `@prisma/client: 6.19.3`. No rediseñar las transacciones como si el repositorio usara Prisma 7.
+
+- [PostgreSQL 17 Row Security](https://www.postgresql.org/docs/17/ddl-rowsecurity.html): comprobar que RLS esté habilitado y que las políticas cubran la tabla/rol/operación; cuando está habilitado sin política aplicable, se deniega por defecto. La presencia de una policy no prueba que el API use el rol correcto; ejecutar negativos tenant A/B y comprobar DB role efectivo.
+- [PostgreSQL: explicit locking](https://www.postgresql.org/docs/17/explicit-locking.html): `SELECT FOR UPDATE` y advisory lock **transaccional** son primitivas distintas; adquirir en un orden verificable, dentro de la transacción que hace el write. No usar lock de sesión como sustituto sin justificarlo.
+- [Prisma v6: interactive transactions](https://www.prisma.io/docs/orm/v6/prisma-client/queries/transactions): verificar aislamiento y reintentos limitados ante conflictos/errores de serialización según el flujo real. No activar `Serializable` indiscriminadamente ni reintentar operaciones no idempotentes.
+- [Playwright projects](https://playwright.dev/docs/test-projects): mantener Chromium como gate real, Firefox/WebKit como matriz; screenshots y traces se vinculan al SHA y al rol/tenant aislado, no sólo al componente visual.
+- Tests de concurrencia usan múltiples transacciones independientes, PostgreSQL17 efímero, PK/unique/FK/RLS existentes, cleanup garantizado y verificación de **un único efecto**; no aceptan sleeps o mocks de base de datos compartida.
