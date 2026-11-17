@@ -36,6 +36,12 @@ export function validSoakSampleSummary(rows, summary) {
           typeof health.ok !== 'boolean' ||
           !Number.isInteger(health.status) || health.status < 0 || health.status > 599 ||
           !finiteNonnegative(health.latencyMs)) return false;
+      // The real probe never reports healthy on HTTP 503/0, nor after a
+      // SOURCE-write warning. A recomputed sample checksum is not proof
+      // that a self-contradictory health object came from the producer.
+      if((health.ok && (health.status<200 || health.status>=300 ||
+          (health.reason!=null && health.reason!=='READY_SHADOW'))) ||
+         (!health.ok && health.reason==='READY_SHADOW')) return false;
       healthChecks++;
       if (!health.ok) healthFailures++;
     }
