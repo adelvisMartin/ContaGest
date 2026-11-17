@@ -310,6 +310,7 @@ export const veterinaryVitalBatchSchema =z.object({
 
 export const immunizationSchema = z.object({
   patientId: z.string().min(10),
+  requestKey: z.string().uuid().optional(),
   professionalId: z.string().optional().nullable(),
   vaccine: z.string().trim().min(2).max(180),
   dose: optionalText,

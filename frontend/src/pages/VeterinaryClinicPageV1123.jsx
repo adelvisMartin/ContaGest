@@ -248,6 +248,7 @@ function VeterinaryDossier({ ctx, state }) {
           }}
         />
         <VeterinaryPreventiveCarePanel
+          key={selected.id}
           patient={selected}
           professionals={professionals}
           encounters={history.encounters}

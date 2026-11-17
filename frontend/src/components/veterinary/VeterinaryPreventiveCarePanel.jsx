@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Box, Divider, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
 import { CgButton, CgDataTable, CgEmptyState, CgSelect, CgState, CgStatusChip, CgTextField } from '../ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService, VeterinaryService } from '../../services/verticalService.js';
@@ -39,6 +39,7 @@ export function VeterinaryPreventiveCarePanel({
   const [reminderChannel,setReminderChannel]=useState('whatsapp');
   const [reminderDays,setReminderDays]=useState('7');
   const [saving,setSaving]=useState(false);
+  const vaccineRequestKeyRef=useRef('');
   const [error,setError]=useState('');
   const [reminderWarning,setReminderWarning]=useState('');
 
@@ -104,7 +105,15 @@ export function VeterinaryPreventiveCarePanel({
     try{
       let created;
       if(kind==='vaccine'){
+        // Reuse the same key if a response is lost, never a second dose.
+        if(!vaccineRequestKeyRef.current){
+          if(typeof globalThis.crypto?.randomUUID!=='function'){
+            throw new Error('El navegador no puede garantizar una clave de operación segura.');
+          }
+          vaccineRequestKeyRef.current=globalThis.crypto.randomUUID();
+        }
         created=await HealthVerticalService.createImmunization({
+          requestKey:vaccineRequestKeyRef.current,
           patientId:patient.id,
           professionalId:professionalId||null,
           vaccine:name.trim(),
@@ -142,6 +151,7 @@ export function VeterinaryPreventiveCarePanel({
       // A failure in optional messaging must not report that clinical
       // persistence failed or invite a duplicate vaccine administration.
       const {reminder,reminderNotConfirmed}=await scheduleOptionalPreventiveReminder(scheduleReminder,eventRecord,reminderEnabled);
+      vaccineRequestKeyRef.current='';
       onCreated?.({kind,record:created,reminder});
       if(reminderNotConfirmed)setReminderWarning(
         'El preventivo fue registrado. No se confirmó el recordatorio: verifica Comunicaciones antes de programarlo otra vez.'

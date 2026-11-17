@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -134,25 +135,64 @@ router.get('/health/immunizations', requirePermission('health.manage'), asyncHan
 router.post('/health/immunizations', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   const b = immunizationSchema.parse(req.body || {});
-  const patientRows=await prisma.$queryRawUnsafe<any[]>(`
-    SELECT "id" FROM public."CarePatient"
-    WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal'
-    LIMIT 1
-  `,tenantId,b.patientId);
-  if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
-  if(b.professionalId){
-    const professionalRows=await prisma.$queryRawUnsafe<any[]>(`
-      SELECT "id" FROM public."CareProfessional"
-      WHERE "tenantId"=$1 AND "id"=$2
-      LIMIT 1
-    `,tenantId,b.professionalId);
-    if(!professionalRows.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
-  }
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."CareImmunization" ("id","tenantId","patientId","professionalId","vaccine","dose","lot","administeredAt","nextDueAt","notes","createdAt")
-    VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,COALESCE($7::timestamptz,now()),$8::timestamptz,$9,now()) RETURNING *
-  `, tenantId,b.patientId,b.professionalId||null,b.vaccine,b.dose||null,b.lot||null,b.administeredAt||null,b.nextDueAt||null,b.notes||null);
-  ok(res, one(rows), 201);
+  const fingerprint=b.requestKey?createHash('sha256').update(JSON.stringify({
+    patientId:b.patientId,professionalId:b.professionalId||null,vaccine:b.vaccine,
+    dose:b.dose||null,lot:b.lot||null,
+    administeredAt:b.administeredAt?new Date(b.administeredAt).toISOString():null,
+    nextDueAt:b.nextDueAt?new Date(b.nextDueAt).toISOString():null,
+    notes:b.notes||null
+  })).digest('hex'):null;
+
+  const result=await prisma.$transaction(async(tx)=>{
+    if(b.requestKey){
+      // Advisory lock serializes retries before checking the unique key.
+      await tx.$queryRawUnsafe<any[]>(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
+        tenantId+':care-immunization:'+b.requestKey
+      );
+      const existing=await tx.$queryRawUnsafe<any[]>(`
+        SELECT * FROM public."CareImmunization"
+        WHERE "tenantId"=$1 AND "requestKey"=$2
+        LIMIT 1 FOR SHARE
+      `,tenantId,b.requestKey);
+      if(existing.length){
+        if(existing[0].requestFingerprint!==fingerprint){
+          throw new HttpError(409,'La clave de administración ya está asociada a otra operación.');
+        }
+        return {record:existing[0],replayed:true};
+      }
+    }
+
+    const patientRows=await tx.$queryRawUnsafe<any[]>(`
+      SELECT "id" FROM public."CarePatient"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' AND "active"=true
+      LIMIT 1 FOR SHARE
+    `,tenantId,b.patientId);
+    if(!patientRows.length)throw new HttpError(422,'El paciente no pertenece al tenant activo.');
+    if(b.professionalId){
+      const professionalRows=await tx.$queryRawUnsafe<any[]>(`
+        SELECT "id" FROM public."CareProfessional"
+        WHERE "tenantId"=$1 AND "id"=$2 AND "status"='active'
+        LIMIT 1 FOR SHARE
+      `,tenantId,b.professionalId);
+      if(!professionalRows.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
+    }
+
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."CareImmunization"
+        ("id","tenantId","patientId","professionalId","vaccine","dose","lot",
+         "administeredAt","nextDueAt","notes","requestKey","requestFingerprint","createdAt")
+      VALUES
+        (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,
+         COALESCE($7::timestamptz,now()),$8::timestamptz,$9,$10,$11,now())
+      RETURNING *
+    `,tenantId,b.patientId,b.professionalId||null,b.vaccine,b.dose||null,
+      b.lot||null,b.administeredAt||null,b.nextDueAt||null,b.notes||null,
+      b.requestKey||null,fingerprint);
+    return {record:one(rows),replayed:false};
+  });
+  res.setHeader('Idempotency-Replayed',result.replayed?'true':'false');
+  ok(res,result.record,result.replayed?200:201);
 }));
 
 export default router;
