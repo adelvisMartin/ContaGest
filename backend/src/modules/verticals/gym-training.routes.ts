@@ -310,28 +310,59 @@ router.post('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandl
   const b=workoutSessionSchema.parse(req.body||{});
   const tenantId=ctx(req).tenantId;
   const created=await prisma.$transaction(async(tx)=>{
-    const routineRows=await tx.$queryRawUnsafe<any[]>(`
-      SELECT "id","memberId"
-      FROM public."GymRoutine"
-      WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true
-      LIMIT 1
+    const routineRows=await tx.$queryRawUnsafe<Array<{id:string;memberId:string}>>(`
+      SELECT "id","memberId" FROM public."GymRoutine"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true LIMIT 1
     `,tenantId,b.routineId);
-    if(!routineRows.length)throw new HttpError(422,'La rutina no pertenece al tenant activo.');
-    const routine=routineRows[0];
+    const routine=one(routineRows,'La rutina no pertenece al tenant activo.');
     const lockKey=`gym-workout-session:${tenantId}:${routine.memberId}`;
     await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
-    const activeRows=await tx.$queryRawUnsafe<any[]>(`
+    const activeRows=await tx.$queryRawUnsafe<Array<{id:string}>>(`
       SELECT "id" FROM public."GymWorkoutSession"
-      WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='in_progress'
-      LIMIT 1
+      WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='in_progress' LIMIT 1
     `,tenantId,routine.memberId);
     if(activeRows.length)throw new HttpError(409,'El cliente ya tiene una sesión activa.');
+    // Preserve the exact effective program revision and prescribed exercises.
+    // Both are selected server-side, never from an untrusted client payload.
+    const programs=await tx.$queryRawUnsafe<Array<{
+      id:string;programKey:string;version:number;name:string;structure:unknown;
+      startsAt:Date|null
+    }>>(`
+      SELECT "id","programKey","version","name","structure","startsAt"
+      FROM public."GymPeriodizationProgram"
+      WHERE "tenantId"=$1 AND "routineId"=$2
+        AND ("startsAt" IS NULL OR "startsAt"<=CURRENT_DATE)
+      ORDER BY "startsAt" DESC NULLS LAST,"createdAt" DESC,"version" DESC,"id" DESC
+      LIMIT 1
+    `,tenantId,routine.id);
+    const program=programs[0]||null;
+    const programSnapshot=program ? {
+      programKey:program.programKey,version:program.version,name:program.name,
+      startsAt:program.startsAt,structure:program.structure
+    } : null;
+    const prescription=await tx.$queryRawUnsafe<any[]>(`
+      SELECT re."id",re."routineId",re."exerciseId",
+        COALESCE(e."name",'Ejercicio retirado') AS "exerciseName",
+        re."dayOfWeek",re."sortOrder",re."sets",re."reps",
+        re."loadKg",re."restSeconds",re."tempo",re."notes",
+        re."intensityTechnique",re."techniqueConfig",
+        re."progressionStrategy",re."progressionConfig"
+      FROM public."GymRoutineExercise" re
+      LEFT JOIN public."GymExercise" e
+        ON e."tenantId"=re."tenantId" AND e."id"=re."exerciseId"
+      WHERE re."tenantId"=$1 AND re."routineId"=$2
+      ORDER BY re."dayOfWeek",re."sortOrder",re."id"
+    `,tenantId,routine.id);
     const rows=await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."GymWorkoutSession"
-        ("id","tenantId","routineId","memberId","status","startedAt","completedAt","notes","createdBy","createdAt","updatedAt")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,'in_progress',now(),NULL,$4,$5,now(),now())
+        ("id","tenantId","routineId","memberId","status","startedAt","completedAt",
+         "notes","createdBy","createdAt","updatedAt",
+         "programVersionId","programSnapshot","routineSnapshot")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,'in_progress',now(),NULL,
+        $4,$5,now(),now(),$6,$7::jsonb,$8::jsonb)
       RETURNING *
-    `,tenantId,b.routineId,routine.memberId,b.notes||null,ctx(req).userId||null);
+    `,tenantId,routine.id,routine.memberId,b.notes||null,ctx(req).userId||null,
+      program?.id||null,programSnapshot?JSON.stringify(programSnapshot):null,JSON.stringify(prescription));
     return one(rows);
   });
   ok(res,{...created,sets:[]},201);

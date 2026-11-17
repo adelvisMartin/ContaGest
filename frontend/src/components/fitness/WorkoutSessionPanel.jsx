@@ -29,7 +29,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
 
   const activeSession=useMemo(()=>sessions.find((item)=>item.status==='in_progress')||null,[sessions]);
   const activeRoutine=useMemo(()=>routineRows.find((item)=>item.id===(activeSession?.routineId||routineId))||null,[routineRows,activeSession,routineId]);
-  const exercises=Array.isArray(activeRoutine?.exercises)?activeRoutine.exercises:[];
+  const exercises=activeSession?.routineSnapshot?.length ? activeSession.routineSnapshot : (Array.isArray(activeRoutine?.exercises)?activeRoutine.exercises:[]);
   const loggedSets=Array.isArray(activeSession?.sets)?activeSession.sets:[];
   const selectedExercise=exercises.find((item)=>item.id===exerciseId)||exercises[0]||null;
 
@@ -166,7 +166,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
         <Typography variant="h6">Ejecución de entrenamiento</Typography>
         <Typography variant="caption" color="text.secondary">Sesión-a-sesión con series realizadas u omitidas, carga, reps, RIR/RPE, descanso, notas y temporizador.</Typography>
       </Box>
-      <CgStatusChip label={activeSession?'Sesión activa':'Sin sesión activa'} tone={activeSession?'success':'default'}/>
+      <Stack direction="row" alignItems="center" gap={.75}><CgStatusChip label={activeSession?'Sesión activa':'Sin sesión activa'} tone={activeSession?'success':'default'}/>{activeSession?.programSnapshot?.version?<CgStatusChip label={`Programa v${activeSession.programSnapshot.version}`} tone="info"/>:null}</Stack>
     </Stack>
     <Divider sx={{my:1.2}}/>
     {error?<CgState severity="error" title="Entrenamiento">{error}</CgState>:null}
@@ -244,7 +244,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
             <Typography variant="body2" fontWeight={700}>{routineRows.find((item)=>item.id===session.routineId)?.name||'Rutina'}</Typography>
             <Typography variant="caption" color="text.secondary">{new Date(session.startedAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {Array.isArray(session.sets)?session.sets.length:0} serie(s)</Typography>
           </Box>
-          <CgStatusChip label={session.status==='completed'?'Completada':'En curso'} tone={session.status==='completed'?'success':'warning'}/>
+          <Stack direction="row" gap={.6} alignItems="center">{session.programSnapshot?.version?<CgStatusChip label={`v${session.programSnapshot.version}`} tone="info"/>:null}<CgStatusChip label={session.status==='completed'?'Completada':'En curso'} tone={session.status==='completed'?'success':'warning'}/></Stack>
         </Stack>
       </Paper>):<CgEmptyState title="Sin sesiones" description="Las sesiones iniciadas aparecerán aquí."/>}
     </Stack>
