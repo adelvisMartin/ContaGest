@@ -70,6 +70,17 @@ export type ObservationInput=ReturnType<typeof buildObservationTrace>&{
   stage:ObservationStage;outcome:ObservationOutcome;reasonCode:string;latencyMs?:number|null;candidateSha?:string|null;metadata?:unknown;
 };
 
+// Reason codes are operational classifications, never human-readable error
+// payloads. Providers sometimes return tokens, URLs or phone numbers in an
+// error "code"; hash malformed values instead of persisting or exporting them.
+const SAFE_REASON_CODE=/^[A-Z0-9][A-Z0-9_:-]{0,159}$/;
+export function safeObservationReasonCode(value:unknown):string{
+  const candidate=String(value??'').trim();
+  if(!candidate)return 'UNSPECIFIED';
+  if(SAFE_REASON_CODE.test(candidate)&&!/\\d{10,}/.test(candidate))return candidate;
+  return 'REDACTED_REASON_'+hash(candidate).slice(0,16).toUpperCase();
+}
+
 export function normalizeObservationEvent(input:ObservationInput){
   if(!OBSERVABILITY_STAGES.includes(input.stage))throw Object.assign(new Error('Unknown observability stage.'),{code:'HIPICO_OBSERVABILITY_STAGE_INVALID'});
   const latency=Number(input.latencyMs??0);
@@ -82,7 +93,7 @@ export function normalizeObservationEvent(input:ObservationInput){
     candidateSha:SHA.test(String(input.candidateSha||''))?String(input.candidateSha).toLowerCase():candidateSha(),
     stage:input.stage,
     outcome:input.outcome,
-    reasonCode:bounded(input.reasonCode||'UNSPECIFIED',160)||'UNSPECIFIED',
+    reasonCode:safeObservationReasonCode(input.reasonCode),
     latencyMs:Number.isFinite(latency)?Math.max(0,Math.min(86_400_000,Math.trunc(latency))):0,
     metadata:sanitizeObservationMetadata(input.metadata||{}) as Record<string,unknown>
   };
