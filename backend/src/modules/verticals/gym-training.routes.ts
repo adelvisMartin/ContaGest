@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -452,7 +453,24 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
   const b=workoutSetSchema.parse(req.body||{});
   const tenantId=ctx(req).tenantId;
   const sessionId=String(req.params.id);
+  const {eventKey,...eventData}=b;
+  const fingerprint=eventKey?createHash('sha256').update(JSON.stringify(eventData)).digest('hex'):null;
   const created=await prisma.$transaction(async(tx)=>{
+    if(eventKey){
+      // Lock identity before the session row; concurrent and cross-session
+      // replays cannot race the unique constraint or debit twice.
+      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+        `gym-workout-set-event:${tenantId}:${eventKey}`);
+      const previous=await tx.$queryRawUnsafe<any[]>(`
+        SELECT * FROM public."GymWorkoutSet"
+        WHERE "tenantId"=$1 AND "eventKey"=$2 LIMIT 1
+      `,tenantId,eventKey);
+      if(previous.length){
+        if(previous[0].sessionId!==sessionId||previous[0].requestFingerprint!==fingerprint)
+          throw new HttpError(409,'La clave de serie ya pertenece a otra operación.');
+        return {set:previous[0],replayed:true};
+      }
+    }
     const sessionRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT s.*
       FROM public."GymWorkoutSession" s
@@ -504,8 +522,8 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
     const completed=b.status==='completed';
     const rows=await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."GymWorkoutSet"
-        ("id","tenantId","sessionId","routineExerciseId","setNumber","status","loadKg","reps","rir","rpe","restSeconds","notes","performedExerciseId","substitutionReason","recordedAt","createdBy")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),$14)
+        ("id","tenantId","sessionId","routineExerciseId","setNumber","status","loadKg","reps","rir","rpe","restSeconds","notes","performedExerciseId","substitutionReason","recordedAt","createdBy","eventKey","requestFingerprint")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),$14,$15,$16)
       RETURNING *
     `,tenantId,session.id,b.routineExerciseId,b.setNumber,b.status,
       completed?(b.loadKg??null):null,
@@ -515,10 +533,10 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
       b.restSeconds,b.notes||null,
       completed?performedExerciseId:null,
       completed?substitutionReason:null,
-      ctx(req).userId||null);
-    return one(rows);
+      ctx(req).userId||null,eventKey||null,fingerprint);
+    return {set:one(rows),replayed:false};
   });
-  ok(res,created,201);
+  ok(res,{...created.set,replayed:created.replayed},created.replayed?200:201);
 }));
 
 router.post('/gym/workout-sessions/:id/complete', requirePermission('gym.manage'), asyncHandler(async (req, res) => {

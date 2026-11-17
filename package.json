@@ -111,7 +111,7 @@
     "test:browser:58:core": "node scripts/erp-browser-58x5-v251.mjs core",
     "test:browser:58:shard": "node scripts/erp-browser-58x5-v251.mjs shard",
     "test:browser:58": "node scripts/erp-browser-58x5-v251.mjs full",
-    "test:backend:verticals:real": "npm --workspace backend exec -- tsx --test ../qa/verticals-backend-real-v4851.test.ts ../qa/gym-checkin-real-v746.test.ts ../qa/gym-class-waitlist-real-v787.test.ts ../qa/gym-program-snapshot-real-v789.test.ts ../qa/gym-workout-lifecycle-real-v792.test.ts ../qa/gym-performance-real-v793.test.ts",
+    "test:backend:verticals:real": "npm --workspace backend exec -- tsx --test ../qa/verticals-backend-real-v4851.test.ts ../qa/gym-checkin-real-v746.test.ts ../qa/gym-class-waitlist-real-v787.test.ts ../qa/gym-program-snapshot-real-v789.test.ts ../qa/gym-workout-lifecycle-real-v792.test.ts ../qa/gym-performance-real-v793.test.ts ../qa/gym-workout-replay-real-v797.test.ts",
     "test:browser:verticals:visual": "npx playwright test qa/erp-visual-overlap-v4951.spec.mjs --project=chromium --workers=1",
     "test:backend:provisioning:real": "npm --workspace backend exec -- tsx --test ../qa/tenant-user-provisioning-v5575.test.ts",
     "test:browser:verticals:real": "node scripts/erp-real-browser-postgres-v5875.mjs",

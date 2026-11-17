@@ -247,7 +247,8 @@ export const workoutSetSchema = z.object({
   restSeconds: z.coerce.number().int().min(0).max(3600).default(0),
   notes: optionalText,
   performedExerciseId: z.string().optional().nullable(),
-  substitutionReason: z.string().trim().max(500).optional().nullable()
+  substitutionReason: z.string().trim().max(500).optional().nullable(),
+  eventKey: z.string().trim().regex(/^[A-Za-z0-9._:-]{12,128}$/).optional()
 }).superRefine((value, refinement) => {
   if(value.status==='completed'&&value.reps==null){
     refinement.addIssue({code:'custom',path:['reps'],message:'Las series realizadas requieren repeticiones.'});
