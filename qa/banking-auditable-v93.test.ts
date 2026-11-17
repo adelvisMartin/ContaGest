@@ -136,6 +136,47 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     assert.equal(projected?.integrity,'ok');
   });
 
+  await t.test('#1289 failed reconciliation audit preserves unmatched movement',async()=>{
+    const account=await h.ok('/banking/accounts',{
+      method:'POST',headers:headers('AUDIT-RECON-ACCOUNT'),
+      body:body({bankName:`${RUN} Reconciliation`,accountNo:`${RUN}-RECON-AUD`,currency:'USD',openingBalance:'0'})
+    });
+    accountIds.push(account.id);
+    const movement=await h.ok('/banking/movements',{
+      method:'POST',headers:headers('AUDIT-RECON-MOVE'),
+      body:body({accountId:account.id,description:`${RUN} before reconcile`,type:'income',currency:'USD',amount:'12.50'})
+    });
+    movementIds.push(movement.id);
+    const gate='qa1289_reconcile_'+randomUUID().replaceAll('-','_');
+    const rowId=movement.id.replaceAll("'","''");
+    try {
+      await h.prisma.$executeRawUnsafe(`
+        CREATE FUNCTION public."${gate}"() RETURNS trigger LANGUAGE plpgsql AS $
+        BEGIN
+          IF NEW."action"='bank.movement.reconciled'
+            AND NEW."entityId"='${rowId}' THEN
+            RAISE EXCEPTION 'QA_RECONCILE_AUDIT_REJECT';
+          END IF;
+          RETURN NEW;
+        END;
+        $`);
+      await h.prisma.$executeRawUnsafe(`
+        CREATE TRIGGER "${gate}" BEFORE INSERT ON public."AuditLog"
+        FOR EACH ROW EXECUTE FUNCTION public."${gate}"()`);
+      await h.status(`/banking/movements/${movement.id}/reconcile`,500,{
+        method:'PATCH',body:body({matched:true})
+      });
+    } finally {
+      await h.prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${gate}" ON public."AuditLog"`);
+      await h.prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public."${gate}"()`);
+    }
+    const unchanged=await h.prisma.bankMovement.findUniqueOrThrow({where:{id:movement.id}});
+    assert.equal(unchanged.matched,false);
+    assert.equal(unchanged.ledgerEntryId,null);
+    const bank=await h.prisma.bankAccount.findUniqueOrThrow({where:{id:account.id}});
+    assert.equal(String(bank.balance),'12.5');
+  });
+
   await t.test('#1289 concurrent reversal and reconciliation cannot both authorize the same original movement',async()=>{
     const account=await h.ok('/banking/accounts',{
       method:'POST',headers:headers('RACE-AUDIT-ACCOUNT'),
