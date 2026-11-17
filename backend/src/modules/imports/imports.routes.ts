@@ -18,12 +18,28 @@ router.use(requireTenant, requirePermission('admin.manage'));
 
 const importTypeSchema = z.enum(['clients','suppliers','inventory','accounts','payroll']);
 const duplicatePolicySchema = z.enum(['update','skip','error']);
+// Uploaded files are mapped to flat scalar rows, never nested JSON documents.
+// Bound width, key length and cell size *before* staging, checksum recursion or
+// any DB query. JSON prototype keys are not meaningful import column names.
+const importRowSchema = z.custom<Record<string, unknown>>((value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const columns = Object.entries(value);
+  if (columns.length > 64) return false;
+  return columns.every(([key, cell]) =>
+    key.length > 0 && key.length <= 120 &&
+    !/^(?:__proto__|prototype|constructor)$/.test(key) &&
+    !/[\\u0000-\\u001f\\u007f]/u.test(key) &&
+    (cell === null || typeof cell === 'boolean' ||
+      (typeof cell === 'number' && Number.isFinite(cell)) ||
+      (typeof cell === 'string' && cell.length <= 2_000))
+  );
+}, 'Cada fila debe tener hasta 64 columnas de texto o números simples, sin datos anidados.');
 const previewSchema = z.object({
   type: importTypeSchema,
   filename: z.string().trim().max(180).optional(),
   templateVersion: z.literal('v1').default('v1'),
   duplicatePolicy: duplicatePolicySchema.default('error'),
-  rows: z.array(z.record(z.string(), z.unknown())).min(1).max(5000)
+  rows: z.array(importRowSchema).min(1).max(5000)
 }).strict();
 const commitSchema = z.object({ confirm: z.literal(true), checksum: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 
