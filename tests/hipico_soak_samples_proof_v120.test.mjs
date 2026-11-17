@@ -121,3 +121,12 @@ test('#120 sample boundary verification accepts reasonable between-probe memory 
     rows.at(-1).heapUsedMb=83;
   }),true);
 });
+
+test('#120 recomputing the sample digest cannot make a failed HTTP health probe healthy',()=>{
+  check(f=>mutateRows(f,rows=>{
+    rows[100].health={ok:true,status:503,reason:'HEALTH_HTTP_FAILURE',latencyMs:5};
+  }));
+  check(f=>mutateRows(f,rows=>{
+    rows[100].health={ok:true,status:200,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5};
+  }));
+});
