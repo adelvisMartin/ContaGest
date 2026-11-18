@@ -39,3 +39,60 @@ test('#764 a real HTTPS documentation URL remains valid',()=>{
   const c=fresh(); c.sources[0].sourceUrl='https://docs.example.org/feature';
   assert.ok(!validateCompetitiveBenchmark(c).some(x=>/source lacks HTTPS provenance/.test(x)));
 });
+
+test('#707 documented feature must belong to the named vendor, not any HTTPS site',()=>{
+  const c=fresh();
+  const row=c.features.find(x=>x.id==='VEOSS-001');
+  assert.equal(row.referenceEvidenceLevel,'DOCUMENTED');
+  row.referenceEvidenceUrl='https://unrelated.example.org/features';
+  assert.match(validateCompetitiveBenchmark(c).join(';'),/unsupported reference feature claim: VEOSS-001/);
+  row.referenceEvidenceUrl='https://www.miprofit.com/productos/';
+  assert.deepEqual(validateCompetitiveBenchmark(c),[]);
+});
+
+test('#707 GitHub evidence is scoped to the exact publisher repository',()=>{
+  const c=fresh();
+  const row=c.features.find(x=>x.productId==='wger'&&x.referenceEvidenceLevel==='DOCUMENTED');
+  assert.ok(row);
+  for(const url of [
+    'https://github.com/other/repo',
+    'https://github.com/wger-project/wger-copy',
+    'https://github.com/wger-project/wger-evil/blob/main/LICENSE',
+    'https://github.com/frappe/erpnext',
+  ]){
+    row.referenceEvidenceUrl=url;
+    assert.match(validateCompetitiveBenchmark(c).join(';'),new RegExp('unsupported reference feature claim: '+row.id));
+  }
+  row.referenceEvidenceUrl='https://github.com/wger-project/wger/blob/master/README.md';
+  assert.deepEqual(validateCompetitiveBenchmark(c),[]);
+});
+
+test('#707 ERPNext first-party documentation may use reviewed Frappe origin, not lookalikes',()=>{
+  const c=fresh();
+  const row=c.features.find(x=>x.id==='VEOSS-015');
+  assert.ok(row);
+  for(const url of [
+    'https://docs.frappe.io/frappe/selling',
+    'https://docs.frappe.io/erpnext-copy/selling',
+    'https://docs.frappe.io.evil.example/erpnext/selling',
+    'https://github.com/other/repo',
+  ]){
+    row.referenceEvidenceUrl=url;
+    assert.match(validateCompetitiveBenchmark(c).join(';'),/unsupported reference feature claim: VEOSS-015/);
+  }
+  row.referenceEvidenceUrl='https://docs.frappe.io/erpnext/selling';
+  assert.deepEqual(validateCompetitiveBenchmark(c),[]);
+  c.sources.find(x=>x.id==='erpnext').sourceUrl='https://github.com/another/erpnext';
+  assert.match(validateCompetitiveBenchmark(c).join(';'),/unsupported reference feature claim: VEOSS-015/);
+});
+
+test('#707 unresolved and secondary sources cannot claim documented official parity',()=>{
+  const c=fresh();
+  const row=c.features.find(x=>x.id==='VEOSS-010');
+  const owner=c.sources.find(x=>x.id==='sac');
+  owner.sourceLevel='SECONDARY';
+  assert.match(validateCompetitiveBenchmark(c).join(';'),/unsupported reference feature claim: VEOSS-010/);
+  row.referenceEvidenceLevel='PROVISIONAL';
+  row.referenceEvidenceUrl=null;
+  assert.ok(!validateCompetitiveBenchmark(c).some(x=>x.includes('unsupported reference feature claim: VEOSS-010')));
+});

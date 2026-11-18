@@ -69,7 +69,7 @@ router.get('/clients/:id',asyncHandler(async(req,res)=>{
   const id=uuid.safeParse(req.params.id);
   if(!id.success)throw new HttpError(422,'Identificador de beneficiario inválido.');
   const pagination=rightsPagination.parse(req.query);
-  const page=await readCustomerRightsPage(ctx(req),id.data,pagination);
+  const page=await readCustomerRightsPage(ctx(req),id.data,{skip:pagination.skip??0,take:pagination.take??100});
   res.setHeader('Cache-Control','private, no-store');
   res.setHeader('X-Pagination-Has-More',page.hasMore?'true':'false');
   if(page.nextSkip!==null)res.setHeader('X-Pagination-Next-Skip',String(page.nextSkip));
