@@ -7,7 +7,7 @@ test('Gym #789: session binds effective immutable program version + routine pres
   assert.notEqual(String(process.env.NODE_ENV||'').toLowerCase(),'production');
   const h=await createRealBackendHarness();
   const id=randomUUID();
-  let memberId='',routineId='',exerciseId='',sessionId='',v1='',v2='';
+  let memberId='',routineId='',exerciseId='',secondExerciseId='',sessionId='',v1='',v2='';
   t.after(async()=>{
     await h.close().catch(()=>undefined);
     if(sessionId)await h.prisma.$executeRawUnsafe(
@@ -24,9 +24,9 @@ test('Gym #789: session binds effective immutable program version + routine pres
       'DELETE FROM public."GymRoutine" WHERE "tenantId"=$1 AND "id"=$2',
       h.tenant.id,routineId
     ).catch(()=>undefined);
-    if(exerciseId)await h.prisma.$executeRawUnsafe(
+    for(const id of [exerciseId,secondExerciseId].filter(Boolean))await h.prisma.$executeRawUnsafe(
       'DELETE FROM public."GymExercise" WHERE "tenantId"=$1 AND "id"=$2',
-      h.tenant.id,exerciseId
+      h.tenant.id,id
     ).catch(()=>undefined);
     if(memberId)await h.prisma.$executeRawUnsafe(
       'DELETE FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2',
@@ -41,6 +41,23 @@ test('Gym #789: session binds effective immutable program version + routine pres
     name:'QA 789 Exercise '+id,category:'strength',muscleGroup:'legs',active:true
   })});
   exerciseId=exercise.id;
+  const secondary=await h.ok('/verticals/gym/exercises',{method:'POST',body:JSON.stringify({
+    name:'QA 789 Exercise '+id+' secondary',category:'strength',muscleGroup:'legs',active:true
+  })});
+  secondExerciseId=secondary.id;
+  const search=encodeURIComponent('QA 789 Exercise '+id);
+  const firstPage=await h.request('/verticals/gym/exercises?q='+search+'&take=1');
+  assert.equal(firstPage.response.status,200);
+  assert.equal(firstPage.response.headers.get('X-Pagination-Has-More'),'true');
+  assert.equal(firstPage.response.headers.get('X-Pagination-Next-Skip'),'1');
+  const secondPage=await h.request('/verticals/gym/exercises?q='+search+'&take=1&skip=1');
+  assert.equal(secondPage.response.status,200);
+  assert.equal(secondPage.response.headers.get('X-Pagination-Has-More'),'false');
+  assert.equal(secondPage.response.headers.get('X-Pagination-Next-Skip'),null);
+  assert.deepEqual(new Set([firstPage.data[0].id,secondPage.data[0].id]),
+    new Set([exerciseId,secondExerciseId]));
+  await h.status('/verticals/gym/exercises?take=0',422);
+  await h.status('/verticals/gym/exercises?skip=-1',422);
   const routine=await h.ok('/verticals/gym/routines',{method:'POST',body:JSON.stringify({
     memberId,name:'QA 789 Routine '+id,trainingMode:'strength',daysPerWeek:1,
     exercises:[{exerciseId,exerciseName:exercise.name,dayOfWeek:1,sortOrder:1,sets:3,reps:'8'}]
