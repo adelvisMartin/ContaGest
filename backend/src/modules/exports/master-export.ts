@@ -48,7 +48,7 @@ export function masterExportCsv(entity: MasterExportEntity, rows: readonly Recor
   const fields = MASTER_EXPORT_FIELDS[entity];
   return [
     fields.map(encodeMasterExportCsvCell).join(','),
-    ...rows.map((row) => fields.map((key) => encodeMasterExportCsvCell(row[key] ?? null)).join(','),
+    ...rows.map((row) => fields.map((key) => encodeMasterExportCsvCell(row[key] ?? null)).join(',')),
   ].join('\r\n');
 }
 
