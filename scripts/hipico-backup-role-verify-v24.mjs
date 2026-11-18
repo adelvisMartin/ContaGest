@@ -54,17 +54,19 @@ export function classifyBackupRoleVerification({
   const role=observation.role||{};
   if(role.exists!==true)findings.push('ROLE_MISSING');
   if(role.exists===true){
+    // An omitted or non-boolean privilege is not proof of least privilege.
+    // Fail closed if catalog observation becomes partial or malformed.
     if(role.connectedUser!=='hipico_backup'||role.sessionUser!=='hipico_backup')findings.push('BACKUP_CONNECTION_ROLE_MISMATCH');
     if(role.login!==true)findings.push('ROLE_LOGIN_REQUIRED');
-    if(role.superuser===true)findings.push('ROLE_SUPERUSER_FORBIDDEN');
-    if(role.createdb===true)findings.push('ROLE_CREATEDB_FORBIDDEN');
-    if(role.createrole===true)findings.push('ROLE_CREATEROLE_FORBIDDEN');
+    if(role.superuser!==false)findings.push('ROLE_SUPERUSER_FORBIDDEN');
+    if(role.createdb!==false)findings.push('ROLE_CREATEDB_FORBIDDEN');
+    if(role.createrole!==false)findings.push('ROLE_CREATEROLE_FORBIDDEN');
     if(role.inherit!==false)findings.push('ROLE_INHERIT_FORBIDDEN');
-    if(role.replication===true)findings.push('ROLE_REPLICATION_FORBIDDEN');
-    if(role.bypassrls===true)findings.push('ROLE_BYPASSRLS_FORBIDDEN');
-    if(role.serviceRoleMember===true)findings.push('SERVICE_ROLE_MEMBERSHIP_FORBIDDEN');
+    if(role.replication!==false)findings.push('ROLE_REPLICATION_FORBIDDEN');
+    if(role.bypassrls!==false)findings.push('ROLE_BYPASSRLS_FORBIDDEN');
+    if(role.serviceRoleMember!==false)findings.push('SERVICE_ROLE_MEMBERSHIP_FORBIDDEN');
     if(role.schemaUsage!==true)findings.push('PUBLIC_SCHEMA_USAGE_REQUIRED');
-    if(role.schemaCreate===true)findings.push('PUBLIC_SCHEMA_CREATE_FORBIDDEN');
+    if(role.schemaCreate!==false)findings.push('PUBLIC_SCHEMA_CREATE_FORBIDDEN');
     if(role.databaseConnect!==true)findings.push('DATABASE_CONNECT_REQUIRED');
   }
 
