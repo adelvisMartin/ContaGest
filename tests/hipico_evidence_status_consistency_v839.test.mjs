@@ -20,8 +20,17 @@ test('#839 matching same-status reports and single reports remain evaluable', ()
 });
 test('#839 candidate selector invokes contradiction gate before picking a PASS', () => {
   const source=fs.readFileSync(new URL('../scripts/hipico-verify-evidence-v290.mjs',import.meta.url),'utf8');
-  const guard=source.indexOf('evidenceStatusesConflict(schemaMatch, evidenceStatus)');
+  const guard=source.indexOf('evidenceStatusesConflict(sameSha, evidenceStatus, descriptor.schemas)');
   const select=source.indexOf("schemaMatch.find((item) => evidenceStatus(item.data) === 'PASS')");
   assert.ok(guard>0 && select>guard);
   assert.match(source,/CONFLICTING_SAME_SHA_EVIDENCE/);
+});
+
+test('#839 same SHA invalid schema cannot be masked by a recognized PASS report', () => {
+  const valid={data:{schema:'hipico-secret-scan.v290',status:'PASS'}};
+  const forged={data:{schema:'unexpected-schema',status:'PASS'}};
+  assert.equal(evidenceStatusesConflict([valid,forged], normalize, ['hipico-secret-scan.v290']),true);
+  assert.equal(evidenceStatusesConflict([valid], normalize, ['hipico-secret-scan.v290']),false);
+  assert.equal(evidenceStatusesConflict([valid,forged], normalize, []),false);
+  assert.equal(evidenceStatusesConflict([valid], normalize, null),true);
 });

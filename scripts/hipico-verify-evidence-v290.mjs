@@ -286,9 +286,9 @@ async function findDescriptor(descriptor) {
     ? sameSha.filter((item) => descriptor.schemas.includes(String(item.data?.schema || '')))
     : sameSha;
   // A stale or rerun FAIL must not be hidden by another PASS under the same SHA/schema.
-  if (evidenceStatusesConflict(schemaMatch, evidenceStatus)) {
+  if (evidenceStatusesConflict(sameSha, evidenceStatus, descriptor.schemas)) {
     return { id: descriptor.id, status: 'FAIL',
-      file: path.relative(evidenceRoot, schemaMatch[0].file),
+      file: path.relative(evidenceRoot, sameSha[0].file),
       reason: 'CONFLICTING_SAME_SHA_EVIDENCE' };
   }
   const pass = schemaMatch.find((item) => evidenceStatus(item.data) === 'PASS');
