@@ -64,7 +64,7 @@ router.post('/hospitalizations', asyncHandler(async (req, res) => {
       WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' AND "active"=true
       FOR SHARE
     `,tenantId,b.patientId);
-    if(patients.length!==1)throw new HttpError(422,'Mascota activa no encontrada.');
+    if(patients.length!==1)throw new HttpError(404,'Mascota no encontrada.'),
 
     const existing=await tx.$queryRawUnsafe<Array<{id:string}>>(`
       SELECT "id" FROM public."CareHospitalization"
