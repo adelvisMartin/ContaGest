@@ -4,12 +4,24 @@ import { fileURLToPath } from 'node:url';
 export function validateCompetitiveBenchmark(input) {
   const errors = [];
   if (!input || typeof input !== 'object' || Array.isArray(input)) return ['invalid root'];
+  if (!Array.isArray(input.sources) || !Array.isArray(input.features))
+    return ['invalid manifest collections'];
   if (input.schemaVersion !== 1 || input.ticket !== 764) errors.push('invalid schema/ticket');
   if (!/^[a-f0-9]{40}$/.test(input.mainBaselineSha ?? '')) errors.push('missing baseline SHA');
+  if (input.ossVerticalExtensionBaselineSha !== undefined &&
+      !/^[a-f0-9]{40}$/.test(input.ossVerticalExtensionBaselineSha))
+    errors.push('invalid vertical extension baseline SHA');
+  if (input.ossVerticalExtensionReviewedAt !== undefined &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(input.ossVerticalExtensionReviewedAt))
+    errors.push('invalid vertical extension reviewed date');
   if (input.policy !== 'BENCHMARK_ONLY_NO_SOURCE_CODE_REUSE') errors.push('unsafe reuse policy');
   if (input.candidateEvidence === 'PASS') errors.push('unsubstantiated PASS');
   const sources = new Map();
-  for (const s of input.sources ?? []) {
+  for (const s of input.sources) {
+    if (!s || typeof s !== 'object' || Array.isArray(s)) {
+      errors.push('invalid product source row');
+      continue;
+    }
     if (!s.id || sources.has(s.id)) errors.push('missing or duplicate product id');
     sources.set(s.id, s);
     if (s.sourceReuse !== 'NONE') errors.push('unreviewed source reuse: ' + s.id);
@@ -22,7 +34,11 @@ export function validateCompetitiveBenchmark(input) {
   }
   const rows = new Set();
   const used = new Set();
-  for (const f of input.features ?? []) {
+  for (const f of input.features) {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) {
+      errors.push('invalid feature row');
+      continue;
+    }
     if (!f.id || rows.has(f.id)) errors.push('missing or duplicate feature id');
     rows.add(f.id); used.add(f.productId);
     const s = sources.get(f.productId);
@@ -33,6 +49,9 @@ export function validateCompetitiveBenchmark(input) {
     if (f.referenceEvidenceLevel !== 'DOCUMENTED' && f.referenceEvidenceUrl != null) errors.push('unverified reference cannot carry evidence URL: ' + f.id);
     if ((s?.sourceLevel === 'UNRESOLVED') !== (f.referenceEvidenceLevel === 'UNRESOLVED')) errors.push('reference identity/evidence mismatch: ' + f.id);
     if (!['EXISTS','PARTIAL','MISSING','NOT_APPLICABLE'].includes(f.status)) errors.push('invalid classification: ' + f.id);
+    // This catalog is expressly source/backlog-only, not a browser/PG17
+    // evidence authority. It cannot upgrade a feature to EXISTS by editing JSON.
+    if (f.status === 'EXISTS') errors.push('runtime parity claim without evidence: ' + f.id);
     if (!['P0','P1','P2','N/A'].includes(f.priority)) errors.push('invalid priority: ' + f.id);
     if (!Number.isInteger(f.ownerIssue) || f.ownerIssue < 1) errors.push('gap without issue owner: ' + f.id);
     if (f.strategy !== 'DESIGN_FROM_BEHAVIOR_ONLY' || f.sourceReuse !== 'NONE') errors.push('unsafe implementation strategy: ' + f.id);

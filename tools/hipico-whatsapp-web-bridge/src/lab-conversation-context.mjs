@@ -22,7 +22,10 @@ const SUMMARY_PATTERN = /\b(?:resumen|resumeme|resumir|recapitulacion|que hemos 
 // exactly one participant JID. Display names are not stable or unique; never key
 // shared memory by a nickname or raw message content.
 export function stableLabSenderKey(messageId){
-  const id=String(messageId||'');
+  // The DOM adapter must supply a primitive message ID. An object with
+  // toString() must never impersonate a participant's stable LAB JID.
+  if(typeof messageId!=='string')return '';
+  const id=messageId;
   const matches=[...id.matchAll(/(?:^|_)(\d{6,}(?:-\d+)?@c\.us|\d{6,}@lid)(?=_|$)/gi)]
     .map(match=>match[1].toLowerCase());
   const unique=[...new Set(matches)];
