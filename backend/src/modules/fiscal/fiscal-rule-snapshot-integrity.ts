@@ -15,6 +15,10 @@ function canonicalize(value: unknown): unknown {
     for (let i = 0; i < value.length; i += 1) {
       if (!Object.hasOwn(value, i)) throw new Error('FISCAL_RULE_EVIDENCE_INTEGRITY');
     }
+    // JSON arrays discard own string/symbol properties outside their indices.
+    if (Reflect.ownKeys(value).length !== value.length + 1) {
+      throw new Error('FISCAL_RULE_EVIDENCE_INTEGRITY');
+    }
     return value.map(canonicalize);
   }
   if (typeof value === 'object') {
@@ -25,7 +29,12 @@ function canonicalize(value: unknown): unknown {
       throw new Error('FISCAL_RULE_EVIDENCE_INTEGRITY');
     }
     const record = value as Record<string, unknown>;
-    return Object.fromEntries(Object.keys(record).sort().map((key) => [key, canonicalize(record[key])]));
+    // Symbol and non-enumerable keys would be silently omitted by JSON.stringify.
+    const keys = Object.keys(record);
+    if (Reflect.ownKeys(record).length !== keys.length) {
+      throw new Error('FISCAL_RULE_EVIDENCE_INTEGRITY');
+    }
+    return Object.fromEntries(keys.sort().map((key) => [key, canonicalize(record[key])]));
   }
   // Previously String(undefined/function/symbol/bigint) could match a real
   // legal JSON string (e.g. "undefined") and pass a historical SHA-256 check.
