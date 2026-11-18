@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -6,8 +5,6 @@ import { ctx, one } from './verticals.shared.js';
 import { observationSchema, procedureSchema } from './veterinary.schemas.js';
 
 const router = Router();
-
-const referenceNumber = (prefix: string) => `${prefix}-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 8).toUpperCase()}`;
 
 router.get('/observations', asyncHandler(async (req, res) => {
   const hospitalizationId = String(req.query.hospitalizationId || '');
