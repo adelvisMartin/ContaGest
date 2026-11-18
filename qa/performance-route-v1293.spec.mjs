@@ -8,6 +8,12 @@ import { PAGE_ROUTES } from '../frontend/src/data/pageRegistry.js';
 import { waitForRouteReady } from './support/playwright-determinism.mjs';
 import { fixtureForRequest } from './support/erp-system-fixtures-v155.mjs';
 
+const targetBase = String(process.env.QA_BASE_URL || '').trim();
+if (targetBase) {
+  const target = new URL(targetBase);
+  assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(target.hostname),
+    '#1293 refuses production/staging hosts: only isolated local webServer is authorized');
+}
 const candidateSha = String(process.env.CANDIDATE_SHA || '').trim().toLowerCase();
 assert.match(candidateSha, /^[a-f0-9]{40}$/, '#1293 needs exact CANDIDATE_SHA');
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase(),
@@ -65,7 +71,7 @@ for (const item of MODULE_VISUAL_CATALOG) {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     let mockedApiRequests = 0;
-    await page.route('**/api/v1/**', async (route) => {
+    await page.route('**/api/**', async (route) => {
       mockedApiRequests += 1;
       const request = route.request();
       const pathname = new URL(request.url()).pathname;
