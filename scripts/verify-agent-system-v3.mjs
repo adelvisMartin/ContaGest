@@ -65,6 +65,14 @@ if(executionPolicy.capabilities?.['contagest-run-skill-generator']?.recordSecret
 if(executionPolicy.capabilities?.['contagest-fewer-permission-prompts']?.autoApply!==false)errors.push('UNSAFE_EXTERNAL_SKILL permission optimization cannot auto-apply');
 if(executionPolicy.capabilities?.['contagest-skill-doctor']?.readOnly!==true)errors.push('SKILL_CONTRACT_INVALID skill-doctor must be read-only by default');
 if(!fs.existsSync(path.join(ROOT,'scripts/agent-ticket-router.mjs')))errors.push('SKILL_SOURCE_STALE missing agent-ticket-router.mjs');
+for(const file of [
+  'scripts/agent-backlog-closeout.mjs',
+  'scripts/agent-backlog-closeout-lib.mjs',
+  'tests/agent_backlog_closeout_v1.test.mjs'
+]){
+  if(!fs.existsSync(path.join(ROOT,file)))errors.push(`SKILL_SOURCE_STALE missing ${file}`);
+}
+
 
 for(const file of ['scripts/agent-gate-router.mjs','scripts/agent-bootstrap.mjs']){
   const source=fs.readFileSync(path.join(ROOT,file),'utf8');
