@@ -51,6 +51,12 @@ test('#816 PG17: treatment retry does not duplicate care events or derived vital
   assert.deepEqual(responses.map(x=>x.response.status).sort((a,b)=>a-b),[200,201],
     JSON.stringify(responses.map(x=>x.payload)));
   assert.equal(responses[0].data.id,responses[1].data.id);
+  for(const reply of responses){
+    assert.equal(reply.data.treatmentRequestKey,undefined);
+    assert.equal(reply.data.treatmentRequestFingerprint,undefined);
+    assert.equal(reply.data.values?.treatmentRequestKey,undefined);
+    assert.equal(reply.data.values?.treatmentRequestFingerprint,undefined);
+  }
   assert.deepEqual(responses.map(x=>x.response.headers.get('Idempotency-Replayed')).sort(),
     ['false','true']);
   assert.equal((await post({...entry,title:'Different vitals'})).response.status,409);
@@ -69,6 +75,12 @@ test('#816 PG17: treatment retry does not duplicate care events or derived vital
     title:'QA manual administration',details:{medication:'QA saline',dose:'QA 1 ml'}};
   const first=await post(medication);
   assert.equal(first.response.status,201);
+  const history=await h.ok('/verticals/veterinary/hospitalizations/'+hospitalizationId+'/treatment-sheet');
+  assert.ok(history.some((entry:any)=>entry.id===first.data.id));
+  for(const entry of history){
+    assert.equal(entry.treatmentRequestKey,undefined);
+    assert.equal(entry.treatmentRequestFingerprint,undefined);
+  }
   assert.equal((await post(medication)).data.id,first.data.id);
   const discharge=await h.request(
     '/verticals/veterinary/hospitalizations/'+hospitalizationId+'/status',{
