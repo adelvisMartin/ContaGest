@@ -122,7 +122,8 @@ test('#717 rejects undefined, bigint and custom runtime values before provenance
 });
 
 test('#717 rejects array holes, extra properties and hidden keys that JSON would erase', () => {
-  const sparse = [1, , 3];
+  const sparse = [1, 2, 3];
+  delete sparse[1];
   const decorated = [1, 2];
   decorated.extra = 'unhashed data';
   const sym = { rate: 1, [Symbol('hidden')]: 2 };
