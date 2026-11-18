@@ -7,6 +7,7 @@ import {
   candidateSha,
   normalizeObservationEvent,
   safeObservationReasonCode,
+  safeObservationTraceId,
   sanitizeObservationMetadata
 } from './hipico-observability.js';
 
@@ -26,6 +27,50 @@ test('trace ids are deterministic without exposing provider ids',()=>{
   assert.match(a.requestId,/^req_[a-f0-9]{32}$/);
   assert.match(a.correlationId,/^corr_[a-f0-9]{32}$/);
   assert.equal(JSON.stringify(a).includes('wamid.secret'),false);
+});
+
+test('#1314 untrusted trace references cannot expose provider IDs or report tokens',()=>{
+  const raw='Bearer '+'a'.repeat(42)+'?t='+ 'b'.repeat(43);
+  const input={ownerId:OWNER,groupKey:'lab:a',groupId:'group-a',sourceRef:'synthetic-event',requestId:raw,correlationId:'584121234567@c.us'};
+  const event=buildObservationTrace(input);
+  const again=buildObservationTrace(input);
+  assert.deepEqual(event,again);
+  assert.match(event.requestId,/^req_[a-f0-9]{32}$/);
+  assert.match(event.correlationId,/^corr_[a-f0-9]{32}$/);
+  assert.equal(JSON.stringify(event).includes('584121234567'),false);
+  assert.equal(JSON.stringify(event).includes('Bearer'),false);
+  const other=buildObservationTrace({...input,groupId:'group-b'});
+  assert.notEqual(event.correlationId,other.correlationId,'Never correlate owners or groups by an untrusted alias');
+  assert.equal(
+    safeObservationTraceId(input.correlationId,'corr',`${OWNER}|lab:a|group-a`),
+    event.correlationId,'A support query must recover the same normalized group identifier'
+  );
+  assert.equal(safeObservationTraceId(event.correlationId,'corr','any-group'),event.correlationId,
+    'Opaque references are stable on storage normalization');
+});
+
+test('#1314 raw observation input cannot bypass trace sanitization',()=>{
+  const original=buildObservationTrace({ownerId:OWNER,groupKey:'lab:a',groupId:'group-a',sourceRef:'synthetic-event'});
+  const event=normalizeObservationEvent({...original,
+    requestId:'https://example.invalid/report?t='+'Q'.repeat(43),
+    correlationId:'584121234567@c.us',
+    stage:'INBOUND',outcome:'HELD',reasonCode:'HUMAN_REQUIRED'
+  });
+  const rendered=JSON.stringify(event);
+  assert.match(event.requestId,/^req_[a-f0-9]{32}$/);
+  assert.match(event.correlationId,/^corr_[a-f0-9]{32}$/);
+  assert.equal(rendered.includes('584121234567'),false);
+  assert.equal(rendered.includes('example.invalid'),false);
+});
+
+test('#1314 legacy support bundles normalize output IDs and keep private scoped filter aliases',()=>{
+  const store=fs.readFileSync(new URL('./hipico-observability.store.ts',import.meta.url),'utf8');
+  assert.match(store,/requestId:safeObservationTraceId\\(row\\.request_id,'req',scope\\)/);
+  assert.match(store,/correlationId:safeObservationTraceId\\(row\\.correlation_id,'corr',scope\\)/);
+  assert.match(store,/OR correlation_id=\\$\\{legacyCorrelationId\\}/);
+  assert.match(store,/WHERE owner_id=\\$\\{input.ownerId\\}::uuid/);
+  assert.match(store,/AND group_key=\\$\\{input.groupKey\\}/);
+  assert.match(store,/AND group_id=\\$\\{input.groupId\\}/);
 });
 
 test('metadata sanitizer removes credentials and message/identity payloads recursively',()=>{
