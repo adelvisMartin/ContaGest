@@ -301,3 +301,21 @@ test('v24 catalogue queries inspect PUBLIC/column effective grants and all direc
   assert.match(source,/array_agg\(granted\.rolname::text order by granted\.rolname\)/);
   assert.doesNotMatch(source,/from information_schema\.role_table_grants g/);
 });
+
+test('v24 manual SQL preflight and Node both reject non-service memberships and effective write privileges',async()=>{
+  const sql=await read('ops/database/verify-hipico-backup-role.sql');
+  const node=await read('scripts/hipico-backup-role-verify-v24.mjs');
+  // SQL remains a manual preflight, not permission for GitHub Actions to
+  // provision a role or mutate production data.
+  assert.match(sql,/ROLE_MEMBERSHIP_FORBIDDEN:/);
+  assert.match(sql,/FROM pg_auth_members m/);
+  assert.match(sql,/member\.rolname='hipico_backup'/);
+  assert.match(sql,/has_table_privilege\('hipico_backup',c\.oid,candidate\.privilege\)/);
+  assert.match(sql,/has_any_column_privilege\('hipico_backup',c\.oid,candidate\.privilege\)/);
+  assert.match(sql,/has_table_privilege\('hipico_backup',c\.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'\)/);
+  assert.match(sql,/has_any_column_privilege\('hipico_backup',c\.oid,'SELECT,INSERT,UPDATE,REFERENCES'\)/);
+  assert.doesNotMatch(sql,/FROM information_schema\.role_table_grants g/i);
+  assert.match(node,/has_any_column_privilege\('hipico_backup',c\.oid,candidate\.privilege\)/);
+  assert.match(node,/roleMemberships/);
+  assert.doesNotMatch(sql,/\b(?:ALTER ROLE|CREATE ROLE|GRANT CONNECT|REVOKE ALL PRIVILEGES)\b/i);
+});
