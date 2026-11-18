@@ -85,3 +85,26 @@ test('#751 a valid future rule version never reinterprets a prior snapshot', () 
   assert.doesNotThrow(() => assertFiscalRuleSnapshotIntegrity(original, 'TENANT-A'));
   assert.notEqual(original.ruleHash, later.hash);
 });
+
+test('#717 rejects non-finite numbers rather than hashing them as JSON null', () => {
+  for (const value of [NaN, Infinity, -Infinity]) {
+    invalid(() => fiscalEvidenceHash({ definition: { amount: value } }));
+  }
+  // This historical SHA-256 comes from main before the fix; valid JSON must
+  // preserve the exact digest when a new runtime rejects lossy numeric values.
+  assert.equal(fiscalEvidenceHash({ definition: { amount: null } }),
+    '6dfa31149b4f6e0307aee4d99cc3ae5ee6d2b512f3466548e6d93334f03d8e9c');
+});
+
+test('#717 rejects a NaN snapshot forged against a previously valid null hash', () => {
+  const base = source();
+  const withNull = { ...base, definition: { basis: 'net', syntheticRate: null } };
+  const ruleHash = fiscalEvidenceHash(withNull);
+  const forged = {
+    ...withNull, ruleVersion: 1, ruleHash,
+    definition: { basis: 'net', syntheticRate: NaN },
+    effectiveFrom: new Date(withNull.effectiveFrom),
+    effectiveTo: new Date(withNull.effectiveTo),
+  };
+  invalid(() => assertFiscalRuleSnapshotIntegrity(forged, 'TENANT-A'));
+});
