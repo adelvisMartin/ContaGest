@@ -62,7 +62,7 @@ router.get('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async
   let filters: ReturnType<typeof parseGymExerciseFilters>;
   try { filters=parseGymExerciseFilters(req.query); }
   catch { throw new HttpError(422,'Filtros de ejercicios inválidos.'); }
-  const {q,muscleGroup,equipment,category,active}=filters;
+  const {q,muscleGroup,equipment,category,active,take,skip}=filters;
   const rows=await prisma.$queryRawUnsafe<any[]>(`
     SELECT *
     FROM public."GymExercise"
@@ -72,10 +72,14 @@ router.get('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async
       AND ($4='' OR COALESCE("equipment",'')=$4)
       AND ($5='' OR COALESCE("category",'')=$5)
       AND ($6='' OR "active"=($6='true'))
-    ORDER BY "active" DESC,"muscleGroup" NULLS LAST,"name"
-    LIMIT 1000
-  `,tenantId,q,muscleGroup,equipment,category,active);
-  ok(res,rows);
+    ORDER BY "active" DESC,"muscleGroup" NULLS LAST,"name","id"
+    LIMIT $7 OFFSET $8
+  `,tenantId,q,muscleGroup,equipment,category,active,take+1,skip);
+  const hasMore=rows.length>take;
+  res.setHeader('Cache-Control','private, no-store');
+  res.setHeader('X-Pagination-Has-More',hasMore?'true':'false');
+  if(hasMore)res.setHeader('X-Pagination-Next-Skip',String(skip+take));
+  ok(res,rows.slice(0,take));
 }));
 
 router.post('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
