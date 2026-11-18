@@ -59,9 +59,13 @@ export function validSoakSamplesProof(manifestPath, report, sampleSeconds = 30) 
     // lstat(path) then readFile(path) is a TOCTOU check that can be bypassed
     // if an artifact path is swapped between calls.
     if (typeof fs.constants.O_NOFOLLOW !== 'number' ||
-        fs.constants.O_NOFOLLOW === 0) return false;
+        fs.constants.O_NOFOLLOW === 0 ||
+        typeof fs.constants.O_NONBLOCK !== 'number' ||
+        fs.constants.O_NONBLOCK === 0) return false;
     const bytes = (() => {
-      const fd = fs.openSync(samplePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      // A FIFO must not hang the release verifier before fstat rejects it.
+      const fd = fs.openSync(samplePath,
+        fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
       try {
         const before = fs.fstatSync(fd);
         if (!before.isFile() || before.size < 1 || before.size > MAX_SAMPLE_BYTES)
