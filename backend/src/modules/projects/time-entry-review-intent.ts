@@ -81,7 +81,7 @@ export function prepareProjectTimeReviewIntent(input: ProjectTimeReviewInput) {
   if (!PROJECT_TIME_REVIEW_STATES.includes(entry.state)) {
     throw new TypeError('PROJECT_TIME_REVIEW_STATE_INVALID');
   }
-  if (!Object.hasOwn(TRANSITIONS, action)) {
+  if (typeof action !== 'string' || !Object.hasOwn(TRANSITIONS, action)) {
     throw new TypeError('PROJECT_TIME_REVIEW_ACTION_INVALID');
   }
   const transition = TRANSITIONS[action];

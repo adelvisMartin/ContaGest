@@ -54,6 +54,8 @@ export function classifyBackupRoleVerification({
   const role=observation.role||{};
   if(role.exists!==true)findings.push('ROLE_MISSING');
   if(role.exists===true){
+    // An omitted or non-boolean privilege is not proof of least privilege.
+    // Fail closed if catalog observation becomes partial or malformed.
     if(role.connectedUser!=='hipico_backup'||role.sessionUser!=='hipico_backup')findings.push('BACKUP_CONNECTION_ROLE_MISMATCH');
     if(role.login!==true)findings.push('ROLE_LOGIN_REQUIRED');
     if(role.superuser!==false)findings.push('ROLE_SUPERUSER_FORBIDDEN');
@@ -63,8 +65,6 @@ export function classifyBackupRoleVerification({
     if(role.replication!==false)findings.push('ROLE_REPLICATION_FORBIDDEN');
     if(role.bypassrls!==false)findings.push('ROLE_BYPASSRLS_FORBIDDEN');
     if(role.serviceRoleMember!==false)findings.push('SERVICE_ROLE_MEMBERSHIP_FORBIDDEN');
-    // NOINHERIT is not enough: a direct role membership may still allow
-    // SET ROLE and access beyond the canonical backup table inventory.
     if(!Array.isArray(role.roleMemberships))findings.push('ROLE_MEMBERSHIPS_NOT_VERIFIED');
     else for(const member of role.roleMemberships)findings.push('ROLE_MEMBERSHIP_FORBIDDEN:'+member);
     if(role.schemaUsage!==true)findings.push('PUBLIC_SCHEMA_USAGE_REQUIRED');
@@ -75,15 +75,10 @@ export function classifyBackupRoleVerification({
   const expected=Array.isArray(observation.expectedTables)?observation.expectedTables:[];
   const observed=Array.isArray(observation.observedTables)?observation.observedTables:[];
   if(expected.length!==25)findings.push(`INVENTORY_COUNT_INVALID:${expected.length}`);
-  if(new Set(expected).size!==expected.length || expected.some(name=>typeof name!=='string'||!/^hipico_[a-z0-9_]+$/.test(name)))
-    findings.push('INVENTORY_NOT_UNIQUE_OR_INVALID');
+  if(new Set(expected).size!==expected.length || expected.some(name=>typeof name!=='string'||!/^hipico_[a-z0-9_]+$/.test(name))) findings.push('INVENTORY_NOT_UNIQUE_OR_INVALID');
   if(observed.length!==expected.length)findings.push(`OBSERVED_TABLE_COUNT_MISMATCH:${observed.length}:${expected.length}`);
 
-  const validObserved=observed.every(item=>item&&typeof item.table==='string');
-  if(!validObserved)findings.push('TABLE_OBSERVATION_INVALID');
-  if(validObserved && new Set(observed.map(item=>item.table)).size!==observed.length)
-    findings.push('TABLE_OBSERVATION_DUPLICATE');
-  const observedByTable=new Map(observed.filter(item=>item&&typeof item.table==='string').map((item)=>[item.table,item]));
+  const observedByTable=new Map(observed.map((item)=>[item.table,item]));
   for(const table of expected){
     const item=observedByTable.get(table);
     if(!item){

@@ -30,3 +30,13 @@ test('#775 a voucher cannot certify withholding with zero taxable/VAT/retained a
   deny({invoiceVatMinor:0,withheldVatMinor:0});
   deny({withheldVatMinor:0});
 });
+
+test('#775 voucher chronology uses UTC instants with mixed fractional precision',()=>{
+  const earlier='2026-10-02T10:00:00Z';
+  const later='2026-10-02T10:00:00.100Z';
+  assert.doesNotThrow(()=>assertRetivaVoucherEvidence({
+    ...sample,invoiceDate:earlier,recognizedAt:later,deliveredAt:later
+  }));
+  deny({invoiceDate:later,recognizedAt:earlier,deliveredAt:later});
+  deny({invoiceDate:earlier,recognizedAt:later,deliveredAt:earlier});
+});

@@ -25,7 +25,9 @@ const FAMILIES = new Set(['FAOV', 'IVSS', 'INCES']);
 const failed = (): never => { throw new Error('PAYROLL_PARAFISCAL_SCOPE_UNVERIFIED'); };
 const safe = (x: unknown): x is number => typeof x === 'number' && Number.isSafeInteger(x) && x >= 0;
 export function parafiscalRuleSelector(event: Pick<ParafiscalPayrollEvent, 'payrollClass' | 'riskClass'>, side: ParafiscalSide) {
-  if (!event || !ID.test(event.payrollClass) || !ID.test(event.riskClass) ||
+  if (!event || typeof event.payrollClass !== 'string' ||
+      typeof event.riskClass !== 'string' ||
+      !ID.test(event.payrollClass) || !ID.test(event.riskClass) ||
       (side !== 'WORKER' && side !== 'EMPLOYER')) failed();
   return [event.payrollClass, event.riskClass, side].join('|');
 }

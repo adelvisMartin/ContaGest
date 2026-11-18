@@ -45,7 +45,9 @@ export function previewReorderPolicy(input: PreviewInput) {
   const safety = parseUnits(input.safetyStockExact ?? '0');
   const multiple = parseUnits(input.orderMultipleExact ?? '1');
   const leadTimeRaw = input.leadTimeDays ?? '0';
-  if (!/^(0|[1-9]\d{0,2})$/.test(leadTimeRaw) || Number(leadTimeRaw) > 365) {
+  // A what-if policy must not accept a toString() object as a lead-time
+  // assumption; only an explicit canonical text value is auditable.
+  if (typeof leadTimeRaw !== 'string' || !/^(0|[1-9]\d{0,2})$/.test(leadTimeRaw) || Number(leadTimeRaw) > 365) {
     throw new TypeError('REORDER_POLICY_LEAD_TIME_INVALID');
   }
   if (reserved > stock) throw new TypeError('REORDER_POLICY_UNRECONCILED_RESERVATIONS');

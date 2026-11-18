@@ -142,3 +142,37 @@ test('support bundle is allow-listed, privacy-redacted, immutable per destinatio
   await assert.rejects(() => buildSupportBundle({ dataDir, outDir, version: '1.4.2', sha: 'candidate-sha' }), /SUPPORT_TARGET_EXISTS/);
   await assert.rejects(() => buildSupportBundle({ dataDir, outDir: path.join(root, 'bad'), allowlist: ['session-secret.json'] }), /NOT_ALLOWLISTED/);
 });
+
+test('report-share private t capability is never exposed by LAB diagnostics or support bundles', async () => {
+  const token = 'A'.repeat(43);
+  const absolute = `https://example.test/api/v1/hipico/report-shares/public?t=${token}&view=consolidated`;
+  const relative = `GET /api/v1/hipico/report-shares/public?t=${token}&page=2`;
+  const cleaned = redactDiagnostic({
+    url: absolute,
+    message: relative,
+    query: { t: token, page: '2' },
+    benign: { t: 30 },
+  });
+  assert.doesNotMatch(JSON.stringify(cleaned), new RegExp(token));
+  assert.equal(cleaned.query.t, '[REDACTED]');
+  assert.equal(cleaned.benign.t, 30);
+  assert.match(cleaned.url, /\[REDACTED\]|\[SIGNED_URL_REDACTED\]/);
+  assert.match(cleaned.message, /t=\[REDACTED\]/);
+
+  const root = await tempDir();
+  try {
+    const dataDir = path.join(root, 'data'), outDir = path.join(root, 'bundle');
+    await fs.mkdir(dataDir);
+    await fs.writeFile(path.join(dataDir, 'health.json'),
+      JSON.stringify({ url: absolute, query: { t: token } }));
+    await fs.writeFile(path.join(dataDir, 'bridge.log'), relative);
+    const result = await buildSupportBundle({ dataDir, outDir, sha: 'synthetic' });
+    for (const item of result.files) {
+      const payload = await fs.readFile(path.join(outDir, item.name), 'utf8');
+      assert.equal(payload.includes(token), false, item.name);
+      assert.equal(sha256Text(payload), item.sha256);
+    }
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});

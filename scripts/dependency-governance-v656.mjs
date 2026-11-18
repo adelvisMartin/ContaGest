@@ -18,7 +18,12 @@ function findResolution(lock, scope, name, spec, workspacePackages) {
     const workspace = workspacePackages[target];
     if (!workspace || workspace.name !== name) return null;
     const link = lock.packages?.[`${scope ? `${scope}/` : ''}node_modules/${name}`] || lock.packages?.[`node_modules/${name}`];
-    return link?.link && typeof workspace.version === 'string' ? { path: target, metadata: { version: workspace.version, license: 'WORKSPACE_LOCAL' }, workspace: true } : null;
+    // A lockfile symlink can point at a different workspace than the one
+    // declared by file:../backend. Do not attest the requested package merely
+    // because an arbitrary link exists at its node_modules location.
+    const resolved = typeof link?.resolved === 'string' ? path.posix.normalize(link.resolved) : null;
+    return link?.link === true && resolved === target && typeof workspace.version === 'string'
+      ? { path: target, metadata: { version: workspace.version, license: 'WORKSPACE_LOCAL' }, workspace: true } : null;
   }
   for (const prefix of scope ? [`${scope}/node_modules/`, 'node_modules/'] : ['node_modules/']) {
     const location = `${prefix}${name}`;

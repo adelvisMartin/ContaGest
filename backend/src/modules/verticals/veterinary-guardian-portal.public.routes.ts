@@ -15,7 +15,10 @@ router.post('/session', asyncHandler(async (req, res) => {
 
   const { accessToken } = veterinaryGuardianPortalSessionSchema.parse(req.body || {});
   const tokenSha256 = sha256(accessToken);
-  const grants = await prisma.$queryRawUnsafe<any[]>(`
+  // The grant is the authorization authority. Hold a row lock across ALL
+  // portal reads so revoke/rotate cannot interleave after authorization.
+  const payload=await prisma.$transaction(async(tx)=>{
+  const grants = await tx.$queryRawUnsafe<any[]>(`
     SELECT g."id",g."tenantId",g."patientId",g."scopes",g."expiresAt",
            p."displayName",p."species",p."breed",p."sex",p."birthDate",p."guardianName",
            t."name" AS "clinicName"
@@ -27,15 +30,17 @@ router.post('/session', asyncHandler(async (req, res) => {
       AND g."revokedAt" IS NULL
       AND g."expiresAt">now()
     LIMIT 1
+    FOR UPDATE OF g
   `, tokenSha256);
   const grant = grants[0];
   if (!grant) throw new HttpError(404, 'El enlace del portal no existe, venció o fue revocado.');
 
-  await prisma.$executeRawUnsafe(`
+  const marked=await tx.$executeRawUnsafe(`
     UPDATE public."VeterinaryGuardianPortalGrant"
     SET "lastUsedAt"=now()
-    WHERE "id"=$1 AND "revokedAt" IS NULL
+    WHERE "id"=$1 AND "revokedAt" IS NULL AND "expiresAt">now()
   `, grant.id);
+  if(marked!==1)throw new HttpError(404,'El enlace del portal no existe, venció o fue revocado.');
 
   const tenantId = String(grant.tenantId);
   const patientId = String(grant.patientId);
@@ -43,7 +48,7 @@ router.post('/session', asyncHandler(async (req, res) => {
   const allowed = (scope: string) => scopes.includes(scope);
 
   const [appointmentRows, dischargeRows, documentRows, billingRows, communicationRows] = await Promise.all([
-    (allowed('appointments') || allowed('reminders')) ? prisma.$queryRawUnsafe<any[]>(`
+    (allowed('appointments') || allowed('reminders')) ? tx.$queryRawUnsafe<any[]>(`
       SELECT "startsAt","endsAt","status","reason","channel","reminderStatus"
       FROM public."CareAppointment"
       WHERE "tenantId"=$1 AND "patientId"=$2
@@ -51,21 +56,21 @@ router.post('/session', asyncHandler(async (req, res) => {
       ORDER BY "startsAt" ASC
       LIMIT 40
     `, tenantId, patientId) : Promise.resolve([]),
-    allowed('discharge') ? prisma.$queryRawUnsafe<any[]>(`
+    allowed('discharge') ? tx.$queryRawUnsafe<any[]>(`
       SELECT "admissionNumber","admittedAt","dischargedAt","status","ward"
       FROM public."CareHospitalization"
       WHERE "tenantId"=$1 AND "patientId"=$2
       ORDER BY "admittedAt" DESC
       LIMIT 20
     `, tenantId, patientId) : Promise.resolve([]),
-    allowed('documents') ? prisma.$queryRawUnsafe<any[]>(`
+    allowed('documents') ? tx.$queryRawUnsafe<any[]>(`
       SELECT "kind","title","status","scheduledAt","performedAt","externalUrl"
       FROM public."CareDiagnosticStudy"
       WHERE "tenantId"=$1 AND "patientId"=$2
       ORDER BY COALESCE("performedAt","scheduledAt","createdAt") DESC
       LIMIT 30
     `, tenantId, patientId) : Promise.resolve([]),
-    allowed('payments') ? prisma.$queryRawUnsafe<any[]>(`
+    allowed('payments') ? tx.$queryRawUnsafe<any[]>(`
       SELECT f."status" AS "caseStatus",f."estimatedTotal"::text AS "estimatedTotal",f."currency",
              f."authorizedAt",f."attendedAt",f."invoicedAt",
              s."number" AS "invoiceNumber",s."status"::text AS "invoiceStatus",
@@ -77,7 +82,7 @@ router.post('/session', asyncHandler(async (req, res) => {
       ORDER BY f."createdAt" DESC
       LIMIT 30
     `, tenantId, patientId) : Promise.resolve([]),
-    allowed('communications') ? prisma.$queryRawUnsafe<any[]>(`
+    allowed('communications') ? tx.$queryRawUnsafe<any[]>(`
       SELECT "channel","event","status","scheduledAt","sentAt","createdAt"
       FROM public."CareCommunicationLog"
       WHERE "tenantId"=$1 AND "patientId"=$2
@@ -95,7 +100,7 @@ router.post('/session', asyncHandler(async (req, res) => {
     externalUrl:/^https:\/\//i.test(String(row.externalUrl || '')) ? String(row.externalUrl) : null
   }));
 
-  ok(res, {
+  return {
     clinic:{ name:String(grant.clinicName || 'Clínica veterinaria') },
     patient:{
       displayName:String(grant.displayName || 'Mascota'),
@@ -137,7 +142,9 @@ router.post('/session', asyncHandler(async (req, res) => {
       sentAt:row.sentAt || null,
       createdAt:row.createdAt
     }))
+  };
   });
+  ok(res,payload);
 }));
 
 export default router;

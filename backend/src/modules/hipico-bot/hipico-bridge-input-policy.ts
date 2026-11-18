@@ -14,7 +14,8 @@ type RuntimeEnv=Record<string,string|undefined>;
 export type BridgeIdentityPayload={groupId?:unknown;channelRole?:unknown;channelKey?:unknown;labChannelKey?:unknown};
 
 export function normalizeBridgeGroupId(value:unknown){
-  const groupId=String(value||'').trim().toLowerCase();
+  if(typeof value!=='string')return'';
+  const groupId=value.trim().toLowerCase();
   return GROUP_ID_RE.test(groupId)?groupId:'';
 }
 
@@ -37,10 +38,16 @@ export function bridgeGroupIdentityReady(env:RuntimeEnv=process.env){
 export function validateBridgeGroupIdentity(payload:BridgeIdentityPayload,env:RuntimeEnv=process.env){
   const config=bridgeIdentityConfig(env);
   if(!config.ready)return 'HIPICO_BRIDGE_GROUP_IDENTITY_NOT_CONFIGURED';
+  // Never coerce untrusted objects into trusted role/group/channel identities.
+  if(!payload || typeof payload!=='object' ||
+    typeof payload.groupId!=='string' || typeof payload.channelRole!=='string' ||
+    typeof payload.channelKey!=='string' ||
+    (payload.labChannelKey!==undefined && typeof payload.labChannelKey!=='string'))
+    return 'HIPICO_BRIDGE_GROUP_IDENTITY_MISMATCH';
   const groupId=normalizeBridgeGroupId(payload.groupId);
-  const role=String(payload.channelRole||'');
-  const channelKey=String(payload.channelKey||'').trim();
-  const labChannelKey=String(payload.labChannelKey||'').trim();
+  const role=payload.channelRole;
+  const channelKey=payload.channelKey.trim();
+  const labChannelKey=(payload.labChannelKey||'').trim();
   const valid=role==='source'
     ? groupId===config.sourceGroupId&&channelKey===config.sourceChannelKey&&labChannelKey===config.labChannelKey
     : role==='lab'
@@ -56,12 +63,17 @@ export function assertBridgeGroupIdentity(payload:BridgeIdentityPayload,env:Runt
   throw Object.assign(new Error(code),{code});
 }
 
-export function normalizeBridgeSender(senderId:string){
-  const raw=String(senderId||'').trim();
-  if(!raw)return null;
-  const canonical=raw.replace(/@.*$/,'').trim().slice(0,MAX_CANONICAL_SENDER_LENGTH);
-  if(!canonical)return null;
-  if(/[\u0000-\u001F\u007F]/.test(canonical))return null;
+const UNSAFE_SENDER_CONTROLS=/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/u;
+
+export function normalizeBridgeSender(senderId:unknown){
+  if(typeof senderId!=='string')return null;
+  const original=senderId;
+  // Reject spoofing controls before trimming or dropping the transport suffix.
+  // Otherwise BOM/zero-width prefixes and truncated names can alias actors.
+  if(!original||UNSAFE_SENDER_CONTROLS.test(original))return null;
+  const raw=original.trim();
+  const canonical=raw.replace(/@.*$/,'').trim();
+  if(!canonical||canonical.length>MAX_CANONICAL_SENDER_LENGTH)return null;
   return canonical;
 }
 

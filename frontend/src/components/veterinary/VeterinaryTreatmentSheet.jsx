@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Box, Button, Chip, CircularProgress, Divider, MenuItem, Paper, Stack, TextField, Typography
 } from '@mui/material';
@@ -67,6 +67,9 @@ export function VeterinaryTreatmentSheet({hospitalizations=[],professionals=[]})
   const [saving,setSaving]=useState(false);
   const [error,setError]=useState('');
   const [success,setSuccess]=useState('');
+  // Preserve the same operation key only for the same form + hospitalization
+  // after a network error. An edited operation must not replay stale care.
+  const pendingRequest=useRef(null);
 
   useEffect(()=>{
     if(activeHospitalizations.some((item)=>item.id===hospitalizationId))return;
@@ -126,11 +129,7 @@ export function VeterinaryTreatmentSheet({hospitalizations=[],professionals=[]})
   async function submit(event){
     event.preventDefault();
     if(!locallyValid()||saving)return;
-    setSaving(true);
-    setError('');
-    setSuccess('');
-    try{
-      await VeterinaryService.createTreatmentSheetEntry(hospitalizationId,{
+    const payload={
         category:form.category,
         status:form.status,
         title:form.title.trim(),
@@ -139,7 +138,18 @@ export function VeterinaryTreatmentSheet({hospitalizations=[],professionals=[]})
         responsibleProfessionalId:form.responsibleProfessionalId||null,
         note:form.note.trim()||null,
         details:detailsForSubmit()
-      });
+      };
+      const signature=JSON.stringify({hospitalizationId,payload});
+      if(pendingRequest.current?.signature!==signature)
+        pendingRequest.current={signature,key:crypto.randomUUID()};
+      setSaving(true);
+      setError('');
+      setSuccess('');
+      try{
+        await VeterinaryService.createTreatmentSheetEntry(hospitalizationId,{
+          ...payload,requestKey:pendingRequest.current.key
+        });
+      pendingRequest.current=null;
       setSuccess('Entrada registrada en la hoja de tratamiento.');
       setForm(initialForm());
       await load(hospitalizationId);

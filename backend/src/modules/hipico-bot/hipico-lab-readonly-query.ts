@@ -13,7 +13,11 @@ const TOPICS:Record<LabRaceQuestion|LabSchedulePurpose,RegExp>={
   summary:/\b(?:resumen|resumeme|sintesis|recapitulacion)\b/
 };
 export function isLabInformationRequest(text:string,purpose:LabRaceQuestion|LabSchedulePurpose,result:Pick<IntentResult,'intent'|'risk'>){
-  const normalized=String(text||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  // A classifier without a known risk verdict cannot unlock a canonical
+  // read: missing/unknown risk must fail closed, not fall through as safe.
+  if(typeof text!=='string'||!result||
+     !['safe','review'].includes(result.risk))return false;
+  const normalized=text.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
   if(normalized.length<6||normalized.length>1200||PROHIBITED.test(normalized)||
      !TOPICS[purpose]?.test(normalized)||result.risk==='monetary')return false;
   // A race summary is not a chat transcript, money recap or participant history.

@@ -75,7 +75,7 @@ export async function saveCloudSession(session) {
   const binding = session?.user?.id ? await storageV2.bindCloudIdentity(session.user.id) : { changed: false };
   await storageV2.saveCloudSession(session);
   if (binding.changed && typeof globalThis.location?.reload === "function") {
-    // The previous owner's primary workspace was archived before this point. Reload
+    // The previous cloud owner's workspace and snapshots were purged before this point. Reload
     // immediately so application memory cannot merge it into the new identity.
     queueMicrotask(() => globalThis.location.reload());
   }

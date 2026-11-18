@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { redactTelemetryValue } from '../../shared/observability/redaction.js';
 
 export const OBSERVABILITY_STAGES=[
   'INBOUND','NORMALIZATION','PARSER','CONTEXT','RISK_POLICY','AGENT_DECISION',
@@ -7,7 +8,7 @@ export const OBSERVABILITY_STAGES=[
 export type ObservationStage=(typeof OBSERVABILITY_STAGES)[number];
 export type ObservationOutcome='SUCCESS'|'HELD'|'DENIED'|'ERROR'|'DUPLICATE'|'RETRY'|'SKIPPED';
 
-const SENSITIVE_KEY=/(authorization|cookie|token|secret|password|api.?key|raw|body|text|message|destination|sender|recipient|phone|jid|payload|participant)/i;
+const SENSITIVE_KEY=/(authorization|cookie|token|secret|password|api.?key|raw|body|text|message|destination|sender|recipient|phone|jid|payload|participant|^t$)/i;
 const SHA=/^[a-f0-9]{40}$/i;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -25,21 +26,42 @@ export function candidateSha(env:Record<string,string|undefined>=process.env){
 export function sanitizeObservationMetadata(value:unknown,depth=0):unknown{
   if(value==null||typeof value==='boolean'||typeof value==='number')return value;
   if(typeof value==='string'){
-    const text=value.slice(0,500);
-    if(/Bearer\s+[A-Za-z0-9._~+\/-]+/i.test(text)||/^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\./.test(text))return'[REDACTED]';
-    return text;
+    // Metadata keys are not trusted. A harmless-looking "detail" can hold a
+    // private report capability, an address, a phone/JID, or an auth header.
+    const text=String(redactTelemetryValue(value));
+    return text
+      // Bare JWTs in an innocuous "detail" field must not survive redaction.
+      .replace(/[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/g,'[REDACTED_TOKEN]')
+      .replace(/\b[A-Za-z0-9_.+-]{3,}@(?:c\.us|s\.whatsapp\.net|lid|g\.us)\b/gi,'[REDACTED_IDENTIFIER]')
+      .replace(/\b\d{10,}\b/g,'[REDACTED_IDENTIFIER]')
+      .slice(0,500);
   }
   if(depth>=4)return'[TRUNCATED]';
   if(Array.isArray(value))return value.slice(0,20).map((item)=>sanitizeObservationMetadata(item,depth+1));
   if(typeof value==='object'){
-    const out:Record<string,unknown>={};
+    // Untrusted observation fields may include "__proto__"/"constructor".
+    // A prototype-free JSON map preserves their literal meaning without
+    // changing the prototype of a support bundle or dropping a field.
+    const out:Record<string,unknown>=Object.create(null);
     for(const [key,item] of Object.entries(value as Record<string,unknown>).slice(0,40)){
       if(SENSITIVE_KEY.test(key))continue;
-      out[key.slice(0,80)]=sanitizeObservationMetadata(item,depth+1);
+      const safeKey=String(sanitizeObservationMetadata(key,depth+1)).slice(0,80);
+      if(!safeKey||safeKey.includes('[REDACTED'))continue;
+      out[safeKey]=sanitizeObservationMetadata(item,depth+1);
     }
     return out;
   }
   return String(value).slice(0,200);
+}
+
+// Third-party trace IDs may contain PII, access tokens or provider errors.
+// Preserve only opaque IDs from our namespace; hash all other input with
+// the owner/group scope before writing or returning observation data.
+export function safeObservationTraceId(value:unknown,kind:'req'|'corr',scope:string):string{
+  const raw=String(value??'').trim();
+  const prefix=kind==='req'?'req_':'corr_';
+  if(new RegExp('^'+prefix+'[a-f0-9]{32}$').test(raw))return raw;
+  return prefix+hash(kind+'|'+scope+'|'+raw).slice(0,32);
 }
 
 export function buildObservationTrace(input:{ownerId:string;groupKey:string;groupId:string;sourceRef:string;requestId?:string|null;correlationId?:string|null}){
@@ -48,15 +70,31 @@ export function buildObservationTrace(input:{ownerId:string;groupKey:string;grou
   const groupKey=bounded(input.groupKey,180);
   const groupId=bounded(input.groupId,180);
   if(!groupKey||!groupId)throw Object.assign(new Error('Observability requires groupKey and groupId.'),{code:'HIPICO_OBSERVABILITY_SCOPE_INVALID'});
-  const seed=`${ownerId}|${groupKey}|${groupId}|${String(input.sourceRef||'')}`;
-  const requestId=bounded(input.requestId,180)||`req_${hash(`req|${seed}`).slice(0,32)}`;
-  const correlationId=bounded(input.correlationId,180)||`corr_${hash(`corr|${seed}`).slice(0,32)}`;
+  const scope=`${ownerId}|${groupKey}|${groupId}`;
+  const seed=`${scope}|${String(input.sourceRef||'')}`;
+  const requestId=input.requestId
+    ?safeObservationTraceId(input.requestId,'req',scope)
+    :`req_${hash(`req|${seed}`).slice(0,32)}`;
+  const correlationId=input.correlationId
+    ?safeObservationTraceId(input.correlationId,'corr',scope)
+    :`corr_${hash(`corr|${seed}`).slice(0,32)}`;
   return{ownerId,groupKey,groupId,requestId,correlationId};
 }
 
 export type ObservationInput=ReturnType<typeof buildObservationTrace>&{
   stage:ObservationStage;outcome:ObservationOutcome;reasonCode:string;latencyMs?:number|null;candidateSha?:string|null;metadata?:unknown;
 };
+
+// Reason codes are operational classifications, never human-readable error
+// payloads. Providers sometimes return tokens, URLs or phone numbers in an
+// error "code"; hash malformed values instead of persisting or exporting them.
+const SAFE_REASON_CODE=/^[A-Z0-9][A-Z0-9_:-]{0,159}$/;
+export function safeObservationReasonCode(value:unknown):string{
+  const candidate=String(value??'').trim();
+  if(!candidate)return 'UNSPECIFIED';
+  if(SAFE_REASON_CODE.test(candidate)&&!/\d{10,}/.test(candidate))return candidate;
+  return 'REDACTED_REASON_'+hash(candidate).slice(0,16).toUpperCase();
+}
 
 export function normalizeObservationEvent(input:ObservationInput){
   if(!OBSERVABILITY_STAGES.includes(input.stage))throw Object.assign(new Error('Unknown observability stage.'),{code:'HIPICO_OBSERVABILITY_STAGE_INVALID'});
@@ -65,12 +103,13 @@ export function normalizeObservationEvent(input:ObservationInput){
     ownerId:input.ownerId,
     groupKey:bounded(input.groupKey,180),
     groupId:bounded(input.groupId,180),
-    requestId:bounded(input.requestId,180),
-    correlationId:bounded(input.correlationId,180),
+    // Normalize even direct ObservationInput calls that bypass buildObservationTrace.
+    requestId:safeObservationTraceId(input.requestId,'req',`${input.ownerId}|${input.groupKey}|${input.groupId}`),
+    correlationId:safeObservationTraceId(input.correlationId,'corr',`${input.ownerId}|${input.groupKey}|${input.groupId}`),
     candidateSha:SHA.test(String(input.candidateSha||''))?String(input.candidateSha).toLowerCase():candidateSha(),
     stage:input.stage,
     outcome:input.outcome,
-    reasonCode:bounded(input.reasonCode||'UNSPECIFIED',160)||'UNSPECIFIED',
+    reasonCode:safeObservationReasonCode(input.reasonCode),
     latencyMs:Number.isFinite(latency)?Math.max(0,Math.min(86_400_000,Math.trunc(latency))):0,
     metadata:sanitizeObservationMetadata(input.metadata||{}) as Record<string,unknown>
   };

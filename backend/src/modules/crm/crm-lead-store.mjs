@@ -86,6 +86,13 @@ export async function createCrmLead({db,tenantId,actorId,idempotencyKey,draft,ip
         }
       }
     });
+    // The returned row must match the server-authorized identity before
+    // committing either the lead or its audit record.
+    if (!saved || saved.id !== id || saved.tenantId !== tenantId ||
+        saved.moduleSlug !== CRM_LEAD_MODULE || saved.status !== 'new' ||
+        saved.payload?.ownerId !== actorId) {
+      throw new TypeError('CRM_LEAD_POST_WRITE_SCOPE_INVALID');
+    }
     await tx.auditLog.create({
       data:{
         tenantId, userId:actorId, action:'crm.lead.create',

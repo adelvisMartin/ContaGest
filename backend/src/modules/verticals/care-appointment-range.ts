@@ -4,8 +4,13 @@ export function parseCareAppointmentReadWindow(
 ): {from:string; to:string; type:string} {
   if (!query || typeof query !== 'object' || Array.isArray(query) ||
       !Number.isFinite(nowMs)) throw new Error('CARE_APPOINTMENT_RANGE_INVALID');
-  const values=query as Record<string,unknown>;
-  if (Object.keys(values).some(key=>!['from','to','type'].includes(key))) {
+  // The query parser may provide an object with inherited properties or
+  // getters; never invoke user-controlled accessors in a clinical filter.
+  const keys=['from','to','type'] as const;
+  const descriptors=Object.getOwnPropertyDescriptors(query);
+  if(Reflect.ownKeys(query).some(key=>typeof key!=='string'||!keys.includes(key as typeof keys[number]))||
+     keys.some(key=>(key in query&&!Object.hasOwn(query,key))||
+       (Object.hasOwn(descriptors,key)&&!Object.hasOwn(descriptors[key],'value')))){
     throw new Error('CARE_APPOINTMENT_RANGE_INVALID');
   }
   const iso=(input: unknown, fallback: string) => {
@@ -21,12 +26,12 @@ export function parseCareAppointmentReadWindow(
        canonical.slice(0,19)!==input.slice(0,19))throw new Error('CARE_APPOINTMENT_RANGE_INVALID');
     return canonical;
   };
-  const from=iso(values.from,new Date(nowMs-86400000).toISOString());
-  const to=iso(values.to,new Date(nowMs+90*86400000).toISOString());
+  const from=iso(descriptors.from?.value,new Date(nowMs-86400000).toISOString());
+  const to=iso(descriptors.to?.value,new Date(nowMs+90*86400000).toISOString());
   if(Date.parse(to)<Date.parse(from)||Date.parse(to)-Date.parse(from)>366*86400000) {
     throw new Error('CARE_APPOINTMENT_RANGE_INVALID');
   }
-  const rawType=values.type===undefined?'':values.type;
+  const rawType=descriptors.type?.value===undefined?'':descriptors.type.value;
   if(typeof rawType!=='string'||rawType.length>120||
      /[\u0000-\u001f\u007f]/.test(rawType))throw new Error('CARE_APPOINTMENT_RANGE_INVALID');
   return {from,to,type:rawType.trim()};

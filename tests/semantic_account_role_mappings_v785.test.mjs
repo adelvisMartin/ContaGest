@@ -38,3 +38,7 @@ test('#785 unnormalized chart-account codes and tenant identities cannot authori
     denied(()=>bind({...a,tenantId},{tenantId}));
   }
 });
+
+test('#785 rejects a self-referential parent even when account is marked postable',()=>{
+  denied(()=>bind({...a,parentCode:a.code}));
+});

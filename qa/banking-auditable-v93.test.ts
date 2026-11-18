@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
+import { hasPlatformAccess } from '../backend/src/shared/identity/platformAccess.ts';
 
 const RUN=`QA93-${Date.now().toString(36).toUpperCase()}`;
 const key=(name:string)=>`${RUN}-${name}-${randomUUID()}`;
@@ -50,6 +51,12 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     assert.equal(links.length,1);
     assert.equal(links[0].kind,'opening');
     assert.equal(links[0].relatedMovementId,movements[0].id);
+    const audits=await h.prisma.auditLog.findMany({where:{
+      tenantId:h.tenant.id,action:'banking.account-opened',entityId:first.id
+    }});
+    assert.equal(audits.length,1,'Same idempotent opening must create exactly one audit event');
+    assert.equal(audits[0].userId,h.admin.id);
+    assert.equal(JSON.stringify(audits[0]).includes(requestHeaders['Idempotency-Key']),false);
   });
 
   await t.test('income and expense reversals preserve originals and restore the exact balance',async()=>{
@@ -106,6 +113,23 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     const foreignAccount=await h.prisma.bankAccount.create({data:{tenantId:tenantB.id,bankName:`${RUN} Foreign`,accountNo:`${RUN}-FOREIGN`,currency:'USD',balance:0}});accountIds.push(foreignAccount.id);
     const foreignMovement=await h.prisma.bankMovement.create({data:{tenantId:tenantB.id,accountId:foreignAccount.id,description:`${RUN} foreign`,credit:'1.00',debit:'0.00'}});movementIds.push(foreignMovement.id);
     await h.status(`/banking/movements/${foreignMovement.id}/reverse`,404,{method:'POST',headers:headers('FOREIGN'),body:body({reason:'QA cross tenant denied'})});
+    // #1288: test every cross-tenant banking mutation/read entrypoint, not
+    // only the reversal endpoint. All attempts operate as tenant A.
+    await h.status('/banking/movements',404,{method:'POST',headers:headers('FOREIGN-ACCOUNT-CREATE'),
+      body:body({accountId:foreignAccount.id,description:`${RUN} forbidden foreign insert`,type:'income',currency:'USD',amount:'999.00'})});
+    await h.status(`/banking/movements/${foreignMovement.id}/reconcile`,404,{method:'PATCH',
+      body:body({matched:true})});
+    await h.status(`/banking/movements/${foreignMovement.id}/correct`,404,{method:'POST',headers:headers('FOREIGN-CORRECT'),
+      body:body({reason:'QA cross tenant correction denied',description:'foreign correction',type:'income',amount:'1.00'})});
+    await h.status(`/banking/movements/${foreignMovement.id}`,404,{method:'DELETE'});
+    const filtered=await h.ok(`/banking/movements?accountId=${foreignAccount.id}`);
+    assert.equal(filtered.length,0,'Foreign account must not leak through search');
+    const overview=await h.ok('/banking/summary');
+    assert.equal(overview.accounts.some((row:any)=>row.id===foreignAccount.id),false);
+    assert.equal(overview.movements.some((row:any)=>row.id===foreignMovement.id),false);
+    const foreignUnchanged=await h.prisma.bankMovement.findUniqueOrThrow({where:{id:foreignMovement.id}});
+    assert.equal(String(foreignUnchanged.credit),'1');
+    assert.equal(foreignUnchanged.matched,false);
 
     const account=await h.ok('/banking/accounts',{method:'POST',headers:headers('CONC-ACCOUNT'),body:body({bankName:`${RUN} Concurrent`,accountNo:`${RUN}-CONCURRENT`,currency:'USD',openingBalance:'0'})});accountIds.push(account.id);
     const results=await Promise.all(Array.from({length:10},(_,index)=>h.ok('/banking/movements',{method:'POST',headers:headers(`CONC-${index}`),body:body({accountId:account.id,description:`${RUN} concurrent ${index}`,type:'income',currency:'USD',amount:'0.10'})})));
@@ -117,6 +141,174 @@ test('issue #93 banking balances are append-only and auditable on real PostgreSQ
     assert.equal(projected?.balanceExact,'1.00');
     assert.equal(projected?.projectedBalanceExact,'1.00');
     assert.equal(projected?.integrity,'ok');
+  });
+
+  await t.test('#1289 failed reconciliation audit preserves unmatched movement',async()=>{
+    const account=await h.ok('/banking/accounts',{
+      method:'POST',headers:headers('AUDIT-RECON-ACCOUNT'),
+      body:body({bankName:`${RUN} Reconciliation`,accountNo:`${RUN}-RECON-AUD`,currency:'USD',openingBalance:'0'})
+    });
+    accountIds.push(account.id);
+    const movement=await h.ok('/banking/movements',{
+      method:'POST',headers:headers('AUDIT-RECON-MOVE'),
+      body:body({accountId:account.id,description:`${RUN} before reconcile`,type:'income',currency:'USD',amount:'12.50'})
+    });
+    movementIds.push(movement.id);
+    const gate='qa1289_reconcile_'+randomUUID().replaceAll('-','_');
+    const rowId=movement.id.replaceAll("'","''");
+    try {
+      await h.prisma.$executeRawUnsafe(`
+        CREATE FUNCTION public."${gate}"() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW."action"='bank.movement.reconciled'
+            AND NEW."entityId"='${rowId}' THEN
+            RAISE EXCEPTION 'QA_RECONCILE_AUDIT_REJECT';
+          END IF;
+          RETURN NEW;
+        END;
+        $$`);
+      await h.prisma.$executeRawUnsafe(`
+        CREATE TRIGGER "${gate}" BEFORE INSERT ON public."AuditLog"
+        FOR EACH ROW EXECUTE FUNCTION public."${gate}"()`);
+      await h.status(`/banking/movements/${movement.id}/reconcile`,500,{
+        method:'PATCH',body:body({matched:true})
+      });
+    } finally {
+      await h.prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${gate}" ON public."AuditLog"`);
+      await h.prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public."${gate}"()`);
+    }
+    const unchanged=await h.prisma.bankMovement.findUniqueOrThrow({where:{id:movement.id}});
+    assert.equal(unchanged.matched,false);
+    assert.equal(unchanged.ledgerEntryId,null);
+    const bank=await h.prisma.bankAccount.findUniqueOrThrow({where:{id:account.id}});
+    assert.equal(String(bank.balance),'12.5');
+  });
+
+  await t.test('#1289 concurrent reversal and reconciliation cannot both authorize the same original movement',async()=>{
+    const account=await h.ok('/banking/accounts',{
+      method:'POST',headers:headers('RACE-AUDIT-ACCOUNT'),
+      body:body({bankName:`${RUN} Race`,accountNo:`${RUN}-RACE`,currency:'USD',openingBalance:'0'})
+    });
+    accountIds.push(account.id);
+    const original=await h.ok('/banking/movements',{
+      method:'POST',headers:headers('RACE-AUDIT-MOVEMENT'),
+      body:body({accountId:account.id,description:`${RUN} race source`,type:'income',currency:'USD',amount:'5.00'})
+    });
+    movementIds.push(original.id);
+    const [reconciliation,reversal]=await Promise.all([
+      h.request(`/banking/movements/${original.id}/reconcile`,{method:'PATCH',body:body({matched:true})}),
+      h.request(`/banking/movements/${original.id}/reverse`,{method:'POST',
+        headers:headers('RACE-REVERSE'),body:body({reason:'QA concurrent reversal guard'})})
+    ]);
+    const statuses=[reconciliation.response.status,reversal.response.status].sort((x,y)=>x-y);
+    assert.deepEqual(statuses,[200,409],'Both operations must not succeed');
+    if(reversal.response.ok)movementIds.push(reversal.data.id);
+    const stored=await h.prisma.bankMovement.findUniqueOrThrow({where:{id:original.id}});
+    const link=await h.prisma.$queryRaw<Array<{id:string}>>`
+      SELECT "id" FROM "BankMovementAuditLink"
+      WHERE "tenantId"=${h.tenant.id} AND "originalMovementId"=${original.id} AND "kind"='reversal'`;
+    assert.equal(Number(stored.matched)+Number(link.length>0),1,
+      'An original must be reconciled or reversed, never both');
+  });
+
+  await t.test('#1289 audit insert failure atomically rolls back movement, balance and idempotency reservation',async()=>{
+    // This trigger targets only synthetic data in the isolated PG17 test database;
+    // always remove it, including if the assertion or request fails.
+    const auditFixture='qa1289_'+randomUUID().replaceAll('-','_');
+    const marker=`${RUN} atomic-audit-rollback`;
+    const account=await h.ok('/banking/accounts',{
+      method:'POST',headers:headers('ATOMIC-AUDIT-ACCOUNT'),
+      body:body({bankName:`${RUN} Atomic`,accountNo:`${RUN}-ATOMIC`,currency:'USD',openingBalance:'0'})
+    });
+    accountIds.push(account.id);
+    const idempotencyHeader=headers('ATOMIC-AUDIT-MOVEMENT');
+    const escapedMarker=marker.replaceAll("'","''");
+    const tenant=h.tenant.id.replaceAll("'","''");
+    try {
+      await h.prisma.$executeRawUnsafe(`
+        CREATE FUNCTION public."${auditFixture}"() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW."tenantId"='${tenant}' AND NEW."action"='bank.movement.created'
+            AND NEW."after"->>'description'='${escapedMarker}' THEN
+            RAISE EXCEPTION 'QA_SYNTHETIC_AUDIT_REJECT';
+          END IF;
+          RETURN NEW;
+        END;
+        $$`);
+      await h.prisma.$executeRawUnsafe(`
+        CREATE TRIGGER "${auditFixture}" BEFORE INSERT ON public."AuditLog"
+        FOR EACH ROW EXECUTE FUNCTION public."${auditFixture}"()`);
+      await h.status('/banking/movements',500,{
+        method:'POST',headers:idempotencyHeader,
+        body:body({accountId:account.id,description:marker,type:'income',currency:'USD',amount:'17.49'})
+      });
+    } finally {
+      await h.prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${auditFixture}" ON public."AuditLog"`);
+      await h.prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public."${auditFixture}"()`);
+    }
+    const accountAfter=await h.prisma.bankAccount.findUniqueOrThrow({where:{id:account.id}});
+    assert.equal(String(accountAfter.balance),'0','Failed audit must not change account balance');
+    assert.equal(await h.prisma.bankMovement.count({where:{tenantId:h.tenant.id,description:marker}}),0);
+    assert.equal(await h.prisma.idempotencyRecord.count({where:{tenantId:h.tenant.id,requestId:idempotencyHeader['x-request-id']}}),0);
+  });
+
+  await t.test('#1288 authenticated platform operator without banking permission is denied',async()=>{
+    const identity=await h.prisma.userProfile.create({data:{
+      tenantId:h.tenant.id,email:`${RUN.toLowerCase()}-restricted@example.invalid`,
+      fullName:'QA restricted banking operator',status:'active'
+    }});
+    let roleId:string|null=null;
+    try {
+      const permission=await h.prisma.permission.findUniqueOrThrow({where:{key:'platform.manage'}});
+      const role=await h.prisma.role.create({data:{
+        tenantId:h.tenant.id,name:`${RUN}-RESTRICTED`,description:'Synthetic platform role lacking banking.manage'
+      }});
+      roleId=role.id;
+      // Role.scope exists in canonical PostgreSQL schema but has not yet
+      // propagated to the generated Prisma Role client in all deployments.
+      await h.prisma.$executeRaw`
+        UPDATE public."Role" SET "scope"='platform' WHERE "id"=${role.id} AND "tenantId"=${h.tenant.id}
+      `;
+      await h.prisma.rolePermission.create({data:{roleId:role.id,permissionId:permission.id}});
+      await h.prisma.userRole.create({data:{userId:identity.id,roleId:role.id}});
+      assert.equal(await hasPlatformAccess({userId:identity.id,tenantId:h.tenant.id}),true,
+        'Restricted fixture must pass platform license check to isolate banking RBAC failure');
+      const restricted=await h.issueSessionTokenFor({id:identity.id,email:identity.email});
+      const denied=await h.status('/banking/summary',403,{},restricted);
+      assert.equal(JSON.stringify(denied.payload).includes('bankName'),false);
+      await h.status('/banking/movements',403,{},restricted);
+      await h.status('/banking/accounts',403,{
+        method:'POST',body:body({bankName:'Synthetic forbidden',accountNo:'ABC-1234',currency:'USD',openingBalance:'0'})
+      },restricted);
+    } finally {
+      // The fixture is private to this test run. Remove every scoped row even
+      // when an assertion fails, before the outer harness disposes its session.
+      await h.prisma.$executeRaw`
+        DELETE FROM public."UserSession" WHERE "tenantId"=${h.tenant.id} AND "userId"=${identity.id}
+      `;
+      await h.prisma.userRole.deleteMany({where:{userId:identity.id}});
+      if(roleId){
+        await h.prisma.rolePermission.deleteMany({where:{roleId}});
+        await h.prisma.role.delete({where:{id:roleId}});
+      }
+      await h.prisma.userProfile.delete({where:{id:identity.id}});
+    }
+  });
+
+  await t.test('#1288 revoked and absent server sessions cannot access financial summaries',async()=>{
+    const syntheticToken=await h.issueSessionTokenFor({id:h.admin.id,email:h.admin.email});
+    await h.ok('/banking/summary',{},syntheticToken);
+    const claims=JSON.parse(Buffer.from(syntheticToken.split('.')[1],'base64url').toString('utf8'));
+    assert.match(String(claims.sid||''),/^[a-f0-9-]{36}$/i);
+    const changed=await h.prisma.$executeRaw`
+      UPDATE public."UserSession"
+      SET "status"='revoked',"revokedAt"=now(),"updatedAt"=now()
+      WHERE "id"=${claims.sid} AND "tenantId"=${h.tenant.id}
+    `;
+    assert.equal(Number(changed),1);
+    await h.status('/banking/summary',401,{},syntheticToken);
+    await h.status('/banking/movements',401,{},syntheticToken);
+    await h.status('/banking/summary',401,{},'');
   });
 
   await t.test('audit log captures the financial lifecycle actor/reason events',async()=>{

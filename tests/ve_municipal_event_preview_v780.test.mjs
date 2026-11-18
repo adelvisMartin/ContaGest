@@ -55,3 +55,12 @@ test('#780 catalog uses inclusive start and exclusive end without historical rul
   assert.equal(previewReviewedMunicipalEventFromCatalog({...event,eventDate:'2026-12-31'},[rule,next]).ruleSnapshot.ruleId,rule.id);
   assert.equal(previewReviewedMunicipalEventFromCatalog({...event,eventDate:'2027-01-01'},[rule,next]).ruleSnapshot.ruleId,next.id);
 });
+
+test('#780 rejects object-coerced municipality, activity, operation and counterparty selectors',()=>{
+  for(const field of ['municipalityCode','activityCode','operationKind','counterpartyClass']){
+    const forged={toString:()=>event[field]};
+    denied(()=>municipalEventSelector({...event,[field]:forged}));
+    denied(()=>previewReviewedMunicipalEvent({...event,[field]:forged},rule));
+    denied(()=>previewReviewedMunicipalEventFromCatalog({...event,[field]:forged},[rule]));
+  }
+});

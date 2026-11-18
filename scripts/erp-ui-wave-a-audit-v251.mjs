@@ -751,7 +751,12 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
   for(const contract of ['performanceQuerySchema','/gym/performance','sessionsPerWeek','setAdherencePct','bestEstimated1RmKg','dailyTrend','byExercise','byMuscleGroup']){
     if(!gymBackend.includes(contract))fail(`fitness: performance history 41 backend missing ${contract}`);
   }
-  if(!gymBackend.includes('reps>=1&&reps<=12')||!gymBackend.includes('load*(1+reps/30)'))fail('fitness: performance history 41 e1RM applicability/formula contract missing');
+  // The formula is owned by the pure v793 helper, not duplicated inline in the route.
+  const epleyAuthority=read('backend/src/modules/verticals/gym-performance-estimate.mjs');
+  if(!gymRoutes.includes('gymEpleyEstimate(load,reps)')
+    || !epleyAuthority.includes('reps<1||reps>12')
+    || !epleyAuthority.includes('loadKg*(1+reps/30)'))
+    fail('fitness: performance history 41 e1RM applicability/formula contract missing');
   const performanceStart=gymRoutes.indexOf("router.get('/gym/performance'");
   const performanceEnd=gymRoutes.indexOf("router.get('/gym/routines'",performanceStart);
   const performanceBlock=gymRoutes.slice(performanceStart,performanceEnd);

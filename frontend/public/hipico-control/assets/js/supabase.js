@@ -1,7 +1,23 @@
 import { CLOUD_CONFIG, canUseLabDirectTableFallback, cloudConfigurationStatus } from "./config.js";
 import { loadCloudSession, saveCloudSession } from "./store.js";
+import { subscribeCloudSessionInvalidation, signalOtherTabsCloudSessionInvalidation } from "./cloud-tab-signal.js";
 let cachedSession = null;
 let refreshPromise = null;
+let sessionEpoch = 0;
+let sessionWriteQueue = Promise.resolve();
+
+// A second tab must not keep a bearer or render a private cloud workspace
+// after this origin logs out or begins switching users. The transport carries
+// only a constant revocation signal, never an identity or secret.
+subscribeCloudSessionInvalidation(() => {
+    const expectedEpoch = ++sessionEpoch;
+    cachedSession = null;
+    refreshPromise = null;
+    void persistSession(null, expectedEpoch).catch(() => null);
+    if (typeof globalThis.dispatchEvent === "function" && typeof globalThis.CustomEvent === "function") {
+        globalThis.dispatchEvent(new globalThis.CustomEvent("hipico:cloud-session-ended"));
+    }
+});
 
 export class BackendAuthorityError extends Error {
     constructor(capability, cause = null) {
@@ -83,32 +99,61 @@ async function request(path, options = {}) {
         clearTimeout(timeout);
     }
 }
-async function persistSession(session) {
-    cachedSession = (session === null || session === void 0 ? void 0 : session.access_token) ? session : null;
-    await saveCloudSession(cachedSession);
-    return cachedSession;
+async function persistSession(session, expectedEpoch = sessionEpoch) {
+    const nextSession = (session === null || session === void 0 ? void 0 : session.access_token) ? session : null;
+    // Serialize durable writes: logout must be the last private-state write
+    // even if a refresh started persisting immediately before revocation.
+    const write = sessionWriteQueue.catch(() => null).then(async () => {
+        if (expectedEpoch !== sessionEpoch)
+            return null;
+        // Never publish a bearer before durable storage has completed.
+        // A logout/user switch while IndexedDB is writing invalidates the
+        // pending write even if it eventually resolves successfully.
+        await saveCloudSession(nextSession);
+        if (expectedEpoch !== sessionEpoch) return null;
+        cachedSession = nextSession;
+        return cachedSession;
+    });
+    sessionWriteQueue = write.catch(() => null);
+    return write;
 }
 export async function refreshCloudSession() {
     if (refreshPromise)
         return refreshPromise;
-    if (!(cachedSession === null || cachedSession === void 0 ? void 0 : cachedSession.refresh_token))
-        return persistSession(null);
-    refreshPromise = request("/auth/v1/token?grant_type=refresh_token", {
+    const expectedEpoch = sessionEpoch;
+    const token = cachedSession?.refresh_token;
+    if (!token)
+        return persistSession(null, expectedEpoch);
+    const pending = request("/auth/v1/token?grant_type=refresh_token", {
         method: "POST",
         headers: authHeaders(null),
-        body: JSON.stringify({ refresh_token: cachedSession.refresh_token })
+        body: JSON.stringify({ refresh_token: token })
     })
-        .then(persistSession)
+        .then((session) => expectedEpoch === sessionEpoch ? persistSession(session, expectedEpoch) : null)
         .catch(async () => {
-        await persistSession(null);
+        if (expectedEpoch === sessionEpoch)
+            await persistSession(null, expectedEpoch);
         return null;
-    })
-        .finally(() => { refreshPromise = null; });
-    return refreshPromise;
+    });
+    const observed = pending.finally(() => {
+        if (refreshPromise === observed)
+            refreshPromise = null;
+    });
+    refreshPromise = observed;
+    return observed;
 }
 export async function initializeCloudSession() {
     var _a;
-    cachedSession = await loadCloudSession();
+    const expectedEpoch = sessionEpoch;
+    // A user switch may have queued a private-store purge. Never rehydrate
+    // the former owner from IndexedDB while that purge is still pending.
+    await sessionWriteQueue;
+    if (expectedEpoch !== sessionEpoch)
+        return currentSession();
+    const loaded = await loadCloudSession();
+    if (expectedEpoch !== sessionEpoch)
+        return currentSession();
+    cachedSession = loaded;
     if (!(cachedSession === null || cachedSession === void 0 ? void 0 : cachedSession.access_token))
         return null;
     if (!sessionExpiresSoon(cachedSession))
@@ -154,13 +199,28 @@ async function validAccessToken() {
     return refreshed.access_token;
 }
 async function authorizedRequest(path, options = {}, retry = true) {
+    // A logout or user switch invalidates every outstanding private response:
+    // never deliver an old owner's workspace or retry a 401 with a new user.
+    const expectedEpoch = sessionEpoch;
+    const assertCurrentSession = () => {
+        if (expectedEpoch !== sessionEpoch || !cachedSession?.access_token) {
+            throw Object.assign(new Error("La sesión cambió. Inicia sesión nuevamente para continuar."), {
+                code: "HIPICO_SESSION_CHANGED", retryable: false
+            });
+        }
+    };
     const token = await validAccessToken();
+    assertCurrentSession();
     try {
-        return await request(path, Object.assign(Object.assign({}, options), { headers: authHeaders(token, options.headers || {}) }));
+        const response = await request(path, Object.assign(Object.assign({}, options), { headers: authHeaders(token, options.headers || {}) }));
+        assertCurrentSession();
+        return response;
     }
     catch (error) {
+        assertCurrentSession();
         if (retry && (error === null || error === void 0 ? void 0 : error.status) === 401 && (cachedSession === null || cachedSession === void 0 ? void 0 : cachedSession.refresh_token)) {
             const refreshed = await refreshCloudSession();
+            assertCurrentSession();
             if (refreshed === null || refreshed === void 0 ? void 0 : refreshed.access_token)
                 return authorizedRequest(path, options, false);
         }
@@ -177,29 +237,52 @@ function validateCredentials(email, password) {
 }
 export async function signIn(email, password) {
     const credentials = validateCredentials(email, password);
+    const expectedEpoch = ++sessionEpoch;
+    refreshPromise = null;
+    // Switching users must invalidate the previous token synchronously;
+    // a new protected read must never observe the old owner mid-login.
+    cachedSession = null;
+    signalOtherTabsCloudSessionInvalidation();
+    await persistSession(null, expectedEpoch);
+    if (expectedEpoch !== sessionEpoch) return null;
     const data = await request("/auth/v1/token?grant_type=password", {
         method: "POST",
         headers: authHeaders(null),
         body: JSON.stringify(credentials)
     });
-    return persistSession(data);
+    return expectedEpoch === sessionEpoch ? persistSession(data, expectedEpoch) : null;
 }
 export async function signUp(email, password) {
     const credentials = validateCredentials(email, password);
+    const expectedEpoch = ++sessionEpoch;
+    refreshPromise = null;
+    cachedSession = null;
+    signalOtherTabsCloudSessionInvalidation();
+    await persistSession(null, expectedEpoch);
+    if (expectedEpoch !== sessionEpoch) return null;
     const data = await request("/auth/v1/signup", {
         method: "POST",
         headers: authHeaders(null),
         body: JSON.stringify(Object.assign(Object.assign({}, credentials), { data: { app: "hipico-control" } }))
     });
-    if (data === null || data === void 0 ? void 0 : data.access_token)
-        await persistSession(data);
+    if (expectedEpoch !== sessionEpoch)
+        return null;
+    if (data?.access_token)
+        await persistSession(data, expectedEpoch);
     return data;
 }
 export async function signOut() {
     const token = cachedSession?.access_token;
+    // Invalidate in-flight refresh/login responses before clearing IndexedDB.
+    const logoutEpoch = ++sessionEpoch;
+    refreshPromise = null;
+    // Invalidate the bearer synchronously, before the first await/IndexedDB
+    // operation. No protected request may start with a logged-out identity.
+    cachedSession = null;
+    signalOtherTabsCloudSessionInvalidation();
     // Local credentials must be cleared even when the cloud is unreachable.
     // A failed local purge is an error, not a successful logout.
-    await persistSession(null);
+    await persistSession(null, logoutEpoch);
     if (!token)
         return { localCleared: true, remoteRevoked: true };
     if (globalThis.navigator?.onLine === false)

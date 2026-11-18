@@ -68,3 +68,24 @@ test('#849/#751 applied migration checksum drift blocks deploy before running Pr
   assert.ok(resolve>preflight && projection>preflight,
     'Historical checksum drift must stop before baseline resolve or compatibility projections');
 });
+
+
+test('#849 catalog page continuation stays tenant-scoped and excludes sentinel records',()=>{
+  const routes=readFileSync(new URL('../backend/src/modules/service-catalog/service-catalog.routes.ts',import.meta.url),'utf8');
+  const category=routes.split("router.get('/categories'")[1].split("router.post('/categories'")[0];
+  const service=routes.split("router.get('/services'")[1].split("router.post('/services'")[0];
+  const publicListing=routes.split("router.get('/public'")[1].split("router.get('/services'")[0];
+  assert.match(routes,/function setPageHeaders\(/);
+  assert.match(routes,/X-Pagination-Has-More/);
+  assert.match(routes,/X-Pagination-Next-Skip/);
+  assert.match(routes,/private, no-store/);
+  assert.match(category,/where:\{tenantId/);
+  assert.match(category,/take:take\+1,skip/);
+  assert.match(category,/rows\.slice\(0,take\)/);
+  assert.match(service,/where:\{tenantId:ctx\(req\)\.tenantId/);
+  assert.match(service,/take:take\+1,skip/);
+  assert.match(service,/rows\.slice\(0,take\)/);
+  assert.match(publicListing,/where:\{tenantId,status:'active',visibility:'public'\}/);
+  assert.match(publicListing,/take:pagination\.take\+1,skip:pagination\.skip/);
+  assert.match(publicListing,/projectPublicServiceCatalog\(\{tenantId,rows:rows\.slice\(0,pagination\.take\)\}\)/);
+});

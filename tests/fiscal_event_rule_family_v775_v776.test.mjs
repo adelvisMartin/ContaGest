@@ -37,3 +37,9 @@ test('#775 IVA withholding cannot substitute an ISLR rule for RET_IVA',()=>{
     ...valid,kind:'withholding',ruleKeys:['iva.general','ret_iva.purchase','islr.service']
   }));
 });
+test('#776/#778 ISLR and IGTF documents cannot mix unrelated fiscal rule families',()=>{
+  bad({module:'islr',kind:'withholding',ruleKeys:['islr.services','igtf.payment']});
+  bad({module:'islr',kind:'withholding',ruleKeys:['islr.services','iva.general']});
+  bad({module:'igtf',kind:'invoice',ruleKeys:['igtf.payment','islr.services']});
+  assert.doesNotThrow(()=>assertFiscalDocumentRuleFamily({...valid,module:'igtf',ruleKeys:['igtf.payment']}));
+});

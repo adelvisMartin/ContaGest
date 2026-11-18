@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { CRITICAL_VISUAL_ROUTES, MODULE_VISUAL_CATALOG } from '../qa/support/module-visual-catalog.mjs';
+import { createCrossBrowserRouteGrep } from './erp-cross-browser-filter-v6375.mjs';
 
 const project=String(process.env.CG_CROSS_BROWSER_PROJECT||'').trim();
 const scope=String(process.env.CG_CROSS_BROWSER_SCOPE||'critical').trim();
@@ -17,7 +18,7 @@ const routes=scope==='full'?MODULE_VISUAL_CATALOG.map((item)=>item.route):critic
 if(MODULE_VISUAL_CATALOG.length!==60)throw new Error(`63/75 catalog drift: expected 60 routes, received ${MODULE_VISUAL_CATALOG.length}`);
 if(!routes.length)throw new Error('63/75 resolved an empty compatibility route set');
 
-const grep=`^(?:${routes.join('|')}) · deep desktop/mobile light/dark audit$`;
+const grep=createCrossBrowserRouteGrep(routes);
 console.log(`[cross-browser-63] project=${project} scope=${scope} routes=${routes.length}`);
 console.log(`[cross-browser-63] route-set=${routes.join(',')}`);
 

@@ -13,6 +13,10 @@ export function prepareQuoteOrderTransition(input:{kind:CommercialDocument; tena
     typeof input.documentId!=='string'||!KEY.test(input.documentId))throw new TypeError('SALES_TRANSITION_SCOPE_INVALID');
   if(!Number.isSafeInteger(input.expectedRevision)||input.expectedRevision<1||input.expectedRevision>=Number.MAX_SAFE_INTEGER)
     throw new TypeError('SALES_TRANSITION_REVISION_INVALID');
+  // A caller-provided object can stringify to an allowed state/action inside
+  // Object.hasOwn(). Only primitive string transitions may reach the CAS plan.
+  if(typeof input.from!=='string'||typeof input.action!=='string')
+    throw new TypeError('SALES_TRANSITION_NOT_ALLOWED');
   const domain=QUOTE_ORDER_TRANSITIONS[input.kind] as Record<string,Record<string,string>|undefined>;
   // TypeScript unions do not protect JavaScript/API callers at runtime.
   // An inherited Object.prototype method is never an authorized transition.

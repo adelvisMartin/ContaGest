@@ -1,3 +1,4 @@
+import { assertHipicoShellCacheRotated } from './support/hipico-shell-cache-contract.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -100,10 +101,8 @@ test('operational copy controls use actual SVG icons and explicit consent contro
 });
 
 test('offline PWA rotates current v4.1.3 shell and never caches sensitive responses', () => {
-  // Preserve the upgrade invariant without freezing cache names at r38.
-  const revision = sw.match(/const SHELL_CACHE\s*=\s*`\$\{CACHE_VERSION\}-shell-r(\d+)-consolidator-v4-1-3`/);
-  assert.ok(revision, 'the application shell must remain revisioned');
-  assert.ok(Number(revision[1]) > 38, 'a new shell cache must replace the stale r38 revision');
+  assertHipicoShellCacheRotated(sw);
+  assert.match(sw, /-consolidator-v4-1-3`/, 'Hípico shell must retain its v4.1.3 authority');
   assert.match(sw, /key\.startsWith\('hipico-control-'\) && key !== SHELL_CACHE/);
   assert.match(sw, /isSensitive\(url\) \|\| isRuntimeMetadata\(url\)/);
   assert.match(sw, /fetch\(request, \{ cache: 'no-store' \}\)/);

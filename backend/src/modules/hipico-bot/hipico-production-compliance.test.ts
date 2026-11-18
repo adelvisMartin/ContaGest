@@ -37,3 +37,20 @@ test('gate requires every external condition even if evidence were later changed
   assert.equal(result.decision,'NO_GO');
   assert.ok(result.reasons.includes('REQUIRED_APPROVALS_NOT_OBTAINED'));
 });
+
+test('#1011 future-dated policy review cannot approve WhatsApp Messenger SOURCE',()=>{
+  const futureDate=new Date(Date.now()+2*24*60*60*1000).toISOString().slice(0,10);
+  const synthetic={...evidence,reviewedAt:futureDate,decision:'GO' as const};
+  const verdict=evaluateWhatsAppProductionCompliance({
+    evidence:synthetic,
+    exactConnector:'test-only-adapter',
+    platformCapabilityAuthorized:true,
+    policyPermitsIntendedUse:true,
+    jurisdictionConfirmed:true,
+    requiredApprovalsObtained:true,
+    candidateSha:'f'.repeat(40)
+  });
+  assert.equal(verdict.decision,'NO_GO');
+  assert.ok(verdict.reasons.includes('POLICY_EVIDENCE_FUTURE_DATE'));
+  assert.throws(()=>assertWhatsAppProductionGo(verdict),/NO-GO/);
+});

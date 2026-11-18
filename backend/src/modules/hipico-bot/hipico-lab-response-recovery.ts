@@ -32,7 +32,9 @@ export function verifyLabResponseRecovery(input:{
   if(!Number.isFinite(age)||age<0||age>LAB_RECOVERY_WINDOW_MS){
     return{recovered:false,reason:'LAB_RECOVERY_STALE'};
   }
-  if(input.currentHandoff?.ownership==='human'){
+  // A missing record is represented by null by the canonical store.
+  // Unknown/undefined ownership is NOT proof that the bot owns the channel.
+  if(input.currentHandoff!==null && input.currentHandoff?.ownership!=='bot'){
     return{recovered:false,reason:'LAB_RECOVERY_HUMAN_HANDOFF'};
   }
   if(input.classification.risk!=='safe'||!SAFE_INTENTS.has(input.classification.intent)){
@@ -42,9 +44,10 @@ export function verifyLabResponseRecovery(input:{
   if(!row)return{recovered:false,reason:'LAB_RECOVERY_RECEIPT_MISSING'};
   // No result board, participant list, dynamic AI answer, mutation or officiality
   // claims can be replayed without state-version attestations.
-  if(!plan.canSend||plan.handoffRequired||plan.confirmationVerified||
-     plan.intent!=='ACK_RECEIVED'||!plan.text||plan.text.length>1000||
-     plan.evidence||!/^resp_[a-f0-9]{32}$/.test(plan.responseIdempotencyKey)){
+  if(!plan||typeof plan!=='object'||!plan.canSend||plan.handoffRequired||plan.confirmationVerified||
+     plan.intent!=='ACK_RECEIVED'||typeof plan.text!=='string'||!plan.text||plan.text.length>1000||
+     plan.evidence||typeof plan.responseIdempotencyKey!=='string'||
+     !/^resp_[a-f0-9]{32}$/.test(plan.responseIdempotencyKey)){
     return{recovered:false,reason:'LAB_RECOVERY_CANDIDATE_UNSAFE'};
   }
   const digest=crypto.createHash('sha256').update(plan.text).digest('hex');

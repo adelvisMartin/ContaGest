@@ -39,3 +39,10 @@ test('#755 ignores future-day lot receipts without inventing stock',()=>{
  const onlyFuture=plan({...base,lots:[future]});
  assert.equal(onlyFuture.allocatedExact,'0');assert.equal(onlyFuture.backorderExact,'5');
 });
+
+test('#755 coercible calendar object never enters FEFO expiry or as-of filtering',()=>{
+ const spoof=value=>({toString:()=>value});
+ assert.throws(()=>plan({...base,asOfDate:spoof('2026-10-16'),lots:[]}),/FEFO_DATE_INVALID/);
+ assert.throws(()=>plan({...base,lots:[lot('a','5',spoof('2026-12-31'))]}),/FEFO_DATE_INVALID/);
+ assert.equal(plan({...base,lots:[lot('safe','5','2026-12-31')]}).allocatedExact,'5');
+});

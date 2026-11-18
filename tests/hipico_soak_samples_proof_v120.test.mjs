@@ -14,7 +14,7 @@ function setup(change = () => {}) {
   const rows = Array.from({length: COUNT}, (_, i) => ({
     at: new Date(START + i * 30_000).toISOString(), elapsedMs: i * 30_000,
     rssMb: 128, heapUsedMb: 64,
-    health: {ok: true, status: 200, latencyMs: 5},
+    health: {ok: true, status: 200, reason: 'READY_SHADOW', latencyMs: 5},
     spool: {available: true, files: 2, bytes: 1024, activeFiles: 1,
       queuedFiles: 1, failedFiles: 0, oldestAgeSeconds: 2},
     decisions: i + 1, duplicateResponses: 0, lostDecisions: 0, contextLeaks: 0
@@ -25,7 +25,9 @@ function setup(change = () => {}) {
   const report = {
     startedAt: new Date(START).toISOString(),
     completedAt: new Date(START + 24 * 3600_000).toISOString(),
-    summaryInput: {samples: COUNT, healthChecks: COUNT, healthFailures: 0,
+    summaryInput: {samples: COUNT,
+      rssStartMb:128,rssEndMb:128,heapStartMb:64,heapEndMb:64,
+      healthChecks: COUNT, healthFailures: 0,
       spoolChecks: COUNT, spoolAvailableChecks: COUNT,
       maxSpoolBytes: 1024, maxBacklogAgeSeconds: 2,
       unexpectedDuplicateResponses: 0, lostDecisions: 0, contextLeaks: 0},
@@ -38,8 +40,7 @@ function check(mutator, expected = false) {
   const fixture = setup();
   try {
     mutator(fixture);
-    // The producer writes the manifest only after its final summary is
-    // complete; update the synthetic fixture to match each mutation.
+    // Keep the synthetic disk manifest in sync with the intentionally mutated report.
     fs.writeFileSync(fixture.manifestPath, JSON.stringify(fixture.report));
     assert.equal(validSoakSamplesProof(fixture.manifestPath, fixture.report), expected);
   } finally {fixture.cleanup();}
@@ -96,6 +97,92 @@ test('#120 historical lost/duplicate counters cannot be cleared before release s
   }));
   check(f => mutateRows(f, rows => {rows[100].duplicateResponses = 1;}));
 });
+
+
+test('#120 rehashed sample stream cannot hide materially wrong RSS and heap endpoints',()=>{
+  check(f=>{f.report.summaryInput.rssStartMb=900;});
+  check(f=>{f.report.summaryInput.rssEndMb=2000;});
+  check(f=>{f.report.summaryInput.heapStartMb=800;});
+  check(f=>{f.report.summaryInput.heapEndMb=1100;});
+  // Report remains unchanged, but a sample-side memory spike at the boundary
+  // with a newly computed digest must invalidate claimed net growth.
+  check(f=>mutateRows(f,rows=>{rows[0].rssMb=1300;}));
+  check(f=>mutateRows(f,rows=>{rows.at(-1).rssMb=400;rows.at(-1).heapUsedMb=300;}));
+});
+
+test('#120 sample boundary verification accepts reasonable between-probe memory variation',()=>{
+  check(f=>{
+    f.report.summaryInput.rssStartMb=150;
+    f.report.summaryInput.rssEndMb=110;
+    f.report.summaryInput.heapStartMb=78;
+    f.report.summaryInput.heapEndMb=50;
+  },true);
+  check(f=>mutateRows(f,rows=>{
+    rows[0].rssMb=160;
+    rows[0].heapUsedMb=80;
+    rows.at(-1).rssMb=165;
+    rows.at(-1).heapUsedMb=83;
+  }),true);
+});
+
+test('#120 recomputing the sample digest cannot make a failed HTTP health probe healthy',()=>{
+  check(f=>mutateRows(f,rows=>{
+    rows[100].health={ok:true,status:503,reason:'HEALTH_HTTP_FAILURE',latencyMs:5};
+  }));
+  check(f=>mutateRows(f,rows=>{
+    rows[100].health={ok:true,status:200,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5};
+  }));
+});
+
+test('#120 missing or forged health classification fails even after sample digest recomputation',()=>{
+  check(f=>mutateRows(f,rows=>{
+    delete rows[20].health.reason;
+  }));
+  check(f=>mutateRows(f,rows=>{
+    rows[20].health.reason='HEALTH_HTTP_FAILURE';
+  }));
+  check(f=>mutateRows(f,rows=>{
+    rows[20].health={ok:false,status:503,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5};
+  }));
+});
+
+
+test('#120 summary RSS must contain its own heap at both process boundaries',()=>{
+  check(f=>{
+    f.report.summaryInput.rssStartMb=100;
+    f.report.summaryInput.heapStartMb=110;
+  });
+  check(f=>{
+    f.report.summaryInput.rssEndMb=100;
+    f.report.summaryInput.heapEndMb=110;
+  });
+});
+
+
+test('#120 sample artifact must be opened atomically without following symlink or leaking an fd',()=>{
+  const source=fs.readFileSync(new URL('../scripts/hipico-soak-samples-proof-v120.mjs',import.meta.url),'utf8');
+  assert.match(source,/fs\.openSync\(samplePath,\s+fs\.constants\.O_RDONLY \| fs\.constants\.O_NOFOLLOW \| fs\.constants\.O_NONBLOCK\)/);
+  assert.match(source,/const before = fs\.fstatSync\(fd\)/);
+  assert.match(source,/const content = fs\.readFileSync\(fd\)/);
+  assert.match(source,/const after = fs\.fstatSync\(fd\)/);
+  assert.match(source,/after\.mtimeMs !== before\.mtimeMs/);
+  assert.match(source,/finally \{\s+fs\.closeSync\(fd\)/);
+  assert.doesNotMatch(source,/fs\.lstatSync\(samplePath\)/);
+  assert.doesNotMatch(source,/fs\.readFileSync\(samplePath\)/);
+});
+
+
+test('#120 blocking pipe artifacts fail closed before invoking readFileSync',()=>{
+  const source=fs.readFileSync(new URL('../scripts/hipico-soak-samples-proof-v120.mjs',import.meta.url),'utf8');
+  assert.match(source,/typeof fs\.constants\.O_NONBLOCK !== 'number'/);
+  assert.match(source,/fs\.constants\.O_NONBLOCK === 0/);
+  const flags=source.indexOf('fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK');
+  const firstStat=source.indexOf('const before = fs.fstatSync(fd)');
+  const read=source.indexOf('const content = fs.readFileSync(fd)');
+  assert.ok(flags>0&&firstStat>flags&&read>firstStat,
+    'FIFO safety must take effect before inspection and content read');
+});
+
 
 test('#120 samples cannot authorize release without their on-disk manifest', () => {
   const f=setup();
