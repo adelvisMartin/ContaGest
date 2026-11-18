@@ -23,6 +23,7 @@ const tenantRif = `QA-762-${runId}`;
 let tenantId = '';
 let token = '';
 let sessionId = '';
+let legacyUnboundToken = '';
 let server: ReturnType<ReturnType<typeof createApp>['listen']>;
 let baseUrl = '';
 
@@ -108,6 +109,7 @@ before(async () => {
       (${sessionId},${user.id},${tenantId},${refreshHash},${csrfHash},'active',0,
        ${expiresAt},'{"qaFixture":true,"suite":"document-sequence-v762"}'::jsonb,now(),now())
   `;
+  legacyUnboundToken = signAccessToken({ id: user.id, email: user.email }, tenantId);
   token = signAccessToken({ id: user.id, email: user.email }, tenantId, sessionId);
 
   server = createApp().listen(0, '127.0.0.1');
@@ -117,6 +119,25 @@ before(async () => {
   });
   const address = server.address() as AddressInfo;
   baseUrl = `http://127.0.0.1:${address.port}`;
+
+  // Exercise the public legal-consent workflow, without bypassing the production guard.
+  const legal = await expectOk('/legal/status');
+  const requiredDocuments = legal.data.documents
+    .filter((doc: { required: boolean }) => doc.required)
+    .map((doc: { code: string; version: string; hash: string }) => ({
+      code: doc.code, version: doc.version, hash: doc.hash
+    }));
+  assert.ok(requiredDocuments.length > 0, 'licensed users must accept required legal documents');
+  await expectOk('/legal/accept', {
+    method: 'POST',
+    body: JSON.stringify({
+      documents: requiredDocuments,
+      necessaryCookiesAcknowledged: true,
+      analyticsCookies: false,
+      marketingCookies: false,
+      locale: 'es-VE'
+    })
+  });
 });
 
 after(async () => {
@@ -137,7 +158,8 @@ test('document sequence API uses a server-bound revocable bearer session', async
   assert.equal(rows.length, 1);
   assert.equal(rows[0].status, 'active');
   // A signed token without sid is invalid even for a licensed admin.
-  const orphanToken = signAccessToken({ id: rows[0].id, email: 'no-session@invalid.example' }, tenantId);
+  // Use an authentic tenant user identity to ensure the missing session binding is what fails.
+  const orphanToken = legacyUnboundToken;
   const result = await fetch(`${baseUrl}/api/v1/document-sequences`, {
     headers: { authorization: `Bearer ${orphanToken}` }
   });

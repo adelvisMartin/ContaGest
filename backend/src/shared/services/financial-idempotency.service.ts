@@ -1,5 +1,5 @@
 import crypto, { randomUUID } from 'node:crypto';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../http.js';
 
@@ -71,6 +71,8 @@ function canonicalize(value: unknown): unknown {
     return Object.is(value, -0) ? 0 : value;
   }
   if (typeof value === 'bigint') return value.toString();
+  // Financial Decimal values must hash by their exact numeric meaning, never by internal representation.
+  if (Prisma.Decimal.isDecimal(value)) return value.toString();
   if (value instanceof Date) {
     if (!Number.isFinite(value.getTime())) throw new HttpError(422,
       'El request contiene una fecha inválida.', { code: 'IDEMPOTENCY_REQUEST_NOT_CANONICAL' });

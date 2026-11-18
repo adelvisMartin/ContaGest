@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Prisma } from '@prisma/client';
 import {
   canonicalRequestHash,
   canonicalRequestJson,
@@ -51,6 +52,21 @@ test('canonical request hashing distinguishes materially different payloads', ()
 test('canonical request hashing normalizes dates and negative zero deterministically', () => {
   const date = new Date('2026-08-27T05:00:00.000Z');
   assert.equal(canonicalRequestJson({ date, value: -0 }), '{"date":"2026-08-27T05:00:00.000Z","value":0}');
+});
+
+test('financial Decimal canonical hashes are scale-independent without discarding request values', () => {
+  const parsed = {
+    exchangeRate: new Prisma.Decimal('1.0000'),
+    lines: [{ quantity: new Prisma.Decimal('1.000'), unitPrice: new Prisma.Decimal('10.00'), taxRate: new Prisma.Decimal('0.00') }]
+  };
+  const canonical = {
+    lines: [{ taxRate: '0', unitPrice: '10', quantity: '1' }],
+    exchangeRate: '1'
+  };
+  assert.equal(canonicalRequestJson(parsed), canonicalRequestJson(canonical));
+  assert.equal(canonicalRequestHash(parsed), canonicalRequestHash(canonical));
+  assert.notEqual(canonicalRequestHash(parsed),
+    canonicalRequestHash({ ...parsed, lines: [{ ...parsed.lines[0], unitPrice: new Prisma.Decimal('11') }] }));
 });
 
 test('scope normalization is stable and rejects unsafe scopes', () => {
