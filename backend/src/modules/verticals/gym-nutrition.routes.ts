@@ -217,7 +217,7 @@ router.post('/gym/ingredients/:id/nutrition-profiles', requirePermission('gym.ma
       LIMIT 1
     `,tenantId,ingredientId);
     if(!ingredientRows.length)throw new HttpError(422,'El ingrediente no pertenece al tenant activo o está archivado.');
-    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`,`gym-nutrient-profile-46:${tenantId}:${ingredientId}`);
+    await tx.$queryRawUnsafe<Array<{locked:string|null}>>('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',`gym-nutrient-profile-46:${tenantId}:${ingredientId}`);
     const versionRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT COALESCE(MAX("version"),0)::int+1 AS "nextVersion"
       FROM public."GymIngredientNutritionProfile"
@@ -294,7 +294,7 @@ router.post('/gym/nutrition-rules', requirePermission('gym.manage'), asyncHandle
       LIMIT 1
     `,tenantId,b.ingredientId);
     if(!ingredientRows.length)throw new HttpError(422,'El ingrediente no pertenece al tenant activo o está archivado.');
-    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`,`gym-nutrition-rule-45:${tenantId}:${b.memberId}:${b.ingredientId}:${b.kind}`);
+    await tx.$queryRawUnsafe<Array<{locked:string|null}>>('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',`gym-nutrition-rule-45:${tenantId}:${b.memberId}:${b.ingredientId}:${b.kind}`);
     const existing=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymNutritionRule"
       WHERE "tenantId"=$1 AND "memberId"=$2 AND "ingredientId"=$3 AND "kind"=$4
@@ -348,7 +348,7 @@ router.post('/gym/recipes', requirePermission('gym.manage'), asyncHandler(async 
   const tenantId=ctx(req).tenantId;
   const b=recipeSchema.parse(req.body||{});
   const created=await prisma.$transaction(async(tx)=>{
-    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`,`gym-recipe-44:${tenantId}:${b.name.toLowerCase()}`);
+    await tx.$queryRawUnsafe<Array<{locked:string|null}>>('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',`gym-recipe-44:${tenantId}:${b.name.toLowerCase()}`);
     const ids=[...new Set(b.items.map((item)=>item.ingredientId))];
     const ingredients=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymIngredient"
