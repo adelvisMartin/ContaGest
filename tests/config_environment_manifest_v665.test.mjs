@@ -309,9 +309,13 @@ test('#665 public config never carries a privileged JWT hidden under an ordinary
    /^VITE_SUPABASE_ANON_KEY=.*$/m,'VITE_SUPABASE_ANON_KEY='+jwt('anon')
  )});
  assert.equal(plain.status,'PASS',JSON.stringify(plain.findings));
+ // The negative fixture must still present a recognizable PEM header to
+ // the runtime validator, without committing that header literally as if it
+ // were real secret material (the global source scanner would flag this test).
+ const syntheticPemHeader=['-----BEGIN',' PRIVATE KEY-----'].join('');
  for(const [key,token] of [
   ['VITE_SUPABASE_ANON_KEY','sb_secret_synthetic_not_a_real_key'],
-  ['VITE_MARKETING_DEMO_URL','-----BEGIN PRIVATE KEY-----SYNTHETIC']
+  ['VITE_MARKETING_DEMO_URL',syntheticPemHeader+'SYNTHETIC']
  ]){
   const report=check({frontend:samples.frontend.replace(new RegExp('^'+key+'=.*$','m'),key+'='+token)});
   assert.ok(report.findings.some(x=>x.code==='MANIFEST_PUBLIC_SECRET_VALUE'&&x.key===key));
