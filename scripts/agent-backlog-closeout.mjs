@@ -4,9 +4,19 @@ import { evaluateBacklogCloseout } from './agent-backlog-closeout-lib.mjs';
 
 const args = process.argv.slice(2);
 const allowed = new Set(['--repo', '--strict']);
+let seenRepo = false;
+let seenStrict = false;
 for (let i = 0; i < args.length; i += 1) {
   if (!allowed.has(args[i])) throw new Error('CLOSEOUT_UNSUPPORTED_CLI_ARGUMENT');
-  if (args[i] === '--repo') i += 1;
+  if (args[i] === '--repo') {
+    if (seenRepo || !args[i + 1] || args[i + 1].startsWith('--'))
+      throw new Error('CLOSEOUT_DUPLICATE_OR_MISSING_REPOSITORY_ARGUMENT');
+    seenRepo = true;
+    i += 1;
+  } else {
+    if (seenStrict) throw new Error('CLOSEOUT_DUPLICATE_STRICT_ARGUMENT');
+    seenStrict = true;
+  }
 }
 const explicit = args.indexOf('--repo');
 const fromRemote = () => {
