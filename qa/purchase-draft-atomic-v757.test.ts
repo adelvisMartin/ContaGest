@@ -12,9 +12,8 @@ test('#757 draft deletion is atomic, audited and tenant-scoped in disposable Pos
 
   t.after(async () => {
     try {
-      await h.prisma.auditLog.deleteMany({
-        where: { tenantId: h.tenant.id, entity: 'PurchaseInvoice', entityId: { in: invoiceIds } },
-      });
+      // PostgreSQL intentionally forbids generic AuditLog deletion.
+      // Preserve forensic records; the guarded _e2e database is disposable.
       await h.prisma.purchaseInvoice.deleteMany({
         where: { tenantId: h.tenant.id, id: { in: invoiceIds } },
       });
