@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { ctx, one } from './verticals.shared.js';
+import { publicVeterinaryTreatmentValues } from './veterinary-treatment-projection.mjs';
 import {
   treatmentSheetEntrySchema,
   VETERINARY_TREATMENT_VITAL_UNITS,
@@ -41,7 +42,7 @@ router.get('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, res
     createdAt:row.createdAt,
     type:row.type,
     note:row.note,
-    ...(row.values&&typeof row.values==='object'?row.values:{})
+    ...publicVeterinaryTreatmentValues(row.values)
   })));
 }));
 
@@ -77,7 +78,8 @@ router.post('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, re
           throw new HttpError(409,'La clave de reintento corresponde a otro tratamiento.');
         return {entry:{
           ...prior,
-          ...(prior.values&&typeof prior.values==='object'?prior.values:{}),
+          values:publicVeterinaryTreatmentValues(prior.values),
+          ...publicVeterinaryTreatmentValues(prior.values),
           responsibleProfessionalId:prior.professionalId
         },replayed:true};
       }
@@ -165,7 +167,8 @@ router.post('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, re
 
     return {entry:{
       ...row,
-      ...values,
+      values:publicVeterinaryTreatmentValues(values),
+      ...publicVeterinaryTreatmentValues(values),
       responsibleProfessionalId:row.professionalId
     },replayed:false};
   });
