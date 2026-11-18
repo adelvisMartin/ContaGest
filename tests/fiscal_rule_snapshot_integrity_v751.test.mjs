@@ -108,3 +108,44 @@ test('#717 rejects a NaN snapshot forged against a previously valid null hash', 
   };
   invalid(() => assertFiscalRuleSnapshotIntegrity(forged, 'TENANT-A'));
 });
+
+test('#717 rejects undefined, bigint and custom runtime values before provenance hashing', () => {
+  const valid = fiscalEvidenceHash({ definition: { amount: 'undefined' } });
+  assert.match(valid, /^[0-9a-f]{64}$/);
+  for (const value of [undefined, 1n, Symbol('rate'), () => 1, new Date('2026-01-01T00:00:00Z'),
+    new Map([['rate', 1]]), new Number(1), /rate/]) {
+    invalid(() => fiscalEvidenceHash({ definition: { amount: value } }));
+  }
+  // Hashing only JSON data preserves the legacy canonical digest.
+  assert.equal(fiscalEvidenceHash({ definition: { amount: null } }),
+    '6dfa31149b4f6e0307aee4d99cc3ae5ee6d2b512f3466548e6d93334f03d8e9c');
+});
+
+test('#717 rejects array holes, extra properties and hidden keys that JSON would erase', () => {
+  const sparse = [1, 2, 3];
+  delete sparse[1];
+  const decorated = [1, 2];
+  decorated.extra = 'unhashed data';
+  const sym = { rate: 1, [Symbol('hidden')]: 2 };
+  const nonEnumerable = { rate: 1 };
+  Object.defineProperty(nonEnumerable, 'hidden', { value: 2, enumerable: false });
+  for (const definition of [sparse, decorated, sym, nonEnumerable]) {
+    invalid(() => fiscalEvidenceHash({ definition }));
+  }
+  const plain = { nested: [1, 2, null], amount: '1.00' };
+  const nullPrototype = Object.assign(Object.create(null), plain);
+  assert.equal(fiscalEvidenceHash(nullPrototype), fiscalEvidenceHash(plain),
+    'Plain JSON with a null prototype must remain compatible with historic hashes');
+});
+
+test('#717 cannot forge a fiscal snapshot using undefined in place of stored legal text', () => {
+  const original = source();
+  const saved = { ...original, definition: { basis: 'net', syntheticRate: 'undefined' } };
+  const forged = {
+    ...saved, ruleVersion: saved.version, ruleHash: fiscalEvidenceHash(saved),
+    effectiveFrom: new Date(saved.effectiveFrom),
+    effectiveTo: new Date(saved.effectiveTo),
+    definition: { basis: 'net', syntheticRate: undefined },
+  };
+  invalid(() => assertFiscalRuleSnapshotIntegrity(forged, 'TENANT-A'));
+});
