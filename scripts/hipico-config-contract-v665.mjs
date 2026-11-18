@@ -76,7 +76,8 @@ function exposesPrivilegedSupabaseJwt(value) {
   const parts = String(value).split('.');
   if (parts.length !== 3 || parts.some(part => !part)) return false;
   if (!/^[A-Za-z0-9_-]{1,8192}={0,2}$/.test(parts[1])) return false;
-  try { return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'))?.role === 'service_role'; }
+  try { return ['service_role', 'supabase_admin', 'postgres'].includes(
+    JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'))?.role); }
   catch { return false; }
 }
 
