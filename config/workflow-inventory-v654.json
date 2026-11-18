@@ -102,6 +102,13 @@
       "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
     },
     {
+      "file": ".github/workflows/catalog-category-v849.yml",
+      "classification": "ADAPTER",
+      "owner": "backend-domain",
+      "status": "ACTIVE",
+      "reason": "Exact-head PostgreSQL17 service catalog category lifecycle, tenant scope and canonical role/RLS validation"
+    },
+    {
       "file": ".github/workflows/ci-runner-probe-v134.yml",
       "classification": "PROVIDER_SPECIFIC",
       "owner": "release-ops",
