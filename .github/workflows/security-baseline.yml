@@ -36,7 +36,7 @@ jobs:
         run: node --test tests/frontend_csv_formula_guard_v1313.test.mjs tests/master_export_v770.test.mjs
       - name: Hípico logout, refresh, storage identity isolation
         run: node --test tests/hipico_logout_revocation_v1292.test.mjs tests/hipico_logout_refresh_race_v1292.test.mjs tests/hipico_private_storage_purge_v1292.test.mjs
-      - name: Privileged user session revocation and audit contract
-        run: node --test tests/admin_session_revocation_v1312.test.mjs
+      - name: Privileged user session revocation, step-up and UI contract
+        run: node --test tests/admin_session_revocation_v1312.test.mjs tests/admin_privileged_stepup_v1312.test.mjs
       - name: PostgreSQL audit rollback trigger syntax contract
         run: node --test tests/qa_audit_rollback_trigger_contract_v1289_1313.test.mjs
