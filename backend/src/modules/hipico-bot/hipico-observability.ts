@@ -54,14 +54,17 @@ export function sanitizeObservationMetadata(value:unknown,depth=0):unknown{
   return String(value).slice(0,200);
 }
 
-// All third-party trace references are untrusted: request IDs can carry raw
-// phone/JID values, report capability tokens or a provider error message.
-// Preserve only IDs generated in our opaque hash namespace; bind all others
-// to the owner/group scope before storing or rendering a support bundle.
+// Third-party trace IDs may contain PII, access tokens or provider errors.
+// Preserve only opaque IDs from our namespace; hash all other input with
+// the owner/group scope before writing or returning observation data.
 export function safeObservationTraceId(value:unknown,kind:'req'|'corr',scope:string):string{
   const raw=String(value??'').trim();
   const prefix=kind==='req'?'req_':'corr_';
-  if(new RegExp('^'+prefix+'[a-f0-9]{32}
+  if(new RegExp('^'+prefix+'[a-f0-9]{32}$').test(raw))return raw;
+  return prefix+hash(kind+'|'+scope+'|'+raw).slice(0,32);
+}
+
+export function buildObservationTrace(input:{ownerId:string;groupKey:string;groupId:string;sourceRef:string;requestId?:string|null;correlationId?:string|null}){
   const ownerId=bounded(input.ownerId,64);
   if(!UUID.test(ownerId))throw Object.assign(new Error('Observability ownerId must be a UUID.'),{code:'HIPICO_OBSERVABILITY_SCOPE_INVALID'});
   const groupKey=bounded(input.groupKey,180);
@@ -74,56 +77,6 @@ export function safeObservationTraceId(value:unknown,kind:'req'|'corr',scope:str
   const correlationId=input.correlationId
     ?safeObservationTraceId(input.correlationId,'corr',seed)
     :`corr_${hash(`corr|${seed}`).slice(0,32)}`;
-  return{ownerId,groupKey,groupId,requestId,correlationId};
-}
-
-export type ObservationInput=ReturnType<typeof buildObservationTrace>&{
-  stage:ObservationStage;outcome:ObservationOutcome;reasonCode:string;latencyMs?:number|null;candidateSha?:string|null;metadata?:unknown;
-};
-
-// Reason codes are operational classifications, never human-readable error
-// payloads. Providers sometimes return tokens, URLs or phone numbers in an
-// error "code"; hash malformed values instead of persisting or exporting them.
-const SAFE_REASON_CODE=/^[A-Z0-9][A-Z0-9_:-]{0,159}$/;
-export function safeObservationReasonCode(value:unknown):string{
-  const candidate=String(value??'').trim();
-  if(!candidate)return 'UNSPECIFIED';
-  if(SAFE_REASON_CODE.test(candidate)&&!/\d{10,}/.test(candidate))return candidate;
-  return 'REDACTED_REASON_'+hash(candidate).slice(0,16).toUpperCase();
-}
-
-export function normalizeObservationEvent(input:ObservationInput){
-  if(!OBSERVABILITY_STAGES.includes(input.stage))throw Object.assign(new Error('Unknown observability stage.'),{code:'HIPICO_OBSERVABILITY_STAGE_INVALID'});
-  const latency=Number(input.latencyMs??0);
-  return{
-    ownerId:input.ownerId,
-    groupKey:bounded(input.groupKey,180),
-    groupId:bounded(input.groupId,180),
-    requestId:bounded(input.requestId,180),
-    correlationId:bounded(input.correlationId,180),
-    candidateSha:SHA.test(String(input.candidateSha||''))?String(input.candidateSha).toLowerCase():candidateSha(),
-    stage:input.stage,
-    outcome:input.outcome,
-    reasonCode:safeObservationReasonCode(input.reasonCode),
-    latencyMs:Number.isFinite(latency)?Math.max(0,Math.min(86_400_000,Math.trunc(latency))):0,
-    metadata:sanitizeObservationMetadata(input.metadata||{}) as Record<string,unknown>
-  };
-}
-
-export function safeSupportId(value:unknown){return hash(String(value||'')).slice(0,24);}
-).test(raw))return raw;
-  return prefix+hash(kind+'|'+scope+'|'+raw).slice(0,32);
-}
-
-export function buildObservationTrace(input:{ownerId:string;groupKey:string;groupId:string;sourceRef:string;requestId?:string|null;correlationId?:string|null}){
-  const ownerId=bounded(input.ownerId,64);
-  if(!UUID.test(ownerId))throw Object.assign(new Error('Observability ownerId must be a UUID.'),{code:'HIPICO_OBSERVABILITY_SCOPE_INVALID'});
-  const groupKey=bounded(input.groupKey,180);
-  const groupId=bounded(input.groupId,180);
-  if(!groupKey||!groupId)throw Object.assign(new Error('Observability requires groupKey and groupId.'),{code:'HIPICO_OBSERVABILITY_SCOPE_INVALID'});
-  const seed=`${ownerId}|${groupKey}|${groupId}|${String(input.sourceRef||'')}`;
-  const requestId=bounded(input.requestId,180)||`req_${hash(`req|${seed}`).slice(0,32)}`;
-  const correlationId=bounded(input.correlationId,180)||`corr_${hash(`corr|${seed}`).slice(0,32)}`;
   return{ownerId,groupKey,groupId,requestId,correlationId};
 }
 
