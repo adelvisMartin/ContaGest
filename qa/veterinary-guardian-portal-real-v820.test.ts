@@ -52,6 +52,19 @@ test('#820 real PG: guardian token scopes, expiry and revocation bind one patien
   assert.ok(revoked.revokedAt);
   assert.equal((await portal(second.portalToken)).response.status,404);
   assert.equal((await portal(randomUUID())).response.status,404);
+  // Simultaneous rotations for the same patient must leave one active token.
+  const rotated=await Promise.all([grant(),grant()]);
+  grants.push(...rotated.map(x=>x.id));
+  const valid=await Promise.all(rotated.map(x=>portal(x.portalToken)));
+  assert.deepEqual(valid.map(x=>x.response.status).sort((a,b)=>a-b),[200,404],
+    'exactly one grant may survive concurrent rotation');
+  const active=await h.prisma.$queryRawUnsafe<Array<{total:number}>>(`
+    SELECT count(*)::int AS total
+    FROM public."VeterinaryGuardianPortalGrant"
+    WHERE "tenantId"=$1 AND "patientId"=$2
+      AND "revokedAt" IS NULL AND "expiresAt">now()
+  `,h.tenant.id,patientId);
+  assert.equal(active[0]?.total,1);
   const grantRows=await h.prisma.$queryRawUnsafe<Array<{revokedAt:Date|null}>>(
     'SELECT "revokedAt" FROM public."VeterinaryGuardianPortalGrant" WHERE "tenantId"=$1 AND "id"=$2',
     h.tenant.id,second.id);
