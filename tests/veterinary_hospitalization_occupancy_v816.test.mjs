@@ -59,3 +59,23 @@ test('#816 status mutations lock the row and preserve terminal transitions',()=>
   assert.match(patch,/if\(changed\.length!==1\)throw new HttpError\(409/);
   assert.match(patch,/b\.dischargedAt&&b\.status!=='discharged'/);
 });
+
+
+test('#816 observations cannot race a terminal hospitalization status transition',()=>{
+  const patientRoutes=readFileSync(
+    new URL('../backend/src/modules/verticals/veterinary-patients.routes.ts',import.meta.url),'utf8');
+  const observation=patientRoutes.split("router.post('/observations'")[1]
+    .split("router.get('/procedures'")[0];
+  const transaction=observation.indexOf('prisma.$transaction(async(tx)=>');
+  const lock=observation.indexOf('FOR SHARE');
+  const insert=observation.indexOf('INSERT INTO public."CareHospitalObservation"');
+  assert.ok(transaction>=0&&lock>transaction&&insert>lock,
+    'Lock admission before persisting observation');
+  assert.match(observation,/FROM public\."CareHospitalization"/);
+  assert.match(observation,/WHERE "tenantId"=\$1 AND "id"=\$2 AND "status" IN \('admitted','observed'\)/);
+  assert.match(observation,/WHERE "tenantId"=\$1 AND "id"=\$2 FOR SHARE/);
+  assert.match(observation,/FROM public\."CareProfessional"/);
+  assert.match(observation,/tx\.\$queryRawUnsafe/);
+  assert.doesNotMatch(observation,/await prisma\.\$queryRawUnsafe/);
+  assert.match(patch,/WHERE "tenantId"=\$1 AND "id"=\$2 FOR UPDATE/);
+});
