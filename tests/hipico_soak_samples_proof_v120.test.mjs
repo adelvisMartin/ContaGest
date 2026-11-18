@@ -142,3 +142,15 @@ test('#120 missing or forged health classification fails even after sample diges
     rows[20].health={ok:false,status:503,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5};
   }));
 });
+
+
+test('#120 summary RSS must contain its own heap at both process boundaries',()=>{
+  check(f=>{
+    f.report.summaryInput.rssStartMb=100;
+    f.report.summaryInput.heapStartMb=110;
+  });
+  check(f=>{
+    f.report.summaryInput.rssEndMb=100;
+    f.report.summaryInput.heapEndMb=110;
+  });
+});
