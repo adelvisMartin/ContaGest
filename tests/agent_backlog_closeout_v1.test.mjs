@@ -16,6 +16,7 @@ const input = changes => ({ mainSha: sha, issues, prs: [pr()],
 test('19 real owners fit target without deleting or auto-closing their epic criteria', () => {
   const result = evaluateBacklogCloseout(input());
   assert.equal(result.issueCount, 19);
+  assert.equal(result.source, 'EVALUATED_SNAPSHOT_NOT_LIVE_PROOF');
   assert.equal(result.targetBand.inBand, true);
   assert.equal(result.targetBand.automaticIssueClosure, false);
   assert.ok(result.issues.every(x => x.status === 'OPEN_UNTIL_ACCEPTANCE_VERIFIED'));
