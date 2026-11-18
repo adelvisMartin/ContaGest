@@ -82,6 +82,8 @@ test('#707 ERPNext first-party documentation may use reviewed Frappe origin, not
   }
   row.referenceEvidenceUrl='https://docs.frappe.io/erpnext/selling';
   assert.deepEqual(validateCompetitiveBenchmark(c),[]);
+  c.sources.find(x=>x.id==='erpnext').sourceUrl='https://github.com/another/erpnext';
+  assert.match(validateCompetitiveBenchmark(c).join(';'),/unsupported reference feature claim: VEOSS-015/);
 });
 
 test('#707 unresolved and secondary sources cannot claim documented official parity',()=>{
