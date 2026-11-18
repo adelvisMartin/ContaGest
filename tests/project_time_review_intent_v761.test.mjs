@@ -114,3 +114,14 @@ test('#761 no rate/ledger/invoice actions or secret fields are returned',()=>{
   ].sort());
   assert.equal(result.invoiceAuthorized,false);
 });
+
+test('#761 rejects object-coerced review action rather than approving with noncanonical input',()=>{
+  for(const action of [new String('approve'), {toString:()=> 'approve'},
+    {toString:()=> 'submit'}, { [Symbol.toPrimitive]:()=> 'reject' }]){
+    const input=action.toString()==='submit'?fixture({action}):submitted({action});
+    reject(input,'ACTION_INVALID');
+  }
+  // Ordinary primitive actions remain accepted for their respective roles.
+  assert.equal(prepareProjectTimeReviewIntent(submitted({action:'approve'})).proposedState,'approved');
+  assert.equal(prepareProjectTimeReviewIntent(fixture({action:'submit'})).proposedState,'submitted');
+});
