@@ -280,11 +280,15 @@ function scheduleCloudSync() {
             isSyncing = true;
             renderStatus();
             const row = await saveCloudWorkspaceSafely();
+            if (mode !== "cloud" || !currentSession() || !workspace) { isSyncing = false; return; }
             cloudWorkspaceId = (row === null || row === void 0 ? void 0 : row.id) || cloudWorkspaceId;
             for (const event of await listOutbox()) {
+                if (mode !== "cloud" || !currentSession() || !workspace) { isSyncing = false; return; }
                 await appendCloudAudit(event, cloudWorkspaceId);
+                if (mode !== "cloud" || !currentSession() || !workspace) { isSyncing = false; return; }
                 await removeOutbox(event.id);
             }
+            if (mode !== "cloud" || !currentSession() || !workspace) { isSyncing = false; return; }
             workspace.syncQueue = [];
             workspace.syncMeta.lastSyncedVersion = Number((row === null || row === void 0 ? void 0 : row.version) || workspace.syncMeta.lastSyncedVersion || 0);
             workspace.syncMeta.lastSyncedAt = now();
@@ -319,13 +323,16 @@ async function init() {
     mode = await getAppMode();
     if (mode === "cloud" && currentSession()) {
         workspace = normalizeWorkspaceShape(await loadLocalWorkspace(createBlankWorkspace));
+        if (mode !== "cloud" || !currentSession()) { workspace = null; mode = null; render(); return; }
         (_d = globalThis.__HIPICO_SET_BOOT_STATUS__) === null || _d === void 0 ? void 0 : _d.call(globalThis, "Preparando interfaz…");
         await refreshStorageInfo();
         render();
         if (navigator.onLine) {
             try {
                 cloudProfile = await fetchCloudProfile();
+                if (mode !== "cloud" || !currentSession()) return;
                 const row = await fetchCloudWorkspace();
+                if (mode !== "cloud" || !currentSession() || !workspace) return;
                 if (row === null || row === void 0 ? void 0 : row.state) {
                     workspace = normalizeWorkspaceShape(mergeWorkspaces(workspace, row.state));
                     cloudWorkspaceId = row.id;
@@ -420,6 +427,26 @@ if ("serviceWorker" in navigator) {
         }
     });
 }
+window.addEventListener("hipico:cloud-session-ended", () => {
+    if (mode !== "cloud") return;
+    clearTimeout(syncTimer);
+    syncTimer = null;
+    // Remove the former owner's memory and DOM immediately. Supabase's
+    // session guard separately invalidates in-flight protected responses.
+    mode = null;
+    workspace = null;
+    cloudWorkspaceId = null;
+    cloudProfile = null;
+    modal = null;
+    chatDraft = "";
+    chatAnalysis = null;
+    chatApprovedMatchIds = new Set();
+    backupJsonText = "";
+    backupJsonFilename = "";
+    navigationHistory = [];
+    render();
+    toast("La sesión de nube cambió en otra pestaña. Inicia sesión nuevamente.", "warning");
+});
 window.addEventListener("online", () => { renderStatus(); if (mode === "cloud")
     scheduleCloudSync(); toast("Conexión recuperada. Sincronizando cambios.", "success"); });
 window.addEventListener("offline", () => { renderStatus(); toast("Sin internet: puedes seguir trabajando. Los cambios quedan protegidos en este dispositivo.", "info"); });
