@@ -33,7 +33,7 @@ function deferred() {
 const oldSession = { access_token: 'synthetic-old-access', refresh_token: 'synthetic-old-refresh' };
 const newSession = { access_token: 'synthetic-new-access', refresh_token: 'synthetic-new-refresh' };
 
-function harness({ refreshResponse, signinResponse = null, signupResponse = null, oldDiskLoad = null, holdSave = null, protectedResponse = null } = {}) {
+function harness({ refreshResponse, signinResponse = null, signupResponse = null, oldDiskLoad = null, holdSave = null, holdClear = null, saveFailure = false, protectedResponse = null } = {}) {
   let stored = oldSession;
   const writes = [];
   const context = {
@@ -45,6 +45,8 @@ function harness({ refreshResponse, signinResponse = null, signupResponse = null
     loadCloudSession: () => oldDiskLoad ? oldDiskLoad.promise : Promise.resolve(stored),
     saveCloudSession: async (value) => {
       if (value && holdSave) await holdSave.promise;
+      if (!value && holdClear) await holdClear.promise;
+      if (value && saveFailure) throw new Error('Synthetic IndexedDB write failure');
       stored = value;
       writes.push(value?.access_token ?? null);
     },
@@ -85,6 +87,7 @@ test('#1292 if refresh storage began before logout, the serialized purge finishe
   await Promise.resolve();
   await Promise.resolve();
   const logoutPromise = h.signOut();
+  assert.equal(h.currentSession(), null, 'Logout is synchronous even when refresh save is pending');
   holdSave.resolve();
   await refresh;
   const logout = await logoutPromise;
@@ -92,6 +95,44 @@ test('#1292 if refresh storage began before logout, the serialized purge finishe
   assert.equal(h.currentSession(), null);
   assert.equal(h.stored(), null);
   assert.equal(h.writes.at(-1), null);
+});
+
+test('#1292 logout invalidates access immediately while private IndexedDB removal is pending', async () => {
+  const refreshResponse = deferred();
+  const holdClear = deferred();
+  const h = harness({ refreshResponse, holdClear });
+  const logout = h.signOut();
+  assert.equal(h.currentSession(), null, 'Logout must clear the in-memory bearer before the first await');
+  await assert.rejects(() => h.authorizedRequest('/rest/v1/rpc/hipico_get_workspace'),
+    /La sesión de nube no está activa/);
+  holdClear.resolve();
+  const result = await logout;
+  assert.equal(result.localCleared, true);
+  assert.equal(h.stored(), null);
+});
+
+test('#1292 a failed durable login save never activates the new private token', async () => {
+  const refreshResponse = deferred();
+  const h = harness({ refreshResponse, saveFailure: true });
+  await assert.rejects(h.signIn('new@example.invalid', 'synthetic'),
+    /Synthetic IndexedDB write failure/);
+  assert.equal(h.currentSession(), null, 'Unconfirmed private state must not be exposed in memory');
+  assert.equal(h.stored(), null, 'A failed save cannot claim durable authentication');
+});
+
+test('#1292 an in-flight login write cannot resurrect memory after logout epoch changes', async () => {
+  const refreshResponse = deferred(), holdSave = deferred();
+  const h = harness({ refreshResponse, holdSave });
+  const login = h.signIn('new@example.invalid', 'synthetic');
+  await Promise.resolve();
+  await Promise.resolve();
+  const logout = h.signOut();
+  assert.equal(h.currentSession(), null, 'Logout must clear the pending new login immediately');
+  holdSave.resolve();
+  await login;
+  await logout;
+  assert.equal(h.currentSession(), null);
+  assert.equal(h.stored(), null);
 });
 
 test('#1292 late refresh cannot overwrite a different user after logout and login', async () => {
