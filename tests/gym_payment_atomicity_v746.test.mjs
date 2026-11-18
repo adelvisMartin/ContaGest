@@ -30,6 +30,20 @@ test('#746 cannot apply a membership payment outside its tenant and member',()=>
 
 test('#746 pending/refunded/void entries do not decrement the membership',()=>{
   assert.match(payment,/body\.membershipId && body\.status === 'paid'/);
-  assert.match(payment,/GREATEST\(0,"balance"-\$2\)/);
+  assert.match(payment,/SET "balance"="balance"-\$2/);
+  assert.match(payment,/AND "balance">=\$2/);
+  assert.doesNotMatch(payment,/GREATEST\(0,"balance"/);
   assert.match(payment,/ok\(res,payment,201\)/);
+});
+
+
+test('#746 overpayment must roll back the inserted payment instead of hiding the excess',()=>{
+  const insert=payment.indexOf('INSERT INTO public."GymPayment"');
+  const update=payment.indexOf('UPDATE public."GymMembership"');
+  const guard=payment.indexOf('AND "balance">=$2');
+  const fail=payment.indexOf('if (changed !== 1)');
+  const done=payment.indexOf('return one(rows)');
+  assert.ok(insert>0&&update>insert&&guard>update&&fail>guard&&done>fail);
+  assert.match(payment,/throw new HttpError\(409, 'El pago excede el saldo pendiente o la membresía cambió\.'/);
+  assert.match(payment,/body\.membershipId && body\.status === 'paid'/);
 });
