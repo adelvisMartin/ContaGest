@@ -1,4 +1,5 @@
 import {readFileSync} from 'node:fs';
+import {Buffer} from 'node:buffer';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {CONFIG_MANIFEST_V665} from '../config/environment-manifest-v665.mjs';
@@ -38,6 +39,21 @@ const PUBLIC_URL_SECRET_KEYS=new Set([
  'servicerolekey','password','passwd','authorization','jwt',
  'secret','token','auth','idtoken','sessiontoken','clienttoken'
 ]);
+// The frontend VITE_* namespace is public even if the variable's metadata
+// says type:string or claims sensitive:false. Never ship a server credential
+// under an innocuous alias. Inspect only checked-in examples, not live secrets.
+function publicSampleContainsCredential(value){
+ if(typeof value!=='string')return false;
+ if(/sb_secret_|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/i.test(value))return true;
+ const jwt=value.split('.');
+ if(jwt.length!==3||jwt.some(part=>!part)||
+    !/^[A-Za-z0-9_-]{1,8192}={0,2}$/.test(jwt[1]))return false;
+ try{
+  const payload=JSON.parse(Buffer.from(jwt[1],'base64url').toString('utf8'));
+  return ['service_role','supabase_admin','postgres'].includes(payload?.role);
+ }catch{return false;}
+}
+
 function frontendUrlHasCredentials(value){
  try{
   const url=new URL(value,'https://config.invalid');
@@ -171,7 +187,11 @@ export function checkEnvironmentManifest(samples,registry=CONFIG_MANIFEST_V665){
      }
    }
   }
-  for(const key of parsed.entries.keys())if(!catalog[key])add('MANIFEST_UNREGISTERED_KEY',owner,key);
+  for(const [key,value] of parsed.entries){
+   if(!catalog[key])add('MANIFEST_UNREGISTERED_KEY',owner,key);
+   if(owner==='frontend'&&publicSampleContainsCredential(value))
+     add('MANIFEST_PUBLIC_SECRET_VALUE',owner,key);
+  }
  }
  return{status:findings.length?'FAIL':'PASS',findings};
 }
