@@ -41,3 +41,7 @@ test('#785 purchase roles use AP credit, VAT input debit and COGS debit', () => 
   assert.equal(result.ap.nature, 'credit');
   deny([{ ...rows[0], nature: 'debit' }, ...rows.slice(1)], ['ap', 'vat_input', 'cost_of_sales']);
 });
+
+test('#785 posting rejects a self-parented mapped account without altering other roles',()=>{
+  deny([{...good[0],parentCode:good[0].accountCode},...good.slice(1)]);
+});
