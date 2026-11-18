@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { augmentAgentRoute } from './agent-ticket-automation-lib.mjs';
 
@@ -8,8 +8,19 @@ const argv = process.argv.slice(2);
 const mode = argv[0];
 const forwarded = argv.slice(1);
 
+// Closeout is a live read-only audit; it does not select or evict domain skills,
+// mutate GitHub or turn mergeable=true into a release decision.
+if (mode === 'closeout') {
+  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+  const run = spawnSync(process.execPath,
+    [path.join(scriptDir, 'agent-backlog-closeout.mjs'), ...forwarded],
+    { stdio: 'inherit', shell: false });
+  if (run.error) throw run.error;
+  process.exit(run.status ?? 2);
+}
+
 if (!['gates', 'bootstrap'].includes(mode)) {
-  console.error('Usage: node scripts/agent-ticket-router.mjs <gates|bootstrap> [agent args] [automation signals]');
+  console.error('Usage: node scripts/agent-ticket-router.mjs <gates|bootstrap|closeout> [args]');
   process.exit(2);
 }
 
