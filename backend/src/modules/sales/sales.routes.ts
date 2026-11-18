@@ -422,11 +422,11 @@ router.delete('/:id', requirePermission('sales.manage'), asyncHandler(async (req
   if (!sale) throw new HttpError(404, 'Venta no encontrada.');
   if (sale.status !== 'draft') throw new HttpError(409, 'Solo se eliminan ventas en borrador. Las ventas emitidas deben anularse.');
   const dentalLinks = await prisma.$queryRaw<Array<{ treatmentPlanId: string }>>`
-    SELECT "treatmentPlanId" FROM public."DentalFinancialLink" WHERE "tenantId"=${ctx.tenantId}::uuid AND "salesInvoiceId"=${sale.id}::uuid LIMIT 1
+    SELECT "treatmentPlanId" FROM public."DentalFinancialLink" WHERE "tenantId"=${ctx.tenantId} AND "salesInvoiceId"=${sale.id} LIMIT 1
   `;
   if (dentalLinks.length) throw new HttpError(409, 'El borrador está vinculado a un plan odontológico aceptado y conserva provenance financiera; no puede eliminarse desde Ventas.');
   const veterinaryLinks = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT "id" FROM public."VeterinaryFinancialCase" WHERE "tenantId"=${ctx.tenantId}::uuid AND "salesInvoiceId"=${sale.id}::uuid LIMIT 1
+    SELECT "id" FROM public."VeterinaryFinancialCase" WHERE "tenantId"=${ctx.tenantId} AND "salesInvoiceId"=${sale.id} LIMIT 1
   `;
   if (veterinaryLinks.length) throw new HttpError(409, 'El borrador está vinculado al flujo financiero veterinario y conserva provenance de estimación, autorización, atención y consumos; no puede eliminarse desde Ventas.');
   await prisma.salesInvoice.delete({ where: { id: sale.id } });
