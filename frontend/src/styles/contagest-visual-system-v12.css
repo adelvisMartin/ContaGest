@@ -444,6 +444,12 @@
   body .cg-ai-footer { display:flex; justify-content:space-between; gap:8px; margin-top:7px; color:var(--cg-v-text-subtle); font-size:8px; }
 
   body :where(.cg-user-security,.cg-rbac-section,.cg-enterprise-card) h3 { font-size:var(--cg-v-text-section)!important; }
+  body .cg-security-reauth { display:grid; grid-template-columns:minmax(0,1fr) minmax(220px,320px); align-items:center; gap:8px 12px; margin:12px 0; padding:12px; border:1px solid var(--cg-v-border); border-radius:10px; background:var(--cg-v-surface-2); }
+  body .cg-security-reauth label { color:var(--cg-v-text); font-size:12px; font-weight:600; }
+  body .cg-security-reauth input { box-sizing:border-box; width:100%; min-height:40px; padding:8px 10px; border:1px solid var(--cg-v-border); border-radius:8px; background:var(--cg-v-surface); color:var(--cg-v-text); }
+  body .cg-security-reauth input:focus-visible { outline:2px solid var(--cg-v-brand); outline-offset:2px; }
+  body .cg-security-reauth small { grid-column:1/-1; color:var(--cg-v-text-muted); font-size:11px; }
+  @media (max-width:720px) { body .cg-security-reauth { grid-template-columns:minmax(0,1fr); } }
   body .cg-security-table { min-width:880px; }
   body .cg-security-user strong { display:block; font-size:10px; }
   body .cg-security-user small { display:block; margin-top:2px; color:var(--cg-v-text-subtle); font-size:8px; }
