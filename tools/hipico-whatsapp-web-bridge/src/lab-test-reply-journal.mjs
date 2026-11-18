@@ -11,6 +11,14 @@ export const LAB_TEST_ACK_STATES=Object.freeze(['prepared','sending','confirmed'
 const STATES=new Set(LAB_TEST_ACK_STATES);
 const DIGEST=/^[a-f0-9]{64}$/;
 const TAG=/^\[LABTEST:[a-f0-9]{10}\]$/;
+const ACK_RECORD_KEYS=new Set([
+  'schemaVersion','scopeHash','idHash','tag','state','attempts',
+  'createdAt','updatedAt','resolution'
+]);
+const ACK_RESOLUTIONS=new Set([
+  null,'SAFE_PRE_SEND_FAILURE','UNCERTAIN_LAB_DELIVERY',
+  'PROCESS_RESTART_DURING_SEND','VISIBLE_OUTGOING_TAG'
+]);
 
 export function labTestTagForMessage(externalId){
   return '[LABTEST:'+crypto.createHash('sha256').update(String(externalId)).digest('hex').slice(0,10)+']';
@@ -68,6 +76,10 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
        record.schemaVersion!==1||record.scopeHash!==scopeHash||
        !DIGEST.test(record.idHash||'')||!TAG.test(record.tag||'')||
        !STATES.has(record.state)||
+       // A syntactically valid ACK carrying extra fields can smuggle message,
+       // sender or session data through later object-spread persistence.
+       Object.keys(record).some(key=>!ACK_RECORD_KEYS.has(key))||
+       !ACK_RESOLUTIONS.has(record.resolution)||
        !Number.isInteger(record.attempts)||record.attempts<0||
        (expected&&(record.idHash!==expected.idHash||record.tag!==expected.tag))){
       throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');
