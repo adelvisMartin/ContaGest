@@ -75,10 +75,10 @@ test('#816 real PG: concurrent admissions exclude a second animal from the same 
     method:'PATCH',body:JSON.stringify({status:'cancelled'})
   });
   assert.equal(cancel.response.status,200);
-  assert.equal((await request(otherPatient,'Ward 1','Cage 7')).response.status,201,
+  const reopened=await request(otherPatient,'Ward 1','Cage 7');
+  assert.equal(reopened.response.status,201,
     'a cancelled admission no longer occupies a cage');
+  hospitalIds.push(reopened.data.id);
   const latest=await h.ok('/verticals/veterinary/hospitalizations?patientId='+otherPatient);
-  const reopened=latest.find((record:any)=>record.status==='admitted');
-  assert.ok(reopened);
-  hospitalIds.push(reopened.id);
+  assert.ok(latest.some((record:any)=>record.id===reopened.data.id&&record.status==='admitted'));
 });
