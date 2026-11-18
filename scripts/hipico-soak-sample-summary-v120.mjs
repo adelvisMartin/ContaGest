@@ -39,9 +39,19 @@ export function validSoakSampleSummary(rows, summary) {
       // The real probe never reports healthy on HTTP 503/0, nor after a
       // SOURCE-write warning. A recomputed sample checksum is not proof
       // that a self-contradictory health object came from the producer.
-      if((health.ok && (health.status<200 || health.status>=300 ||
-          (health.reason!=null && health.reason!=='READY_SHADOW'))) ||
-         (!health.ok && health.reason==='READY_SHADOW')) return false;
+      const isHttpSuccess=health.status>=200&&health.status<300;
+      const reason=health.reason;
+      const expected=reason==='READY_SHADOW'
+        ? health.ok===true&&isHttpSuccess
+        : reason==='HEALTH_REQUEST_FAILED'
+          ? health.ok===false&&health.status===0
+          : reason==='HEALTH_HTTP_FAILURE'
+            ? health.ok===false&&health.status>=100&&!isHttpSuccess
+            : ['HEALTH_BODY_INVALID','HEALTH_NOT_READY','HEALTH_MODE_MISMATCH',
+              'SOURCE_WRITE_POSSIBLE'].includes(reason)
+              ? health.ok===false&&isHttpSuccess
+              : false;
+      if(!expected)return false;
       healthChecks++;
       if (!health.ok) healthFailures++;
     }
