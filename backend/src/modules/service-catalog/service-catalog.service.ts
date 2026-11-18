@@ -43,11 +43,21 @@ async function lockService(tx:Prisma.TransactionClient,tenantId:string,id:string
   `;
   if(rows.length!==1)denied('SERVICE_NOT_FOUND','Servicio no encontrado.',404);
 }
+async function lockedCategory(tx:Prisma.TransactionClient,tenantId:string,id:string){
+  // FOR UPDATE serializes new service creation with category archival.
+  // FK checks alone do not protect the mutable status of a parent row.
+  const rows=await tx.$queryRaw<Array<{id:string;status:string}>>`
+    SELECT "id","status" FROM public."ServiceCatalogCategory"
+    WHERE "tenantId"=${tenantId} AND "id"=${id} FOR UPDATE
+  `;
+  return rows[0]??null;
+}
+
 async function validateRefs(tx:Prisma.TransactionClient,tenantId:string,
  categoryId:string|null|undefined,productId:string|null|undefined){
   if(categoryId){
-    const c=await tx.serviceCatalogCategory.findFirst({where:{tenantId,id:categoryId,status:'active'},select:{id:true}});
-    if(!c)denied('SERVICE_CATEGORY_NOT_AVAILABLE','Categoría ajena, inexistente o archivada.',422);
+    const c=await lockedCategory(tx,tenantId,categoryId);
+    if(c?.status!=='active')denied('SERVICE_CATEGORY_NOT_AVAILABLE','Categoría ajena, inexistente o archivada.',422);
   }
   if(productId){
     const p=await tx.product.findFirst({where:{tenantId,id:productId,active:true},select:{id:true}});
@@ -99,6 +109,34 @@ export async function createServiceCategory(ctx:CatalogActor,input:{
     }
   });
 }
+export async function setServiceCategoryStatus(ctx:CatalogActor,categoryId:string,
+ status:'active'|'archived'){
+  actor(ctx);
+  return prisma.$transaction(async tx=>{
+    const before=await lockedCategory(tx,ctx.tenantId,categoryId);
+    if(!before)denied('SERVICE_CATEGORY_NOT_FOUND','Categoría no encontrada.',404);
+    // Idempotent retry: do not add a second audit entry for the same state.
+    if(before.status===status)return tx.serviceCatalogCategory.findFirstOrThrow({
+      where:{tenantId:ctx.tenantId,id:categoryId}
+    });
+    if(status==='archived'){
+      // Referenced services must be archived first; historical rows and
+      // snapshots are never deleted or reinterpreted.
+      const inUse=await tx.serviceDefinition.count({
+        where:{tenantId:ctx.tenantId,categoryId,status:{not:'archived'}}
+      });
+      if(inUse>0)denied('SERVICE_CATEGORY_IN_USE','Archive primero los servicios de la categoría.');
+    }
+    const updated=await tx.serviceCatalogCategory.update({
+      where:{tenantId:ctx.tenantId,id:categoryId},
+      data:{status,updatedAt:new Date()}
+    });
+    await audit(tx,ctx,'service-category.status',categoryId,
+      {previousStatus:before.status,status:updated.status},'ServiceCatalogCategory');
+    return updated;
+  });
+}
+
 export async function createCatalogService(ctx:CatalogActor,input:CatalogServiceDraft){
   return prisma.$transaction(async tx=>{
     await validateRefs(tx,ctx.tenantId,input.categoryId,input.productId);
