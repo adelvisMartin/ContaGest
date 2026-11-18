@@ -16,7 +16,7 @@ test('#1312 step-up validates the actor password before any privileged mutation'
   const mutation=backend.indexOf('await prisma.$transaction(async (tx)');
   assert.ok(auth>=0&&mutation>auth,'Step-up must occur before side effects');
   assert.match(backend,/code:'ADMIN_REAUTH_REQUIRED'/);
-  assert.match(backend,/router\\.patch\\('\/users\/:userId', authRateLimit,/);
+  assert.match(backend,/router\.patch\('\/users\/:userId', authRateLimit,/);
   const transaction=backend.slice(mutation);
   assert.doesNotMatch(transaction,/after:\s*\{[^}]*currentPassword\s*:/s);
   assert.match(transaction,/await tx\.auditLog\.create/);
