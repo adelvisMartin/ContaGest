@@ -8,6 +8,13 @@ const service=()=>fs.readFileSync('frontend/src/services/verticalService.js','ut
 const page=()=>fs.readFileSync('frontend/src/pages/DentistryPracticePage.jsx','utf8');
 const panel=()=>fs.readFileSync('frontend/src/components/dentistry/DentalConsentPanel.jsx','utf8');
 
+test('16/51 dental consent serializes signed plans without deserializing PostgreSQL void',()=>{
+  const code=fs.readFileSync('backend/src/modules/verticals/health-extended.routes.ts','utf8');
+  assert.match(code,/pg_advisory_xact_lock\(hashtextextended\(\$1,0\)\)::text AS locked/);
+  assert.match(code,/metadata.*treatmentPlanEncounterId/s);
+  assert.match(code,/latest\?\.status==='signed'/);
+});
+
 test('16/51 signs dental consent only through the specialized server-authoritative route',()=>{
   const source=backend();
   const start=source.indexOf("router.post('/health/consents/dental-treatment'");

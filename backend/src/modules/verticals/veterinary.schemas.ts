@@ -226,6 +226,7 @@ export const VETERINARY_TREATMENT_VITAL_UNITS ={
 export const VETERINARY_TREATMENT_VITAL_KEYS =Object.keys(VETERINARY_TREATMENT_VITAL_UNITS) as Array<keyof typeof VETERINARY_TREATMENT_VITAL_UNITS>;
 
 export const treatmentSheetEntrySchema = z.object({
+  requestKey: z.string().uuid().optional(),
   responsibleProfessionalId: z.string().min(10).optional().nullable(),
   category: z.enum(['medication','feeding','fluid','task','observation','vitals']),
   status: z.enum(['scheduled','completed','skipped','cancelled']).default('completed'),

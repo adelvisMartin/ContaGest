@@ -50,3 +50,18 @@ test('manual release report waits for browser matrix completion before classifyi
   const workflow = await read('.github/workflows/hipico-production-gates-v290.yml');
   assert.match(workflow, /needs:\s*\[[^\]]*browser-matrix[^\]]*\]/s);
 });
+
+test('#839 coerced PASS objects cannot authorize LAB release or production readiness',()=>{
+ const fake={toString:()=> 'PASS'};
+ const actual={stablePromotionStatus:'PASS',p0Open:false,securityCritical:false,automationReadiness:'VERIFIED'};
+ assert.equal(readiness.deriveProductionReadinessState(actual),'PASS');
+ assert.equal(readiness.deriveProductionReadinessState({...actual,stablePromotionStatus:fake}),'NOT_EXECUTED');
+ assert.equal(readiness.deriveAutomationReadiness({evidenceStatus:fake,
+   agentShadowStatus:'PASS',raceContextStatus:'PASS'}),'NOT_VERIFIED');
+ const score=readiness.computeReadinessScore({statuses:[fake,'PASS'],p0Open:false,
+   securityCritical:false,codeReviewStatus:'PASS',raceContextVerified:true});
+ assert.equal(score.passed,1);
+ assert.equal(score.score,50);
+ assert.equal(readiness.__test__.normalizeStatus(' PASS '),'PASS');
+ assert.equal(readiness.__test__.normalizeStatus(new String('PASS')),'NOT_EXECUTED');
+});

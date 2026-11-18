@@ -211,3 +211,21 @@ test('#665 spaces near = cannot bypass public frontend credential checks',()=>{
   assert.deepEqual(parseEnvTemplate('HIPICO_SOURCE_AUTO_REPLY_ENABLED = false').vars.get(
     'HIPICO_SOURCE_AUTO_REPLY_ENABLED'),'false');
 });
+
+test('#665 Hípico public template cannot conceal administrative Supabase JWT roles',()=>{
+ const jwt=role=>{
+  const enc=v=>Buffer.from(JSON.stringify(v)).toString('base64url');
+  return enc({alg:'HS256',typ:'JWT'})+'.'+enc({role,aud:'authenticated'})+'.fixture';
+ };
+ for(const role of ['service_role','supabase_admin','postgres']){
+  const value=jwt(role);
+  const report=check({frontend:frontend.replace('VITE_SUPABASE_ANON_KEY=replace_me',
+    'VITE_SUPABASE_ANON_KEY='+value)});
+  assert.equal(report.status,'FAIL');
+  assert.ok(report.findings.some(f=>f.code==='PUBLIC_PRIVILEGED_JWT'&&f.key==='VITE_SUPABASE_ANON_KEY'));
+  assert.equal(JSON.stringify(report).includes(value),false);
+ }
+ const anon=check({frontend:frontend.replace('VITE_SUPABASE_ANON_KEY=replace_me',
+   'VITE_SUPABASE_ANON_KEY='+jwt('anon'))});
+ assert.equal(anon.status,'PASS');
+});

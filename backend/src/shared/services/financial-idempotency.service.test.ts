@@ -80,3 +80,25 @@ test('non-finite numeric input is rejected before hashing', () => {
   assert.equal(error.status, 422);
   assert.equal(error.details?.code, 'IDEMPOTENCY_REQUEST_NOT_CANONICAL');
 });
+
+test('#1289 prototype-named JSON fields must affect request hashes, not disappear', () => {
+  const ordinary = { amount: 10, currency: 'USD' };
+  const crafted = JSON.parse('{"amount":10,"currency":"USD","__proto__":{"sideEffect":true}}');
+  const canonical = canonicalRequestJson(crafted);
+  assert.equal(canonical, '{"__proto__":{"sideEffect":true},"amount":10,"currency":"USD"}');
+  assert.notEqual(canonicalRequestHash(ordinary), canonicalRequestHash(crafted));
+  assert.equal(({} as any).sideEffect, undefined, 'no pollution of the global prototype');
+});
+
+test('#1289 canonical hash preserves explicit sensitive-looking keys as data without prototype pollution', () => {
+  const payload = JSON.parse('{"constructor":{"prototype":{"admin":true}},"amount":1}');
+  assert.equal(canonicalRequestJson(payload), '{"amount":1,"constructor":{"prototype":{"admin":true}}}');
+  const original = JSON.parse('{"__proto__":1,"nested":{"__proto__":2}}');
+  assert.equal(canonicalRequestJson(original), '{"__proto__":1,"nested":{"__proto__":2}}');
+});
+
+test('invalid Date values are canonical request errors rather than uncaught RangeError', () => {
+  const error = captureError(() => canonicalRequestHash({ issuedAt: new Date(Number.NaN) }));
+  assert.equal(error.status, 422);
+  assert.equal(error.details?.code, 'IDEMPOTENCY_REQUEST_NOT_CANONICAL');
+});

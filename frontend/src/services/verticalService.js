@@ -4,6 +4,7 @@ import { query, pathId, createWithPhoto } from './verticalService.helpers.js';
 
 export const HealthVerticalService = {
   summary() { return BackendApi.get('/verticals/health/summary'); },
+  dentalChartHistory(patientId) { return BackendApi.get('/verticals/health/dental/chart-history?patientId='+encodeURIComponent(patientId)); },
   async patients(params = {}) { return MediaService.signRecords(await BackendApi.get(`/verticals/health/patients${query(params)}`)); },
   createPatient(payload) { return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/health/patients', data), payload, 'care-patient', 'displayName'); },
   updatePatient(id, payload) { return BackendApi.request(`/verticals/health/patients/${pathId(id)}`, { method:'PATCH', body:payload }); },
@@ -90,6 +91,11 @@ export const VeterinaryService = {
 
 export const GymVerticalService = {
   summary() { return BackendApi.get('/verticals/gym/summary'); },
+  equipment(filters={}) { return BackendApi.get('/verticals/gym/equipment'+query(filters)); },
+  createEquipment(payload) { return BackendApi.post('/api/v1/verticals/gym/equipment',payload); },
+  equipmentWorkOrders(id) { return BackendApi.get('/verticals/gym/equipment/'+pathId(id)+'/work-orders'); },
+  createEquipmentWorkOrder(id,payload) { return BackendApi.post('/api/v1/verticals/gym/equipment/'+pathId(id)+'/work-orders',payload); },
+  transitionEquipmentWorkOrder(id,payload) { return BackendApi.post('/api/v1/verticals/gym/equipment/work-orders/'+pathId(id)+'/transitions',payload); },
   async members(params = {}) { return MediaService.signRecords(await BackendApi.get(`/verticals/gym/members${query(params)}`)); },
   createMember(payload) { return createWithPhoto((data) => BackendApi.post('/api/v1/verticals/gym/members', data), payload, 'gym-member', 'fullName'); },
   trainers() { return BackendApi.get('/verticals/gym/trainers'); },
@@ -116,6 +122,8 @@ export const GymVerticalService = {
   startWorkoutSession(payload) { return BackendApi.post('/api/v1/verticals/gym/workout-sessions', payload); },
   recordWorkoutSet(sessionId, payload) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${pathId(sessionId)}/sets`, payload); },
   completeWorkoutSession(sessionId) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${pathId(sessionId)}/complete`, {}); },
+  transitionWorkoutSession(sessionId,payload) { return BackendApi.post(`/api/v1/verticals/gym/workout-sessions/${pathId(sessionId)}/transition`, payload); },
+  workoutSessionTransitions(sessionId) { return BackendApi.get(`/verticals/gym/workout-sessions/${pathId(sessionId)}/transitions`); },
   performance(memberId, filters = {}) { return BackendApi.get(`/verticals/gym/performance${query({ memberId, ...filters })}`); },
   suggestExerciseSubstitutions(payload) { return BackendApi.post('/api/v1/verticals/gym/exercise-substitutions/suggest', payload); },
   ingredients(params = {}) { return BackendApi.get(`/verticals/gym/ingredients${query(params)}`); },

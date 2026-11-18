@@ -21,3 +21,12 @@ test('inherited operations cannot become an authorized quote or order transition
     }
   }
 });
+
+test('#753 runtime objects cannot impersonate state or action for commercial CAS',()=>{
+  const forged=s=>({toString:()=>s});
+  for(const patch of [
+    {from:forged('draft')},{action:forged('send')},
+    {from:new String('draft')},{action:new String('send')}
+  ])assert.throws(()=>plan({...q,...patch}),/SALES_TRANSITION_NOT_ALLOWED/);
+  assert.equal(plan({...q,from:'draft',action:'send'}).to,'sent');
+});

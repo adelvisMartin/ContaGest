@@ -208,10 +208,14 @@ function validTwoDayPhysicalEvidence(data) {
     const time=Date.parse(value);
     return Number.isFinite(time)&&new Date(time).toISOString()===value&&time<=Date.now()?time:null;
   };
+  const runStarted=parse(data?.startedAt);
+  const runCompleted=parse(data?.completedAt);
+  if(runStarted===null||runCompleted===null||runCompleted<runStarted)return false;
   return environments.length>0&&environments.every((environment)=>{
     const start=parse(environment?.physicalDays?.day1ObservedAtUtc);
     const end=parse(environment?.physicalDays?.day2ObservedAtUtc);
-    if(start===null||end===null||end-start<86400000)return false;
+    if(start===null||end===null||start<runStarted||end>runCompleted||
+       end-start<86400000)return false;
     const dayHashes=(id)=>files.filter(row=>
       row?.environment===environment.id&&row?.scenario===id
       &&/^[a-f0-9]{64}$/i.test(String(row?.sha256||''))).map(row=>String(row.sha256).toLowerCase());

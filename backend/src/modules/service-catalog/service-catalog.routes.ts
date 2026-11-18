@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -47,6 +47,24 @@ const listQuery=z.object({
   take:z.coerce.number().int().min(1).max(100).default(50),
   skip:z.coerce.number().int().min(0).max(100000).default(0)
 }).strict();
+// Keep legacy default page sizes while allowing bounded, tenant-scoped filters.
+const categoryListQuery=z.object({
+  take:z.coerce.number().int().min(1).max(100).default(100),
+  skip:z.coerce.number().int().min(0).max(100000).default(0),
+  status:z.enum(['active','archived']).optional(),
+  search:z.string().trim().min(1).max(80).optional()
+}).strict();
+const serviceListQuery=listQuery.extend({
+  status:z.enum(['draft','active','archived']).optional(),
+  categoryId:uuid.optional(),
+  search:z.string().trim().min(1).max(80).optional()
+}).strict();
+function setPageHeaders(res:Response,count:number,take:number,skip:number){
+  const hasMore=count>take;
+  res.setHeader('Cache-Control','private, no-store');
+  res.setHeader('X-Pagination-Has-More',hasMore?'true':'false');
+  if(hasMore)res.setHeader('X-Pagination-Next-Skip',String(skip+take));
+}
 function params(req:any){
   const parsed=uuid.safeParse(req.params.id);
   if(!parsed.success)throw new HttpError(422,'Identificador de servicio inválido.');
@@ -60,9 +78,14 @@ function assignment(req:any,key:'employeeId'|'locationId'){
 
 router.get('/categories',asyncHandler(async(req,res)=>{
   const tenantId=ctx(req).tenantId;
-  ok(res,await prisma.serviceCatalogCategory.findMany({
-    where:{tenantId},orderBy:[{displayOrder:'asc'},{name:'asc'}],take:100
-  }));
+  const {take,skip,status,search}=categoryListQuery.parse(req.query);
+  const rows=await prisma.serviceCatalogCategory.findMany({
+    where:{tenantId,...(status?{status}:{}),
+      ...(search?{name:{contains:search,mode:'insensitive' as const}}:{})},
+    orderBy:[{displayOrder:'asc'},{name:'asc'},{id:'asc'}],take:take+1,skip
+  });
+  setPageHeaders(res,rows.length,take,skip);
+  ok(res,rows.slice(0,take));
 }));
 router.post('/categories',validateBody(category),asyncHandler(async(req,res)=>{
   ok(res,await createServiceCategory(ctx(req),req.body),201);
@@ -74,17 +97,21 @@ router.get('/public',asyncHandler(async(req,res)=>{
     where:{tenantId,status:'active',visibility:'public'},
     select:{id:true,tenantId:true,categoryId:true,name:true,description:true,status:true,
       visibility:true,version:true,modality:true,durationMinutes:true},
-    orderBy:[{name:'asc'},{id:'asc'}],take:pagination.take,skip:pagination.skip
+    orderBy:[{name:'asc'},{id:'asc'}],take:pagination.take+1,skip:pagination.skip
   });
-  res.setHeader('Cache-Control','private, no-store');
-  ok(res,projectPublicServiceCatalog({tenantId,rows}));
+  setPageHeaders(res,rows.length,pagination.take,pagination.skip);
+  ok(res,projectPublicServiceCatalog({tenantId,rows:rows.slice(0,pagination.take)}));
 }));
 router.get('/services',asyncHandler(async(req,res)=>{
-  const {take,skip}=listQuery.parse(req.query);
-  ok(res,await prisma.serviceDefinition.findMany({
-    where:{tenantId:ctx(req).tenantId},
-    orderBy:[{name:'asc'},{id:'asc'}],take,skip
-  }));
+  const {take,skip,status,categoryId,search}=serviceListQuery.parse(req.query);
+  const rows=await prisma.serviceDefinition.findMany({
+    where:{tenantId:ctx(req).tenantId,...(status?{status}:{}),
+      ...(categoryId?{categoryId}:{}),
+      ...(search?{name:{contains:search,mode:'insensitive' as const}}:{})},
+    orderBy:[{name:'asc'},{id:'asc'}],take:take+1,skip
+  });
+  setPageHeaders(res,rows.length,take,skip);
+  ok(res,rows.slice(0,take));
 }));
 router.post('/services',validateBody(service),asyncHandler(async(req,res)=>{
   ok(res,await createCatalogService(ctx(req),req.body),201);

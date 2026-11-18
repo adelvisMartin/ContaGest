@@ -44,3 +44,10 @@ test('#782 validates book kind, period, tenant and bounded scan', () => {
   denied(() => buildFiscalBookReadiness({ ...params, book: 'combined' }));
   denied(() => buildFiscalBookReadiness({ ...params, rows: Array.from({ length: 501 }, (_, i) => ({ ...rows[0], id: String(i) })) }));
 });
+
+test('#782 refuses ambiguous whitespace identities in book evidence',()=>{
+  denied(()=>buildFiscalBookReadiness({...params,tenantId:' t-A ',rows:[]}));
+  for(const identity of [{id:'b '},{number:' F-2'},{number:'F-2 '}]) {
+    denied(()=>buildFiscalBookReadiness({...params,rows:[{...rows[0],...identity}]}));
+  }
+});

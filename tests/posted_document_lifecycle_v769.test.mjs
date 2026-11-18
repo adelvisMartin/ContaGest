@@ -11,3 +11,13 @@ test('#769 terminal and illegal transitions reject immutability bypass',()=>{for
 test('#769 no tenant impersonation or fabricated source',()=>{fail({actorTenantId:'TENANT_B'},'SCOPE_OR_SOURCE_UNVERIFIED');fail({sourceVerified:false},'SCOPE_OR_SOURCE_UNVERIFIED');fail({immutableSnapshotHash:'unknown'},'SNAPSHOT_REQUIRED');fail({expectedRevision:0},'REVISION_INVALID');});
 test('#769 draft cancellation is possible before a number is issued',()=>{const x=run({...base(),action:'cancel',issuedNumber:null});assert.equal(x.to,'cancelled');assert.equal(x.issuedNumber,null);fail({action:'cancel',issuedNumber:null,reason:'bad'},'REASON_REQUIRED');});
 test('#769 intent is immutable and has no effects before #637 transaction',()=>{const x=run(base());assert.equal(Object.isFrozen(x),true);assert.deepEqual(x,run(base()));assert.equal(x.requiresTenantScopedCAS,true);assert.equal(x.requiresIdempotentEffect,true);assert.equal(x.reversalPosted,false);});
+
+test('#769 object-coerced state or issue action never bypasses document sequence authority',()=>{
+  const forged=(value)=>({toString:()=>value});
+  fail({action:forged('issue'),sequenceAuthorityVerified:false},'TRANSITION_FORBIDDEN');
+  fail({from:forged('draft'),sequenceAuthorityVerified:true},'TRANSITION_FORBIDDEN');
+  fail({action:new String('issue'),sequenceAuthorityVerified:true},'TRANSITION_FORBIDDEN');
+  fail({from:new String('posted'),action:'reverse'},'TRANSITION_FORBIDDEN');
+  fail({action:'issue',sequenceAuthorityVerified:false},'SEQUENCE_AUTHORITY_REQUIRED');
+  assert.equal(run({...base(),action:'issue'}).to,'issued');
+});

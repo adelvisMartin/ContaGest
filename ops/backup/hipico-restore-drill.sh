@@ -21,15 +21,17 @@ done
 head_sha="$(git rev-parse HEAD | tr '[:upper:]' '[:lower:]')"
 [[ "$head_sha" == "${HIPICO_CANDIDATE_SHA,,}" ]] || { echo "Candidate checkout mismatch." >&2; exit 4; }
 
-readarray -t url_parts < <(node --input-type=module - "$HIPICO_RESTORE_DATABASE_URL" <<'NODE'
-const u=new URL(process.argv[2]);
-console.log(u.hostname.toLowerCase());
-console.log(u.pathname.replace(/^\//,''));
-NODE
-)
+# Reject query-string hostaddr/service redirection and libpq PG* overrides
+# before decryption, psql or any destructive restore operation. The validator
+# reads the DSN from env so secrets never appear in node's process argv.
+restore_parts="$(node scripts/hipico-restore-target-policy-v842.mjs)" || {
+  echo "Restore target preflight denied an unsafe connection." >&2
+  exit 5
+}
+mapfile -t url_parts <<< "$restore_parts"
 restore_host="${url_parts[0]}"
 restore_database="${url_parts[1]}"
-[[ "$restore_host" == "127.0.0.1" || "$restore_host" == "localhost" || "$restore_host" == "::1" ]] || {
+[[ "$restore_host" == "127.0.0.1" || "$restore_host" == "localhost" || "$restore_host" == "[::1]" ]] || {
   echo "Restore target must be local." >&2; exit 5;
 }
 [[ "$restore_database" =~ (_drill|_restore)$ ]] || { echo "Restore DB must end in _drill or _restore." >&2; exit 5; }
@@ -71,6 +73,13 @@ manifest_table_sha="${MV[5]}"; mode="${MV[6]}"; canonical_table_count="${MV[7]}"
 dump_sha="${MV[9]}"; counts_sha="${MV[10]}"; auth_sha="${MV[11]}"
 
 [[ "$manifest_sha" == "${HIPICO_CANDIDATE_SHA,,}" ]] || { echo "Backup SHA mismatch." >&2; exit 6; }
+# The manifest contains the source current_database() recorded by pg_dump.
+# Reject source/restore name collisions before decrypting or issuing DDL.
+# A suffix _drill/_restore by itself is not proof that a DB is disposable.
+[[ -n "$target_database" && "$target_database" != "$restore_database" ]] || {
+  echo "Restore database collides with backup source or source is unknown." >&2
+  exit 5
+}
 [[ "$scope" == "hipico-canonical-v12-v27" && "$chain" == "v12-v27" ]] || { echo "Backup scope/chain mismatch." >&2; exit 6; }
 [[ "$manifest_table_sha" == "$table_manifest_sha256" ]] || { echo "Table inventory digest mismatch." >&2; exit 6; }
 [[ "$canonical_table_count" == "25" ]] || { echo "Canonical table count mismatch." >&2; exit 6; }
@@ -96,11 +105,15 @@ while IFS= read -r uuid; do
   [[ "$uuid" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ ]] || {
     echo "Invalid auth UUID in encrypted identity list." >&2; exit 7;
   }
-  psql "$HIPICO_RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -v user_id="$uuid" -c "
-    insert into auth.users(id,email)
-    values (:'user_id'::uuid, :'user_id' || '@restore.invalid')
-    on conflict(id) do nothing
-  " >/dev/null
+  # -c sends literal SQL to libpq, bypassing psql's :var interpolation.
+  # Read from stdin so psql safely quotes the already UUID-validated value.
+  # Quoted heredoc prevents shell interpolation, accidental SQL expansion and
+  # leaking the identity into a generated SQL argv.
+  psql "$HIPICO_RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -v user_id="$uuid" >/dev/null <<'SQL'
+INSERT INTO auth.users(id,email)
+VALUES (:'user_id'::uuid, :'user_id' || '@restore.invalid')
+ON CONFLICT(id) DO NOTHING;
+SQL
 done < "$tmpdir/auth-user-ids.txt"
 
 export DATABASE_URL="$HIPICO_RESTORE_DATABASE_URL"
@@ -204,6 +217,8 @@ HIPICO_BACKUP_RESTORED_COUNTS_FILE="$tmpdir/restored-counts.json" \
 HIPICO_BACKUP_ID="$backup_id" \
 HIPICO_RESTORE_TEST_ID="$RESTORE_TEST_ID" \
 HIPICO_BACKUP_TARGET_DATABASE="$target_database" \
+HIPICO_RESTORE_DATABASE_NAME="$restore_database" \
+HIPICO_RESTORE_HOST="$restore_host" \
 HIPICO_BACKUP_SCOPE="$scope" \
 HIPICO_BACKUP_MIGRATION_CHAIN="$chain" \
 HIPICO_BACKUP_TABLE_MANIFEST_SHA256="$table_manifest_sha256" \

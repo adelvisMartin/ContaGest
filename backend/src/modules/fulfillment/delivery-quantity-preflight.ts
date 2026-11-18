@@ -9,7 +9,10 @@ export function prepareDeliveryQuantity(input:{tenantId:string;orderTenantId:str
   typeof input.orderId!=='string'||!ID.test(input.orderId)||input.ownerType!=='sales-order'||input.ownerId!==input.orderId)
   throw new TypeError('DELIVERY_RESERVATION_SCOPE_INVALID');
  const ordered=q(input.orderedExact),done=q(input.previouslyFulfilledExact),reserved=q(input.reservedOutstandingExact),request=q(input.requestedDeliveryExact);
- if(ordered===0n||request===0n||done>ordered||request>reserved||request>ordered-done)throw new TypeError('DELIVERY_OVERFULFILL_OR_UNRESERVED');
+ // Reservation outstanding cannot exceed the undelivered order quantity:
+ // that signals stale or mismatched reservation ownership, not free stock.
+ if(ordered===0n||request===0n||done>ordered||reserved>ordered-done||
+    request>reserved||request>ordered-done)throw new TypeError('DELIVERY_OVERFULFILL_OR_UNRESERVED');
  const future=done+request;
  return Object.freeze({tenantId:input.tenantId,orderId:input.orderId,deliverExact:format(request),
   fulfilledAfterExact:format(future),outstandingAfterExact:format(ordered-future),

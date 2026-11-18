@@ -25,6 +25,9 @@ For the complete machine-readable rows, read [config/competitive-benchmark-v764.
 | Akaunting | [OFFICIAL](https://github.com/akaunting/akaunting) | BSL-1.1 ([source](https://api.akaunting.com/license)) |
 | Tryton | [OFFICIAL](https://docs.tryton.org/latest/server/topics/install.html) | GPL-3.0 ([source](https://www.tryton.org/)) |
 | Invoice Ninja | [OFFICIAL](https://github.com/invoiceninja/invoiceninja) | ELv2 ([source](https://invoiceninja.github.io/en/legal/license/)) |
+| wger Workout Manager | [OFFICIAL](https://github.com/wger-project/wger) | AGPL-3.0-or-later ([source](https://github.com/wger-project/wger/blob/master/LICENSE.txt)); **benchmark only** |
+| OpenDentist (Clawnify) | [OFFICIAL](https://github.com/clawnify/OpenDentist) | MIT ([source](https://github.com/clawnify/OpenDentist/blob/main/LICENSE)); **no source reuse in this PR** |
+| OpenVPM | [OFFICIAL](https://github.com/evangauer/openvpm) | AGPL-3.0 ([source](https://github.com/evangauer/openvpm/blob/main/LICENSE)); **benchmark only** |
 
 Notes: S.A.C. is specifically the `Sistema de Asistencia Comercial` described by Sumeria, **not** the unrelated Dominican product SAC Enterprise. The category `Bodega/POS` is not a company, library or API. `Ecologic` remains unresolved; do not conflate it with unrelated ecological companies or create product-feature claims. Odoo Community vs Enterprise/modules have distinct licenses, so the LGPL evidence applies only to Community 19. Gálac's `SaC` commercial plan is **not** a separate SAC software product.
 
@@ -61,6 +64,18 @@ The manifest validator rejects a forged `DOCUMENTED` flag without an official HT
 | VEOSS-019 | No feature-level source — not established | PROVISIONAL |
 | VEOSS-020 | No feature-level source — not established | PROVISIONAL |
 | VEOSS-021 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-022 | [Official source](https://github.com/wger-project/wger) | DOCUMENTED |
+| VEOSS-023 | [Official source](https://github.com/wger-project/wger) | DOCUMENTED |
+| VEOSS-024 | [Official source](https://github.com/wger-project/wger) | DOCUMENTED |
+| VEOSS-025 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-026 | [Official source](https://github.com/clawnify/OpenDentist) | DOCUMENTED |
+| VEOSS-027 | [Official source](https://github.com/clawnify/OpenDentist) | DOCUMENTED |
+| VEOSS-028 | [Official source](https://github.com/clawnify/OpenDentist) | DOCUMENTED |
+| VEOSS-029 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-030 | [Official source](https://github.com/evangauer/openvpm) | DOCUMENTED |
+| VEOSS-031 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-032 | No feature-level source — not established | PROVISIONAL |
+| VEOSS-033 | [Official source](https://github.com/evangauer/openvpm) | DOCUMENTED |
 
 ## Functional comparison
 
@@ -89,6 +104,34 @@ The manifest validator rejects a forged `DOCUMENTED` flag without an official HT
 | VEOSS-019 | Tryton | architecture | Módulos de venta/compra con contratos explícitos | PARTIAL¹ | P1 | [#653](https://github.com/adelvisMartin/ContaGest/issues/653) |
 | VEOSS-020 | Invoice Ninja | projects | Horas/proyectos→factura con idempotencia | MISSING¹ | P2 | [#761](https://github.com/adelvisMartin/ContaGest/issues/761) |
 | VEOSS-021 | Invoice Ninja | client-portal | Portal cliente para presupuestos y facturas | PARTIAL¹ | P1 | [#769](https://github.com/adelvisMartin/ContaGest/issues/769) |
+| VEOSS-022 | wger Workout Manager | gym | Biblioteca y planes de ejercicios | PARTIAL¹ | P1 | [#789](https://github.com/adelvisMartin/ContaGest/issues/789) |
+| VEOSS-023 | wger Workout Manager | gym | Registro de sesiones, series y progresión | PARTIAL¹ | P1 | [#792](https://github.com/adelvisMartin/ContaGest/issues/792) |
+| VEOSS-024 | wger Workout Manager | nutrition | Planificación de comidas y macros | PARTIAL¹ | P1 | [#795](https://github.com/adelvisMartin/ContaGest/issues/795) |
+| VEOSS-025 | wger Workout Manager | gym-pwa | Seguimiento personal y multiusuario | PARTIAL¹ | P1 | [#797](https://github.com/adelvisMartin/ContaGest/issues/797) |
+| VEOSS-026 | OpenDentist (Clawnify) | dental-schedule | Agenda con recursos y consultorios | PARTIAL¹ | P1 | [#801](https://github.com/adelvisMartin/ContaGest/issues/801) |
+| VEOSS-027 | OpenDentist (Clawnify) | dental-chart | Odontograma y registro por diente | PARTIAL¹ | P1 | [#747](https://github.com/adelvisMartin/ContaGest/issues/747) |
+| VEOSS-028 | OpenDentist (Clawnify) | dental-treatment | Plan de tratamiento y presupuesto | PARTIAL¹ | P1 | [#803](https://github.com/adelvisMartin/ContaGest/issues/803) |
+| VEOSS-029 | OpenDentist (Clawnify) | dental-lab | Órdenes de laboratorio protésico | PARTIAL¹ | P1 | [#805](https://github.com/adelvisMartin/ContaGest/issues/805) |
+| VEOSS-030 | OpenVPM | vet-preventive | Vacunación, fechas y recordatorios | PARTIAL¹ | P1 | [#748](https://github.com/adelvisMartin/ContaGest/issues/748) |
+| VEOSS-031 | OpenVPM | vet-hospital | Hospitalización, observaciones y alta | PARTIAL¹ | P1 | [#816](https://github.com/adelvisMartin/ContaGest/issues/816) |
+| VEOSS-032 | OpenVPM | vet-diagnostics | Laboratorio, resultados e imágenes | PARTIAL¹ | P1 | [#814](https://github.com/adelvisMartin/ContaGest/issues/814) |
+| VEOSS-033 | OpenVPM | vet-portal | Portal guardian/tutor y exportaciones | PARTIAL¹ | P1 | [#820](https://github.com/adelvisMartin/ContaGest/issues/820) |
+
+## Lote OSS 08 — source-backed ownership, not E2E parity (2026-11-18)
+
+**Baseline:** `main@03834a6ca1504399011f4b53866fe15b8cfa2557`. Este incremento mantiene la **authority existente** `config/competitive-benchmark-v764.json`, añade 3 referencias y 12 filas (33 total), y conserva las 10 filas ERP de `config/erp-parity-gap-ownership-v708.json`. No crea una segunda matriz ni importa código/proyectos ajenos. `SOURCE_REUSE=NONE` para todas las filas, también para la referencia MIT.
+
+| Ticket del lote | Evidencia de presencia en ContaGest | Owner del gap material | Estado demostrado |
+|---|---|---|---|
+| #707 · Política OSS/licencias | `scripts/verify-competitive-benchmark-v764.mjs` y `tests/competitive_benchmark_v764.test.mjs` | #707 y los children | PARTIAL — manifest/validator, no reuso ni QA de todos los módulos |
+| #708 · ERP | `scripts/audit-erp-parity-gap-v708.mjs`, `backend/src/modules/sales/sales.routes.ts` | #753/#757/#743/#744 | PARTIAL — diez gaps de source, no posting/PG17 E2E |
+| #709 · Gym | `backend/src/modules/verticals/gym-training.routes.ts`, `gym-nutrition.routes.ts` | #789/#792/#795/#797 | PARTIAL — source, no member PWA/offline E2E ni 2 tenants |
+| #710 · Dental | `backend/src/modules/verticals/dental-chart-consistency.ts`, `health-dental-financial.routes.ts` | #801/#747/#803/#805 | PARTIAL — source, no historia/firma/ledger clinical E2E |
+| #711 · Veterinaria | `backend/src/modules/verticals/veterinary-hospitalization.routes.ts`, `veterinary-diagnostics.routes.ts` | #748/#816/#814/#820 | PARTIAL — source, no clínica/portal/PG17 E2E |
+
+**Límites de evidencia:** `DOCUMENTED` significa página pública del proyecto sobre el tema; **no** certidumbre de que la capacidad exista en ContaGest. `PROVISIONAL` no significa que el proveedor implemente el flujo. Los owners citados siguen OPEN; **no se proclama** compatibilidad contable, clínica, fiscal, biomédica, ni funcionalidad terminada. El auditor prohíbe `EXISTS` en un manifiesto donde `candidateEvidence` no se ha ejecutado. Cada mejora futura debe pasar por la única autoridad CRUD/ledger/RBAC de su vertical y tests de aceptación sobre la misma rama.
+
+**Pendiente para completar el lote:** fuentes comparadas en producto real, matriz `EXISTS|PARTIAL|MISSING|N/A` respaldada con API/PG17/RBAC/UX de 360–1440, validación legal de licencias si alguna vez se plantea reutilización, y los flujos completos de Gym/Dental/Vet. Estos **no** se atribuyen a esta actualización documental.
 
 ## Decisions for engineering
 

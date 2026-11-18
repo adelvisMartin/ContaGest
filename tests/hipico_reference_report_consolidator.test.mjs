@@ -187,7 +187,7 @@ test('PWA and Android parity include three consolidator modules with rotated cac
   const sw=read('frontend/public/hipico-control/sw.js');
   const android=read('android/hipico-control-v1130/scripts/sync-web.mjs');
   const app=read('frontend/public/hipico-control/assets/js/app.js');
-  assert.match(sw,/shell-r38-consolidator-v4-1-3/);
+  assert.match(sw,/shell-r39-consolidator-v4-1-3/);
   for(const p of ['reference-report-consolidator.js','reference-report-consolidator-ui.js',
     'reference-report-consolidator-image.js']){
     assert.ok(sw.includes(p)); assert.ok(android.includes(p)); assert.ok(app.includes(p));

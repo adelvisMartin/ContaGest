@@ -17,9 +17,11 @@ export type MunicipalEvent = Readonly<{
 const CODE = /^[A-Z0-9][A-Z0-9._-]{0,59}$/;
 function blocked(): never { throw new Error('MUNICIPAL_RULE_SCOPE_NOT_VERIFIED'); }
 export function municipalEventSelector(event: Pick<MunicipalEvent, 'municipalityCode' | 'activityCode' | 'operationKind' | 'counterpartyClass'>) {
-  if (!event || !CODE.test(event.municipalityCode) ||
-      !CODE.test(event.activityCode) || !CODE.test(event.operationKind) ||
-      !CODE.test(event.counterpartyClass)) blocked();
+  if (!event || typeof event.municipalityCode !== 'string' ||
+      typeof event.activityCode !== 'string' || typeof event.operationKind !== 'string' ||
+      typeof event.counterpartyClass !== 'string' ||
+      !CODE.test(event.municipalityCode) || !CODE.test(event.activityCode) ||
+      !CODE.test(event.operationKind) || !CODE.test(event.counterpartyClass)) blocked();
   return [event.municipalityCode, event.activityCode,
     event.operationKind, event.counterpartyClass].join('|');
 }

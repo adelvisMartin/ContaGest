@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Box, Divider, Paper, Stack, Typography } from '@mui/material';
 import { CgButton, CgEmptyState, CgSelect, CgState, CgStatusChip, CgTextField } from '../ui/cg/CgPrimitives.jsx';
 import { GymVerticalService } from '../../services/verticalService.js';
 import { ExerciseSubstitutionPanel } from './ExerciseSubstitutionPanel.jsx';
+import { GymWorkoutOfflineService } from '../../services/gymWorkoutOfflineService.js';
 
 const rows=(value)=>Array.isArray(value)?value:value?.data||[];
 const numericReps=(value)=>/^\d+$/.test(String(value||'').trim())?Number(value):'';
@@ -18,6 +19,8 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
   const [sessions,setSessions]=useState([]);
   const [routineId,setRoutineId]=useState(routineRows[0]?.id||'');
   const [sessionNotes,setSessionNotes]=useState('');
+  const [transitionReason,setTransitionReason]=useState('');
+  const pendingTransition=useRef(null);
   const [exerciseId,setExerciseId]=useState('');
   const [draft,setDraft]=useState({loadKg:'',reps:'',rir:'',rpe:'',restSeconds:60,notes:''});
   const [selectedSubstitution,setSelectedSubstitution]=useState(null);
@@ -25,11 +28,16 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
   const [timerRunning,setTimerRunning]=useState(false);
   const [loading,setLoading]=useState(false);
   const [saving,setSaving]=useState(false);
+  const [syncing,setSyncing]=useState(false);
+  const [queueItems,setQueueItems]=useState([]);
+  const [queueReady,setQueueReady]=useState(false);
+  const [reviewDiscardId,setReviewDiscardId]=useState(null);
   const [error,setError]=useState('');
 
-  const activeSession=useMemo(()=>sessions.find((item)=>item.status==='in_progress')||null,[sessions]);
+  const activeSession=useMemo(()=>sessions.find((item)=>item.status==='in_progress'||item.status==='paused')||null,[sessions]);
+  const paused=activeSession?.status==='paused';
   const activeRoutine=useMemo(()=>routineRows.find((item)=>item.id===(activeSession?.routineId||routineId))||null,[routineRows,activeSession,routineId]);
-  const exercises=Array.isArray(activeRoutine?.exercises)?activeRoutine.exercises:[];
+  const exercises=activeSession?.routineSnapshot?.length ? activeSession.routineSnapshot : (Array.isArray(activeRoutine?.exercises)?activeRoutine.exercises:[]);
   const loggedSets=Array.isArray(activeSession?.sets)?activeSession.sets:[];
   const selectedExercise=exercises.find((item)=>item.id===exerciseId)||exercises[0]||null;
 
@@ -64,20 +72,24 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
 
   const notify=(message,tone='success')=>{if(typeof Toast==='function')Toast(message,tone);};
 
+  const memberLoadGeneration=useRef(0);
   async function load(){
-    if(!memberId){setSessions([]);return;}
+    const generation=++memberLoadGeneration.current;
+    setSessions([]);
+    if(!memberId){setLoading(false);return;}
     setLoading(true);setError('');
     try{
       const response=await GymVerticalService.workoutSessions(memberId);
-      setSessions(rows(response));
+      if(generation===memberLoadGeneration.current)setSessions(rows(response));
     }catch(cause){
-      setError(cause?.message||'No se pudieron cargar las sesiones.');
+      if(generation===memberLoadGeneration.current)
+        setError(cause?.message||'No se pudieron cargar las sesiones.');
     }finally{
-      setLoading(false);
+      if(generation===memberLoadGeneration.current)setLoading(false);
     }
   }
 
-  useEffect(()=>{void load();},[memberId]);
+  useEffect(()=>{void load();return()=>{memberLoadGeneration.current+=1;setSessions([]);};},[memberId]);
 
   async function startSession(){
     if(!routineId){setError('Selecciona una rutina.');return;}
@@ -95,8 +107,9 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
   }
 
   function nextSetNumber(targetExerciseId){
-    const used=loggedSets.filter((item)=>item.routineExerciseId===targetExerciseId).map((item)=>Number(item.setNumber||0));
-    return used.length?Math.max(...used)+1:1;
+    const logged=loggedSets.filter((item)=>item.routineExerciseId===targetExerciseId).map((item)=>Number(item.setNumber||0));
+    const pending=queueItems.filter((item)=>item.sessionId===activeSession?.id&&item.routineExerciseId===targetExerciseId).map((item)=>Number(item.setNumber||0));
+    return 1+Math.max(0,...logged,...pending);
   }
 
   function startRestTimer(seconds=Number(draft.restSeconds||0)){
@@ -105,12 +118,54 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
     setTimerRunning(safe>0);
   }
 
+  async function refreshQueue(){
+    try{
+      const items=await GymWorkoutOfflineService.pending();
+      setQueueItems(items);setQueueReady(true);
+    }catch(cause){setQueueItems([]);setQueueReady(false);
+      setError(cause?.message||'No se puede recuperar la cola offline.');}
+  }
+
+  async function synchronizeQueue({force=true}={}){
+    if(syncing)return [];
+    setSyncing(true);setError('');
+    try{
+      const result=await GymWorkoutOfflineService.sync({force});
+      if(result.some((item)=>item.delivered))await load();
+      if(result.some((item)=>item.status==='conflict'||item.status==='failed'))
+        setError('Hay una serie con conflicto o fallo. Revísala antes de continuar.');
+      await refreshQueue();
+      return result;
+    }catch(cause){
+      setError(cause?.message||'No se pudo sincronizar. La cola local permanece guardada.');
+      await refreshQueue();return [];
+    }finally{setSyncing(false);}
+  }
+
+  async function discardAfterReview(id){
+    if(reviewDiscardId!==id){setReviewDiscardId(id);return;}
+    setSaving(true);
+    try{
+      await GymWorkoutOfflineService.discardAfterReview(id);
+      setReviewDiscardId(null);
+      await refreshQueue();
+      notify('Se descartó únicamente el evento local. Verifica el historial del servidor.','warning');
+    }catch(cause){setError(cause?.message||'No se pudo descartar la serie pendiente.');}
+    finally{setSaving(false);}
+  }
+
+  useEffect(()=>{void refreshQueue();},[memberId]);
+
   async function recordSet(status='completed'){
     if(!activeSession||!selectedExercise){setError('No hay una sesión activa con ejercicio seleccionado.');return;}
+    if(paused){setError('Reanuda la sesión antes de registrar series.');return;}
+    if(!queueReady){setError('Primero verifica la cola offline de esta sesión.');return;}
     if(status==='completed'&&(draft.reps===''||draft.reps==null)){setError('Indica las repeticiones realizadas.');return;}
     setSaving(true);setError('');
     try{
-      await GymVerticalService.recordWorkoutSet(activeSession.id,{
+      if(!queueReady)throw new Error('No se confirmó todavía el estado de la cola offline.');
+      const record=await GymWorkoutOfflineService.queueSet({
+        sessionId:activeSession.id,
         routineExerciseId:selectedExercise.id,
         setNumber:nextSetNumber(selectedExercise.id),
         status,
@@ -125,10 +180,22 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
           ? selectedSubstitution.reasons.join(',')
           : null
       });
-      if(status==='completed')startRestTimer();
+      await refreshQueue();
+      // Persist locally FIRST. The server's eventKey makes every retry
+      // replayable without creating a second set, including across tabs.
+      const results=await GymWorkoutOfflineService.sync({force:false});
+      const outcome=results.find((item)=>item.id===record.id);
+      if(outcome?.delivered){
+        if(status==='completed')startRestTimer();
+        notify(status==='completed'?'Serie sincronizada.':'Omisión sincronizada.','success');
+      }else{
+        notify('Serie pendiente en este dispositivo. Sincroniza cuando recuperes conexión.','warning');
+        if(outcome?.status==='conflict'||outcome?.status==='failed')
+          setError('Serie pendiente con conflicto. Revisa la cola antes de continuar.');
+      }
       setDraft((current)=>({...current,rir:'',rpe:'',notes:''}));
-      await load();
-      notify(status==='completed'?'Serie registrada.':'Serie omitida.','success');
+      await refreshQueue();
+      if(outcome?.delivered)await load();
     }catch(cause){
       setError(cause?.message||'No se pudo registrar la serie.');
     }finally{
@@ -138,6 +205,8 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
 
   async function completeSession(){
     if(!activeSession)return;
+    if(paused){setError('Reanuda la sesión antes de completarla.');return;}
+    if(queueItems.some((item)=>item.sessionId===activeSession.id)){setError('Sincroniza o resuelve las series pendientes antes de cerrar la sesión.');return;}
     setSaving(true);setError('');
     try{
       await GymVerticalService.completeWorkoutSession(activeSession.id);
@@ -149,6 +218,30 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
     }finally{
       setSaving(false);
     }
+  }
+
+  async function transitionSession(action){
+    if(!activeSession||saving)return;
+    const reason=transitionReason.trim();
+    if(action==='abandon'&&!reason){setError('Indica el motivo para abandonar el entrenamiento.');return;}
+    if(!globalThis.crypto?.randomUUID){setError('Se requiere una conexión segura para registrar la transición.');return;}
+    let attempt=pendingTransition.current;
+    if(!attempt||attempt.sessionId!==activeSession.id||attempt.action!==action||attempt.reason!==reason){
+      attempt={sessionId:activeSession.id,action,reason,eventKey:globalThis.crypto.randomUUID()};
+      pendingTransition.current=attempt;
+    }
+    setSaving(true);setError('');
+    try{
+      await GymVerticalService.transitionWorkoutSession(activeSession.id,{
+        action,eventKey:attempt.eventKey,reason:reason||null
+      });
+      pendingTransition.current=null;
+      setTransitionReason('');
+      setTimerRunning(false);
+      await load();
+      notify(action==='pause'?'Sesión pausada.':action==='resume'?'Sesión reanudada.':'Sesión abandonada.','success');
+    }catch(cause){setError(cause?.message||'No se pudo cambiar el estado de la sesión. Reintenta.');}
+    finally{setSaving(false);}
   }
 
   const routineOptions=[
@@ -166,11 +259,33 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
         <Typography variant="h6">Ejecución de entrenamiento</Typography>
         <Typography variant="caption" color="text.secondary">Sesión-a-sesión con series realizadas u omitidas, carga, reps, RIR/RPE, descanso, notas y temporizador.</Typography>
       </Box>
-      <CgStatusChip label={activeSession?'Sesión activa':'Sin sesión activa'} tone={activeSession?'success':'default'}/>
+      <Stack direction="row" alignItems="center" gap={.75}><CgStatusChip label={paused?'Pausada':activeSession?'Sesión activa':'Sin sesión activa'} tone={paused?'warning':activeSession?'success':'default'}/>{activeSession?.programSnapshot?.version?<CgStatusChip label={`Programa v${activeSession.programSnapshot.version}`} tone="info"/>:null}</Stack>
     </Stack>
     <Divider sx={{my:1.2}}/>
     {error?<CgState severity="error" title="Entrenamiento">{error}</CgState>:null}
     {loading?<CgState severity="info" title="Actualizando">Cargando sesiones.</CgState>:null}
+    <Paper variant="outlined" sx={{p:1,mt:.6}}>
+      <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{sm:'center'}} gap={.8}>
+        <Box>
+          <Typography variant="body2" fontWeight={700}>Sincronización de series</Typography>
+          <Typography variant="caption" color="text.secondary">Los cambios sin conexión permanecen sólo en este dispositivo hasta confirmación del servidor.</Typography>
+        </Box>
+        <Stack direction="row" gap={.75} alignItems="center">
+          <CgStatusChip label={queueReady?`${queueItems.length} pendiente(s)`:'Cola sin verificar'} tone={queueItems.length?'warning':'info'}/>
+          <CgButton type="button" variant="outlined" disabled={syncing||saving||!queueReady||!queueItems.length} onClick={()=>void synchronizeQueue({force:true})}>{syncing?'Sincronizando…':'Sincronizar'}</CgButton>
+        </Stack>
+      </Stack>
+      {queueItems.some((item)=>item.status==='conflict'||item.status==='failed')?
+        <CgState severity="warning" title="Operaciones que requieren revisión">Confirma primero en el historial del servidor si la serie existe. Descartar el evento local no revierte una serie ya enviada.</CgState>:null}
+      <Stack gap={.5} mt={queueItems.length?.5:0}>
+        {queueItems.filter((item)=>item.status==='conflict'||item.status==='failed').map((item)=>
+          <Stack key={item.id} direction={{xs:'column',sm:'row'}} alignItems={{sm:'center'}} justifyContent="space-between" gap={.5}>
+            <Typography variant="caption">Serie {item.setNumber} · {item.status==='conflict'?'Conflicto':'Fallo definitivo'} · {item.errorCode||'Revisar'}</Typography>
+            <CgButton type="button" variant="outlined" color="error" disabled={saving||syncing} onClick={()=>void discardAfterReview(item.id)}>{reviewDiscardId===item.id?'Confirmar descarte local':'Descartar tras revisar'}</CgButton>
+          </Stack>
+        )}
+      </Stack>
+    </Paper>
 
     {!activeSession?<Stack gap={1}>
       <CgSelect label="Rutina" value={routineId} onChange={(event)=>setRoutineId(event.target.value)} options={routineOptions}/>
@@ -179,7 +294,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
     </Stack>:<Stack gap={1}>
       <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'minmax(0,1fr) 220px'},gap:1}}>
         <Box>
-          <CgSelect label="Ejercicio" value={selectedExercise?.id||''} onChange={(event)=>{setExerciseId(event.target.value);setSelectedSubstitution(null);setDraft({loadKg:'',reps:'',rir:'',rpe:'',restSeconds:60,notes:''});}} options={exerciseOptions}/>
+          <CgSelect label="Ejercicio" disabled={paused||saving} value={selectedExercise?.id||''} onChange={(event)=>{setExerciseId(event.target.value);setSelectedSubstitution(null);setDraft({loadKg:'',reps:'',rir:'',rpe:'',restSeconds:60,notes:''});}} options={exerciseOptions}/>
           {selectedExercise?<Typography variant="caption" color="text.secondary" display="block" mt={.5}>
             Prescrito: {selectedExercise.sets||3} × {selectedExercise.reps||'—'} · carga {selectedExercise.loadKg??'—'} kg · descanso {selectedExercise.restSeconds??60}s
           </Typography>:null}
@@ -188,7 +303,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
           <Typography variant="caption" color="text.secondary">Temporizador de descanso</Typography>
           <Typography variant="h4" sx={{fontVariantNumeric:'tabular-nums'}}>{secondsLabel(timerSeconds)}</Typography>
           <Stack direction="row" gap={.5} justifyContent="center">
-            <CgButton type="button" size="small" variant="outlined" onClick={()=>startRestTimer()} disabled={saving}>Iniciar</CgButton>
+            <CgButton type="button" size="small" variant="outlined" onClick={()=>startRestTimer()} disabled={saving||paused}>Iniciar</CgButton>
             <CgButton type="button" size="small" variant="outlined" onClick={()=>setTimerRunning(false)} disabled={!timerRunning}>Pausar</CgButton>
             <CgButton type="button" size="small" variant="outlined" onClick={()=>{setTimerRunning(false);setTimerSeconds(0);}}>Reiniciar</CgButton>
           </Stack>
@@ -199,7 +314,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
         routineExercise={selectedExercise}
         selected={selectedSubstitution}
         onSelect={setSelectedSubstitution}
-        disabled={saving}
+        disabled={saving||paused}
       />:null}
 
       {selectedExercise?<Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(3,minmax(0,1fr))'},gap:1}}>
@@ -210,12 +325,20 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
         <CgTextField size="small" label="RPE" type="number" inputProps={{min:1,max:10,step:.5}} value={draft.rpe} onChange={(event)=>setDraft({...draft,rpe:event.target.value})}/>
         <CgTextField size="small" label="Notas" value={draft.notes} onChange={(event)=>setDraft({...draft,notes:event.target.value})}/>
         <Stack direction="row" gap={.7} sx={{gridColumn:'1/-1'}}>
-          <CgButton type="button" disabled={saving} onClick={()=>void recordSet('completed')}>Registrar serie</CgButton>
-          <CgButton type="button" variant="outlined" disabled={saving} onClick={()=>void recordSet('skipped')}>Omitir serie</CgButton>
+          <CgButton type="button" disabled={saving||paused||!queueReady||syncing} onClick={()=>void recordSet('completed')}>Registrar serie</CgButton>
+          <CgButton type="button" variant="outlined" disabled={saving||paused||!queueReady||syncing} onClick={()=>void recordSet('skipped')}>Omitir serie</CgButton>
         </Stack>
       </Box>:<CgEmptyState title="Sin ejercicio" description="Selecciona un ejercicio de la rutina activa."/>}
 
       <Divider/>
+      {paused?<CgState severity="info" title="Sesión pausada">Las series y el cierre se encuentran bloqueados hasta reanudar.</CgState>:null}
+      <Stack gap={.75}>
+        <CgTextField size="small" label="Motivo (obligatorio al abandonar)" value={transitionReason} onChange={(event)=>{pendingTransition.current=null;setTransitionReason(event.target.value);}} inputProps={{maxLength:500}} disabled={saving}/>
+        <Stack direction={{xs:'column',sm:'row'}} gap={.75}>
+          <CgButton type="button" variant="outlined" disabled={saving} onClick={()=>void transitionSession(paused?'resume':'pause')}>{paused?'Reanudar sesión':'Pausar sesión'}</CgButton>
+          <CgButton type="button" color="error" variant="outlined" disabled={saving||!transitionReason.trim()} onClick={()=>void transitionSession('abandon')}>Abandonar sesión</CgButton>
+        </Stack>
+      </Stack>
       <Typography variant="subtitle1" fontWeight={700}>Progreso de la sesión</Typography>
       <Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:.8}}>
         {exercises.map((exercise)=>{
@@ -232,7 +355,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
           </Paper>;
         })}
       </Box>
-      <CgButton type="button" color="success" disabled={saving} onClick={()=>void completeSession()}>Completar sesión</CgButton>
+      <CgButton type="button" color="success" disabled={saving||paused||!queueReady||queueItems.some((item)=>item.sessionId===activeSession?.id)} onClick={()=>void completeSession()}>Completar sesión</CgButton>
     </Stack>}
 
     <Divider sx={{my:1.5}}/>
@@ -244,7 +367,7 @@ export function WorkoutSessionPanel({routines=[],memberId='',Toast}){
             <Typography variant="body2" fontWeight={700}>{routineRows.find((item)=>item.id===session.routineId)?.name||'Rutina'}</Typography>
             <Typography variant="caption" color="text.secondary">{new Date(session.startedAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {Array.isArray(session.sets)?session.sets.length:0} serie(s)</Typography>
           </Box>
-          <CgStatusChip label={session.status==='completed'?'Completada':'En curso'} tone={session.status==='completed'?'success':'warning'}/>
+          <Stack direction="row" gap={.6} alignItems="center">{session.programSnapshot?.version?<CgStatusChip label={`v${session.programSnapshot.version}`} tone="info"/>:null}<CgStatusChip label={session.status==='completed'?'Completada':session.status==='paused'?'Pausada':session.status==='abandoned'?'Abandonada':'En curso'} tone={session.status==='completed'?'success':session.status==='abandoned'?'error':'warning'}/></Stack>
         </Stack>
       </Paper>):<CgEmptyState title="Sin sesiones" description="Las sesiones iniciadas aparecerán aquí."/>}
     </Stack>

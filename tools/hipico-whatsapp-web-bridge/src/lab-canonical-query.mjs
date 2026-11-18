@@ -59,6 +59,10 @@ const CANONICAL_RECEIPT_PURPOSES=new Set([
   'status','result','summary','next','active','schedule'
 ]);
 
+export function labApprovedCanonicalInformationStatus(value) {
+  return typeof value === 'string' && SAFE_LAB_INFORMATION_STATUSES.has(value);
+}
+
 const MAX_LAB_CANONICAL_BYTES=16_384;
 // Reject invisible direction/word separators that can hide an action inside a
 // superficially read-only question. Preserve U+200D for ordinary emoji ZWJ.
@@ -288,7 +292,7 @@ export async function queryCanonicalLab({
         ? {available:false,reason:'LAB_CANONICAL_REVIEW_REQUIRED'}
         : {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'};
     }
-    if(!SAFE_LAB_INFORMATION_STATUSES.has(body.status)||
+    if(!labApprovedCanonicalInformationStatus(body.status)||
        (CANONICAL_FACT_PURPOSE[body.status] && CANONICAL_FACT_PURPOSE[body.status]!==purpose)||
        (['LAB_CANONICAL_RECOVERED','LAB_CANONICAL_REVISION_CHANGED'].includes(body.status)&&
         !CANONICAL_RECEIPT_PURPOSES.has(purpose))||

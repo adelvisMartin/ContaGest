@@ -206,9 +206,9 @@ test('issue #561 keeps fiscal rules historical and numbering unique under concur
     ruleKeys: [`iva.${RUN.toLowerCase()}`], effectiveAt: '2099-06-20T12:00:00.000Z', prefix: `${RUN}-`, width: 4
   };
   const first = await h.ok('/fiscal/documents/issue', { method: 'POST', headers: { 'Idempotency-Key': retryKey }, body: JSON.stringify(retryBody) });
-  const replay = await h.ok('/fiscal/documents/issue', { method: 'POST', headers: { 'Idempotency-Key': retryKey }, body: JSON.stringify(retryBody) });
-  assert.equal(replay.id, first.id, 'Idempotency-Key retry must return the same document');
-  assert.equal(replay.number, first.number, 'retry must not consume another fiscal sequence number');
+  const issuedReplay = await h.ok('/fiscal/documents/issue', { method: 'POST', headers: { 'Idempotency-Key': retryKey }, body: JSON.stringify(retryBody) });
+  assert.equal(issuedReplay.id, first.id, 'Idempotency-Key retry must return the same document');
+  assert.equal(issuedReplay.number, first.number, 'retry must not consume another fiscal sequence number');
   const issueAudits = await h.prisma.auditLog.findMany({
     where: { tenantId: h.tenant.id, entity: 'FiscalDocument',
       entityId: first.id, action: 'fiscal.document.issued' }

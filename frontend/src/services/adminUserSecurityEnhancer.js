@@ -44,17 +44,29 @@ async function saveRow(section,rowNode,{unlockOnly=false}={}){
   const roleId=rowNode.querySelector('[data-security-role]')?.value||'';
   const newPassword=String(rowNode.querySelector('[data-security-password]')?.value||'');
   if(newPassword&&newPassword.length<12){setStatus(section,'La nueva contraseña debe tener al menos 12 caracteres.','error');return;}
+  const confirmation=section.querySelector('[data-security-confirm-password]');
+  const currentPassword=String(confirmation?.value||'');
+  if(!currentPassword){
+    setStatus(section,'Confirma tu contraseña actual de administrador para autorizar el cambio.','error');
+    confirmation?.focus();return;
+  }
   const buttons=[...rowNode.querySelectorAll('button')];buttons.forEach((button)=>button.disabled=true);
   try{
     const payload=unlockOnly
       ? {status:'active',clearFailures:true}
       : {status:active?'active':'disabled',roleId,clearFailures:active,...(newPassword?{newPassword}:{})};
-    await BackendApi.request(`/user-security/users/${encodeURIComponent(userId)}`,{method:'PATCH',body:payload});
+    // Step-up credential is sent only to the authorized PATCH and never cached.
+    await BackendApi.request(`/user-security/users/${encodeURIComponent(userId)}`,{
+      method:'PATCH',body:{...payload,currentPassword}
+    });
     setStatus(section,unlockOnly?'Usuario reactivado y contador de fallos limpiado.':'Usuario actualizado correctamente.','success');
     await load(section);
   }catch(error){
     setStatus(section,error?.message||'No se pudo actualizar el usuario.','error');
-  }finally{buttons.forEach((button)=>button.disabled=false);}
+  }finally{
+    if(confirmation)confirmation.value='';
+    buttons.forEach((button)=>button.disabled=false);
+  }
 }
 
 function bindRows(section){
@@ -69,7 +81,7 @@ function mount(){
   const section=document.createElement('section');
   section.id='cgUserSecurityConsole';
   section.className='cg-rbac-section cg-enterprise-card cg-user-security';
-  section.innerHTML=`<div class="cg-user-security-head"><div><h3>Usuarios reales · acceso y desbloqueo</h3><p>Activa o bloquea cuentas, cambia el rol y asigna una nueva contraseña. Después de 5 contraseñas incorrectas la cuenta queda bloqueada hasta que un administrador la reactive.</p></div><button type="button" class="btn btn-secondary cg-security-refresh" data-security-refresh><i class="fa-solid fa-rotate"></i> Actualizar</button></div><p class="cg-security-status" data-security-status aria-live="polite"></p><div class="pl-table-wrap"><table class="cg-security-table"><thead><tr><th>Usuario</th><th>Estado</th><th>Rol</th><th>Nueva contraseña</th><th>Último fallo</th><th>Acción</th></tr></thead><tbody data-security-body><tr><td colspan="6" class="cg-security-empty">Cargando…</td></tr></tbody></table></div>`;
+  section.innerHTML=`<div class="cg-user-security-head"><div><h3>Usuarios reales · acceso y desbloqueo</h3><p>Activa o bloquea cuentas, cambia el rol y asigna una nueva contraseña. Después de 5 contraseñas incorrectas la cuenta queda bloqueada hasta que un administrador la reactive.</p></div><button type="button" class="btn btn-secondary cg-security-refresh" data-security-refresh><i class="fa-solid fa-rotate"></i> Actualizar</button></div><div class="cg-security-reauth"><label for="cgSecurityCurrentPassword">Confirmación de administrador (requerida para guardar o desbloquear)</label><input id="cgSecurityCurrentPassword" class="cg-security-password" data-security-confirm-password type="password" autocomplete="current-password" maxlength="128" aria-describedby="cgSecurityStepupHelp"><small id="cgSecurityStepupHelp">Introduce tu contraseña actual. Se verifica en el servidor para este cambio y se borra de este campo al terminar.</small></div><p class="cg-security-status" data-security-status aria-live="polite"></p><div class="pl-table-wrap"><table class="cg-security-table"><thead><tr><th>Usuario</th><th>Estado</th><th>Rol</th><th>Nueva contraseña</th><th>Último fallo</th><th>Acción</th></tr></thead><tbody data-security-body><tr><td colspan="6" class="cg-security-empty">Cargando…</td></tr></tbody></table></div>`;
   const anchor=page.querySelector('.cg-admin-command-grid');
   if(anchor)anchor.insertAdjacentElement('afterend',section);else page.prepend(section);
   section.querySelector('[data-security-refresh]')?.addEventListener('click',()=>load(section));

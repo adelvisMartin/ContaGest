@@ -8,6 +8,13 @@ const js=stripTypeScriptTypes(src).replace('export function dentalChartConsisten
 const validate=new Function(js+'; return dentalChartConsistencyIssues;')();
 const chart=(tooth,surfaces,heading)=>({tooth:heading,odontogram:{tooth,surfaces}});
 
+test('#747 periodontal inputs keep a persistent per-site label required by CgTextField and WCAG',()=>{
+  const panel=readFileSync('frontend/src/components/dentistry/PeriodontalChartPanel.jsx','utf8');
+  assert.match(panel,/label=\{\x60Sondaje \$\{row\.site\} \(mm\)\x60\}/);
+  assert.match(panel,/label=\{\x60Margen gingival \$\{row\.site\} \(mm\)\x60\}/);
+  assert.doesNotMatch(panel,/<CgTextField[^>]*value=\{row\.(?:probingDepthMm|gingivalMarginMm)\}[^>]*inputProps=\{\{[^}]*aria-label/);
+});
+
 test('#747 accepts one dental surface',()=>assert.deepEqual(validate(chart('11',['mesial'],'11')),[]));
 test('#747 accepts distinct surfaces',()=>assert.deepEqual(validate(chart('11',['mesial','distal'],null)),[]));
 test('#747 rejects repeated surface at original index',()=>assert.deepEqual(validate(chart('11',['mesial','distal','mesial'])).map(x=>x.path),[['odontogram','surfaces',2]]));

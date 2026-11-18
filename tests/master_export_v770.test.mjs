@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
-import { MASTER_EXPORT_FIELDS, masterExportCell, masterExportRows, masterExportCsv, masterExportPayload } from '../backend/src/modules/exports/master-export.ts';
+import { encodeImportReportCsvCell } from '../backend/src/modules/imports/import-report-csv-cell.ts';
+import { MASTER_EXPORT_FIELDS, masterExportCell, masterExportRows, masterExportCsv, masterExportPayload, encodeMasterExportCsvCell } from '../backend/src/modules/exports/master-export.ts';
 
 const meta = Object.freeze({ skip: 0, take: 100, hasMore: false, exportedAt: '2026-10-15T00:00:00.000Z' });
 
@@ -44,11 +45,65 @@ test('CSV quoting encodes commas, quotes and multiline values according to RFC41
   assert.ok(result.startsWith('"rif","name"'));
 });
 
+test('one RFC4180 data record per row across multiple master exports', () => {
+  const csv=masterExportCsv('clients',[
+    {rif:'J-11',name:'Primero',contact:'=HYPERLINK("x")'},
+    {rif:'J-12',name:'Segundo',contact:'-7.50'}
+  ]);
+  const lines=csv.split('\r\n');
+  assert.equal(lines.length,3,'CSV must have one header plus two independent records');
+  assert.ok(lines[1].startsWith('"J-11","Primero","\'=HYPERLINK(""x"")"'));
+  assert.ok(lines[2].startsWith('"J-12","Segundo","-7.50"'));
+});
+
 test('neutralizes spreadsheet formulas even after whitespace/control prefixes', () => {
   const csv = masterExportCsv('clients', [{rif:'=1+1',name:'\t@SUM(A1:A2)',email:' +HYPERLINK("x")'}]);
   assert.ok(csv.includes('"\'=1+1"'));
   assert.ok(csv.includes('"\'\t@SUM(A1:A2)"'));
   assert.ok(csv.includes('"\' +HYPERLINK(""x"")"'));
+});
+
+test('spreadsheet CSV guard rejects Unicode invisible prefixes and C1 controls', () => {
+  const csv = masterExportCsv('clients', [{ rif:'\u0085=1+1', name:'\u200B@SUM(A1:A2)' }]);
+  assert.ok(csv.includes(`"'\u0085=1+1"`));
+  assert.ok(csv.includes(`"'\u200B@SUM(A1:A2)"`));
+});
+
+test('Unicode default-ignorable prefixes cannot bypass backend CSV formula protection', () => {
+  const hiddenPrefixes = ['\u00ad', '\u034f', '\u061c', '\u180e', '\u2800', '\u3164', '\ufe0f', '\uffa0'];
+  for (const prefix of hiddenPrefixes) {
+    const formula = prefix + '=HYPERLINK("https://example.invalid")';
+    const expected = `"'${formula.replaceAll('"', '""')}"`;
+    assert.equal(encodeMasterExportCsvCell(formula), expected, JSON.stringify(prefix));
+  }
+  assert.equal(encodeMasterExportCsvCell('-20.00'), '"-20.00"');
+  assert.equal(encodeMasterExportCsvCell('normal'), '"normal"');
+});
+
+test('generic and master backend CSV cells share Unicode-safe formula mitigation', () => {
+  for (const input of ['\u200B=1+1','\u2060@SUM(A1:A2)','\t-HYPERLINK("x")']) {
+    assert.equal(encodeMasterExportCsvCell(input), `"'${input.replaceAll('"','""')}"`);
+  }
+  assert.equal(encodeMasterExportCsvCell(-20), '"-20"');
+  assert.equal(encodeMasterExportCsvCell('normal'), '"normal"');
+});
+
+test('generic backend CSV endpoint uses audited shared cell policy and no-store', () => {
+  const route=readFileSync(new URL('../backend/src/modules/exports/exports.routes.ts',import.meta.url),'utf8');
+  assert.match(route,/const escapeCsv = encodeMasterExportCsvCell/);
+  assert.match(route,/router\.use\(\(_req, res, next\) =>/);
+  assert.match(route,/cache-control', 'no-store, max-age=0'/);
+  assert.match(route,/x-content-type-options', 'nosniff'/);
+});
+
+test('import report CSV rejects hidden formula prefixes without changing safe numeric cells', () => {
+  for (const prefix of ['\u00ad', '\u034f', '\u180e', '\ufe0f']) {
+    const formula = prefix + '@SUM(1,2)';
+    assert.equal(encodeImportReportCsvCell(formula), `"'${formula}"`);
+  }
+  assert.equal(encodeImportReportCsvCell('normal'), '"normal"');
+  // Preserve the import-report encoder's pre-existing conservative negative-value policy.
+  assert.equal(encodeImportReportCsvCell(-20), `"'-20"`);
 });
 
 test('CSV header and row keys stay in declared canonical order', () => {
@@ -95,4 +150,18 @@ test('source route binds tenant to DB predicates and uses per-entity permission 
   assert.match(route,/where: \{tenantId:ctx\.tenantId\}/);
   assert.match(route,/tx\.auditLog\.create/);
   assert.match(route,/no-store/);
+});
+
+test('negative Decimal values remain numeric while negative spreadsheet formulas remain escaped', () => {
+  const csv = masterExportPayload('products','csv',[
+    { sku:'SYN-NEGATIVE-1', cost:'-20.00', price:'-0.01', name:'-1+HYPERLINK("https://example.invalid")' }
+  ],meta).data;
+  assert.ok(csv.includes('"-20.00"'), 'the exact negative Decimal string remains a numeric CSV cell');
+  assert.ok(csv.includes('"-0.01"'));
+  assert.ok(csv.includes('"\'-1+HYPERLINK(""https://example.invalid"")"'), 'an expression retains its injection prefix');
+  for (const unsafe of ['-SUM(A1:A2)', '-1+2', '-1e2', ' -12.5', '\u200B-3']) {
+    assert.equal(encodeMasterExportCsvCell(unsafe).startsWith('"\''), true, unsafe);
+  }
+  assert.equal(encodeMasterExportCsvCell('-0'), '"-0"');
+  assert.equal(encodeMasterExportCsvCell('-12.25'), '"-12.25"');
 });

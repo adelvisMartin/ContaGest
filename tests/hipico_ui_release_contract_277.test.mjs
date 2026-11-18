@@ -75,7 +75,11 @@ test('installed PWA precaches the complete Hípico JavaScript module tree and at
   const missing = jsFiles(root).filter((file) => !sw.includes(`'./assets/js/${file}'`) && !sw.includes(`"./assets/js/${file}"`));
   assert.deepEqual(missing, [], `JavaScript modules missing from APP_SHELL: ${missing.join(', ')}`);
   assert.match(sw, /const SHELL_CACHE\s*=\s*`\$\{CACHE_VERSION\}-shell-r\d+-[a-z0-9-]+`/i);
-  assert.match(sw, /cache\.addAll\(\[\.\.\.APP_SHELL_URLS\]\)/);
+  assert.match(sw, /await primeShell\(\)/);
+  assert.match(sw, /new Request\(url, \{ cache: 'reload', credentials: 'omit', redirect: 'error' \}\)/);
+  assert.match(sw, /if \(!cacheablePublicResponse\(response\)\) throw new Error\('HIPICO_PRIVATE_SHELL_RESPONSE'\)/);
+  assert.match(sw, /await cache\.put\(request, response\)/);
+  assert.doesNotMatch(sw, /cache\.addAll\(/);
   assert.match(sw, /key\.startsWith\('hipico-control-'\)\s*&&\s*key\s*!==\s*SHELL_CACHE/);
   assert.match(sw, /caches\.delete\(key\)/);
   assert.match(sw, /isSensitive\(url\).*cache:\s*'no-store'/s);

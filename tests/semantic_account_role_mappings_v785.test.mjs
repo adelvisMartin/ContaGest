@@ -25,3 +25,7 @@ test('#785 rejects nature mismatch and unknown role, does not infer codes', () =
   denied(()=>bind(a,{role:'arbitrary'}));
   denied(()=>bind(a,{expectedNature:'other'}));
 });
+
+test('#785 rejects a self-referential parent even when account is marked postable',()=>{
+  denied(()=>bind({...a,parentCode:a.code}));
+});

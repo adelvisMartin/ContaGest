@@ -67,3 +67,14 @@ test('#781 catalog selects reviewed version by effective date without shifting h
   const future=previewReviewedPayrollContributionsFromCatalog({...event,eventDate:'2027-01-01',payrollPeriod:'2027-01'},specs,[old,next]);
   assert.equal(future.components[0].ruleSnapshot.ruleId,next.id);
 });
+
+test('#781 refuses object-coerced payroll category and risk selectors',()=>{
+  for(const field of ['payrollClass','riskClass']){
+    const forged={toString:()=>event[field]};
+    denied(()=>parafiscalRuleSelector({...event,[field]:forged},'WORKER'));
+    denied(()=>previewReviewedPayrollContributions({...event,[field]:forged},[component('IVSS','WORKER')]));
+    denied(()=>previewReviewedPayrollContributionsFromCatalog(
+      {...event,[field]:forged},[{family:'IVSS',side:'WORKER',baseMinor:10000}],[rule('IVSS','WORKER')]
+    ));
+  }
+});

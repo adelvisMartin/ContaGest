@@ -44,3 +44,17 @@ test('#801 route validates before DB cast, keeps server tenant and auth',()=>{
  assert.match(section,/a\."tenantId"=\$1/);
  assert.doesNotMatch(section,/req\.query\.tenantId/);
 });
+
+test('#712 clinical read filters cannot borrow tenant-like or inherited date properties',()=>{
+ const inherited=Object.create({from:'2026-10-14'});
+ assert.throws(()=>parse(inherited,clock),/CARE_APPOINTMENT_RANGE_INVALID/);
+ const accessors=Object.defineProperty({},'to',{
+  enumerable:true,get(){throw new Error('GETTER_EXECUTED');}
+ });
+ assert.throws(()=>parse(accessors,clock),/CARE_APPOINTMENT_RANGE_INVALID/);
+ const symbol=Object.defineProperty({},Symbol('secret'),{value:'opaque'});
+ assert.throws(()=>parse(symbol,clock),/CARE_APPOINTMENT_RANGE_INVALID/);
+ const clean=Object.create(null);
+ clean.from='2026-10-15';
+ assert.equal(parse(clean,clock).from,'2026-10-15T00:00:00.000Z');
+});
