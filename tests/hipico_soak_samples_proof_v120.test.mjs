@@ -14,7 +14,7 @@ function setup(change = () => {}) {
   const rows = Array.from({length: COUNT}, (_, i) => ({
     at: new Date(START + i * 30_000).toISOString(), elapsedMs: i * 30_000,
     rssMb: 128, heapUsedMb: 64,
-    health: {ok: true, status: 200, latencyMs: 5},
+    health: {ok: true, status: 200, reason: 'READY_SHADOW', latencyMs: 5},
     spool: {available: true, files: 2, bytes: 1024, activeFiles: 1,
       queuedFiles: 1, failedFiles: 0, oldestAgeSeconds: 2},
     decisions: i + 1, duplicateResponses: 0, lostDecisions: 0, contextLeaks: 0
