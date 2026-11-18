@@ -56,6 +56,7 @@ test('#757 PG17 audit-failure probe is scoped to disposable tenant, cleans trigg
   assert.match(qa, /END;\s*\$\$`\);/);
   assert.match(qa, /DROP TRIGGER IF EXISTS/);
   assert.match(qa, /DROP FUNCTION IF EXISTS/);
+  assert.doesNotMatch(qa, /auditLog\.deleteMany/, 'Append-only audits must survive disposable QA cleanup');
   assert.match(qa, /await h\.status\(.*500.*DELETE/);
   assert.match(qa, /purchaseInvoiceLine\.count/);
   assert.match(qa, /foreign tenant draft is not exposed or deleted/);
