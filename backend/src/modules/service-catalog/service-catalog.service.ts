@@ -115,18 +115,19 @@ export async function setServiceCategoryStatus(ctx:CatalogActor,categoryId:strin
   return prisma.$transaction(async tx=>{
     const before=await lockedCategory(tx,ctx.tenantId,categoryId);
     if(!before)denied('SERVICE_CATEGORY_NOT_FOUND','Categoría no encontrada.',404);
-    // Idempotent retry: do not add a second audit entry for the same state.
-    if(before.status===status)return tx.serviceCatalogCategory.findFirstOrThrow({
-      where:{tenantId:ctx.tenantId,id:categoryId}
-    });
     if(status==='archived'){
       // Referenced services must be archived first; historical rows and
-      // snapshots are never deleted or reinterpreted.
+      // snapshots are never deleted or reinterpreted. Also check on replay:
+      // a previously invalid archived category cannot silently pass.
       const inUse=await tx.serviceDefinition.count({
         where:{tenantId:ctx.tenantId,categoryId,status:{not:'archived'}}
       });
       if(inUse>0)denied('SERVICE_CATEGORY_IN_USE','Archive primero los servicios de la categoría.');
     }
+    // Idempotent retry: do not add a second audit entry for the same state.
+    if(before.status===status)return tx.serviceCatalogCategory.findFirstOrThrow({
+      where:{tenantId:ctx.tenantId,id:categoryId}
+    });
     const updated=await tx.serviceCatalogCategory.update({
       where:{tenantId:ctx.tenantId,id:categoryId},
       data:{status,updatedAt:new Date()}
