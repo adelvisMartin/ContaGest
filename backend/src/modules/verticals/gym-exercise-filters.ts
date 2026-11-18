@@ -4,7 +4,7 @@ export function parseGymExerciseFilters(query: unknown) {
     throw new Error('GYM_EXERCISE_FILTER_INVALID');
   }
   const raw = query as Record<string, unknown>;
-  const keys = ['q', 'muscleGroup', 'equipment', 'category', 'active'];
+  const keys = ['q', 'muscleGroup', 'equipment', 'category', 'active', 'take', 'skip'];
   if (Object.keys(raw).some(key => !keys.includes(key))) {
     throw new Error('GYM_EXERCISE_FILTER_INVALID');
   }
@@ -25,5 +25,21 @@ export function parseGymExerciseFilters(query: unknown) {
   if (active !== '' && active !== 'true' && active !== 'false') {
     throw new Error('GYM_EXERCISE_FILTER_INVALID');
   }
-  return { q, muscleGroup, equipment, category, active };
+  const readPage = (name: string, fallback: number, minimum: number, maximum: number) => {
+    const value = raw[name];
+    if (value === undefined) return fallback;
+    if (typeof value !== 'string' || !/^(0|[1-9][0-9]*)$/.test(value)) {
+      throw new Error('GYM_EXERCISE_FILTER_INVALID');
+    }
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+      throw new Error('GYM_EXERCISE_FILTER_INVALID');
+    }
+    return parsed;
+  };
+  // Preserve legacy limit on unpaged requests, while exposing continuation
+  // for larger tenant-owned exercise libraries.
+  const take = readPage('take', 1000, 1, 1000);
+  const skip = readPage('skip', 0, 0, 100000);
+  return { q, muscleGroup, equipment, category, active, take, skip };
 }

@@ -22,3 +22,21 @@ test('invalid references cannot produce a fake created response',()=>{
  assert.match(block,/ok\(res, one\(rows\), 201\)/);
  assert.doesNotMatch(block,/INSERT INTO public\."CarePrescription"[\s\S]*?VALUES\s*\(/);
 });
+
+test('#805 dental prescription workspace consumes one CarePrescription authority, with session and patient scoping',()=>{
+ const src=fs.readFileSync('frontend/src/components/dentistry/DentalPrescriptionPanel.jsx','utf8');
+ const page=fs.readFileSync('frontend/src/pages/DentistryPracticePage.jsx','utf8');
+ const service=fs.readFileSync('frontend/src/services/verticalService.js','utf8');
+ assert.match(page,/<DentalPrescriptionPanel[\s\S]*?patientId=\{selectedPatientId\}/);
+ assert.match(src,/HealthVerticalService\.prescriptions\(patientId\)/);
+ assert.match(src,/HealthVerticalService\.createPrescription\(payload\)/);
+ assert.match(src,/item\?\.patientId===patientId/);
+ assert.match(src,/item\?\.status==='signed'/);
+ assert.match(src,/identity!==sessionScope\(\)/);
+ assert.match(src,/cg:pwa-session-changed/);
+ assert.match(src,/cg:auth-expired/);
+ assert.match(src,/savingRef\.current/);
+ assert.match(src,/no se reenvía automáticamente/);
+ assert.match(service,/createPrescription\(payload\)/);
+ assert.doesNotMatch(src,/localStorage\.setItem|innerHTML|indexedDB|\.createObjectStore\(/);
+});

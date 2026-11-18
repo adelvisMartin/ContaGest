@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Box, Checkbox, Divider, FormControlLabel, Paper, Stack, Typography } from '@mui/material';
 import { CgButton, CgEmptyState, CgSelect, CgStatusChip, CgTextField } from '../ui/cg/CgPrimitives.jsx';
 
@@ -25,6 +25,8 @@ const durationMinutes=(item)=>Math.max(0,Math.round((new Date(item.endsAt).getTi
 export function DentalSchedulePanel({patientOptions,professionalOptions,appointments,onCreate,onUpdate}){
   const [form,setForm]=useState({patientId:'',professionalId:'',date:today(),time:'09:00',durationMin:'45',room:'Sillón 1',reason:'',waitlisted:false});
   const [busy,setBusy]=useState('');
+  const pendingCreate=useRef(null);
+  const createInFlight=useRef(false);
   const [recallDrafts,setRecallDrafts]=useState({});
   const ordered=useMemo(()=>[...appointments].sort((a,b)=>{
     if(a.status==='waitlisted'&&b.status!=='waitlisted')return 1;
@@ -34,11 +36,11 @@ export function DentalSchedulePanel({patientOptions,professionalOptions,appointm
 
   async function submit(event){
     event.preventDefault();
-    if(!form.patientId)return;
-    setBusy('create');
+    if(!form.patientId||createInFlight.current)return;
+    createInFlight.current=true;setBusy('create');
     try{
       const {startsAt,endsAt}=toWindow(form.date,form.time,form.durationMin);
-      const created=await onCreate?.({
+      const payload={
         patientId:form.patientId,
         professionalId:form.professionalId||null,
         startsAt,endsAt,
@@ -48,9 +50,19 @@ export function DentalSchedulePanel({patientOptions,professionalOptions,appointm
         channel:'onsite',
         room:form.room.trim(),
         notes:''
-      });
-      if(created!==false)setForm((current)=>({...current,reason:'',waitlisted:false}));
-    }finally{setBusy('');}
+      };
+      const signature=JSON.stringify(payload);
+      if(pendingCreate.current?.signature!==signature){
+        if(typeof globalThis.crypto?.randomUUID!=='function')
+          throw new Error('Se requiere una conexión segura para identificar la reserva.');
+        pendingCreate.current={signature,requestKey:globalThis.crypto.randomUUID()};
+      }
+      const created=await onCreate?.({...payload,requestKey:pendingCreate.current.requestKey});
+      if(created!==false){
+        pendingCreate.current=null;
+        setForm((current)=>({...current,reason:'',waitlisted:false}));
+      }
+    }finally{createInFlight.current=false;setBusy('');}
   }
 
   async function update(id,payload){

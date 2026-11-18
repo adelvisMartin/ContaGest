@@ -29,16 +29,27 @@ export function masterExportRows(entity: MasterExportEntity, records: readonly R
   );
 }
 
+// Keep all backend CSV exporters on the same cell policy. CSV quoting alone
+// cannot stop spreadsheet formula interpretation of untrusted text.
+const FORMULA_PREFIX = /^[\u0000-\u0020\u007f-\u009f\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u180e\u2000-\u200f\u2028-\u202e\u202f\u205f\u2060-\u2069\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0]*[=+\-@]/u;
+// Numeric columns leave masterExportRows as exact Decimal strings. A leading
+// minus sign is safe only for a complete decimal literal, never an expression.
+const PLAIN_SIGNED_DECIMAL = /^-(?:0|[1-9]\d*)(?:\.\d+)?$/;
+
+export function encodeMasterExportCsvCell(value: unknown): string {
+  const text = value == null ? '' : String(value);
+  const untrustedText = typeof value === 'string';
+  const safe = untrustedText && FORMULA_PREFIX.test(text) && !PLAIN_SIGNED_DECIMAL.test(text)
+    ? "'" + text : text;
+  return '"' + safe.replaceAll('"', '""') + '"';
+}
+
 export function masterExportCsv(entity: MasterExportEntity, rows: readonly Record<string, string | null>[]): string {
   const fields = MASTER_EXPORT_FIELDS[entity];
-  const safe = (value: string | null) => {
-    let text = value ?? '';
-    // Any spreadsheet formula prefix (including leading whitespace and
-    // control chars) must be escaped before RFC4180 quoting.
-    if (/^[\s\u0000-\u001f]*[=+\-@]/.test(text)) text = "'" + text;
-    return '"' + text.replaceAll('"', '""') + '"';
-  };
-  return [fields.map(safe).join(','), ...rows.map((row) => fields.map((key) => safe(row[key] ?? null)).join(','))].join('\r\n');
+  return [
+    fields.map(encodeMasterExportCsvCell).join(','),
+    ...rows.map((row) => fields.map((key) => encodeMasterExportCsvCell(row[key] ?? null)).join(',')),
+  ].join('\r\n');
 }
 
 export function masterExportPayload(entity: MasterExportEntity, format: MasterExportFormat,

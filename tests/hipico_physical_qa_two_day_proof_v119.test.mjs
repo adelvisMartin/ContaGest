@@ -30,6 +30,7 @@ function fixture() {
     assert.equal(step.status,0,step.stderr);
   }
   const raw=JSON.parse(fs.readFileSync(file,'utf8'));
+  raw.startedAt=new Date(Date.now()-4*86400000).toISOString();
   for(const env of raw.environments){
     for(const entry of catalog.scenarios){
       const isOne=entry.id===one,isTwo=entry.id===two;
@@ -180,4 +181,39 @@ test('#119 release verifier rejects missing, old or future observation metadata'
   const future=structuredClone(raw);
   future.environments[0].physicalDays.day2ObservedAtUtc=new Date(Date.now()+86400000).toISOString();
   assert.equal(validateReleaseDays(future),false);
+});
+
+test('#119 physical days must fall between recorder initialization and completion',()=>{
+  const f=fixture();
+  update(f,r=>{r.startedAt=new Date(Date.now()-2*86400000).toISOString();});
+  assert.equal(status(f).releasePhysicalGate,'NOT_READY');
+  assert.match(status(f).twoDayEvidenceErrors.join(' '),/anterior al inicio/);
+  update(f,r=>{
+    r.startedAt=new Date(Date.now()-4*86400000).toISOString();
+    r.completedAt=new Date(Date.now()-2*86400000).toISOString();
+  });
+  assert.equal(status(f).releasePhysicalGate,'NOT_READY');
+  assert.match(status(f).twoDayEvidenceErrors.join(' '),/posterior a la finalización/);
+  update(f,r=>{
+    r.completedAt=null;
+    r.startedAt='2026-10-12T12:00:00Z';
+  });
+  assert.equal(status(f).releasePhysicalGate,'NOT_READY');
+  assert.match(status(f).twoDayEvidenceErrors.join(' '),/UTC canónico/);
+});
+
+test('#119 release consumer fails closed on missing or forged physical run window',()=>{
+  const f=fixture();
+  assert.equal(check(f).status,0);
+  const original=JSON.parse(fs.readFileSync(path.join(f.dir,'physical-qa-evidence.json'),'utf8'));
+  assert.equal(validateReleaseDays(original),true);
+  const missing=structuredClone(original);
+  delete missing.startedAt;
+  assert.equal(validateReleaseDays(missing),false);
+  const startedLate=structuredClone(original);
+  startedLate.startedAt=new Date(Date.now()-2*86400000).toISOString();
+  assert.equal(validateReleaseDays(startedLate),false);
+  const endedEarly=structuredClone(original);
+  endedEarly.completedAt=new Date(Date.now()-2*86400000).toISOString();
+  assert.equal(validateReleaseDays(endedEarly),false);
 });

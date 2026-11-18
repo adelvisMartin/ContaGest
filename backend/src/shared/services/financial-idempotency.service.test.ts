@@ -54,22 +54,19 @@ test('canonical request hashing normalizes dates and negative zero deterministic
   assert.equal(canonicalRequestJson({ date, value: -0 }), '{"date":"2026-08-27T05:00:00.000Z","value":0}');
 });
 
-
-test('parsed financial Decimal payloads have canonical value hashes across equivalent scale', () => {
+test('financial Decimal canonical hashes are scale-independent without discarding request values', () => {
   const parsed = {
     exchangeRate: new Prisma.Decimal('1.0000'),
     lines: [{ quantity: new Prisma.Decimal('1.000'), unitPrice: new Prisma.Decimal('10.00'), taxRate: new Prisma.Decimal('0.00') }]
   };
   const canonical = {
-    lines: [{ taxRate:'0', unitPrice:'10', quantity:'1' }],
-    exchangeRate:'1'
+    lines: [{ taxRate: '0', unitPrice: '10', quantity: '1' }],
+    exchangeRate: '1'
   };
   assert.equal(canonicalRequestJson(parsed), canonicalRequestJson(canonical));
   assert.equal(canonicalRequestHash(parsed), canonicalRequestHash(canonical));
-  assert.notEqual(
-    canonicalRequestHash(parsed),
-    canonicalRequestHash({ ...parsed, lines:[{ ...parsed.lines[0], unitPrice:new Prisma.Decimal('11') }] })
-  );
+  assert.notEqual(canonicalRequestHash(parsed),
+    canonicalRequestHash({ ...parsed, lines: [{ ...parsed.lines[0], unitPrice: new Prisma.Decimal('11') }] }));
 });
 
 test('scope normalization is stable and rejects unsafe scopes', () => {
@@ -96,6 +93,28 @@ test('idempotency keys are opaque, bounded and never stored as raw hashes accide
 
 test('non-finite numeric input is rejected before hashing', () => {
   const error = captureError(() => canonicalRequestHash({ amount: Number.POSITIVE_INFINITY }));
+  assert.equal(error.status, 422);
+  assert.equal(error.details?.code, 'IDEMPOTENCY_REQUEST_NOT_CANONICAL');
+});
+
+test('#1289 prototype-named JSON fields must affect request hashes, not disappear', () => {
+  const ordinary = { amount: 10, currency: 'USD' };
+  const crafted = JSON.parse('{"amount":10,"currency":"USD","__proto__":{"sideEffect":true}}');
+  const canonical = canonicalRequestJson(crafted);
+  assert.equal(canonical, '{"__proto__":{"sideEffect":true},"amount":10,"currency":"USD"}');
+  assert.notEqual(canonicalRequestHash(ordinary), canonicalRequestHash(crafted));
+  assert.equal(({} as any).sideEffect, undefined, 'no pollution of the global prototype');
+});
+
+test('#1289 canonical hash preserves explicit sensitive-looking keys as data without prototype pollution', () => {
+  const payload = JSON.parse('{"constructor":{"prototype":{"admin":true}},"amount":1}');
+  assert.equal(canonicalRequestJson(payload), '{"amount":1,"constructor":{"prototype":{"admin":true}}}');
+  const original = JSON.parse('{"__proto__":1,"nested":{"__proto__":2}}');
+  assert.equal(canonicalRequestJson(original), '{"__proto__":1,"nested":{"__proto__":2}}');
+});
+
+test('invalid Date values are canonical request errors rather than uncaught RangeError', () => {
+  const error = captureError(() => canonicalRequestHash({ issuedAt: new Date(Number.NaN) }));
   assert.equal(error.status, 422);
   assert.equal(error.details?.code, 'IDEMPOTENCY_REQUEST_NOT_CANONICAL');
 });

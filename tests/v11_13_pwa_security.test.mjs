@@ -47,7 +47,9 @@ test('PWA install flow and service worker do not cache API data', () => {
     ['/licenses', true], ['/media/private', true], ['/admin/users', true],
     ['/assets/app.js', false], ['/index.html', false]
   ]) assert.equal(isSensitiveRequest(new URL(pathname,scope)),expected,pathname);
-  assert.match(sw, /isSensitiveRequest\(url\)\) return/);
+  // Both the private-route guard and credential-header guard must run before
+  // any CacheStorage path, even for apparently public same-origin assets.
+  assert.match(sw, /url\.origin !== self\.location\.origin \|\| isSensitiveRequest\(url\) \|\| hasPrivateRequestHeaders\(request\)\) return/);
   assert.match(sw, /cache:\s*'no-store'/);
   assert.equal(manifest.display, 'standalone');
   // A relative scope intentionally confines the PWA to its installation base.

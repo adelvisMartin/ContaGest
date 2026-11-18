@@ -23,7 +23,7 @@ export function assertSemanticAccountBinding(
       account.active !== true || account.allowPosting !== true ||
       !['debit', 'credit'].includes(account.nature) ||
       (request.expectedNature && account.nature !== request.expectedNature) ||
-      (account.parentCode !== null && typeof account.parentCode !== 'string')) fail();
+      (account.parentCode !== null && (typeof account.parentCode !== 'string' || account.parentCode === account.code))) fail();
   if (!account) throw new Error('ACCOUNT_ROLE_MAPPING_NOT_POSTABLE');
   return Object.freeze({ tenantId: request.tenantId, role: request.role, accountCode: account.code, nature: account.nature });
 }

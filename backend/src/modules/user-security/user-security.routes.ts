@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
+import { authRateLimit } from '../../shared/middleware/security.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('admin.manage'));
@@ -12,7 +13,9 @@ const updateSchema = z.object({
   status: z.enum(['active', 'invited', 'disabled']).optional(),
   roleId: z.string().min(1).optional(),
   newPassword: z.string().min(12).max(128).optional(),
-  clearFailures: z.boolean().optional()
+  clearFailures: z.boolean().optional(),
+  // Verified only in memory for this request. Never persist or audit this field.
+  currentPassword: z.string().min(1).max(128).optional()
 }).refine((body) => Boolean(body.status || body.roleId || body.newPassword || body.clearFailures), {
   message: 'No se recibió ningún cambio.'
 });
@@ -21,12 +24,6 @@ function tenantId(req:any) {
   const id = String(req.context?.tenantId || '');
   if (!id) throw new HttpError(401, 'No hay empresa activa.');
   return id;
-}
-
-async function clearUserFailures(tenantRif:string,email:string) {
-  await prisma.authLoginAttempt.deleteMany({
-    where:{ tenantRif, email:email.trim().toLowerCase(), success:false }
-  });
 }
 
 async function serializeUsers(id:string) {
@@ -89,7 +86,7 @@ router.get('/users', asyncHandler(async (req,res) => {
   ok(res, await serializeUsers(tenantId(req)));
 }));
 
-router.patch('/users/:userId', asyncHandler(async (req,res) => {
+router.patch('/users/:userId', authRateLimit, asyncHandler(async (req,res) => {
   const id = tenantId(req);
   const body = updateSchema.parse(req.body || {});
   const user = await prisma.userProfile.findFirst({
@@ -99,6 +96,20 @@ router.patch('/users/:userId', asyncHandler(async (req,res) => {
   if (!user) throw new HttpError(404, 'Usuario no encontrado.');
 
   const currentUserId = String((req as any).context?.userId || '');
+  // An established admin cookie alone does not authorize a password/role
+  // takeover. Verify the *actor's* current credential for each privileged
+  // mutation, never the target's password, and fail closed for card-only users.
+  // This is a one-request step-up: no reusable bearer or bypass flag exists.
+  const actor = await prisma.userProfile.findFirst({
+    where:{ id:currentUserId, tenantId:id, status:'active' },
+    select:{ id:true, passwordHash:true }
+  });
+  if(!actor?.passwordHash || !body.currentPassword ||
+      !await bcrypt.compare(body.currentPassword,actor.passwordHash)){
+    throw new HttpError(403,'Confirma tu contraseña actual de administrador para aplicar este cambio.',{
+      code:'ADMIN_REAUTH_REQUIRED'
+    });
+  }
   const self = currentUserId === user.id;
   if (self && body.status === 'disabled') throw new HttpError(409, 'No puedes bloquear tu propia sesión administrativa.');
 
@@ -124,11 +135,37 @@ router.patch('/users/:userId', asyncHandler(async (req,res) => {
       await tx.userRole.create({ data:{ userId:user.id, roleId:selectedRole.id } });
     }
     if (Object.keys(updateData).length) await tx.userProfile.update({ where:{ id:user.id }, data:updateData });
-  });
 
-  if (body.clearFailures || body.status === 'active' || body.newPassword) {
-    await clearUserFailures(user.tenant.rif, user.email);
-  }
+    // Role, credential and status changes invalidate every server-bound JWT
+    // for this user. Scope both user and tenant; do not revoke other tenants.
+    const revokeSessions = Boolean(body.newPassword || body.status || selectedRole);
+    if (revokeSessions) {
+      await tx.$executeRaw`
+        UPDATE public."UserSession"
+        SET "status"='revoked', "revokedAt"=COALESCE("revokedAt",now()), "updatedAt"=now()
+        WHERE "tenantId"=${id} AND "userId"=${user.id} AND "status"='active'
+      `;
+    }
+    const resetFailures = Boolean(body.clearFailures || body.status === 'active' || body.newPassword);
+    if (resetFailures) {
+      await tx.authLoginAttempt.deleteMany({
+        where:{ tenantRif:user.tenant.rif, email:user.email.trim().toLowerCase(), success:false }
+      });
+    }
+    // Audit and update commit together. Never persist a password, credential,
+    // token or its derived hash in audit payloads.
+    await tx.auditLog.create({ data: {
+      tenantId:id, userId:currentUserId || null, action:'security.user.updated',
+      entity:'UserProfile', entityId:user.id,
+      after:{
+        status:body.status ?? null, roleChanged:Boolean(selectedRole),
+        credentialRotated:Boolean(body.newPassword), sessionsRevoked:revokeSessions,
+        failureCounterReset:resetFailures
+      },
+      ipAddress:(req as any).context?.ip || null,
+      userAgent:String((req as any).context?.userAgent || '').slice(0,240) || null
+    } });
+  });
 
   ok(res, {
     updated:true,

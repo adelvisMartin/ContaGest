@@ -130,6 +130,8 @@ El verifier de release v290 descubre `soak-evidence.json` como evidencia opciona
 - SOURCE/LAB/session invariant no verificada al final del run o sin evidence material → `BLOCKED`;
 - número de muestras inferior al 90% de la frecuencia oficial de 30 s → `BLOCKED` (`SOAK_SAMPLE_CADENCE_INSUFFICIENT`), aunque duración/health/spool afirmados parezcan correctos;
 - health/spool sin cobertura suficiente → `BLOCKED`;
+- `samples.jsonl` se abre mediante descriptor con `O_NOFOLLOW | O_NONBLOCK` y se valida con `fstat` antes/después de la lectura, sin secuencia vulnerable `lstat(ruta)→readFile(ruta)`. Un symlink, archivo no regular, archivo que cambia durante la lectura o una plataforma sin `O_NOFOLLOW`/`O_NONBLOCK` se rechaza. Un FIFO/tubería especial se rechaza sin bloquear la validación; ausencia de soporte `O_NONBLOCK` también implica fail-closed. Esto asegura la lectura del artefacto local; el hash y la coherencia temporal siguen siendo gates independientes y no prueban un soak físico por sí mismos.
+- muestras `health.ok/status/reason` contradictorias, motivo omitido o motivo que no coincide con la clasificación real del probe → evidencia rechazada, aunque `samples.jsonl` tenga un SHA-256 recalculado. Los resultados admitidos son `READY_SHADOW` con HTTP 2xx, fallos HTTP fuera de 2xx, errores de cuerpo/modo/readiness/SOURCE en 2xx, o `HEALTH_REQUEST_FAILED` con status 0. Esto valida integridad interna, no certifica hardware ni autenticidad física;
 - threshold excedido → `FAIL`;
 - sin muestras → `NOT_EXECUTED`;
 - sólo la combinación completa puede producir `PASS`.
@@ -137,3 +139,9 @@ El verifier de release v290 descubre `soak-evidence.json` como evidencia opciona
 ## Estado actual
 
 El harness implementa los gates y la integridad de evidence, pero este cambio **no afirma** que ya hayan ocurrido las 24–72 h, los restart/reconnect físicos ni el Physical QA real. #120 debe seguir abierto hasta obtener evidencia material del candidato definitivo.
+
+## Reloj monotónico y consistencia temporal
+
+El runner mide la duración real transcurrida mediante `performance.now()` (reloj monotónico): un ajuste NTP/manual de `Date.now()` no puede adelantar ni acortar las 24 horas mínimas. Las muestras usan `elapsedMs` monotónico y mantienen `at`, `startedAt` y `completedAt` UTC para auditoría. El verificador de `samples.jsonl` comprueba la concordancia entre ambas líneas temporales y falla cerrado ante un salto de reloj significativo; no se convierte el soak en PASS sólo por acumular tiempo de pared.
+
+Esto es endurecimiento del harness, **no evidencia de que se haya ejecutado un soak real**.

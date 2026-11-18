@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -7,6 +8,8 @@ import { evaluateGymProgression } from './gym.progression.js';
 import { nextPeriodizationVersion } from './gym-program-version.js';
 import { parseGymExerciseFilters } from './gym-exercise-filters.js';
 import { gymPerformanceSessionDay } from './gym-performance-day.mjs';
+import { gymEpleyEstimate } from './gym-performance-estimate.mjs';
+import { gymHistoricalPlanCoverage, gymHistoricalSetAdherence } from './gym-performance-adherence.mjs';
 import { parseGymMemberQuery } from './gym-member-query.js';
 import {
   exerciseLibrarySchema,
@@ -15,6 +18,7 @@ import {
   periodizationTemplateSchema,
   periodizationProgramSchema,
   workoutSessionSchema,
+  workoutSessionTransitionSchema,
   exerciseSubstitutionSchema,
   workoutSetSchema,
   performanceQuerySchema,
@@ -34,9 +38,7 @@ const decoratePeriodizationProgram = (row:any) => {
   };
 };
 
-const epleyEstimate = (load:number,reps:number) => reps>=1&&reps<=12&&load>0
-  ? Number((load*(1+reps/30)).toFixed(2))
-  : null;
+
 
 
 // Inventory planning input only: an exercise's equipment label is not
@@ -60,7 +62,7 @@ router.get('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async
   let filters: ReturnType<typeof parseGymExerciseFilters>;
   try { filters=parseGymExerciseFilters(req.query); }
   catch { throw new HttpError(422,'Filtros de ejercicios inválidos.'); }
-  const {q,muscleGroup,equipment,category,active}=filters;
+  const {q,muscleGroup,equipment,category,active,take,skip}=filters;
   const rows=await prisma.$queryRawUnsafe<any[]>(`
     SELECT *
     FROM public."GymExercise"
@@ -70,17 +72,21 @@ router.get('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async
       AND ($4='' OR COALESCE("equipment",'')=$4)
       AND ($5='' OR COALESCE("category",'')=$5)
       AND ($6='' OR "active"=($6='true'))
-    ORDER BY "active" DESC,"muscleGroup" NULLS LAST,"name"
-    LIMIT 1000
-  `,tenantId,q,muscleGroup,equipment,category,active);
-  ok(res,rows);
+    ORDER BY "active" DESC,"muscleGroup" NULLS LAST,"name","id"
+    LIMIT $7 OFFSET $8
+  `,tenantId,q,muscleGroup,equipment,category,active,take+1,skip);
+  const hasMore=rows.length>take;
+  res.setHeader('Cache-Control','private, no-store');
+  res.setHeader('X-Pagination-Has-More',hasMore?'true':'false');
+  if(hasMore)res.setHeader('X-Pagination-Next-Skip',String(skip+take));
+  ok(res,rows.slice(0,take));
 }));
 
 router.post('/gym/exercises', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const tenantId=ctx(req).tenantId;
   const b=exerciseLibrarySchema.parse(req.body||{});
   const created=await prisma.$transaction(async tx=>{
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
       'gym-exercise-name:'+tenantId+':'+b.name.trim().toLowerCase());
     const existing=await tx.$queryRawUnsafe<any[]>(`
     SELECT "id" FROM public."GymExercise"
@@ -107,7 +113,7 @@ router.patch('/gym/exercises/:id', requirePermission('gym.manage'), asyncHandler
   const b=exerciseLibraryPatchSchema.parse(req.body||{});
   const updated=await prisma.$transaction(async tx=>{
   if(b.name){
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
       'gym-exercise-name:'+tenantId+':'+b.name.trim().toLowerCase());
     const duplicate=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymExercise"
@@ -156,7 +162,7 @@ router.post('/gym/periodization/templates', requirePermission('gym.manage'), asy
   const tenantId=ctx(req).tenantId;
   const created=await prisma.$transaction(async(tx)=>{
     const lockKey=`gym-periodization-template:${tenantId}:${b.name.trim().toLocaleLowerCase('es')}`;
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',lockKey);
     const duplicate=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymPeriodizationTemplate"
       WHERE "tenantId"=$1 AND lower(btrim("name"))=lower(btrim($2))
@@ -254,7 +260,7 @@ router.post('/gym/periodization/programs/:id/version', requirePermission('gym.ma
     }
 
     const lockKey=`gym-periodization-program:${tenantId}:${source.programKey}`;
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',lockKey);
     const versionRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT COALESCE(MAX("version"),0)::int AS "maxVersion"
       FROM public."GymPeriodizationProgram"
@@ -300,7 +306,7 @@ router.get('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandle
       ),'[]') AS sets
     FROM public."GymWorkoutSession" s
     WHERE s."tenantId"=$1 AND s."memberId"=$2
-    ORDER BY (s."status"='in_progress') DESC,s."startedAt" DESC
+    ORDER BY (s."status" IN ('in_progress','paused')) DESC,s."startedAt" DESC
     LIMIT 200
   `,tenantId,memberId);
   ok(res,rows);
@@ -310,38 +316,166 @@ router.post('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandl
   const b=workoutSessionSchema.parse(req.body||{});
   const tenantId=ctx(req).tenantId;
   const created=await prisma.$transaction(async(tx)=>{
-    const routineRows=await tx.$queryRawUnsafe<any[]>(`
-      SELECT "id","memberId"
-      FROM public."GymRoutine"
-      WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true
-      LIMIT 1
+    const routineRows=await tx.$queryRawUnsafe<Array<{id:string;memberId:string}>>(`
+      SELECT "id","memberId" FROM public."GymRoutine"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "active"=true LIMIT 1
     `,tenantId,b.routineId);
     if(!routineRows.length)throw new HttpError(422,'La rutina no pertenece al tenant activo.');
     const routine=routineRows[0];
     const lockKey=`gym-workout-session:${tenantId}:${routine.memberId}`;
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',lockKey);
-    const activeRows=await tx.$queryRawUnsafe<any[]>(`
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',lockKey);
+    const activeRows=await tx.$queryRawUnsafe<Array<{id:string}>>(`
       SELECT "id" FROM public."GymWorkoutSession"
-      WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='in_progress'
-      LIMIT 1
+      WHERE "tenantId"=$1 AND "memberId"=$2 AND "status" IN ('in_progress','paused') LIMIT 1
     `,tenantId,routine.memberId);
     if(activeRows.length)throw new HttpError(409,'El cliente ya tiene una sesión activa.');
+    // Preserve the exact effective program revision and prescribed exercises.
+    // Both are selected server-side, never from an untrusted client payload.
+    const programs=await tx.$queryRawUnsafe<Array<{
+      id:string;programKey:string;version:number;name:string;structure:unknown;
+      startsAt:Date|null
+    }>>(`
+      SELECT "id","programKey","version","name","structure","startsAt"
+      FROM public."GymPeriodizationProgram"
+      WHERE "tenantId"=$1 AND "routineId"=$2
+        AND ("startsAt" IS NULL OR "startsAt"<=CURRENT_DATE)
+      ORDER BY "startsAt" DESC NULLS LAST,"createdAt" DESC,"version" DESC,"id" DESC
+      LIMIT 1
+    `,tenantId,routine.id);
+    const program=programs[0]||null;
+    const programSnapshot=program ? {
+      programKey:program.programKey,version:program.version,name:program.name,
+      startsAt:program.startsAt,structure:program.structure
+    } : null;
+    const prescription=await tx.$queryRawUnsafe<any[]>(`
+      SELECT re."id",re."routineId",re."exerciseId",
+        COALESCE(e."name",'Ejercicio retirado') AS "exerciseName",e."muscleGroup",
+        re."dayOfWeek",re."sortOrder",re."sets",re."reps",
+        re."loadKg",re."restSeconds",re."tempo",re."notes",
+        re."intensityTechnique",re."techniqueConfig",
+        re."progressionStrategy",re."progressionConfig"
+      FROM public."GymRoutineExercise" re
+      LEFT JOIN public."GymExercise" e
+        ON e."tenantId"=re."tenantId" AND e."id"=re."exerciseId"
+      WHERE re."tenantId"=$1 AND re."routineId"=$2
+      ORDER BY re."dayOfWeek",re."sortOrder",re."id"
+    `,tenantId,routine.id);
     const rows=await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."GymWorkoutSession"
-        ("id","tenantId","routineId","memberId","status","startedAt","completedAt","notes","createdBy","createdAt","updatedAt")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,'in_progress',now(),NULL,$4,$5,now(),now())
+        ("id","tenantId","routineId","memberId","status","startedAt","completedAt",
+         "notes","createdBy","createdAt","updatedAt",
+         "programVersionId","programSnapshot","routineSnapshot")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,'in_progress',now(),NULL,
+        $4,$5,now(),now(),$6,$7::jsonb,$8::jsonb)
       RETURNING *
-    `,tenantId,b.routineId,routine.memberId,b.notes||null,ctx(req).userId||null);
+    `,tenantId,routine.id,routine.memberId,b.notes||null,ctx(req).userId||null,
+      program?.id||null,programSnapshot?JSON.stringify(programSnapshot):null,JSON.stringify(prescription));
     return one(rows);
   });
   ok(res,{...created,sets:[]},201);
+}));
+
+// #792: audit events and state changes share one canonical session row.
+router.get('/gym/workout-sessions/:id/transitions', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const tenantId=ctx(req).tenantId;
+  const sessionId=String(req.params.id);
+  const owned=await prisma.$queryRawUnsafe<Array<{id:string}>>(
+    'SELECT "id" FROM public."GymWorkoutSession" WHERE "tenantId"=$1 AND "id"=$2',
+    tenantId,sessionId
+  );
+  if(!owned.length)throw new HttpError(404,'Sesión no encontrada en la empresa.');
+  const events=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","sessionId","action","fromStatus","toStatus","reason","actorId","createdAt"
+    FROM public."GymWorkoutSessionTransition"
+    WHERE "tenantId"=$1 AND "sessionId"=$2
+    ORDER BY "createdAt" ASC,"id" ASC LIMIT 200
+  `,tenantId,sessionId);
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,events);
+}));
+
+router.post('/gym/workout-sessions/:id/transition', requirePermission('gym.manage'), asyncHandler(async(req,res)=>{
+  const b=workoutSessionTransitionSchema.parse(req.body||{});
+  const tenantId=ctx(req).tenantId;
+  const actorId=ctx(req).userId;
+  if(!actorId)throw new HttpError(403,'No hay un usuario autorizado para la transición.');
+  const sessionId=String(req.params.id);
+  const reason=b.reason?.trim()||null;
+  const result=await prisma.$transaction(async tx=>{
+    // The event key also serializes requests that accidentally reuse the same
+    // key across different session IDs. No conflicting 500 from unique races.
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
+      `gym-workout-transition:${tenantId}:${b.eventKey}`);
+    const sessions=await tx.$queryRawUnsafe<Array<{id:string;status:string}>>(`
+      SELECT "id","status" FROM public."GymWorkoutSession"
+      WHERE "tenantId"=$1 AND "id"=$2 FOR UPDATE
+    `,tenantId,sessionId);
+    const session=one(sessions,'Sesión de entrenamiento no encontrada.');
+    const prior=await tx.$queryRawUnsafe<Array<{
+      id:string;sessionId:string;action:string;reason:string|null;
+      fromStatus:string;toStatus:string;actorId:string;createdAt:Date;
+    }>>(`
+      SELECT "id","sessionId","action","reason","fromStatus","toStatus","actorId","createdAt"
+      FROM public."GymWorkoutSessionTransition"
+      WHERE "tenantId"=$1 AND "eventKey"=$2
+    `,tenantId,b.eventKey);
+    if(prior.length){
+      if(prior[0].sessionId!==sessionId||prior[0].action!==b.action||(prior[0].reason||null)!==reason)
+        throw new HttpError(409,'La clave de transición pertenece a otra operación.');
+      const current=await tx.$queryRawUnsafe<any[]>(
+        'SELECT * FROM public."GymWorkoutSession" WHERE "tenantId"=$1 AND "id"=$2',
+        tenantId,sessionId
+      );
+      return {session:one(current),transition:prior[0],replayed:true};
+    }
+    const allowed=b.action==='pause'
+      ? session.status==='in_progress'
+      : b.action==='resume'
+        ? session.status==='paused'
+        : ['in_progress','paused'].includes(session.status);
+    if(!allowed)throw new HttpError(409,'El estado actual no permite esta transición.');
+    const nextStatus=b.action==='pause'?'paused':b.action==='resume'?'in_progress':'abandoned';
+    const changed=await tx.$queryRawUnsafe<any[]>(`
+      UPDATE public."GymWorkoutSession"
+      SET "status"=$3,"abandonedAt"=CASE WHEN $3='abandoned' THEN now() ELSE "abandonedAt" END,
+        "updatedAt"=now()
+      WHERE "tenantId"=$1 AND "id"=$2 AND "status"=$4
+      RETURNING *
+    `,tenantId,sessionId,nextStatus,session.status);
+    if(changed.length!==1)throw new HttpError(409,'Conflicto de transición de entrenamiento.');
+    const transitions=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."GymWorkoutSessionTransition"
+        ("id","tenantId","sessionId","eventKey","action","fromStatus","toStatus","reason","actorId","createdAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,now())
+      RETURNING "id","sessionId","action","fromStatus","toStatus","reason","actorId","createdAt"
+    `,tenantId,sessionId,b.eventKey,b.action,session.status,nextStatus,reason,actorId);
+    return {session:one(changed),transition:one(transitions),replayed:false};
+  });
+  ok(res,result,result.replayed?200:201);
 }));
 
 router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const b=workoutSetSchema.parse(req.body||{});
   const tenantId=ctx(req).tenantId;
   const sessionId=String(req.params.id);
+  const {eventKey,...eventData}=b;
+  const fingerprint=eventKey?createHash('sha256').update(JSON.stringify(eventData)).digest('hex'):null;
   const created=await prisma.$transaction(async(tx)=>{
+    if(eventKey){
+      // Lock identity before the session row; concurrent and cross-session
+      // replays cannot race the unique constraint or debit twice.
+      await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
+        `gym-workout-set-event:${tenantId}:${eventKey}`);
+      const previous=await tx.$queryRawUnsafe<any[]>(`
+        SELECT * FROM public."GymWorkoutSet"
+        WHERE "tenantId"=$1 AND "eventKey"=$2 LIMIT 1
+      `,tenantId,eventKey);
+      if(previous.length){
+        if(previous[0].sessionId!==sessionId||previous[0].requestFingerprint!==fingerprint)
+          throw new HttpError(409,'La clave de serie ya pertenece a otra operación.');
+        return {set:previous[0],replayed:true};
+      }
+    }
     const sessionRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT s.*
       FROM public."GymWorkoutSession" s
@@ -351,6 +485,15 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
     `,tenantId,sessionId);
     const session=one(sessionRows,'Sesión de entrenamiento no encontrada.');
     if(session.status!=='in_progress')throw new HttpError(409,'La sesión ya está completada.');
+    // Session prescription was captured server-side at start. Do not let
+    // later edits to the routine silently reinterpret a performed set.
+    // Legacy sessions created before snapshots can still use the former
+    // live-routine lookup, but a present snapshot is authoritative.
+    const snapshot=Array.isArray(session.routineSnapshot)?session.routineSnapshot:null;
+    const prescribedSnapshot=snapshot?.find((entry:any)=>
+      entry&&entry.id===b.routineExerciseId&&entry.routineId===session.routineId)||null;
+    if(snapshot&&!prescribedSnapshot)
+      throw new HttpError(409,'El ejercicio no forma parte de la prescripción inicial de esta sesión.');
 
     const exerciseRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT re."id",re."routineId",re."exerciseId",e."muscleGroup"
@@ -362,6 +505,8 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
     `,tenantId,b.routineExerciseId,session.routineId);
     if(!exerciseRows.length)throw new HttpError(422,'El ejercicio no pertenece a la rutina de esta sesión.');
     const prescribedExercise=exerciseRows[0];
+    if(prescribedSnapshot&&prescribedSnapshot.exerciseId!==prescribedExercise.exerciseId)
+      throw new HttpError(409,'La rutina cambió después de iniciar la sesión; revisa la prescripción original.');
 
     let performedExerciseId:string|null=null;
     let substitutionReason:string|null=null;
@@ -374,7 +519,9 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
       `,tenantId,b.performedExerciseId);
       if(!substituteRows.length)throw new HttpError(422,'El ejercicio sustituto no pertenece al tenant activo.');
       const substitute=substituteRows[0];
-      const prescribedMuscle=String(prescribedExercise.muscleGroup||'').trim().toLocaleLowerCase('es');
+      const originalMuscle=prescribedSnapshot&&Object.hasOwn(prescribedSnapshot,'muscleGroup')
+        ?prescribedSnapshot.muscleGroup:prescribedExercise.muscleGroup;
+      const prescribedMuscle=String(originalMuscle||'').trim().toLocaleLowerCase('es');
       const substituteMuscle=String(substitute.muscleGroup||'').trim().toLocaleLowerCase('es');
       if(!prescribedMuscle||!substituteMuscle||prescribedMuscle!==substituteMuscle){
         throw new HttpError(422,'El ejercicio sustituto debe conservar el mismo grupo muscular.');
@@ -385,16 +532,16 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
 
     const duplicate=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymWorkoutSet"
-      WHERE "sessionId"=$1 AND "routineExerciseId"=$2 AND "setNumber"=$3
+      WHERE "tenantId"=$4 AND "sessionId"=$1 AND "routineExerciseId"=$2 AND "setNumber"=$3
       LIMIT 1
-    `,session.id,b.routineExerciseId,b.setNumber);
+    `,session.id,b.routineExerciseId,b.setNumber,tenantId);
     if(duplicate.length)throw new HttpError(409,'La serie indicada ya fue registrada.');
 
     const completed=b.status==='completed';
     const rows=await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."GymWorkoutSet"
-        ("id","tenantId","sessionId","routineExerciseId","setNumber","status","loadKg","reps","rir","rpe","restSeconds","notes","performedExerciseId","substitutionReason","recordedAt","createdBy")
-      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),$14)
+        ("id","tenantId","sessionId","routineExerciseId","setNumber","status","loadKg","reps","rir","rpe","restSeconds","notes","performedExerciseId","substitutionReason","recordedAt","createdBy","eventKey","requestFingerprint")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),$14,$15,$16)
       RETURNING *
     `,tenantId,session.id,b.routineExerciseId,b.setNumber,b.status,
       completed?(b.loadKg??null):null,
@@ -404,10 +551,10 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
       b.restSeconds,b.notes||null,
       completed?performedExerciseId:null,
       completed?substitutionReason:null,
-      ctx(req).userId||null);
-    return one(rows);
+      ctx(req).userId||null,eventKey||null,fingerprint);
+    return {set:one(rows),replayed:false};
   });
-  ok(res,created,201);
+  ok(res,{...created.set,replayed:created.replayed},created.replayed?200:201);
 }));
 
 router.post('/gym/workout-sessions/:id/complete', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
@@ -461,14 +608,14 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
 
   const tenantId=ctx(req).tenantId;
   const memberRows=await prisma.$queryRawUnsafe<any[]>(`
-    SELECT "id" FROM public."GymMember"
+    SELECT "id","goals" FROM public."GymMember"
     WHERE "tenantId"=$1 AND "id"=$2
     LIMIT 1
   `,tenantId,q.memberId);
   if(!memberRows.length)throw new HttpError(404,'El cliente no pertenece al tenant activo.');
 
   const sessions=await prisma.$queryRawUnsafe<any[]>(`
-    SELECT s."id",s."routineId",s."startedAt",s."completedAt",r."daysPerWeek"
+    SELECT s."id",s."routineId",s."startedAt",s."completedAt",s."routineSnapshot",r."daysPerWeek"
     FROM public."GymWorkoutSession" s
     JOIN public."GymRoutine" r
       ON r."tenantId"=s."tenantId" AND r."id"=s."routineId"
@@ -492,19 +639,13 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
       ON e."tenantId"=re."tenantId" AND e."id"=COALESCE(ws."performedExerciseId",re."exerciseId")
     WHERE ws."tenantId"=$1 AND s."memberId"=$2 AND s."status"='completed'
       AND s."startedAt">=$3::timestamptz AND s."startedAt"<$4::timestamptz
-    ORDER BY ws."recordedAt" ASC
+    ORDER BY ws."recordedAt" ASC,ws."id" ASC
   `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
 
-  const planRows=await prisma.$queryRawUnsafe<any[]>(`
-    SELECT r."id" AS "routineId",COALESCE(sum(re."sets"),0)::int AS "plannedSets"
-    FROM public."GymRoutine" r
-    LEFT JOIN public."GymRoutineExercise" re
-      ON re."tenantId"=r."tenantId" AND re."routineId"=r."id"
-    WHERE r."tenantId"=$1 AND r."memberId"=$2
-    GROUP BY r."id"
-  `,tenantId,q.memberId);
-  const plannedByRoutine=new Map(planRows.map((row:any)=>[String(row.routineId),Number(row.plannedSets||0)]));
-  const plannedSets=sessions.reduce((total:any,session:any)=>total+Number(plannedByRoutine.get(String(session.routineId))||0),0);
+  // #789 captured prescriptions when the session started. Do not recalculate
+  // historical adherence from today's mutable routine or invent legacy plans.
+  const coverage=gymHistoricalPlanCoverage(sessions);
+  const {plannedSets,unknownPlanSessions,planComplete}=coverage;
 
   const byExerciseMap=new Map<string,any>();
   const byMuscleMap=new Map<string,any>();
@@ -518,7 +659,7 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     const exerciseName=String(row.exerciseName||'Ejercicio');
     const muscleGroup=String(row.muscleGroup||'Sin grupo');
     if(!byExerciseMap.has(exerciseId))byExerciseMap.set(exerciseId,{
-      exerciseId,exerciseName,muscleGroup,completedSets:0,skippedSets:0,totalVolume:0,maxLoadKg:0,maxReps:0,bestEstimated1RmKg:null,lastPerformedAt:null
+      exerciseId,exerciseName,muscleGroup,completedSets:0,skippedSets:0,totalVolume:0,maxLoadKg:0,maxReps:0,bestEstimated1RmKg:null,bestEstimated1RmSource:null,lastPerformedAt:null
     });
     if(!byMuscleMap.has(muscleGroup))byMuscleMap.set(muscleGroup,{muscleGroup,completedSets:0,skippedSets:0,totalVolume:0});
     const exercise=byExerciseMap.get(exerciseId);
@@ -533,13 +674,19 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     const load=Number(row.loadKg||0);
     const reps=Number(row.reps||0);
     const volume=load>0&&reps>0?load*reps:0;
-    const estimated=epleyEstimate(load,reps);
+    const estimated=gymEpleyEstimate(load,reps);
     totalVolume+=volume;
     exercise.totalVolume+=volume;
     muscle.totalVolume+=volume;
     exercise.maxLoadKg=Math.max(exercise.maxLoadKg,load);
     exercise.maxReps=Math.max(exercise.maxReps,reps);
-    exercise.bestEstimated1RmKg=estimated==null?exercise.bestEstimated1RmKg:Math.max(Number(exercise.bestEstimated1RmKg||0),estimated);
+    if(estimated!=null && (exercise.bestEstimated1RmKg==null || estimated>exercise.bestEstimated1RmKg)){
+      exercise.bestEstimated1RmKg=estimated;
+      exercise.bestEstimated1RmSource={
+        setId:String(row.id),sessionId:String(row.sessionId),
+        recordedAt:row.recordedAt,loadKg:load,reps
+      };
+    }
     exercise.lastPerformedAt=row.recordedAt;
 
     const date=gymPerformanceSessionDay(row.startedAt);
@@ -552,7 +699,7 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
   const trainingDays=new Set(sessions.map((session:any)=>gymPerformanceSessionDay(session.startedAt))).size;
   const completedSessions=sessions.length;
   const sessionsPerWeek=periodDays>0?Number((completedSessions/(periodDays/7)).toFixed(2)):0;
-  const setAdherencePct=plannedSets>0?Number((Math.min(1,completedSets/plannedSets)*100).toFixed(1)):0;
+  const setAdherencePct=gymHistoricalSetAdherence(completedSets,coverage);
   const roundMetrics=(item:any)=>({...item,totalVolume:Number(Number(item.totalVolume||0).toFixed(2))});
 
   const byExercise=[...byExerciseMap.values()]
@@ -561,6 +708,24 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
   const byMuscleGroup=[...byMuscleMap.values()].map(roundMetrics).sort((a,b)=>b.totalVolume-a.totalVolume||a.muscleGroup.localeCompare(b.muscleGroup));
   const dailyTrend=[...dailyMap.values()].map(roundMetrics).sort((a,b)=>a.date.localeCompare(b.date));
 
+  // Assessment is the existing authoritative longitudinal source. Never
+  // mirror medical notes or issue clinical interpretations from Gym metrics.
+  const assessmentRows=await prisma.$queryRawUnsafe<any[]>(`
+    SELECT "id","measuredAt","weightKg","heightCm","bodyFatPct","muscleMassKg",
+      "waistCm","hipCm","chestCm","armCm","thighCm"
+    FROM public."GymAssessment"
+    WHERE "tenantId"=$1 AND "memberId"=$2
+      AND "measuredAt">=$3::timestamptz AND "measuredAt"<$4::timestamptz
+    ORDER BY "measuredAt" DESC,"id" DESC LIMIT 201
+  `,tenantId,q.memberId,fromDate.toISOString(),toExclusive.toISOString());
+  const measurements=assessmentRows.slice(0,200).reverse().map((row:any)=>({
+    assessmentId:String(row.id),measuredAt:row.measuredAt,
+    ...Object.fromEntries(
+      ['weightKg','heightCm','bodyFatPct','muscleMassKg','waistCm','hipCm',
+        'chestCm','armCm','thighCm'].map((key)=>[key,row[key]==null?null:Number(row[key])])
+    )
+  }));
+
   ok(res,{
     period:{from,to,days:periodDays},
     summary:{
@@ -568,6 +733,8 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
       trainingDays,
       sessionsPerWeek,
       plannedSets,
+      unknownPlanSessions,
+      planComplete,
       completedSets,
       skippedSets,
       setAdherencePct,
@@ -575,7 +742,18 @@ router.get('/gym/performance', requirePermission('gym.manage'), asyncHandler(asy
     },
     byExercise,
     byMuscleGroup,
-    dailyTrend
+    dailyTrend,
+    provenance:{
+      timeZone:'UTC',
+      estimated1Rm:{formula:'Epley',version:1,validReps:{min:1,max:12},unit:'kg'},
+      totalVolume:{formula:'sum(loadKg * reps) over completed sets',unit:'kg·rep'},
+      setAdherence:{formula:'completedSets / sum(snapshot exercise sets)',source:'GymWorkoutSession.routineSnapshot',legacy:'unavailable'},
+      source:'GymWorkoutSet / completed GymWorkoutSession',
+      dates:'WorkoutSession.startedAt'
+    },
+    measurements:{items:measurements,truncated:assessmentRows.length>200,
+      source:'GymAssessment',timeZone:'UTC'},
+    goals:{current:Array.isArray(memberRows[0]?.goals)?memberRows[0].goals:[],historical:false}
   });
 }));
 

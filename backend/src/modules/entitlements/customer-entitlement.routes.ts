@@ -4,7 +4,8 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
-import { createBenefit,grantCustomerRight,readCustomerRights } from './customer-entitlement.service.js';
+import { createBenefit,grantCustomerRight,readCustomerRightsPage } from './customer-entitlement.service.js';
+import { customerRightsPage } from './customer-rights-pagination.mjs';
 
 const router=Router();
 router.use(requireTenant);
@@ -25,6 +26,10 @@ const create=z.object({
       Boolean(row.categoryId)&&!row.serviceId;
   if(!valid)context.addIssue({code:'custom',message:'Alcance de beneficio inválido.'});
 });
+const rightsPagination=z.object({
+  take:z.coerce.number().int().min(1).max(100).default(100),
+  skip:z.coerce.number().int().min(0).max(100000).default(0)
+}).strict();
 const grant=z.object({
   benefitId:uuid,beneficiaryId:uuid,effectKey:z.string().regex(/^[A-Za-z0-9:_-]{8,128}$/),
   reason:z.string().trim().min(10).max(500),
@@ -32,10 +37,19 @@ const grant=z.object({
   locationId:uuid.nullish()
 }).strict();
 router.get('/benefits',asyncHandler(async(req,res)=>{
+  const pagination=rightsPagination.parse(req.query);
+  // The benefit catalogue is tenant-scoped. A sentinel record detects an
+  // additional page without changing the array response contract.
   const rows=await prisma.benefitDefinition.findMany({
-    where:{tenantId:ctx(req).tenantId},orderBy:{createdAt:'desc'},take:100
+    where:{tenantId:ctx(req).tenantId},
+    orderBy:[{createdAt:'desc'},{id:'asc'}],
+    skip:pagination.skip,take:pagination.take+1
   });
-  ok(res,rows);
+  const page=customerRightsPage(rows,pagination);
+  res.setHeader('Cache-Control','private, no-store');
+  res.setHeader('X-Pagination-Has-More',page.hasMore?'true':'false');
+  if(page.nextSkip!==null)res.setHeader('X-Pagination-Next-Skip',String(page.nextSkip));
+  ok(res,page.items);
 }));
 router.post('/benefits',validateBody(create),asyncHandler(async(req,res)=>{
   ok(res,await createBenefit(ctx(req),req.body),201);
@@ -53,8 +67,13 @@ router.post('/manual-grants',validateBody(grant),asyncHandler(async(req,res)=>{
 router.get('/clients/:id',asyncHandler(async(req,res)=>{
   const id=uuid.safeParse(req.params.id);
   if(!id.success)throw new HttpError(422,'Identificador de beneficiario inválido.');
+  const pagination=rightsPagination.parse(req.query);
+  const page=await readCustomerRightsPage(ctx(req),id.data,pagination);
   res.setHeader('Cache-Control','private, no-store');
-  ok(res,await readCustomerRights(ctx(req),id.data));
+  res.setHeader('X-Pagination-Has-More',page.hasMore?'true':'false');
+  if(page.nextSkip!==null)res.setHeader('X-Pagination-Next-Skip',String(page.nextSkip));
+  // Existing response contract stays an array; page metadata is in headers.
+  ok(res,page.items);
 }));
 // No consume/refund endpoint. #852 writes must be atomic with #848 booking +
 // #637 finance and must revalidate ledger sequence inside one SQL transaction.

@@ -18,12 +18,28 @@ router.use(requireTenant, requirePermission('admin.manage'));
 
 const importTypeSchema = z.enum(['clients','suppliers','inventory','accounts','payroll']);
 const duplicatePolicySchema = z.enum(['update','skip','error']);
+// Uploaded files are mapped to flat scalar rows, never nested JSON documents.
+// Bound width, key length and cell size *before* staging, checksum recursion or
+// any DB query. JSON prototype keys are not meaningful import column names.
+const importRowSchema = z.custom<Record<string, unknown>>((value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const columns = Object.entries(value);
+  if (columns.length > 64) return false;
+  return columns.every(([key, cell]) =>
+    key.length > 0 && key.length <= 120 &&
+    !/^(?:__proto__|prototype|constructor)$/.test(key) &&
+    !/[\u0000-\u001f\u007f]/u.test(key) &&
+    (cell === null || typeof cell === 'boolean' ||
+      (typeof cell === 'number' && Number.isFinite(cell)) ||
+      (typeof cell === 'string' && cell.length <= 2_000))
+  );
+}, 'Cada fila debe tener hasta 64 columnas de texto o números simples, sin datos anidados.');
 const previewSchema = z.object({
   type: importTypeSchema,
   filename: z.string().trim().max(180).optional(),
   templateVersion: z.literal('v1').default('v1'),
   duplicatePolicy: duplicatePolicySchema.default('error'),
-  rows: z.array(z.record(z.string(), z.unknown())).min(1).max(5000)
+  rows: z.array(importRowSchema).min(1).max(5000)
 }).strict();
 const commitSchema = z.object({ confirm: z.literal(true), checksum: z.string().regex(/^[a-f0-9]{64}$/) }).strict();
 
@@ -193,8 +209,12 @@ router.post('/preview', validateBody(previewSchema), asyncHandler(async(req,res)
   const digest=checksum(input.type,input.templateVersion,rows.map((row)=>({key:row.key,action:row.action,normalized:row.normalized,errors:row.errors})));
   const accepted=rows.filter((row)=>row.action!=='error').length;const rejected=rows.length-accepted;
   const payload:BatchPayload={version:1,templateVersion:input.templateVersion,checksum:digest,duplicatePolicy:input.duplicatePolicy,filename:sanitizedFilename(input.filename),createdBy:ctx.userId||null,rows,counts:{total:rows.length,valid:accepted,invalid:rejected,created:0,updated:0,skipped:rows.filter((r)=>r.action==='skip').length}};
-  const batch=await prisma.importBatch.create({data:{tenantId:ctx.tenantId,userId:ctx.userId||null,type:input.type,filename:sanitizedFilename(input.filename),accepted,rejected,status:rejected?'invalid':'validated',payload:payload as any}});
-  await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'import.dry-run',entity:'ImportBatch',entityId:batch.id,after:{type:input.type,status:batch.status,checksum:digest,counts:payload.counts,duplicatePolicy:input.duplicatePolicy},ipAddress:ctx.ip,userAgent:ctx.userAgent});
+  const batch=await prisma.$transaction(async(tx)=>{
+    const created=await tx.importBatch.create({data:{tenantId:ctx.tenantId,userId:ctx.userId||null,type:input.type,filename:sanitizedFilename(input.filename),accepted,rejected,status:rejected?'invalid':'validated',payload:payload as any}});
+    // A failed audit must roll back the staging batch, not leave an untracked import.
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'import.dry-run',entity:'ImportBatch',entityId:created.id,after:{type:input.type,status:created.status,checksum:digest,counts:payload.counts,duplicatePolicy:input.duplicatePolicy},ipAddress:ctx.ip,userAgent:ctx.userAgent},tx);
+    return created;
+  });
   ok(res,publicBatch(batch));
 }));
 
@@ -215,10 +235,11 @@ router.post('/:id/commit', validateBody(commitSchema), asyncHandler(async(req,re
     for(const row of payload.rows){const result=await applyRow(tx,batch.type as ImportType,ctx.tenantId,row);if(result.status==='created')created++;else if(result.status==='updated')updated++;else skipped++;report.push({index:row.index,key:row.key,action:row.action,status:result.status,errors:[],entityId:result.entityId});}
     const finalPayload:BatchPayload={...payload,rows:undefined,report,counts:{...payload.counts,created,updated,skipped},completedAt:new Date().toISOString()};
     const completed=await tx.importBatch.update({where:{id:batch.id},data:{status:'completed',payload:finalPayload as any}});
-    return {data:publicBatch(completed),resourceType:'ImportBatch',resourceId:batch.id};
+    const committed=publicBatch(completed);
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'import.commit',entity:'ImportBatch',entityId:completed.id,after:{type:committed.type,status:committed.status,checksum:committed.checksum,counts:committed.counts},ipAddress:ctx.ip,userAgent:ctx.userAgent},tx);
+    return {data:committed,resourceType:'ImportBatch',resourceId:batch.id};
   });
   res.setHeader('Idempotency-Replayed',execution.replayed?'true':'false');
-  if(!execution.replayed){const data=execution.data as any;await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'import.commit',entity:'ImportBatch',entityId:data.id,after:{type:data.type,status:data.status,checksum:data.checksum,counts:data.counts},ipAddress:ctx.ip,userAgent:ctx.userAgent});}
   ok(res,execution.data,execution.responseCode);
 }));
 

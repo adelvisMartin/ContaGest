@@ -9,10 +9,16 @@ import { writeAudit } from '../../shared/services/audit.service.js';
 import { buildClinicalExport } from '../clinical-privacy/clinical-privacy.service.js';
 import { buildXlsxWorkbook, XlsxLimitError } from './xlsx-writer.js';
 import { prisma } from '../../database/prisma.js';
-import { masterExportPayload, type MasterExportEntity, type MasterExportFormat } from './master-export.js';
+import { encodeMasterExportCsvCell, masterExportPayload, type MasterExportEntity, type MasterExportFormat } from './master-export.js';
 
 const router = Router();
 router.use(requireTenant);
+router.use((_req, res, next) => {
+  // Export payloads may contain tenant, clinical or financial data.
+  res.setHeader('cache-control', 'no-store, max-age=0');
+  res.setHeader('x-content-type-options', 'nosniff');
+  next();
+});
 const exportSchema = z.object({ filename: z.string().default('contagest-export'), rows: z.array(z.record(z.string(), z.unknown())).default([]), title: z.string().default('ContaGest-VE Export') });
 const sheetSchema = z.object({ name: z.string().default('Datos'), rows: z.array(z.record(z.string(), z.unknown())).default([]) });
 const xlsxSchema = z.object({ filename: z.string().default('contagest-export'), title: z.string().default('ContaGest-VE Export'), sheets: z.array(sheetSchema).default([]) });
@@ -29,12 +35,7 @@ function safeDownloadBaseName(value: unknown, fallback: string) {
   return normalized || fallback;
 }
 
-function spreadsheetSafeText(value: unknown) {
-  if (typeof value !== 'string') return String(value ?? '');
-  return /^[\s\u0000-\u001F]*[=+\-@]/.test(value) ? `'${value}` : value;
-}
-
-const escapeCsv = (value: unknown) => `"${spreadsheetSafeText(value).replaceAll('"', '""')}"`;
+const escapeCsv = encodeMasterExportCsvCell;
 function headersFromRows(rows: Record<string, unknown>[]) { return Array.from(new Set(rows.flatMap((r) => Object.keys(r)))); }
 
 router.post('/clinical-record', requirePermission('health.manage'), validateBody(clinicalExportSchema), asyncHandler(async (req, res) => {

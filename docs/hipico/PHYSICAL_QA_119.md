@@ -66,6 +66,8 @@ No guardar QR, cookies, tokens, números personales, chats completos ni identifi
 
 - `observedAtUtc` para ambos escenarios, en formato ISO UTC canónico `YYYY-MM-DDTHH:mm:ss.sssZ`, nunca fecha futura;
 - jornada 2 posterior a jornada 1 con separación **mínima de 24 horas**;
+- el campo `startedAt` del registrador se fija al ejecutar `init` **antes** de la primera observación; la jornada 1 no puede preceder a ese inicio, y la jornada 2 no puede ocurrir después del `completedAt` declarado (si existe). Inicio/final deben ser UTC ISO canónico y no futuro;
+- `physical-qa-evidence.json` publica también `startedAt`; el verificador de release valida independientemente que ambas jornadas estén dentro del intervalo real del run. Los artefactos históricos sin esa relación temporal no autorizan nuevos releases exact-SHA. No editar `startedAt` para fabricar una ventana: reiniciar el gate con un `init` auténtico y evidencia nueva.
 - evidencia material con **huellas SHA-256 diferentes** en ambos días. Copiar el mismo video bajo otro nombre no acredita dos jornadas;
 - todas las demás exigencias habituales: operador, identidades hash SOURCE/LAB separadas, tres modos, escenario completo, APK versión/hash, SHA candidato vigente, y no saltarse los bloqueos de política #1011.
 

@@ -16,9 +16,9 @@ export function assertComplianceTransition(
   current: string, action: ComplianceAction, actor: string, evidence: Readonly<Record<string, unknown>>,
   clock: Date = new Date(),
 ) {
-  if (!actor || typeof actor !== 'string' || !transitions[action] ||
+  if (typeof actor !== 'string' || !actor.trim() || actor.trim() !== actor || !transitions[action] ||
       !evidence || typeof evidence !== 'object' || Array.isArray(evidence) ||
-      !Number.isFinite(clock.getTime()) ||
+      !(clock instanceof Date) || !Number.isFinite(clock.getTime()) ||
       current !== transitions[action].from) reject();
   const fields: Record<ComplianceAction, readonly string[]> = {
     REVIEW: ['legalSourceId', 'legalSourceHash', 'reason'],
@@ -29,6 +29,7 @@ export function assertComplianceTransition(
   const keys = fields[action];
   if (Object.keys(evidence).sort().join('|') !== [...keys].sort().join('|') ||
       keys.some(k => typeof evidence[k] !== 'string' || !(evidence[k] as string).trim() ||
+        (evidence[k] as string).trim() !== evidence[k] ||
         (evidence[k] as string).length > 240)) reject();
   if (action === 'REVIEW' && (!SHA.test(evidence.legalSourceHash as string) ||
       (evidence.reason as string).length < 15)) reject();

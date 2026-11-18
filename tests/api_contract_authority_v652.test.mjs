@@ -67,9 +67,9 @@ test('source projection follows app mounts, module manifest, CRUD generation, RB
   const sources = {
     'backend/src/app.ts': `import apiRoutes from './modules/index.js'; import authRoutes from './modules/auth/auth.routes.js'; import { registerHealthRoutes } from './shared/observability/health.js'; const app:any={}; registerHealthRoutes(app); app.use('/api/v1/auth', authRoutes); app.use('/api/v1', apiRoutes);`,
     'backend/src/modules/index.ts': `import { mountModuleRouteManifest } from './route-manifest.js'; const router:any={}; mountModuleRouteManifest(router); router.get('/health/db', requireTenant, (_q:any,r:any)=>r.json({ok:true,data:{}})); export default router;`,
-    'backend/src/modules/route-manifest.ts': `import authzRoutes from './custom/custom.routes.js'; export const MODULE_ROUTE_MANIFEST=[\n{ id: 'clients', domain: 'commercial', path: '/clients', router: createCrudRouter({ model:'client', entity:'client', permission:'clients.manage', schema:clientSchema }) },\n{ id: 'custom', domain: 'platform', path: '/custom', router: authzRoutes },\n];`,
+    'backend/src/modules/route-manifest.ts': `import { clientSchema } from './schemas.js'; import authzRoutes from './custom/custom.routes.js'; export const MODULE_ROUTE_MANIFEST=[\n{ id: 'clients', domain: 'commercial', path: '/clients', router: createCrudRouter({ model:'client', entity:'client', permission:'clients.manage', schema:clientSchema }) },\n{ id: 'custom', domain: 'platform', path: '/custom', router: authzRoutes },\n];`,
     'backend/src/modules/custom/custom.routes.ts': `const router:any={}; router.use(requireTenant, requirePermission('custom.read')); router.get('/:id', (_q:any,r:any)=>r.status(200).json({ok:true,data:{},meta:{}})); export default router;`,
-    'backend/src/modules/auth/auth.routes.ts': `const router:any={}; router.post('/login', validateBody(loginSchema), (_q:any,r:any)=>r.status(200).json({ok:true,data:{},meta:{}})); export default router;`,
+    'backend/src/modules/auth/auth.routes.ts': `import { loginSchema } from '../schemas.js'; const router:any={}; router.post('/login', validateBody(loginSchema), (_q:any,r:any)=>r.status(200).json({ok:true,data:{},meta:{}})); export default router;`,
     'backend/src/shared/observability/health.ts': `export function registerHealthRoutes(app:any){ app.get('/health/live',(_q:any,r:any)=>r.status(200).json({ok:true})); app.get('/health',(_q:any,r:any)=>r.status(200).json({ok:true})); }`,
     'backend/src/shared/http.ts': `export const ok=(res:any,data:any,meta={})=>res.status(200).json({ ok: true, data, meta });`,
     'backend/src/shared/middleware/error.ts': `return res.json(buildErrorEnvelope(normalized, context));`,
@@ -92,6 +92,20 @@ test('source projection follows app mounts, module manifest, CRUD generation, RB
   assert.equal(contract.conventions.pagination.takeMax, 500);
   assert.equal(contract.conventions.correlationHeader, 'x-correlation-id');
   assert.ok(contract.conventions.errorEnvelope.required.includes('detail'));
+  // #652 must not confuse an unrelated vertical addition with an API break.
+  const before=buildApiContract(reader);
+  sources['backend/src/modules/verticals/unrelated.schemas.ts'] =
+    'export const newVerticalSchema=z.object({newValue:z.string()});';
+  files.push('backend/src/modules/verticals/unrelated.schemas.ts');
+  const unrelated=buildApiContract(reader);
+  assert.deepEqual(compareApiContracts(before,unrelated).breaking,[]);
+  const loginBefore=before.routes.find((item)=>item.path==='/api/v1/auth/login').request.bodySchema;
+  const loginAfter=unrelated.routes.find((item)=>item.path==='/api/v1/auth/login').request.bodySchema;
+  assert.equal(loginAfter,loginBefore);
+  sources['backend/src/modules/schemas.ts'] =
+    'export const clientSchema=z.object({name:z.string()}); export const loginSchema=z.object({email:z.string().email().min(8)});';
+  const changed=buildApiContract(reader);
+  assert.match(compareApiContracts(before,changed).breaking.join('\n'),/REQUEST_SCHEMA_CHANGED:POST \/api\/v1\/auth\/login/);
 });
 
 test('the composed client router contributes CRUD and scoped CRM preflight to the source contract', () => {

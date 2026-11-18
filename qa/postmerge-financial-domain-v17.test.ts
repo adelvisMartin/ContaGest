@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
-import { prepareQaSemanticPosting } from './support/semantic-posting-fixture.ts';
+import { prepareQaSemanticPosting, prepareQaManualPostingAccounts } from './support/semantic-posting-fixture.ts';
 
 const RUN=`QA58FIN-${Date.now().toString(36).toUpperCase()}`;
 const OPEN_PERIOD='2097-07';
@@ -21,6 +21,7 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
     await h.prisma.bankMovement.deleteMany({where:{id:{in:ids.bankMovements}}}).catch(()=>undefined);
     await h.prisma.bankAccount.deleteMany({where:{id:{in:ids.bankAccounts}}}).catch(()=>undefined);
     await h.prisma.ledgerEntry.deleteMany({where:{OR:[{id:{in:ids.ledgers}},{sourceId:{startsWith:RUN}}]}}).catch(()=>undefined);
+    await h.prisma.chartAccount.deleteMany({where:{tenantId:h.tenant.id,code:{in:[`${RUN}.D`,`${RUN}.C`]}}}).catch(()=>undefined);
     await h.prisma.salesInvoice.deleteMany({where:{id:{in:ids.sales}}}).catch(()=>undefined);
     await h.prisma.purchaseInvoice.deleteMany({where:{id:{in:ids.purchases}}}).catch(()=>undefined);
     await h.prisma.closingPeriod.deleteMany({where:{id:{in:ids.closing}}}).catch(()=>undefined);
@@ -28,6 +29,10 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
   });
 
   await prepareQaSemanticPosting(h);
+  await prepareQaManualPostingAccounts(h, [
+    { code: `${RUN}.D`, nature: 'debit' },
+    { code: `${RUN}.C`, nature: 'credit' },
+  ]);
 
   await t.test('contabilidad: balanced draft persists, explicit post publishes it; unbalanced entry is rejected',async()=>{
     const entry=await h.ok('/accounting/entries',{method:'POST',body:JSON.stringify({fiscalPeriod:OPEN_PERIOD,description:`${RUN} asiento balanceado`,source:'manual',lines:[{accountCode:`${RUN}.D`,accountName:'QA Débito',debit:100,credit:0},{accountCode:`${RUN}.C`,accountName:'QA Crédito',debit:0,credit:100}]})});
@@ -110,7 +115,7 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
   });
 
   await t.test('bancos: movement updates balance, reconcile protects deletion, cleanup restores balance',async()=>{
-    const account=await h.ok('/bank-accounts',{method:'POST',body:JSON.stringify({bankName:`${RUN} Banco`,accountNo:`${RUN}-ACCT`,currency:'USD',balance:100})});ids.bankAccounts.push(account.id);
+    const account=await h.ok('/bank-accounts',{method:'POST',body:JSON.stringify({bankName:`${RUN} Banco`,accountNo:`${RUN}-ACCT`,currency:'USD',openingBalance:100})});ids.bankAccounts.push(account.id);
     const movement=await h.ok('/banking/movements',{method:'POST',body:JSON.stringify({accountId:account.id,description:`${RUN} ingreso`,reference:RUN,type:'income',currency:'USD',amount:35.5})});ids.bankMovements.push(movement.id);
     assert.equal(movement.type,'income');assert.equal(num(movement.amount),35.5);
     let storedAccount=await h.prisma.bankAccount.findUnique({where:{id:account.id}});assert.equal(num(storedAccount?.balance),135.5,'Bank balance did not increment');

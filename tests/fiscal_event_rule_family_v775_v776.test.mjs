@@ -6,3 +6,9 @@ test('#775 accepted IVA rule and strict UTC period',()=>{assert.doesNotThrow(()=
 test('#775 fail closed for wrong tax family, unreviewed selector shape, missing timestamp',()=>{bad({module:'islr'});bad({module:'retiva',ruleKeys:['iva.general']});bad({ruleKeys:['custom.general']});bad({ruleKeys:['iva.general','iva.general']});bad({explicitEffectiveAt:false});});
 test('#775 event period and date cannot diverge',()=>{bad({period:'2099-07'});bad({effectiveAt:new Date('invalid')});bad({period:'2099-13'});});
 test('#776 withholding must carry a retention rule',()=>{bad({kind:'withholding'});assert.doesNotThrow(()=>assertFiscalDocumentRuleFamily({...valid,module:'islr',kind:'withholding',ruleKeys:['islr.services']}));});
+test('#776/#778 ISLR and IGTF documents cannot mix unrelated fiscal rule families',()=>{
+  bad({module:'islr',kind:'withholding',ruleKeys:['islr.services','igtf.payment']});
+  bad({module:'islr',kind:'withholding',ruleKeys:['islr.services','iva.general']});
+  bad({module:'igtf',kind:'invoice',ruleKeys:['igtf.payment','islr.services']});
+  assert.doesNotThrow(()=>assertFiscalDocumentRuleFamily({...valid,module:'igtf',ruleKeys:['igtf.payment']}));
+});

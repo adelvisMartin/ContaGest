@@ -25,11 +25,11 @@ test('genuine producer-shaped stream matches counts, peaks and cumulative counte
   assert.equal(check(base), true);
 });
 test('recomputed hash cannot disguise a failed health probe or missing probe', () => {
-  assert.equal(check([base[0], row(1, { health: { ok: false, status: 503, latencyMs: 5 } }), base[2]]), false);
+  assert.equal(check([base[0], row(1, { health: { ok: false, status: 503, reason: 'HEALTH_HTTP_FAILURE', latencyMs: 5 } }), base[2]]), false);
   assert.equal(check([base[0], row(1, { health: null }), base[2]]), false);
 });
 test('a documented health failure matches only honest summary accounting', () => {
-  assert.equal(check([base[0], row(1, { health: { ok: false, status: 503, latencyMs: 5 } }), base[2]],
+  assert.equal(check([base[0], row(1, { health: { ok: false, status: 503, reason: 'HEALTH_HTTP_FAILURE', latencyMs: 5 } }), base[2]],
     { ...summary, healthFailures: 1 }), true);
 });
 test('recomputed hash cannot conceal spool outage, age or byte spike', () => {
@@ -53,4 +53,43 @@ test('empty series, absent summary fields or wrong row count never pass', () => 
   assert.equal(check([]), false);
   assert.equal(check(base, { ...summary, samples: 2 }), false);
   assert.equal(check(base, { ...summary, spoolChecks: undefined }), false);
+});
+
+test('#120 a healthy result must be a 2xx READY_SHADOW observation',()=>{
+  assert.equal(check([base[0],row(1,{health:{
+    ok:true,status:503,reason:'HEALTH_HTTP_FAILURE',latencyMs:5
+  }}),base[2]]),false);
+  assert.equal(check([base[0],row(1,{health:{
+    ok:true,status:200,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5
+  }}),base[2]]),false);
+  assert.equal(check([base[0],row(1,{health:{
+    ok:false,status:200,reason:'READY_SHADOW',latencyMs:5
+  }}),base[2]],{...summary,healthFailures:1}),false);
+  assert.equal(check([base[0],row(1,{health:{
+    ok:false,status:503,reason:'HEALTH_HTTP_FAILURE',latencyMs:5
+  }}),base[2]],{...summary,healthFailures:1}),true);
+});
+
+test('#120 health evidence must match actual classified reason, status and success flags',()=>{
+  const valid={...base[1].health};
+  const attempts=[
+    {ok:true,status:200,latencyMs:5},
+    {...valid,reason:'UNKNOWN'},
+    {...valid,reason:'HEALTH_BODY_INVALID'},
+    {ok:false,status:200,reason:'HEALTH_HTTP_FAILURE',latencyMs:5},
+    {ok:false,status:503,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5},
+    {ok:false,status:503,reason:'HEALTH_REQUEST_FAILED',latencyMs:5},
+    {ok:false,status:0,reason:'HEALTH_HTTP_FAILURE',latencyMs:5},
+    {ok:false,status:0,reason:'READY_SHADOW',latencyMs:5},
+  ];
+  for(const health of attempts)assert.equal(check([base[0],row(1,{health}),base[2]],
+    {...summary,healthFailures:health.ok?0:1}),false,JSON.stringify(health));
+  const legitimate=[
+    {ok:false,status:503,reason:'HEALTH_HTTP_FAILURE',latencyMs:5},
+    {ok:false,status:0,reason:'HEALTH_REQUEST_FAILED',latencyMs:5},
+    {ok:false,status:200,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5},
+    {ok:false,status:200,reason:'HEALTH_MODE_MISMATCH',latencyMs:5}
+  ];
+  for(const health of legitimate)assert.equal(check([base[0],row(1,{health}),base[2]],
+    {...summary,healthFailures:1}),true,JSON.stringify(health));
 });

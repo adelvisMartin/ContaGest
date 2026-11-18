@@ -100,8 +100,8 @@ export function PeriodontalChartPanel({
 
   const siteColumns=[
     {key:'site',label:'Sitio',render:(row)=>PERIODONTAL_SITES.find((site)=>site.value===row.site)?.label||row.site},
-    {key:'probing',label:'Sondaje (mm)',render:(row)=><CgTextField size="small" type="number" value={row.probingDepthMm} inputProps={{min:0,max:15,step:1,'aria-label':`Sondaje ${row.site}`}} onChange={(e)=>updateSite(row.site,{probingDepthMm:e.target.value})} sx={{minWidth:105}}/>},
-    {key:'margin',label:'Margen gingival (mm)',render:(row)=><CgTextField size="small" type="number" value={row.gingivalMarginMm} inputProps={{min:-10,max:20,step:1,'aria-label':`Margen gingival ${row.site}`}} onChange={(e)=>updateSite(row.site,{gingivalMarginMm:e.target.value})} sx={{minWidth:120}}/>},
+    {key:'probing',label:'Sondaje (mm)',render:(row)=><CgTextField size="small" type="number" label={`Sondaje ${row.site} (mm)`} value={row.probingDepthMm} inputProps={{min:0,max:15,step:1}} onChange={(e)=>updateSite(row.site,{probingDepthMm:e.target.value})} sx={{minWidth:165}}/>},
+    {key:'margin',label:'Margen gingival (mm)',render:(row)=><CgTextField size="small" type="number" label={`Margen gingival ${row.site} (mm)`} value={row.gingivalMarginMm} inputProps={{min:-10,max:20,step:1}} onChange={(e)=>updateSite(row.site,{gingivalMarginMm:e.target.value})} sx={{minWidth:205}}/>},
     {key:'bleeding',label:'Sangrado',render:(row)=><CgButton type="button" size="small" variant={row.bleeding?'contained':'outlined'} aria-pressed={row.bleeding} onClick={()=>updateSite(row.site,{bleeding:!row.bleeding})} sx={{minHeight:44}}>BOP</CgButton>},
     {key:'suppuration',label:'Supuración',render:(row)=><CgButton type="button" size="small" variant={row.suppuration?'contained':'outlined'} aria-pressed={row.suppuration} onClick={()=>updateSite(row.site,{suppuration:!row.suppuration})} sx={{minHeight:44}}>SUP</CgButton>},
     {key:'plaque',label:'Placa',render:(row)=><CgButton type="button" size="small" variant={row.plaque?'contained':'outlined'} aria-pressed={row.plaque} onClick={()=>updateSite(row.site,{plaque:!row.plaque})} sx={{minHeight:44}}>PLQ</CgButton>}
