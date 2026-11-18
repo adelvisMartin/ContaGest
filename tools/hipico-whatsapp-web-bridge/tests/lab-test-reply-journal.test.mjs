@@ -159,23 +159,23 @@ test('live Bridge only acknowledges after durable confirmation and reconciles ou
 });
 
 test('LAB journal never follows a symlinked root or chmods its target',async()=>{
- if(process.platform==='win32')return; // Windows NTFS/ACL validation belongs to #119 physical QA.
+
  const f=await fixture();
  try{
   const outside=path.join(f.dir,'outside');
   await fs.mkdir(outside,{mode:0o755});
   await fs.chmod(outside,0o755);
-  await fs.symlink(outside,f.rootDir);
+  await fs.symlink(outside,f.rootDir,process.platform==='win32'?'junction':'dir');
   await assert.rejects(()=>f.journal.initialize(),/LAB_TEST_JOURNAL_ROOT_UNSAFE/);
   await assert.rejects(()=>f.journal.prepare('message-id'),/LAB_TEST_JOURNAL_ROOT_UNSAFE/);
   await assert.rejects(()=>f.journal.read('message-id'),/LAB_TEST_JOURNAL_ROOT_UNSAFE/);
-  assert.equal((await fs.stat(outside)).mode&0o777,0o755);
+  if(process.platform!=='win32')assert.equal((await fs.stat(outside)).mode&0o777,0o755);
   assert.deepEqual(await fs.readdir(outside),[]);
  }finally{await f.clean();}
 });
 
 test('LAB ACK record symlinks and root replacements are never valid journal authority',async()=>{
- if(process.platform==='win32')return; // Windows NTFS/ACL validation belongs to #119 physical QA.
+
  const f=await fixture();
  try{
   const id='safe-synthetic-message';
@@ -184,7 +184,7 @@ test('LAB ACK record symlinks and root replacements are never valid journal auth
   const outside=path.join(f.dir,'outside.json');
   await fs.writeFile(outside,JSON.stringify(record.record));
   await fs.rm(pathOnDisk);
-  await fs.symlink(outside,pathOnDisk);
+  await fs.symlink(outside,pathOnDisk,'file');
   await assert.rejects(()=>f.journal.read(id),/LAB_TEST_JOURNAL_RECORD_INVALID/);
   await assert.rejects(()=>f.journal.prepare(id),/LAB_TEST_JOURNAL_RECORD_INVALID/);
   await assert.rejects(()=>f.make().initialize(),/LAB_TEST_JOURNAL_RECORD_INVALID/);
