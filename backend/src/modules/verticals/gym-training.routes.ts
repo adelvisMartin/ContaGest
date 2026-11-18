@@ -86,11 +86,14 @@ router.post('/gym/exercises', requirePermission('gym.manage'), asyncHandler(asyn
   const tenantId=ctx(req).tenantId;
   const b=exerciseLibrarySchema.parse(req.body||{});
   const created=await prisma.$transaction(async tx=>{
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
-      'gym-exercise-name:'+tenantId+':'+b.name.trim().toLowerCase());
+    // The lock and duplicate predicate use identical PostgreSQL case/trim
+    // semantics. JS and DB Unicode case-folding must not diverge in a race.
+    await tx.$queryRawUnsafe(
+      "SELECT pg_advisory_xact_lock(hashtextextended('gym-exercise-name:'||$1||':'||lower(btrim($2)),0))::text AS locked",
+      tenantId,b.name);
     const existing=await tx.$queryRawUnsafe<any[]>(`
     SELECT "id" FROM public."GymExercise"
-    WHERE "tenantId"=$1 AND lower("name")=lower($2)
+    WHERE "tenantId"=$1 AND lower(btrim("name"))=lower(btrim($2))
     LIMIT 1
   `,tenantId,b.name);
   if(existing.length)throw new HttpError(409,'Ya existe un ejercicio con ese nombre.');
@@ -113,11 +116,14 @@ router.patch('/gym/exercises/:id', requirePermission('gym.manage'), asyncHandler
   const b=exerciseLibraryPatchSchema.parse(req.body||{});
   const updated=await prisma.$transaction(async tx=>{
   if(b.name){
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
-      'gym-exercise-name:'+tenantId+':'+b.name.trim().toLowerCase());
+    // The lock and duplicate predicate use identical PostgreSQL case/trim
+    // semantics. JS and DB Unicode case-folding must not diverge in a race.
+    await tx.$queryRawUnsafe(
+      "SELECT pg_advisory_xact_lock(hashtextextended('gym-exercise-name:'||$1||':'||lower(btrim($2)),0))::text AS locked",
+      tenantId,b.name);
     const duplicate=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymExercise"
-      WHERE "tenantId"=$1 AND lower("name")=lower($2) AND "id"<>$3
+      WHERE "tenantId"=$1 AND lower(btrim("name"))=lower(btrim($2)) AND "id"<>$3
       LIMIT 1
     `,tenantId,b.name,String(req.params.id));
     if(duplicate.length)throw new HttpError(409,'Ya existe otro ejercicio con ese nombre.');
@@ -125,7 +131,7 @@ router.patch('/gym/exercises/:id', requirePermission('gym.manage'), asyncHandler
   const currentRows=await tx.$queryRawUnsafe<any[]>(`
     SELECT * FROM public."GymExercise"
     WHERE "tenantId"=$1 AND "id"=$2
-    LIMIT 1
+    FOR UPDATE
   `,tenantId,String(req.params.id));
   const current=one(currentRows,'Ejercicio no encontrado.');
   const next={...current,...b};
