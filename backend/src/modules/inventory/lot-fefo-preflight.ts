@@ -7,7 +7,7 @@ const DEC=/^(?:0|[1-9]\d{0,14})(?:\.(\d{1,6}))?$/;
 const ID=/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 function units(x:string){if(typeof x!=='string'||!DEC.test(x))throw new TypeError('FEFO_DECIMAL_INVALID');const [integer,fraction='']=x.split('.');return BigInt(integer)*1000000n+BigInt(fraction.padEnd(6,'0'));}
 function exact(u:bigint){const whole=u/1000000n,rest=(u%1000000n).toString().padStart(6,'0').replace(/0+$/,'');return `${whole}${rest?'.'+rest:''}`;}
-function isoDate(s:string){if(!DATE.test(s)||Number.isNaN(Date.parse(s+'T00:00:00.000Z'))||new Date(s+'T00:00:00.000Z').toISOString().slice(0,10)!==s)throw new TypeError('FEFO_DATE_INVALID');}
+function isoDate(s:string){if(typeof s!=='string'||!DATE.test(s)||Number.isNaN(Date.parse(s+'T00:00:00.000Z'))||new Date(s+'T00:00:00.000Z').toISOString().slice(0,10)!==s)throw new TypeError('FEFO_DATE_INVALID');}
 export function prepareFefoAllocation(input:{tenantId:string;productId:string;locationId:string;requestedExact:string;asOfDate:string;lots:ReadonlyArray<FefoLot>}) {
  if(!input||!Array.isArray(input.lots)||input.lots.length>5000)throw new TypeError('FEFO_INPUT_INVALID');
  for(const v of [input.tenantId,input.productId,input.locationId])if(typeof v!=='string'||!ID.test(v))throw new TypeError('FEFO_SCOPE_INVALID');
