@@ -114,7 +114,7 @@ test('unverified or malformed LAB handoff state never authorizes a replay',()=>{
   for(const forged of [undefined,{}, {ownership:'unknown'}, {ownership:'human'},
     {ownership:new String('bot')}, false]){
     const result=verifyLabResponseRecovery(params({currentHandoff:forged}));
-    assert.equal(result.recovered,false,'untrusted handoff: '+String(forged?.ownership));
+    assert.equal(result.recovered,false,'untrusted handoff: '+String(forged));
     assert.equal(result.reason,'LAB_RECOVERY_HUMAN_HANDOFF');
   }
 });
