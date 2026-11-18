@@ -20,7 +20,7 @@ test('#824 all appointment kinds honor caller-provided retry keys in the same lo
   assert.match(create,/WHERE "tenantId"=\$1\s+AND "schedulingMeta"->>'requestKey'=\$2 LIMIT 1/);
   assert.doesNotMatch(create,/if\(b\.type==='dentistry'&&requestKey\)/);
   assert.match(create,/previous\[0\]\.schedulingMeta\?\.requestFingerprint!==requestFingerprint/);
-  assert.match(create,/\.\.\.\(requestKey\?\{requestKey,requestFingerprint\}:\{\}\)/);
+  assert.match(create,/\.\.\.\(requestKey\s*\?\{requestKey,requestFingerprint\}:\{\}\)/);
   assert.match(create,/created\.replayed\?200:201/);
 });
 
