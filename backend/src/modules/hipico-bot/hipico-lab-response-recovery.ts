@@ -32,7 +32,9 @@ export function verifyLabResponseRecovery(input:{
   if(!Number.isFinite(age)||age<0||age>LAB_RECOVERY_WINDOW_MS){
     return{recovered:false,reason:'LAB_RECOVERY_STALE'};
   }
-  if(input.currentHandoff?.ownership==='human'){
+  // A missing record is represented by null by the canonical store.
+  // Unknown/undefined ownership is NOT proof that the bot owns the channel.
+  if(input.currentHandoff!==null && input.currentHandoff?.ownership!=='bot'){
     return{recovered:false,reason:'LAB_RECOVERY_HUMAN_HANDOFF'};
   }
   if(input.classification.risk!=='safe'||!SAFE_INTENTS.has(input.classification.intent)){
