@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
+import { authRateLimit } from '../../shared/middleware/security.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('admin.manage'));
@@ -85,7 +86,7 @@ router.get('/users', asyncHandler(async (req,res) => {
   ok(res, await serializeUsers(tenantId(req)));
 }));
 
-router.patch('/users/:userId', asyncHandler(async (req,res) => {
+router.patch('/users/:userId', authRateLimit, asyncHandler(async (req,res) => {
   const id = tenantId(req);
   const body = updateSchema.parse(req.body || {});
   const user = await prisma.userProfile.findFirst({
