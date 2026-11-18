@@ -41,3 +41,25 @@ test('#816 UI retains treatment key on network failure but rotates for a changed
   const error=ui.indexOf('}catch(cause){',send);
   assert.ok(send>0&&clear>send&&error>clear);
 });
+
+
+test('#816 internal idempotency keys remain stored but never enter clinical API projections',async()=>{
+  const {publicVeterinaryTreatmentValues}=await import(
+    '../backend/src/modules/verticals/veterinary-treatment-projection.mjs');
+  const original={
+    treatmentRequestKey:'private-operation-id',
+    treatmentRequestFingerprint:'private-payload-digest',
+    category:'medication',title:'Medication',details:{medication:'QA drug'}
+  };
+  const visible=publicVeterinaryTreatmentValues(original);
+  assert.deepEqual(visible,{category:'medication',title:'Medication',
+    details:{medication:'QA drug'}});
+  assert.equal(original.treatmentRequestKey,'private-operation-id',
+    'redaction must not break durable retry verification');
+  assert.deepEqual(publicVeterinaryTreatmentValues(null),{});
+  assert.deepEqual(publicVeterinaryTreatmentValues([]),{});
+  assert.match(routes,/\.\.\.publicVeterinaryTreatmentValues\(row\.values\)/);
+  assert.match(post,/values:publicVeterinaryTreatmentValues\(prior\.values\)/);
+  assert.match(post,/values:publicVeterinaryTreatmentValues\(values\)/);
+  assert.match(post,/treatmentRequestKey:body\.requestKey/);
+});
