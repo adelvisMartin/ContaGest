@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdtempSync,rmSync,mkdirSync,existsSync} from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {inspectHipicoRestoreTarget} from '../scripts/hipico-restore-target-policy-v842.mjs';
@@ -85,4 +87,49 @@ test('#842 source/restore collision is denied before decrypt, SQL, truncate and 
     assert.ok(collision<restore.indexOf(operation),
       'source/target collision must be denied before '+operation);
   }
+});
+
+
+test('#842 psql stdin quotes restored auth IDs and rejects malformed identities before SQL',()=>{
+  const loopStart=restore.indexOf('while IFS= read -r uuid; do');
+  const loopEnd=restore.indexOf('done < "$tmpdir/auth-user-ids.txt"',loopStart);
+  assert.ok(loopStart>=0&&loopEnd>loopStart);
+  const shell=restore.slice(loopStart,loopEnd+'done < "$tmpdir/auth-user-ids.txt"'.length);
+  assert.match(shell,/<<'SQL'/);
+  assert.match(shell,/:\x27user_id\x27::uuid/);
+  assert.doesNotMatch(shell,/psql[^\n]*\s-c\s/);
+  const dir=mkdtempSync(path.join(os.tmpdir(),'hipico-restore-auth-'));
+  try{
+    mkdirSync(path.join(dir,'bin'));
+    const executable=path.join(dir,'bin','psql');
+    writeFileSync(executable,[
+      '#!/bin/sh',
+      'printf "%s\\n" "$@" > "$QA_PSQL_ARGS"',
+      'cat > "$QA_PSQL_STDIN"'
+    ].join('\n')+'\n',{mode:0o700});
+    const sample='11111111-1111-4111-8111-111111111111';
+    const dataFile=path.join(dir,'auth-user-ids.txt');
+    const argsFile=path.join(dir,'args.txt');
+    const stdinFile=path.join(dir,'stdin.sql');
+    const env={...process.env,PATH:path.join(dir,'bin')+path.delimiter+process.env.PATH,
+      HIPICO_RESTORE_DATABASE_URL:'postgresql://test:password@127.0.0.1:5432/qa_restore',
+      QA_PSQL_ARGS:argsFile,QA_PSQL_STDIN:stdinFile};
+    writeFileSync(dataFile,sample+'\n');
+    const valid=spawnSync('bash',['-c','set -Eeuo pipefail\n'+shell],
+      {env:{...env,tmpdir:dir},encoding:'utf8'});
+    assert.equal(valid.status,0,valid.stderr);
+    const args=readFileSync(argsFile,'utf8');
+    const sql=readFileSync(stdinFile,'utf8');
+    assert.match(args,/user_id=11111111-1111-4111-8111-111111111111/);
+    assert.doesNotMatch(args,/^-c$/m);
+    assert.match(sql,/VALUES \(:\x27user_id\x27::uuid, :\x27user_id\x27 \|\| \x27@restore\.invalid\x27\)/);
+    rmSync(argsFile);
+    rmSync(stdinFile);
+    writeFileSync(dataFile,"11111111-1111-4111-8111-111111111111'); DROP TABLE auth.users;--\n");
+    const invalid=spawnSync('bash',['-c','set -Eeuo pipefail\n'+shell],
+      {env:{...env,tmpdir:dir},encoding:'utf8'});
+    assert.notEqual(invalid.status,0);
+    assert.match(invalid.stderr,/Invalid auth UUID/);
+    assert.equal(existsSync(argsFile),false,'invalid identity cannot reach psql');
+  }finally{rmSync(dir,{recursive:true,force:true});}
 });
