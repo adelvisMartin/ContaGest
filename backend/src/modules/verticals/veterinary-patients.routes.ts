@@ -40,21 +40,48 @@ router.get('/procedures', asyncHandler(async (req, res) => {
   const patientId = String(req.query.patientId || '');
   const rows = await prisma.$queryRawUnsafe<any[]>(`
     SELECT c.*,p."displayName" AS "patientName",pr."fullName" AS "professionalName"
-    FROM public."CareProcedure" c JOIN public."CarePatient" p ON p."id"=c."patientId" AND p."kind"='animal'
-    LEFT JOIN public."CareProfessional" pr ON pr."id"=c."professionalId"
-    WHERE c."tenantId"=$1 AND ($2='' OR c."patientId"=$2) ORDER BY COALESCE(c."performedAt",c."scheduledAt",c."createdAt") DESC LIMIT 1000
-  `, ctx(req).tenantId, patientId);
-  ok(res, rows);
-}));
-
-router.post('/procedures', asyncHandler(async (req, res) => {
+    FROM public."CareProcedure" c
+    JOIN public."CarePatient" p ON p."id"=c."patientId" AND p."tenantId"=c."tenantId" AND p."kind"='animal'
+    LEFT JOIN public."CareProfessional" pr ON pr."id"=c."professionalId" AND pr."tenantId"=c."tenantId"
+    WHERE c."tenantId"=$1 AND ($2='' OR c."patientId"=$2) ORDER BY COALESCE(c."performedAt",c."scheduledAt",c."createdAt") DESC LIMITrouter.post('/procedures', asyncHandler(async (req, res) => {
   const b = procedureSchema.parse(req.body || {});
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."CareProcedure" ("id","tenantId","patientId","encounterId","professionalId","name","kind","status","scheduledAt","performedAt","anesthesia","notes","outcome","createdAt","updatedAt")
-    SELECT gen_random_uuid()::text,$1,p."id",$3,$4,$5,$6,$7,$8::timestamptz,$9::timestamptz,$10,$11,$12,now(),now()
-    FROM public."CarePatient" p WHERE p."id"=$2 AND p."tenantId"=$1 AND p."kind"='animal' RETURNING *
-  `, ctx(req).tenantId, b.patientId, b.encounterId || null, b.professionalId || null, b.name, b.kind, b.status, b.scheduledAt || null, b.performedAt || null, b.anesthesia || null, b.notes || null, b.outcome || null);
-  ok(res, one(rows, 'Mascota no encontrada.'), 201);
+  const tenantId = ctx(req).tenantId;
+  const created = await prisma.$transaction(async(tx)=>{
+    const patients=await tx.$queryRawUnsafe<Array<{id:string}>>(`
+      SELECT "id" FROM public."CarePatient"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' AND "active"=true
+      FOR SHARE
+    `,tenantId,b.patientId);
+    if(patients.length!==1)throw new HttpError(404,'Mascota activa no encontrada.');
+    if(b.encounterId){
+      const encounters=await tx.$queryRawUnsafe<Array<{id:string}>>(`
+        SELECT "id" FROM public."CareEncounter"
+        WHERE "tenantId"=$1 AND "patientId"=$2 AND "id"=$3 FOR SHARE
+      `,tenantId,b.patientId,b.encounterId);
+      if(encounters.length!==1)
+        throw new HttpError(422,'El encuentro clínico no corresponde a esta mascota.');
+    }
+    if(b.professionalId){
+      const professionals=await tx.$queryRawUnsafe<Array<{id:string}>>(`
+        SELECT "id" FROM public."CareProfessional"
+        WHERE "tenantId"=$1 AND "id"=$2 FOR SHARE
+      `,tenantId,b.professionalId);
+      if(professionals.length!==1)
+        throw new HttpError(422,'Profesional ajeno a la empresa activa.');
+    }
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."CareProcedure"
+        ("id","tenantId","patientId","encounterId","professionalId",
+         "name","kind","status","scheduledAt","performedAt","anesthesia",
+         "notes","outcome","createdAt","updatedAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,
+              $8::timestamptz,$9::timestamptz,$10,$11,$12,now(),now())
+      RETURNING *
+    `,tenantId,b.patientId,b.encounterId||null,b.professionalId||null,b.name,
+      b.kind,b.status,b.scheduledAt||null,b.performedAt||null,b.anesthesia||null,
+      b.notes||null,b.outcome||null);
+    return one(rows);
+  });
+  ok(res,created,201);
 }));
-
 export default router;
