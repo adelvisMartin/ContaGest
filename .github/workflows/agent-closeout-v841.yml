@@ -8,6 +8,8 @@ on:
       - '.agents/agents/orchestrator.md'
       - '.agents/skills/contagest-erp-orchestrator/SKILL.md'
       - '.agents/context/AGENT_SYSTEM_V3.md'
+      - '.agents/context/WORK_QUEUE.json'
+      - 'tests/agent_context_plane_v2_contract.test.mjs'
       - 'scripts/agent-ticket-router.mjs'
       - 'scripts/agent-backlog-closeout.mjs'
       - 'scripts/agent-backlog-closeout-lib.mjs'
@@ -47,7 +49,7 @@ jobs:
           node --check scripts/agent-ticket-router.mjs
           node --check scripts/agent-backlog-closeout.mjs
           node --check scripts/agent-backlog-closeout-lib.mjs
-          node --test tests/agent_backlog_closeout_v1.test.mjs
+          node --test tests/agent_backlog_closeout_v1.test.mjs tests/agent_context_plane_v2_contract.test.mjs
       - name: Verify original agent skill contracts and pin policy
         run: node scripts/verify-agent-system-v3.mjs
       - name: Read-only live GitHub closeout snapshot
