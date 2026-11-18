@@ -16,7 +16,7 @@ const updateSchema = z.object({
   clearFailures: z.boolean().optional(),
   // Verified only in memory for this request. Never persist or audit this field.
   currentPassword: z.string().min(1).max(128).optional()
-}).strict().refine((body) => Boolean(body.status || body.roleId || body.newPassword || body.clearFailures), {
+}).refine((body) => Boolean(body.status || body.roleId || body.newPassword || body.clearFailures), {
   message: 'No se recibió ningún cambio.'
 });
 
