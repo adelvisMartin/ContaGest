@@ -46,18 +46,34 @@ router.get('/lab-orders', asyncHandler(async (req, res) => {
 router.post('/lab-orders', asyncHandler(async (req, res) => {
   const body = labOrderSchema.parse(req.body || {});
   const tenantId = ctx(req).tenantId;
-  const patientRows = await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' LIMIT 1`, tenantId, body.patientId);
-  if (!patientRows.length) throw new HttpError(404, 'Mascota no encontrada.');
-  if(body.professionalId){
-    const professionalRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,body.professionalId);
-    if(!professionalRows.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
-  }
-  if(body.encounterId){
-    const encounterRows=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareEncounter" WHERE "tenantId"=$1 AND "id"=$2 AND "patientId"=$3 LIMIT 1`,tenantId,body.encounterId,body.patientId);
-    if(!encounterRows.length)throw new HttpError(422,'El encuentro no pertenece a la mascota activa.');
-  }
   const orderNumber = referenceNumber('VET-LAB');
   const order = await prisma.$transaction(async (tx) => {
+    // Validate references under the same database transaction that creates
+    // the order and its ordered tests. FOR SHARE prevents concurrent edits
+    // or removal between object-level authorization and persistence.
+    const patients=await tx.$queryRawUnsafe<Array<{id:string}>>(`
+      SELECT "id" FROM public."CarePatient"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "kind"='animal' AND "active"=true
+      FOR SHARE
+    `,tenantId,body.patientId);
+    if(patients.length!==1)throw new HttpError(404,'Mascota activa no encontrada.');
+    if(body.encounterId){
+      const encounters=await tx.$queryRawUnsafe<Array<{id:string}>>(`
+        SELECT "id" FROM public."CareEncounter"
+        WHERE "tenantId"=$1 AND "patientId"=$2 AND "id"=$3
+        FOR SHARE
+      `,tenantId,body.patientId,body.encounterId);
+      if(encounters.length!==1)
+        throw new HttpError(422,'El encuentro no pertenece a la mascota activa.');
+    }
+    if(body.professionalId){
+      const professionals=await tx.$queryRawUnsafe<Array<{id:string}>>(`
+        SELECT "id" FROM public."CareProfessional"
+        WHERE "tenantId"=$1 AND "id"=$2 FOR SHARE
+      `,tenantId,body.professionalId);
+      if(professionals.length!==1)
+        throw new HttpError(422,'El profesional no pertenece al tenant activo.');
+    }
     const orderRows = await tx.$queryRawUnsafe<any[]>(`
       INSERT INTO public."CareLabOrder" ("id","tenantId","patientId","encounterId","professionalId","orderNumber","status","priority","laboratory","specimenType","fasting","notes","orderedAt","createdAt","updatedAt")
       VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,'ordered',$6,$7,$8,$9,$10,now(),now(),now()) RETURNING *
