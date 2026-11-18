@@ -74,6 +74,6 @@ test('#1312 privileged user mutations require the actor password on disposable P
     assert.equal(audit.length,1);
     assert.equal(audit[0].userId,h.admin.id);
     assert.equal(JSON.stringify(audit).includes(currentPassword),false,'Audit leaked step-up password');
-    assert.equal(audit[0].after?.status,'disabled');
+    assert.equal((audit[0].after as {status?:string}|null)?.status,'disabled');
   });
 });
