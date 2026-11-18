@@ -42,3 +42,27 @@ test('archivo binario y oversized se rechazan antes de parsear',()=>{
   assert.throws(()=>parseBankStatement({fileName:'x.csv',bytes:Buffer.from([1,0,2]),defaultCurrency:'VES'}),/binario\/corrupto/i);
   assert.throws(()=>parseBankStatement({fileName:'x.csv',bytes:Buffer.alloc(5*1024*1024+1,65),defaultCurrency:'VES'}),(error:any)=>error?.status===413||/5 MB/.test(error?.message));
 });
+
+
+test('CSV rejects ambiguous bank amount, date and metadata headers before import',()=>{
+  for(const [header,values] of [
+    ['date,amount,monto','2026-09-01,12.00,99.00'],
+    ['date,fecha,amount','2026-09-01,2026-09-02,12.00'],
+    ['date,amount,ref,referencia','2026-09-01,12.00,REF-1,REF-2'],
+    ['date,amount,valueDate,fecha_valor','2026-09-01,12.00,2026-09-01,2026-09-02'],
+    ['date,amount,extra,EXTRA','2026-09-01,12.00,one,two']
+  ]){
+    assert.throws(()=>parse('estado.csv',`${header}\n${values}\n`),
+      /cabeceras duplicadas o ambiguas/i,header);
+  }
+});
+
+test('CSV preserves Spanish fecha_valor and reuses one FITID for id/reference',()=>{
+  const result=parse('estado.csv','fecha,fecha_valor,monto,FITID\n2026-09-01,2026-09-02,12.34,REF-A\n');
+  assert.equal(result.lines.length,1);
+  assert.equal(result.lines[0].bookedAt.toISOString(),'2026-09-01T00:00:00.000Z');
+  assert.equal(result.lines[0].valueDate?.toISOString(),'2026-09-02T00:00:00.000Z');
+  assert.equal(result.lines[0].amount,'12.34');
+  assert.equal(result.lines[0].bankLineId,'REF-A');
+  assert.equal(result.lines[0].reference,'REF-A');
+});
