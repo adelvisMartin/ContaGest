@@ -31,12 +31,16 @@ function setup(change = () => {}) {
       unexpectedDuplicateResponses: 0, lostDecisions: 0, contextLeaks: 0},
     evidenceIntegrity: {samplesSha256: crypto.createHash('sha256').update(bytes).digest('hex')}
   };
+  fs.writeFileSync(manifestPath, JSON.stringify(report));
   return {root, manifestPath, report, cleanup: () => fs.rmSync(root, {recursive: true, force: true})};
 }
 function check(mutator, expected = false) {
   const fixture = setup();
   try {
     mutator(fixture);
+    // The producer writes the manifest only after its final summary is
+    // complete; update the synthetic fixture to match each mutation.
+    fs.writeFileSync(fixture.manifestPath, JSON.stringify(fixture.report));
     assert.equal(validSoakSamplesProof(fixture.manifestPath, fixture.report), expected);
   } finally {fixture.cleanup();}
 }
@@ -91,4 +95,32 @@ test('#120 historical lost/duplicate counters cannot be cleared before release s
     for(let i=101;i<rows.length;i++)rows[i].lostDecisions=1;
   }));
   check(f => mutateRows(f, rows => {rows[100].duplicateResponses = 1;}));
+});
+
+test('#120 samples cannot authorize release without their on-disk manifest', () => {
+  const f=setup();
+  try {
+    fs.unlinkSync(f.manifestPath);
+    assert.equal(validSoakSamplesProof(f.manifestPath, f.report), false);
+  } finally {f.cleanup();}
+});
+
+test('#120 manifest must not be a symlink to another file', () => {
+  const f=setup();
+  try {
+    const retained=path.join(f.root,'retained-manifest.json');
+    fs.renameSync(f.manifestPath,retained);
+    fs.symlinkSync(retained,f.manifestPath);
+    assert.equal(validSoakSamplesProof(f.manifestPath,f.report),false);
+  } finally {f.cleanup();}
+});
+
+test('#120 verifier rejects a caller-side report differing from the stored JSON', () => {
+  const f=setup();
+  try {
+    assert.equal(validSoakSamplesProof(f.manifestPath,{...f.report,
+      operatorId:'tampered-release-status'}),false);
+    fs.writeFileSync(f.manifestPath,'{bad-json');
+    assert.equal(validSoakSamplesProof(f.manifestPath,f.report),false);
+  } finally {f.cleanup();}
 });

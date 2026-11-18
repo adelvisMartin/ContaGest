@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { validSoakSampleSummary } from './hipico-soak-sample-summary-v120.mjs';
 
 const HASH = /^[a-f0-9]{64}$/i;
@@ -27,6 +28,14 @@ export function validSoakSamplesProof(manifestPath, report, sampleSeconds = 30) 
         !HASH.test(String(claimedHash || '')) || !Number.isSafeInteger(count) ||
         count < 1 || count > 500_000 || start === null || end === null || end <= start ||
         !Number.isFinite(sampleSeconds) || sampleSeconds < 1 || sampleSeconds > 3600) return false;
+
+    // The release producer writes both files together. A caller's synthetic
+    // report object cannot prove a soak if the JSON manifest is missing,
+    // replaced by a symlink, or does not match the on-disk declaration.
+    const manifestStats = fs.lstatSync(manifestPath);
+    if (!manifestStats.isFile() || manifestStats.isSymbolicLink()) return false;
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (!isDeepStrictEqual(manifest, report)) return false;
 
     const samplePath = path.join(path.dirname(manifestPath), 'samples.jsonl');
     const stats = fs.lstatSync(samplePath);
