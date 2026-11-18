@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'AGENTS.md'
+      - 'docs/OPERATIONS_BACKLOG_CLOSEOUT_V841.md'
       - '.agents/agents/orchestrator.md'
       - '.agents/skills/contagest-erp-orchestrator/SKILL.md'
       - '.agents/context/AGENT_SYSTEM_V3.md'
