@@ -107,6 +107,9 @@ test('#746 payment insert and membership debit remain one tenant-scoped transact
     membershipId:null,reference:'cross-tenant-'+run});
   assert.equal(crossTenant.response.status,404);
   assert.equal(await amount(),30,'invalid member references cannot debit membership');
+  const tooMuch=await post({...payment,amount:'30.01',reference:'overpayment-'+run});
+  assert.equal(tooMuch.response.status,409,'no unallocated prepaid amount can be silently discarded');
+  assert.equal(await amount(),30,'rejected overpayment must preserve the full outstanding balance');
 
   const concurrent=await Promise.all([
     post({...payment,amount:15,reference:'concurrent-a-'+run}),
@@ -115,6 +118,9 @@ test('#746 payment insert and membership debit remain one tenant-scoped transact
   assert.ok(concurrent.every(result=>result.response.status===201),
     JSON.stringify(concurrent.map(r=>r.payload)));
   assert.equal(await amount(),0,'concurrent paid events cannot lose a debit');
+  const postZero=await post({...payment,amount:'1.00',reference:'after-zero-'+run});
+  assert.equal(postZero.response.status,409,'zero balance must reject an additional paid write');
+  assert.equal(await amount(),0);
   const persisted=await h.prisma.$queryRawUnsafe<Array<{id:string;status:string}>>(
     'SELECT "id","status" FROM public."GymPayment" WHERE "tenantId"=$1 AND "memberId"=$2',
     h.tenant.id,memberId);
