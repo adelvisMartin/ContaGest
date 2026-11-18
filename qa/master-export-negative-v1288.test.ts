@@ -11,35 +11,45 @@ const RUN='QA1288-'+randomUUID().slice(0,12);
 test('#1288 master exports enforce real tenant/role/session boundaries',async(t)=>{
   const h=await createRealBackendHarness({approvedDatabaseNames:['contagest_banking_v93_e2e']});
   const startedAt=new Date();
-  const tenantB=await h.prisma.tenant.create({
-    data:{rif:`${RUN}-B`,name:`${RUN} B`,legalName:`${RUN} B`}
-  });
-  const a=await h.prisma.client.create({data:{
-    tenantId:h.tenant.id,rif:`${RUN}-A`,name:`${RUN} AUTHORIZED ROW`
-  }});
-  const b=await h.prisma.client.create({data:{
-    tenantId:tenantB.id,rif:`${RUN}-B`,name:`${RUN} FORBIDDEN CROSS-TENANT ROW`
-  }});
-  const restricted=await h.prisma.userProfile.create({data:{
-    tenantId:h.tenant.id,email:`${RUN.toLowerCase()}@example.invalid`,
-    fullName:'QA unprivileged export actor',status:'active'
-  }});
+  const allocations:{tenantIds:string[];clientIds:string[];userIds:string[]}={
+    tenantIds:[],clientIds:[],userIds:[]
+  };
+  // Install cleanup before the first fixture insert. A failed setup, test
+  // assertion or HTTP request must never leave synthetic cross-tenant rows.
   t.after(async()=>{
     try{
-      await h.prisma.$executeRaw`
-        DELETE FROM public."UserSession" WHERE "tenantId"=${h.tenant.id} AND "userId"=${restricted.id}
-      `;
+      for(const id of allocations.userIds){
+        await h.prisma.$executeRaw`
+          DELETE FROM public."UserSession" WHERE "tenantId"=${h.tenant.id} AND "userId"=${id}
+        `;
+      }
       await h.prisma.auditLog.deleteMany({where:{
         tenantId:h.tenant.id,action:'data.export.master',createdAt:{gte:startedAt}
       }});
-      await h.prisma.userProfile.deleteMany({where:{id:restricted.id,tenantId:h.tenant.id}});
-      await h.prisma.client.deleteMany({where:{id:a.id,tenantId:h.tenant.id}});
-      await h.prisma.client.deleteMany({where:{id:b.id,tenantId:tenantB.id}});
-      await h.prisma.tenant.delete({where:{id:tenantB.id}});
+      await h.prisma.userProfile.deleteMany({where:{id:{in:allocations.userIds},tenantId:h.tenant.id}});
+      await h.prisma.client.deleteMany({where:{id:{in:allocations.clientIds}}});
+      await h.prisma.tenant.deleteMany({where:{id:{in:allocations.tenantIds}}});
     }finally{
       await h.close();
     }
   });
+  const tenantB=await h.prisma.tenant.create({
+    data:{rif:`${RUN}-B`,name:`${RUN} B`,legalName:`${RUN} B`}
+  });
+  allocations.tenantIds.push(tenantB.id);
+  const a=await h.prisma.client.create({data:{
+    tenantId:h.tenant.id,rif:`${RUN}-A`,name:`${RUN} AUTHORIZED ROW`
+  }});
+  allocations.clientIds.push(a.id);
+  const b=await h.prisma.client.create({data:{
+    tenantId:tenantB.id,rif:`${RUN}-B`,name:`${RUN} FORBIDDEN CROSS-TENANT ROW`
+  }});
+  allocations.clientIds.push(b.id);
+  const restricted=await h.prisma.userProfile.create({data:{
+    tenantId:h.tenant.id,email:`${RUN.toLowerCase()}@example.invalid`,
+    fullName:'QA unprivileged export actor',status:'active'
+  }});
+  allocations.userIds.push(restricted.id);
 
   await t.test('JSON and CSV contain A but never B, without private fields',async()=>{
     for(const format of ['json','csv']){
