@@ -12,8 +12,10 @@ const updateSchema = z.object({
   status: z.enum(['active', 'invited', 'disabled']).optional(),
   roleId: z.string().min(1).optional(),
   newPassword: z.string().min(12).max(128).optional(),
-  clearFailures: z.boolean().optional()
-}).refine((body) => Boolean(body.status || body.roleId || body.newPassword || body.clearFailures), {
+  clearFailures: z.boolean().optional(),
+  // Verified only in memory for this request. Never persist or audit this field.
+  currentPassword: z.string().min(1).max(128).optional()
+}).strict().refine((body) => Boolean(body.status || body.roleId || body.newPassword || body.clearFailures), {
   message: 'No se recibió ningún cambio.'
 });
 
@@ -93,6 +95,20 @@ router.patch('/users/:userId', asyncHandler(async (req,res) => {
   if (!user) throw new HttpError(404, 'Usuario no encontrado.');
 
   const currentUserId = String((req as any).context?.userId || '');
+  // An established admin cookie alone does not authorize a password/role
+  // takeover. Verify the *actor's* current credential for each privileged
+  // mutation, never the target's password, and fail closed for card-only users.
+  // This is a one-request step-up: no reusable bearer or bypass flag exists.
+  const actor = await prisma.userProfile.findFirst({
+    where:{ id:currentUserId, tenantId:id, status:'active' },
+    select:{ id:true, passwordHash:true }
+  });
+  if(!actor?.passwordHash || !body.currentPassword ||
+      !await bcrypt.compare(body.currentPassword,actor.passwordHash)){
+    throw new HttpError(403,'Confirma tu contraseña actual de administrador para aplicar este cambio.',{
+      code:'ADMIN_REAUTH_REQUIRED'
+    });
+  }
   const self = currentUserId === user.id;
   if (self && body.status === 'disabled') throw new HttpError(409, 'No puedes bloquear tu propia sesión administrativa.');
 
