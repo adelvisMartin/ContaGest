@@ -69,3 +69,20 @@ test('#842 restore shell must validate URL before decryption, psql or destructiv
   assert.doesNotMatch(restore,/node --input-type=module - "\$HIPICO_RESTORE_DATABASE_URL"/);
   assert.match(restore,/restore_parts="\$\(node scripts\/hipico-restore-target-policy-v842\.mjs\)" \|\|/);
 });
+
+
+test('#842 source/restore collision is denied before decrypt, SQL, truncate and pg_restore',()=>{
+  const shaGuard=restore.indexOf('Backup SHA mismatch.');
+  const collision=restore.indexOf('"$target_database" != "$restore_database"');
+  const verifyInventory=restore.indexOf('Table inventory digest mismatch.');
+  assert.ok(shaGuard>=0&&collision>shaGuard&&collision<verifyInventory,
+    'must validate authenticated manifest before destructive SQL');
+  assert.match(restore,/\[\[ -n "\$target_database" && "\$target_database" != "\$restore_database" \]\] \|\|/);
+  for(const operation of [
+    'age -d','pg_restore --list','prepare-hipico-restore-ephemeral.sql',
+    'psql "$HIPICO_RESTORE_DATABASE_URL"','pg_restore --dbname','truncate_sql'
+  ]){
+    assert.ok(collision<restore.indexOf(operation),
+      'source/target collision must be denied before '+operation);
+  }
+});
