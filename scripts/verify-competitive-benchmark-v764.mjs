@@ -106,7 +106,8 @@ export function isOfficialFeatureEvidence(referenceUrl, source) {
   }
   // Frappe publishes ERPNext's own selling/assets documentation on this
   // separate official domain; other unrelated hosts are never accepted.
-  return source.id === 'erpnext' &&
+  return source.id === 'erpnext' && primary.origin === 'https://github.com' &&
+    primary.pathname === '/frappe/erpnext' &&
     reference.origin === 'https://docs.frappe.io' &&
     (reference.pathname === '/erpnext' || reference.pathname.startsWith('/erpnext/'));
 }
