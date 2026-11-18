@@ -45,7 +45,22 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
   async function ensure(){
     await fs.mkdir(root,{recursive:true,mode:0o700});
     await assertRootSafe();
-    await fs.chmod(root,0o700);
+    // chmod(path) is a symlink race even after lstat(path). On POSIX, pin
+    // the actual directory descriptor and change only THAT inode.
+    if(process.platform!=='win32'){
+      let handle;
+      try{
+        handle=await fs.open(root,fsConstants.O_RDONLY|
+          fsConstants.O_DIRECTORY|fsConstants.O_NOFOLLOW);
+        const opened=await handle.stat();
+        const named=await fs.lstat(root);
+        if(!opened.isDirectory()||!named.isDirectory()||named.isSymbolicLink()||
+           opened.dev!==named.dev||opened.ino!==named.ino)
+          throw new Error('LAB_TEST_JOURNAL_ROOT_UNSAFE');
+        await handle.chmod(0o700);
+      }finally{await handle?.close();}
+    }
+    // Windows ACLs require #119 real-device verification.
     await assertRootSafe();
   }
   function validate(record,expected=null){
@@ -78,7 +93,8 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
       const data=await handle.readFile('utf8');
       return validate(JSON.parse(data),expected);
     }catch(error){
-      if(error?.code==='ENOENT')return null;
+      // The file existed at lstat(); disappearance during open/read is
+      // an ambiguous concurrent mutation, never permission to recreate ACK.
       throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');
     }finally{await handle?.close();}
   }
