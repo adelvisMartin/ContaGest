@@ -7,7 +7,8 @@ const original = JSON.parse(readFileSync(new URL('../config/competitive-benchmar
 const clone = () => structuredClone(original);
 test('all selected products have source, classification and issue mapping', () => {
   assert.deepEqual(validateCompetitiveBenchmark(original), []);
-  assert.equal(original.sources.length, 13);
+  assert.equal(original.sources.length, 16);
+  assert.equal(original.features.length, 33);
   assert.ok(original.features.length >= 20);
 });
 test('rejects duplicate feature identifiers', () => {
@@ -53,4 +54,50 @@ test('provisional reference cannot imply a documented official claim', () => {
   const copy = clone(); const row = copy.features.find(x => x.id === 'VEOSS-009');
   row.referenceEvidenceUrl = 'https://example.org';
   assert.match(validateCompetitiveBenchmark(copy).join(';'), /unverified reference cannot carry evidence URL/);
+});
+
+test('#707–#711 verified OSS license sources and atomic owners remain benchmark-only', () => {
+  const families = [
+    ['wger', [789,792,795,797], 'AGPL-3.0-or-later'],
+    ['opendentist', [801,747,803,805], 'MIT'],
+    ['openvpm', [748,816,814,820], 'AGPL-3.0']
+  ];
+  for (const [productId, issueOwners, license] of families) {
+    const src = original.sources.find(x => x.id === productId);
+    assert.ok(src, productId);
+    assert.equal(src.license, license);
+    assert.equal(src.sourceReuse, 'NONE');
+    assert.ok(src.sourceUrl.startsWith('https://github.com/'));
+    assert.ok(src.licenseEvidenceUrl.startsWith('https://'));
+    const features = original.features.filter(x => x.productId === productId);
+    assert.equal(features.length, 4);
+    assert.deepEqual(features.map(x => x.ownerIssue), issueOwners);
+    assert.ok(features.every(x => x.status === 'PARTIAL' && x.sourceReuse === 'NONE'
+      && x.assessmentLevel === 'INFERRED_FROM_BACKLOG'));
+  }
+});
+
+test('#707 source-only manifest never certifies functional EXISTS by editing status', () => {
+  const forged = clone();
+  forged.features[0].status = 'EXISTS';
+  assert.match(validateCompetitiveBenchmark(forged).join(';'), /runtime parity claim without evidence/);
+  assert.deepEqual(validateCompetitiveBenchmark(original), []);
+});
+
+test('#707 source-only validator fails closed on malformed arrays or nested rows', () => {
+  for (const entry of [null, {}, {sources:{}}, {features:{}},
+    {...clone(),sources:null}, {...clone(),features:null}]) {
+    assert.doesNotThrow(() => validateCompetitiveBenchmark(entry));
+    assert.ok(validateCompetitiveBenchmark(entry).length > 0);
+  }
+  for (const type of [null, false, 42, 'forged']) {
+    const brokenSource = clone();
+    brokenSource.sources[0] = type;
+    assert.doesNotThrow(() => validateCompetitiveBenchmark(brokenSource));
+    assert.ok(validateCompetitiveBenchmark(brokenSource).includes('invalid product source row'));
+    const brokenFeature = clone();
+    brokenFeature.features[0] = type;
+    assert.doesNotThrow(() => validateCompetitiveBenchmark(brokenFeature));
+    assert.ok(validateCompetitiveBenchmark(brokenFeature).includes('invalid feature row'));
+  }
 });
