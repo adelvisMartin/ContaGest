@@ -1,5 +1,5 @@
 import { prisma } from '../../database/prisma.js';
-import { normalizeObservationEvent, safeObservationReasonCode, safeSupportId, sanitizeObservationMetadata, type ObservationInput } from './hipico-observability.js';
+import { normalizeObservationEvent, safeObservationReasonCode, safeObservationTraceId, safeSupportId, sanitizeObservationMetadata, type ObservationInput } from './hipico-observability.js';
 
 export async function observabilityReadiness(){
   try{
@@ -29,14 +29,19 @@ export async function recordHipicoObservationSafe(input:ObservationInput){
 
 export async function hipicoSupportBundle(input:{ownerId:string;groupKey:string;groupId:string;correlationId?:string|null;limit?:number}){
   const limit=Math.max(1,Math.min(250,Math.trunc(Number(input.limit||100))));
-  const correlationId=String(input.correlationId||'').trim();
+  // Accept the caller's exact legacy identifier as a scoped lookup alias,
+  // but never print it or other historical provider IDs in the support export.
+  const legacyCorrelationId=String(input.correlationId||'').trim().slice(0,180);
+  const scope=`${input.ownerId}|${input.groupKey}|${input.groupId}`;
+  const correlationId=legacyCorrelationId
+    ?safeObservationTraceId(legacyCorrelationId,'corr',scope):'';
   const rows=await prisma.$queryRaw<any[]>`
     SELECT request_id,correlation_id,candidate_sha,stage,outcome,reason_code,latency_ms,metadata,created_at
     FROM public.hipico_observability_events
     WHERE owner_id=${input.ownerId}::uuid
       AND group_key=${input.groupKey}
       AND group_id=${input.groupId}
-      AND (${correlationId}='' OR correlation_id=${correlationId})
+      AND (${correlationId}='' OR correlation_id=${correlationId} OR correlation_id=${legacyCorrelationId})
     ORDER BY created_at ASC,id ASC
     LIMIT ${limit}`;
   return{
@@ -44,7 +49,9 @@ export async function hipicoSupportBundle(input:{ownerId:string;groupKey:string;
     correlationId:correlationId||null,
     generatedAt:new Date().toISOString(),
     events:rows.map((row)=>({
-      requestId:row.request_id,correlationId:row.correlation_id,candidateSha:row.candidate_sha,
+      requestId:safeObservationTraceId(row.request_id,'req',scope),
+      correlationId:safeObservationTraceId(row.correlation_id,'corr',scope),
+      candidateSha:row.candidate_sha,
       stage:row.stage,outcome:row.outcome,reasonCode:safeObservationReasonCode(row.reason_code),latencyMs:Number(row.latency_ms||0),
       metadata:sanitizeObservationMetadata(row.metadata||{}),createdAt:row.created_at
     }))
