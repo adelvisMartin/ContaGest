@@ -25,11 +25,11 @@ test('genuine producer-shaped stream matches counts, peaks and cumulative counte
   assert.equal(check(base), true);
 });
 test('recomputed hash cannot disguise a failed health probe or missing probe', () => {
-  assert.equal(check([base[0], row(1, { health: { ok: false, status: 503, latencyMs: 5 } }), base[2]]), false);
+  assert.equal(check([base[0], row(1, { health: { ok: false, status: 503, reason: 'HEALTH_HTTP_FAILURE', latencyMs: 5 } }), base[2]]), false);
   assert.equal(check([base[0], row(1, { health: null }), base[2]]), false);
 });
 test('a documented health failure matches only honest summary accounting', () => {
-  assert.equal(check([base[0], row(1, { health: { ok: false, status: 503, latencyMs: 5 } }), base[2]],
+  assert.equal(check([base[0], row(1, { health: { ok: false, status: 503, reason: 'HEALTH_HTTP_FAILURE', latencyMs: 5 } }), base[2]],
     { ...summary, healthFailures: 1 }), true);
 });
 test('recomputed hash cannot conceal spool outage, age or byte spike', () => {
