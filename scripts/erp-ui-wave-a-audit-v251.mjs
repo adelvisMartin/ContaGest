@@ -738,7 +738,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     if(!workoutMigration.includes(contract))fail(`fitness: workout execution 40 migration missing ${contract}`);
   }
   const workoutStart=gymRoutes.indexOf("router.get('/gym/workout-sessions'");
-  const workoutEnd=gymRoutes.indexOf("router.get('/gym/routines'",workoutStart);
+  const workoutEnd=gymRoutes.indexOf("router.get('/gym/performance'",workoutStart);
   const workoutBlock=gymRoutes.slice(workoutStart,workoutEnd);
   if(workoutStart<0||workoutEnd<0)fail('fitness: workout execution 40 route boundaries missing');
   if(/personalRecord|estimated1RM|e1RM|adherence|volumeBy|performanceChart/.test(workoutBlock))fail('fitness: workout execution 40 must not pre-implement history/performance 41');
@@ -758,7 +758,7 @@ if(fitnessEntries.every((item)=>item.status==='MIGRATED')){
     || !epleyAuthority.includes('loadKg*(1+reps/30)'))
     fail('fitness: performance history 41 e1RM applicability/formula contract missing');
   const performanceStart=gymRoutes.indexOf("router.get('/gym/performance'");
-  const performanceEnd=gymRoutes.indexOf("router.get('/gym/routines'",performanceStart);
+  const performanceEnd=gymRoutes.indexOf("router.post('/gym/exercise-substitutions/suggest'",performanceStart);
   const performanceBlock=gymRoutes.slice(performanceStart,performanceEnd);
   if(performanceStart<0||performanceEnd<0)fail('fitness: performance history 41 route boundaries missing');
   if(/INSERT INTO|UPDATE public|DELETE FROM/.test(performanceBlock))fail('fitness: performance history 41 must remain derived/read-only');
