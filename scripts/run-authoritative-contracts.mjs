@@ -53,6 +53,7 @@ const required59=[
   'tests/frontend_csv_formula_guard_v1313.test.mjs',
   'tests/qa_audit_rollback_trigger_contract_v1289_1313.test.mjs',
   'tests/hipico_private_storage_purge_v1292.test.mjs',
+  'tests/admin_privileged_stepup_v1312.test.mjs',
   'tests/entitlement_ledger_projection_v852.test.mjs',
   'tests/architecture_ownership_issue_653.test.mjs',
   'tests/production_convergence_v627.test.mjs',
