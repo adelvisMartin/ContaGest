@@ -92,8 +92,12 @@ async function persistSession(session, expectedEpoch = sessionEpoch) {
     const write = sessionWriteQueue.catch(() => null).then(async () => {
         if (expectedEpoch !== sessionEpoch)
             return null;
-        cachedSession = nextSession;
+        // Never publish a bearer before durable storage has completed.
+        // A logout/user switch while IndexedDB is writing invalidates the
+        // pending write even if it eventually resolves successfully.
         await saveCloudSession(nextSession);
+        if (expectedEpoch !== sessionEpoch) return null;
+        cachedSession = nextSession;
         return cachedSession;
     });
     sessionWriteQueue = write.catch(() => null);
@@ -256,6 +260,9 @@ export async function signOut() {
     // Invalidate in-flight refresh/login responses before clearing IndexedDB.
     const logoutEpoch = ++sessionEpoch;
     refreshPromise = null;
+    // Invalidate the bearer synchronously, before the first await/IndexedDB
+    // operation. No protected request may start with a logged-out identity.
+    cachedSession = null;
     // Local credentials must be cleared even when the cloud is unreachable.
     // A failed local purge is an error, not a successful logout.
     await persistSession(null, logoutEpoch);
