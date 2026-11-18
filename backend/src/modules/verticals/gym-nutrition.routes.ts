@@ -5,6 +5,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx, one } from './verticals.shared.js';
 import { parseGymMemberQuery } from './gym-member-query.js';
+import { parseGymIngredientFilters } from './gym-ingredient-filters.mjs';
 import {
   ingredientSchema,
   ingredientPatchSchema,
@@ -126,9 +127,10 @@ const createPlanNutrientSnapshot=async(tx:Prisma.TransactionClient,tenantId:stri
 };
 
 router.get('/gym/ingredients', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
-  const q=`%${String(req.query.q||'').trim()}%`;
-  const category=String(req.query.category||'').trim();
-  const active=String(req.query.active||'').trim();
+  let filters:ReturnType<typeof parseGymIngredientFilters>;
+  try{filters=parseGymIngredientFilters(req.query);}
+  catch{throw new HttpError(422,'Filtros de ingredientes inválidos.');}
+  const {q,category,active,take,skip}=filters;
   const rows=await prisma.$queryRawUnsafe<any[]>(`
     SELECT *
     FROM public."GymIngredient"
@@ -136,10 +138,14 @@ router.get('/gym/ingredients', requirePermission('gym.manage'), asyncHandler(asy
       AND ($2='%%' OR "name" ILIKE $2)
       AND ($3='' OR COALESCE("category",'')=$3)
       AND ($4='' OR "active"=$4::boolean)
-    ORDER BY "active" DESC,"name" ASC
-    LIMIT 1000
-  `,ctx(req).tenantId,q,category,active);
-  ok(res,rows);
+    ORDER BY "active" DESC,"name" ASC,"id" ASC
+    LIMIT $5 OFFSET $6
+  `,ctx(req).tenantId,`%${q}%`,category,active,take+1,skip);
+  const hasMore=rows.length>take;
+  res.setHeader('Cache-Control','private, no-store');
+  res.setHeader('X-Pagination-Has-More',hasMore?'true':'false');
+  if(hasMore)res.setHeader('X-Pagination-Next-Skip',String(skip+take));
+  ok(res,rows.slice(0,take));
 }));
 
 router.post('/gym/ingredients', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
