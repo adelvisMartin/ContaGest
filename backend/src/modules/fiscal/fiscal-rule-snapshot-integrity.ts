@@ -9,12 +9,27 @@ function canonicalize(value: unknown): unknown {
     if (!Number.isFinite(value)) throw new Error('FISCAL_RULE_EVIDENCE_INTEGRITY');
     return value;
   }
-  if (Array.isArray(value)) return value.map(canonicalize);
+  if (Array.isArray(value)) {
+    // JSON.stringify turns sparse array holes into null, creating false
+    // integrity-equivalent snapshots with explicitly recorded nulls.
+    for (let i = 0; i < value.length; i += 1) {
+      if (!Object.hasOwn(value, i)) throw new Error('FISCAL_RULE_EVIDENCE_INTEGRITY');
+    }
+    return value.map(canonicalize);
+  }
   if (typeof value === 'object') {
+    // Fiscal definitions are JSON data. Dates, boxed primitives, Maps and
+    // custom toJSON methods must never silently hash as {} or altered data.
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new Error('FISCAL_RULE_EVIDENCE_INTEGRITY');
+    }
     const record = value as Record<string, unknown>;
     return Object.fromEntries(Object.keys(record).sort().map((key) => [key, canonicalize(record[key])]));
   }
-  return String(value);
+  // Previously String(undefined/function/symbol/bigint) could match a real
+  // legal JSON string (e.g. "undefined") and pass a historical SHA-256 check.
+  throw new Error('FISCAL_RULE_EVIDENCE_INTEGRITY');
 }
 
 export function fiscalEvidenceHash(value: unknown): string {
