@@ -1,0 +1,97 @@
+name: "Catalog #849 · category lifecycle PG17"
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/service-catalog/**'
+      - 'qa/service-catalog-real-v849.test.ts'
+      - 'tests/service_catalog_api_contract_v849.test.mjs'
+      - 'scripts/run-authoritative-contracts.mjs'
+      - '.github/workflows/catalog-category-v849.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  NODE_ENV: test
+  API_MODE: prisma
+  DATABASE_URL: postgresql://postgres:catalog-ci-only@127.0.0.1:5432/contagest_catalog_v849_e2e?schema=public
+  DIRECT_DATABASE_URL: postgresql://postgres:catalog-ci-only@127.0.0.1:5432/contagest_catalog_v849_e2e?schema=public
+  APP_URL: http://127.0.0.1:8080
+  CORS_ORIGIN: http://127.0.0.1:8080
+  JWT_SECRET: catalog-v849-ci-only-jwt-secret-more-than-thirty-two-characters
+  LICENSE_HASH_SECRET: catalog-v849-ci-only-license-hash-more-than-thirty-two-characters
+  ALLOW_PUBLIC_REGISTER: "false"
+  ALLOW_DEV_TENANT_HEADER: "false"
+  SUPABASE_AUTH_FALLBACK: "false"
+  CG_SERVICE_CATALOG_QA_ISOLATED: "true"
+
+jobs:
+  category-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: catalog-ci-only
+          POSTGRES_DB: contagest_catalog_v849_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d contagest_catalog_v849_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+      - name: Assert exact source SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Locked install and PostgreSQL client
+        run: |
+          npm ci --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Catalog source and schema contracts
+        run: node --test tests/service_catalog_api_contract_v849.test.mjs tests/service_catalog_schema_v849.test.mjs
+      - name: Prepare isolated PostgreSQL baseline
+        env:
+          PGPASSWORD: catalog-ci-only
+        run: psql -h 127.0.0.1 -U postgres -d contagest_catalog_v849_e2e -v ON_ERROR_STOP=1 -f ops/database/prepare-supabase-ephemeral.sql
+      - name: Apply canonical migrations and verify status
+        run: |
+          npm --workspace backend run prisma:deploy
+          npx prisma migrate status --schema backend/prisma/schema.prisma
+      - name: Install canonical runtime tenant RLS sidecar in ephemeral DB
+        env:
+          PGPASSWORD: catalog-ci-only
+        run: psql -h 127.0.0.1 -U postgres -d contagest_catalog_v849_e2e -v ON_ERROR_STOP=1 -f ops/database/runtime-rls-policy-v845.sql
+      - name: Seed isolated authorization fixtures
+        run: npm run seed
+      - name: Catalog API/PG17 tenant and concurrency regressions
+        run: npm run test:backend:service-catalog:real
+      - name: Record exact-SHA evidence
+        if: always()
+        run: |
+          mkdir -p artifacts/qa/catalog-v849
+          printf 'sha=%s\nrun=%s\nattempt=%s\n' "$CANDIDATE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            > artifacts/qa/catalog-v849/run-identity.txt
+      - name: Publish catalog QA evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: catalog-v849-${{ env.CANDIDATE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/qa/catalog-v849
+          if-no-files-found: error
