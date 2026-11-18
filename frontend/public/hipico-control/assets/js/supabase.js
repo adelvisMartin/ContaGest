@@ -1,9 +1,23 @@
 import { CLOUD_CONFIG, canUseLabDirectTableFallback, cloudConfigurationStatus } from "./config.js";
 import { loadCloudSession, saveCloudSession } from "./store.js";
+import { subscribeCloudSessionInvalidation, signalOtherTabsCloudSessionInvalidation } from "./cloud-session-tab-signal.js";
 let cachedSession = null;
 let refreshPromise = null;
 let sessionEpoch = 0;
 let sessionWriteQueue = Promise.resolve();
+
+// A second tab must not keep a bearer or render a private cloud workspace
+// after this origin logs out or begins switching users. The transport carries
+// only a constant revocation signal, never an identity or secret.
+subscribeCloudSessionInvalidation(() => {
+    const expectedEpoch = ++sessionEpoch;
+    cachedSession = null;
+    refreshPromise = null;
+    void persistSession(null, expectedEpoch).catch(() => null);
+    if (typeof globalThis.dispatchEvent === "function" && typeof globalThis.CustomEvent === "function") {
+        globalThis.dispatchEvent(new globalThis.CustomEvent("hipico:cloud-session-ended"));
+    }
+});
 
 export class BackendAuthorityError extends Error {
     constructor(capability, cause = null) {
@@ -228,6 +242,7 @@ export async function signIn(email, password) {
     // Switching users must invalidate the previous token synchronously;
     // a new protected read must never observe the old owner mid-login.
     cachedSession = null;
+    signalOtherTabsCloudSessionInvalidation();
     await persistSession(null, expectedEpoch);
     if (expectedEpoch !== sessionEpoch) return null;
     const data = await request("/auth/v1/token?grant_type=password", {
@@ -242,6 +257,7 @@ export async function signUp(email, password) {
     const expectedEpoch = ++sessionEpoch;
     refreshPromise = null;
     cachedSession = null;
+    signalOtherTabsCloudSessionInvalidation();
     await persistSession(null, expectedEpoch);
     if (expectedEpoch !== sessionEpoch) return null;
     const data = await request("/auth/v1/signup", {
@@ -263,6 +279,7 @@ export async function signOut() {
     // Invalidate the bearer synchronously, before the first await/IndexedDB
     // operation. No protected request may start with a logged-out identity.
     cachedSession = null;
+    signalOtherTabsCloudSessionInvalidation();
     // Local credentials must be cleared even when the cloud is unreachable.
     // A failed local purge is an error, not a successful logout.
     await persistSession(null, logoutEpoch);
