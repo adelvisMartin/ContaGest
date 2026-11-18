@@ -22,7 +22,7 @@ export async function recordHipicoObservation(input:ObservationInput){
 export async function recordHipicoObservationSafe(input:ObservationInput){
   try{return Boolean(await recordHipicoObservation(input));}
   catch(error:any){
-    console.error('[hipico-observability] event persistence unavailable',{code:String(error?.code||'HIPICO_OBSERVABILITY_PERSISTENCE_FAILED').slice(0,120)});
+    console.error('[hipico-observability] event persistence unavailable',{code:safeObservationReasonCode(error?.code||'HIPICO_OBSERVABILITY_PERSISTENCE_FAILED')});
     return false;
   }
 }
