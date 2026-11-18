@@ -14,14 +14,14 @@ const row = (data={}) => ({
   createdAt:'2026-10-15T16:00:00.000Z',updatedAt:'2026-10-15T16:00:00.000Z',...data
 });
 
-function transactionalDb({failAudit=false}={}){
+function transactionalDb({failAudit=false,returnedRowChanges={}}={}){
   const writes=[],reads=[];
   const db={
     async $transaction(run){
       const pending=[];
       const tx={
         moduleRecord:{create:async args=>{
-          pending.push(['lead',args]);return row({tenantId:args.data.tenantId,title:args.data.title,status:args.data.status,payload:args.data.payload});
+          pending.push(['lead',args]);return row({id:args.data.id,tenantId:args.data.tenantId,title:args.data.title,status:args.data.status,payload:args.data.payload,...returnedRowChanges});
         }},
         auditLog:{create:async args=>{
           pending.push(['audit',args]);
@@ -60,7 +60,7 @@ test('rejects malformed dates and input overflow',()=>{
 test('atomic create inserts the lead and minimal audit in the same callback',async()=>{
   const {db,writes}=transactionalDb();
   const result=await createCrmLead({db,tenantId:'tenant-a',actorId:'actor-1',idempotencyKey,draft:{...sample,tenantId:'spoof',ownerId:'spoof'},ipAddress:'127.0.0.1'});
-  assert.equal(result.id,'lead-1');
+  assert.equal(result.id,deterministicLeadId('tenant-a',idempotencyKey));
   assert.equal(result.name,'Comercial Acme');
   assert.equal(writes.length,2);
   assert.equal(writes[0][0],'lead');
@@ -70,7 +70,7 @@ test('atomic create inserts the lead and minimal audit in the same callback',asy
   assert.equal(writes[0][1].data.moduleSlug,CRM_LEAD_MODULE);
   assert.equal(writes[1][0],'audit');
   assert.equal(writes[1][1].data.action,'crm.lead.create');
-  assert.equal(writes[1][1].data.entityId,'lead-1');
+  assert.equal(writes[1][1].data.entityId,deterministicLeadId('tenant-a',idempotencyKey));
   assert.doesNotMatch(JSON.stringify(writes[1][1].data.after),/example.com|J123/);
 });
 test('audit insert failing aborts the transaction rather than allowing untracked lead',async()=>{
@@ -169,4 +169,19 @@ test('unique PK conflict maps to CRM replay error instead of inserting again',as
 test('non-uniqueness transaction errors preserve error semantics',async()=>{
  const db={$transaction:async()=>{throw Error('DB_UNAVAILABLE')}};
  await assert.rejects(createCrmLead({db,tenantId:'tenant-a',actorId:'actor-1',idempotencyKey,draft:sample}),/DB_UNAVAILABLE/);
+});
+
+test('create refuses wrong persisted identity/scope/owner before committing its audit',async()=>{
+  for(const returnedRowChanges of [
+    {id:'lead-from-other-request'},
+    {tenantId:'tenant-b'},
+    {moduleSlug:'other-module'},
+    {status:'archived'},
+    {payload:{ownerId:'attacker'}}
+  ]){
+    const {db,writes}=transactionalDb({returnedRowChanges});
+    await assert.rejects(createCrmLead({db,tenantId:'tenant-a',actorId:'actor-1',
+      idempotencyKey,draft:sample}),/CRM_LEAD_POST_WRITE_SCOPE_INVALID/);
+    assert.equal(writes.length,0,'transaction must not commit lead or audit');
+  }
 });

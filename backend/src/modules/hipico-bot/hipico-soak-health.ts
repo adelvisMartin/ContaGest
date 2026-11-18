@@ -55,6 +55,12 @@ export async function probeSoakHealth(
       signal: AbortSignal.timeout(5000)
     });
     if (!response.ok) return classifySoakHealth(response.status, null);
+    // A proxy/captive portal may serve syntactically valid JSON under an HTML
+    // content type. Do not promote such a response to SOAK_READY evidence.
+    const contentType = response.headers.get('content-type') || '';
+    if (!/^application\/(?:json|[a-z0-9.+-]+\+json)\s*(?:;|$)/i.test(contentType)) {
+      return { ok: false, status: response.status, reason: 'HEALTH_BODY_INVALID' };
+    }
     const body: unknown = await response.json().catch(() => null);
     return classifySoakHealth(response.status, body);
   } catch {

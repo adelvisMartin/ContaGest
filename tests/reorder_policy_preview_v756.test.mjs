@@ -81,3 +81,11 @@ test('result is not a stored policy, forecast or automatic purchase instruction'
   assert.equal(x.locationAllocationVerified, false);
   assert.equal(x.autoPurchaseEnabled, false);
 });
+
+test('#756 only primitive canonical lead-time assumptions reach inventory projection',()=>{
+ for(const leadTimeDays of [{toString:()=> '7'},new String('7'),7]) {
+   assert.throws(()=>preview({leadTimeDays}),/REORDER_POLICY_LEAD_TIME_INVALID/);
+ }
+ assert.equal(preview({leadTimeDays:'7'}).assumedPolicy.leadTimeDays,7);
+ assert.equal(preview().autoPurchaseEnabled,false);
+});

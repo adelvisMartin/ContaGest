@@ -39,6 +39,8 @@ export function evaluateWhatsAppProductionCompliance(input:ComplianceGateInput):
   if(!/^\d{4}-\d{2}-\d{2}$/.test(input.evidence.reviewedAt))reasons.push('EVIDENCE_REVIEW_DATE_INVALID');
   const ageMs=Date.now()-Date.parse(`${input.evidence.reviewedAt}T00:00:00Z`);
   if(!Number.isFinite(ageMs)||ageMs>30*24*60*60*1000)reasons.push('POLICY_EVIDENCE_STALE_OVER_30_DAYS');
+  // Future-dated reviews must not be used to bypass the expiry gate.
+  if(Number.isFinite(ageMs)&&ageMs<0)reasons.push('POLICY_EVIDENCE_FUTURE_DATE');
   return{decision:reasons.length?'NO_GO':'GO',reasons,reviewedAt:input.evidence.reviewedAt,connector:input.exactConnector,candidateSha:input.candidateSha||null};
 }
 

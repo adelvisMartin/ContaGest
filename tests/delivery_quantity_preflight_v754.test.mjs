@@ -8,3 +8,11 @@ test('reservation owner must be exact same sales order',()=>{for(const p of [{or
 test('finite precision no rounding or float drift',()=>{const r=plan({...b,orderedExact:'1.000002',previouslyFulfilledExact:'0.000001',reservedOutstandingExact:'1.000001',requestedDeliveryExact:'1.000001'});assert.equal(r.fullyFulfilled,true);assert.equal(r.fulfilledAfterExact,'1.000002');});
 test('zero, negative, scientific and excessive decimal scales fail closed',()=>{for(const requestedDeliveryExact of ['0','-1','1e3','1.0000001',''])assert.throws(()=>plan({...b,requestedDeliveryExact}));});
 test('no duplicate effects can be authorized by pure preflight alone',()=>{const r=plan(b);assert.equal(r.requiresTransactionalReservationConsume,true);assert.equal(r.persisted,false);assert.equal(Object.isFrozen(r),true);});
+
+test('#754 reject stale over-reservations instead of converting corrupted reserved stock',()=>{
+  for(const patch of [
+    {reservedOutstandingExact:'8.000001'},
+    {previouslyFulfilledExact:'9',reservedOutstandingExact:'2',requestedDeliveryExact:'1'}
+  ])assert.throws(()=>plan({...b,...patch}),/DELIVERY_OVERFULFILL_OR_UNRESERVED/);
+  assert.equal(plan({...b,reservedOutstandingExact:'8'}).deliverExact,'3');
+});

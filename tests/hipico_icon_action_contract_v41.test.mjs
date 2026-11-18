@@ -101,9 +101,8 @@ test('operational copy controls use actual SVG icons and explicit consent contro
 });
 
 test('offline PWA rotates current v4.1.3 shell and never caches sensitive responses', () => {
-  // Preserve the upgrade invariant without freezing cache names at r38.
   assertHipicoShellCacheRotated(sw);
-  assert.match(sw, /-consolidator-v4-1-3`/, 'v4.1.3 shell authority must be retained');
+  assert.match(sw, /-consolidator-v4-1-3`/, 'Hípico shell must retain its v4.1.3 authority');
   assert.match(sw, /key\.startsWith\('hipico-control-'\) && key !== SHELL_CACHE/);
   assert.match(sw, /isSensitive\(url\) \|\| isRuntimeMetadata\(url\)/);
   assert.match(sw, /fetch\(request, \{ cache: 'no-store' \}\)/);

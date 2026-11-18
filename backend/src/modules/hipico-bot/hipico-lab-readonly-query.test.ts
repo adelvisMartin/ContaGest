@@ -80,3 +80,15 @@ test('canonical backend blocks plural betting and balance words in read-only sum
   assert.equal(isLabInformationRequest('¿Resumen de la carrera 5?','summary',safe),true);
   assert.equal(isLabInformationRequest('¿Estado de carrera 5?','status',safe),true);
 });
+
+test('undefined or unrecognized LAB classifier risk never authorizes a canonical read',()=>{
+  const prompt='¿Cuál es el resultado de carrera 5?';
+  assert.equal(isLabInformationRequest(prompt,'result',classified('conversation','safe')),true);
+  assert.equal(isLabInformationRequest(prompt,'result',classified('conversation','review')),true);
+  for(const risk of [undefined,null,'unverified','unknown','SAFE',{}]){
+    assert.equal(isLabInformationRequest(prompt,'result',{intent:'conversation',risk} as any),false,
+      String(risk));
+  }
+  assert.equal(isLabInformationRequest(prompt,'result',null as any),false);
+  assert.equal(isLabInformationRequest({toString:()=>prompt} as any,'result',classified('conversation','safe')),false);
+});

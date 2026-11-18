@@ -103,3 +103,14 @@ test('UI provides a keyboard-accessible status region and never prints raw IDs',
  assert.match(src,/feedback\.textContent = verdict\.message/);
  assert.doesNotMatch(src,/feedback\.innerHTML|verdict\.candidates\.join/);
 });
+
+test('CRM prospect fields have unique labelled IDs distinct from canonical Client form',()=>{
+ const src=readFileSync(new URL('../frontend/src/pages/ClientsPage.js',import.meta.url),'utf8');
+ for(const name of ['name','rif','email','phone']){
+   const pattern=new RegExp("name:'"+name+"',id:'crm-lead-"+name+"'");
+   assert.match(src,pattern);
+   assert.match(src,new RegExp("labelKey:'"+name+"', name:'"+name+"'"));
+ }
+ const kit=readFileSync(new URL('../frontend/src/components/ui/kit.js',import.meta.url),'utf8');
+ assert.match(kit,/const inputId=id\|\|/);
+});

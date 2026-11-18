@@ -118,3 +118,15 @@ test('permissive indirect dependencies are inventoried without duplicate direct 
   assert.deepEqual(result.transitive.map((x) => x.resolutionPath), ['node_modules/indirect']);
   assert.deepEqual(result, auditDependencyGovernance(f));
 });
+
+test('workspace lock symlinks pointing to a different package cannot satisfy a local declaration', () => {
+  const corrupted = fixture();
+  corrupted.lock.packages['node_modules/backend'].resolved = 'frontend';
+  const result = auditDependencyGovernance(corrupted);
+  assert.equal(result.status, 'FAIL');
+  assert.ok(result.findings.some((x) => x.code === 'LOCK_RESOLUTION_MISSING' && x.subject === 'frontend:backend'));
+
+  const valid = fixture();
+  valid.lock.packages['node_modules/backend'].resolved = './backend';
+  assert.equal(auditDependencyGovernance(valid).status,'PASS');
+});

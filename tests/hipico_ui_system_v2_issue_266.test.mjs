@@ -89,7 +89,7 @@ test('operational center is denied by default and mobile/accessibility rules are
   assert.match(css, /scroll-behavior:\s*auto\s*!important/);
 });
 
-test('offline cache rotates r38 and never stores sensitive routes or obsolete CSS', async () => {
+test('offline cache rotates current r39 and never stores sensitive routes or obsolete CSS', async () => {
   const sw = await read(root + '/sw.js');
   for (const file of ['app.css', ...modules]) assert.ok(sw.includes('assets/css/' + file), 'missing offline style ' + file);
   for (const file of obsolete) assert.equal(sw.includes('assets/css/' + file), false, 'obsolete cached style ' + file);

@@ -37,6 +37,17 @@ test('bridge sender normalization rejects control characters',()=>{
   assert.equal(normalizeBridgeSender('participant\u0007@c.us'),null);
 });
 
+test('bridge sender identities cannot be visually spoofed or truncated into aliases',()=>{
+  for(const control of ['\u200B','\u202E','\u2069','\uFEFF']){
+    assert.equal(normalizeBridgeSender(`participant${control}-7@lid`),null);
+    assert.equal(normalizeBridgeSender(`${control}participant-7@lid`),null);
+    assert.equal(normalizeBridgeSender(`participant-7@lid${control}`),null);
+  }
+  assert.equal(normalizeBridgeSender('a'.repeat(221)+'@lid'),null);
+  assert.equal(normalizeBridgeSender('a'.repeat(220)+'@lid'),'a'.repeat(220));
+  assert.equal(normalizeBridgeSender('participant-7@lid'),'participant-7');
+});
+
 test('SOURCE and LAB identity accepts modern and legacy WhatsApp group JIDs only',()=>{
   assert.equal(normalizeBridgeGroupId(sourceGroupId),sourceGroupId);
   assert.equal(normalizeBridgeGroupId(labGroupId),labGroupId);
@@ -90,4 +101,20 @@ test('history replay has a separate larger server-side throttle but is never unl
   assert.equal(blocked.reason,'REPETITION_RATE_LIMIT');
   assert.equal(historySyncRateCheck('source:p2',digest,2000).allowed,true);
   historySyncRateLimiter.reset();
+});
+
+test('bridge SOURCE/LAB identities cannot be forged by objects with toString',()=>{
+  const forge=(s:string)=>({toString:()=>s});
+  assert.equal(normalizeBridgeGroupId(forge(sourceGroupId)),'');
+  assert.equal(normalizeBridgeSender(forge('584121234567@c.us')),null);
+  const valid={groupId:sourceGroupId,channelRole:'source',
+    channelKey:'club-hipico-triple-crown-official',labChannelKey:'control-hipico-lab'};
+  assert.equal(validateBridgeGroupIdentity(valid,env),null);
+  for(const field of ['groupId','channelRole','channelKey','labChannelKey'] as const){
+    const forged={...valid,[field]:forge(valid[field])};
+    assert.equal(validateBridgeGroupIdentity(forged,env),'HIPICO_BRIDGE_GROUP_IDENTITY_MISMATCH',field);
+    assert.throws(()=>assertBridgeGroupIdentity(forged,env),
+      (error:any)=>error?.code==='HIPICO_TRANSPORT_REPLAY_MISMATCH',field);
+  }
+  assert.equal(validateBridgeGroupIdentity(null as any,env),'HIPICO_BRIDGE_GROUP_IDENTITY_MISMATCH');
 });

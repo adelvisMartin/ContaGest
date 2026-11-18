@@ -291,3 +291,30 @@ test('#665 public frontend URL query and fragments never carry credential parame
   'DATABASE_RUNTIME_URL=postgresql://synthetic-user:synthetic-pass@db.example.test:5432/fixture');
  assert.equal(check({backend:db}).status,'PASS');
 });
+
+test('#665 public config never carries a privileged JWT hidden under an ordinary VITE key',()=>{
+ const encode=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
+ const jwt=role=>encode({alg:'HS256',typ:'JWT'})+'.'+encode({role,aud:'authenticated'})+'.fixture';
+ for(const role of ['service_role','supabase_admin','postgres']){
+  for(const key of ['VITE_SUPABASE_ANON_KEY','VITE_MARKETING_DEMO_URL']){
+   const original=new RegExp('^'+key+'=.*$','m');
+   const tampered=samples.frontend.replace(original,key+'='+jwt(role));
+   const report=check({frontend:tampered});
+   assert.equal(report.status,'FAIL');
+   assert.ok(report.findings.some(x=>x.code==='MANIFEST_PUBLIC_SECRET_VALUE'&&x.key===key));
+   assert.equal(JSON.stringify(report).includes(jwt(role)),false);
+  }
+ }
+ const plain=check({frontend:samples.frontend.replace(
+   /^VITE_SUPABASE_ANON_KEY=.*$/m,'VITE_SUPABASE_ANON_KEY='+jwt('anon')
+ )});
+ assert.equal(plain.status,'PASS',JSON.stringify(plain.findings));
+ for(const [key,token] of [
+  ['VITE_SUPABASE_ANON_KEY','sb_secret_synthetic_not_a_real_key'],
+  ['VITE_MARKETING_DEMO_URL','-----BEGIN PRIVATE KEY-----SYNTHETIC']
+ ]){
+  const report=check({frontend:samples.frontend.replace(new RegExp('^'+key+'=.*$','m'),key+'='+token)});
+  assert.ok(report.findings.some(x=>x.code==='MANIFEST_PUBLIC_SECRET_VALUE'&&x.key===key));
+  assert.equal(JSON.stringify(report).includes(token),false);
+ }
+});

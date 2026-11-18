@@ -23,5 +23,7 @@ export function assertFiscalDocumentRuleFamily(input:Readonly<{
     if(input.kind==='withholding' &&
        !input.ruleKeys.some(key=>['ret_iva','islr'].includes(classOf(key))))reject();
     if(input.ruleKeys.some(key=>!Object.values(PREFIX).includes(classOf(key))))reject();
+    if((input.module==='islr'||input.module==='igtf')&&
+       input.ruleKeys.some(key=>classOf(key)!==family))reject();
   }
 }

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Box, Checkbox, FormControlLabel, Paper, Stack, Tab, Tabs, Typography } from '@mui/material';
 import {
@@ -9,6 +9,7 @@ import { rows, object, localDate, localDateTime, amount, memberOptions, trainerO
 import { Metric, RecordList, Section } from '../components/fitness/GymWorkspacePrimitives.jsx';
 import { GymTrainingPanel } from '../components/fitness/GymTrainingPanel.jsx';
 import { GymNutritionPanel } from '../components/fitness/GymNutritionPanel.jsx';
+import { GymEquipmentPanel } from '../components/fitness/GymEquipmentPanel.jsx';
 import { FitnessProductivityTools } from '../components/fitness/FitnessProductivityTools.jsx';
 
 function DateOfBirthFields({form,setForm}){
@@ -47,10 +48,14 @@ function GymWorkspace({state,context}){
   const [planForm,setPlanForm]=useState({name:'',durationDays:'30',price:'20',currency:'USD'});
   const [membershipForm,setMembershipForm]=useState({memberId:'',planId:'',startsAt:localDate(),autoRenew:false});
   const [checkInForm,setCheckInForm]=useState({memberId:'',method:'manual'});
+  const [checkingIn,setCheckingIn]=useState(false);
+  const checkInFlight=useRef(false);
+  const pendingCheckIn=useRef(null);
   const [assessmentForm,setAssessmentForm]=useState({memberId:'',trainerId:'',weightKg:'',heightCm:'',bodyFatPct:'',muscleMassKg:'',notes:''});
   const [routineForm,setRoutineForm]=useState({memberId:'',trainerId:'',name:'',goal:'',level:'beginner',trainingMode:'hypertrophy',daysPerWeek:'3',exercises:[]});
-  const [nutritionForm,setNutritionForm]=useState({memberId:'',trainerId:'',name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]});
+  const [nutritionForm,setNutritionForm]=useState({memberId:'',trainerId:'',supersedesId:null,name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]});
   const [classForm,setClassForm]=useState({name:'',trainerId:'',startsAt:localDateTime(60),endsAt:localDateTime(120),capacity:'20',location:''});
+  const [bookingClassId,setBookingClassId]=useState('');
 
   const notify=(message,tone='success')=>Toast?.show?.(message,tone);
   const selectedMember=useMemo(()=>members.find((item)=>item.id===selectedMemberId)||null,[members,selectedMemberId]);
@@ -128,9 +133,37 @@ function GymWorkspace({state,context}){
     ()=>GymVerticalService.createMembership({...membershipForm,balance:0}),'Membresía activada.',()=>loadAll({silent:true})
   );};
 
-  const submitCheckIn=(event)=>{event.preventDefault();if(!checkInForm.memberId)return notify('Selecciona un cliente.','warning');void execute(
-    ()=>GymVerticalService.checkIn({...checkInForm,device:navigator.userAgentData?.platform||navigator.platform||'web'}),'Entrada procesada.',()=>loadAll({silent:true})
-  );};
+  const submitCheckIn=(event)=>{event.preventDefault();
+    if(checkInFlight.current)return;
+    if(!checkInForm.memberId)return notify('Selecciona un cliente.','warning');
+    if(!globalThis.crypto?.randomUUID)return notify('Se requiere una conexión segura para registrar la entrada.','error');
+    const payload={...checkInForm,device:navigator.userAgentData?.platform||navigator.platform||'web'};
+    const previous=pendingCheckIn.current;
+    if(!previous||previous.memberId!==payload.memberId||previous.method!==payload.method||previous.device!==payload.device){
+      pendingCheckIn.current={...payload,requestKey:globalThis.crypto.randomUUID()};
+    }
+    checkInFlight.current=true;setCheckingIn(true);
+    void (async()=>{try{
+      await GymVerticalService.checkIn(pendingCheckIn.current);
+      pendingCheckIn.current=null;
+      notify('Entrada procesada.','success');
+      await loadAll({silent:true});
+    }catch(cause){notify(cause?.message||'No se pudo registrar la entrada. Reintenta sin cambiar el cliente.','error');}
+    finally{checkInFlight.current=false;setCheckingIn(false);}
+    })();
+  };
+
+  const reserveClass=(classId)=>{if(!selectedMemberId)return notify('Selecciona un cliente para reservar.','warning');
+    if(bookingClassId)return;
+    setBookingClassId(classId);
+    void (async()=>{try{
+      const booking=await GymVerticalService.bookClass({classId,memberId:selectedMemberId,status:'booked',allowWaitlist:true});
+      notify(booking.status==='waitlisted'?'Agregado a la lista de espera.':'Cupo reservado.','success');
+      await loadAll({silent:true,memberId:selectedMemberId});
+    }catch(cause){notify(cause?.message||'No se pudo reservar la clase.','error');}
+    finally{setBookingClassId('');}
+    })();
+  };
 
   const submitAssessment=(event)=>{event.preventDefault();if(!assessmentForm.memberId)return notify('Selecciona un cliente.','warning');void execute(
     ()=>GymVerticalService.createAssessment(assessmentForm),'Evaluación corporal guardada.',()=>loadAll({silent:true,memberId:assessmentForm.memberId})
@@ -210,8 +243,8 @@ function GymWorkspace({state,context}){
     if(meals.some((meal)=>!meal.recipeId&&!meal.items.length))throw new Error('Cada comida necesita una receta o ingredientes directos.');
     if(meals.some((meal)=>meal.items.some((item)=>!item.ingredientId||!Number.isFinite(item.quantity)||item.quantity<=0||!item.unit)))throw new Error('Cada ingrediente necesita identidad, cantidad positiva y unidad.');
     await GymVerticalService.createNutrition({...nutritionForm,durationDays,targetCalories:Number(nutritionForm.targetCalories||0)||null,waterMl:Number(nutritionForm.waterMl||0)||null,meals});
-    setNutritionForm((current)=>({...current,name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]}));
-  },'Plan alimenticio completo creado.',()=>loadAll({silent:true,memberId:nutritionForm.memberId}));};
+    setNutritionForm((current)=>({...current,supersedesId:null,name:'',goal:'',durationDays:7,targetCalories:'',waterMl:'',startsAt:localDate(),endsAt:'',meals:[]}));
+  },nutritionForm.supersedesId?'Nueva versión del plan alimenticio guardada.':'Plan alimenticio completo creado.',()=>loadAll({silent:true,memberId:nutritionForm.memberId}));};
 
   const submitClass=(event)=>{event.preventDefault();if(!classForm.trainerId)return notify('Selecciona un instructor.','warning');void execute(
     ()=>GymVerticalService.createClass({...classForm,capacity:Number(classForm.capacity||20)}),'Clase programada.',()=>loadAll({silent:true})
@@ -277,18 +310,19 @@ function GymWorkspace({state,context}){
   const readyForClass=members.length>0&&trainers.length>0;
   const panelClasses=<Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
     <Section title="Nueva clase" description="Programa capacidad, instructor y sala.">{!readyForClass?<CgState severity="warning" title="Configuración incompleta">{!members.length?'Falta registrar al menos un cliente. ':''}{!trainers.length?'Falta registrar al menos un instructor.':''}</CgState>:null}<Box component="form" onSubmit={submitClass} sx={{mt:1}}><Stack gap={1}><CgTextField size="small" label="Nombre de la clase" required value={classForm.name} onChange={(e)=>setClassForm({...classForm,name:e.target.value})}/><CgSelect label="Instructor" value={classForm.trainerId} onChange={(e)=>setClassForm({...classForm,trainerId:e.target.value})} options={trainerOpts}/><Box className="cg-gym-v1124-fields" sx={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:1}}><CgTextField size="small" label="Inicio" type="datetime-local" slotProps={{inputLabel:{shrink:true}}} value={classForm.startsAt} onChange={(e)=>setClassForm({...classForm,startsAt:e.target.value})}/><CgTextField size="small" label="Fin" type="datetime-local" slotProps={{inputLabel:{shrink:true}}} value={classForm.endsAt} onChange={(e)=>setClassForm({...classForm,endsAt:e.target.value})}/><CgTextField size="small" label="Cupo" type="number" value={classForm.capacity} onChange={(e)=>setClassForm({...classForm,capacity:e.target.value})}/><CgTextField size="small" label="Sala / sede" value={classForm.location} onChange={(e)=>setClassForm({...classForm,location:e.target.value})}/></Box><CgButton type="submit" disabled={!readyForClass}>Programar clase</CgButton></Stack></Box></Section>
-    <Section title="Próximas clases" description="Calendario operativo."><RecordList items={classes} empty="No hay clases próximas" render={(item)=><Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" gap={1}><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.startsAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {item.trainerName||'Sin instructor'} · {item.location||'Sin sala'}</Typography></Box><CgStatusChip label={`${Number(item.bookings||0)} / ${Number(item.capacity||0)}`} tone="info"/></Stack>}/></Section>
+    <Section title="Próximas clases" description="Reservas con aforo y lista de espera."><CgSelect label="Cliente para reservar" value={selectedMemberId} onChange={(event)=>void loadMemberData(event.target.value)} options={memberOpts}/><RecordList items={classes} empty="No hay clases próximas" render={(item)=><Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{xs:'stretch',sm:'center'}} gap={1}><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.startsAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {item.trainerName||'Sin instructor'} · {item.location||'Sin sala'}</Typography></Box><Stack direction="row" alignItems="center" gap={1}><CgStatusChip label={`${Number(item.bookings||0)} / ${Number(item.capacity||0)}`} tone="info"/><CgButton size="small" disabled={!selectedMemberId||bookingClassId!==''||item.status!=='scheduled'||new Date(item.startsAt)<=new Date()} onClick={()=>reserveClass(item.id)}>{bookingClassId===item.id?'Reservando…':'Reservar'}</CgButton></Stack></Stack>}/></Section>
   </Box>;
 
   const overview=<Box className="cg-gym-v1124-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',lg:'repeat(2,minmax(0,1fr))'},gap:1.25}}>
     <Section title="Preparación operativa" description="Clientes, instructores y planes disponibles en este módulo."><Box className="cg-gym-v1124-status" sx={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:1}}><Metric label="Clientes" value={members.length}/><Metric label="Instructores" value={trainers.length}/><Metric label="Planes" value={plans.length}/></Box>{!members.length||!trainers.length?<CgState severity="info" title="Completa la configuración básica">{!members.length?'Registra al menos un cliente. ':''}{!trainers.length?'Registra al menos un instructor.':''}</CgState>:null}</Section>
-    <Section title="Registrar entrada" description="Control de acceso de clientes ya creados."><Box component="form" onSubmit={submitCheckIn}><Stack gap={1}><CgSelect label="Cliente" value={checkInForm.memberId} onChange={(e)=>setCheckInForm({...checkInForm,memberId:e.target.value})} options={memberOpts}/><CgSelect label="Método" value={checkInForm.method} onChange={(e)=>setCheckInForm({...checkInForm,method:e.target.value})} options={['manual','qr','barcode','nfc'].map((value)=>({value,label:value.toUpperCase()}))}/><CgButton type="submit" disabled={!members.length}>Registrar entrada</CgButton></Stack></Box></Section>
+    <Section title="Registrar entrada" description="Control de acceso de clientes ya creados."><Box component="form" onSubmit={submitCheckIn}><Stack gap={1}><CgSelect label="Cliente" value={checkInForm.memberId} disabled={checkingIn} onChange={(e)=>{pendingCheckIn.current=null;setCheckInForm({...checkInForm,memberId:e.target.value});}} options={memberOpts}/><CgSelect label="Método" value={checkInForm.method} disabled={checkingIn} onChange={(e)=>{pendingCheckIn.current=null;setCheckInForm({...checkInForm,method:e.target.value});}} options={['manual','qr','barcode','nfc'].map((value)=>({value,label:value.toUpperCase()}))}/><CgButton type="submit" disabled={!members.length||checkingIn}>{checkingIn?'Procesando…':'Registrar entrada'}</CgButton></Stack></Box></Section>
     <Section title="Nuevo plan comercial" description="Configura una membresía antes de asignarla."><Box component="form" onSubmit={submitPlan}><Stack gap={1}><CgTextField size="small" label="Nombre" required value={planForm.name} onChange={(e)=>setPlanForm({...planForm,name:e.target.value})}/><Box className="cg-gym-v1124-fields" sx={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:1}}><CgTextField size="small" label="Duración (días)" type="number" value={planForm.durationDays} onChange={(e)=>setPlanForm({...planForm,durationDays:e.target.value})}/><CgTextField size="small" label="Precio" type="number" value={planForm.price} onChange={(e)=>setPlanForm({...planForm,price:e.target.value})}/></Box><CgSelect label="Moneda" value={planForm.currency} onChange={(e)=>setPlanForm({...planForm,currency:e.target.value})} options={['USD','VES'].map((value)=>({value,label:value}))}/><CgButton type="submit">Guardar plan</CgButton></Stack></Box><Box mt={1}><RecordList items={plans} empty="No hay planes comerciales configurados" render={(plan)=><Stack direction="row" justifyContent="space-between"><Box><Typography variant="body2" fontWeight={700}>{plan.name}</Typography><Typography variant="caption" color="text.secondary">{Number(plan.durationDays||0)} días</Typography></Box><Typography variant="body2">{amount(plan.price,plan.currency)}</Typography></Stack>}/></Box></Section>
     <Section title="Activar membresía" description="Asigna un plan comercial a un cliente."><Box component="form" onSubmit={submitMembership}><Stack gap={1}><CgSelect label="Cliente" value={membershipForm.memberId} onChange={(e)=>setMembershipForm({...membershipForm,memberId:e.target.value})} options={memberOpts}/><CgSelect label="Plan" value={membershipForm.planId} onChange={(e)=>setMembershipForm({...membershipForm,planId:e.target.value})} options={planOpts}/><CgTextField size="small" label="Inicio" type="date" slotProps={{inputLabel:{shrink:true}}} value={membershipForm.startsAt} onChange={(e)=>setMembershipForm({...membershipForm,startsAt:e.target.value})}/><FormControlLabel control={<Checkbox checked={membershipForm.autoRenew} onChange={(e)=>setMembershipForm({...membershipForm,autoRenew:e.target.checked})}/>} label="Renovación automática"/><CgButton type="submit" disabled={!members.length||!plans.length}>Activar membresía</CgButton></Stack></Box></Section>
     <Section wide title="Próximas clases" description="Agenda disponible para operación diaria." action={<CgButton variant="outlined" onClick={()=>selectTab('classes')}>Programar clase</CgButton>}><RecordList items={classes} empty="No hay clases próximas" render={(item)=><Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between"><Box><Typography variant="body2" fontWeight={700}>{item.name}</Typography><Typography variant="caption" color="text.secondary">{new Date(item.startsAt).toLocaleString('es-VE',{dateStyle:'short',timeStyle:'short'})} · {item.trainerName||'Sin instructor'}</Typography></Box><Typography variant="body2">{Number(item.bookings||0)} / {Number(item.capacity||0)}</Typography></Stack>}/></Section>
   </Box>;
 
-  const panels={overview,members:panelMembers,trainers:panelTrainers,assessments:panelAssessments,routines:panelRoutines,nutrition:panelNutrition,classes:panelClasses};
+  const panelEquipment=<GymEquipmentPanel/>;
+  const panels={overview,members:panelMembers,trainers:panelTrainers,assessments:panelAssessments,routines:panelRoutines,nutrition:panelNutrition,classes:panelClasses,equipment:panelEquipment};
 
   if (!serverVerified) return <Stack className="cg-vertical-page cg-gym-page" gap={1.5}>
     <CgPageHeader eyebrow="Vertical Fitness" title="Datos del gimnasio pendientes de verificación" description="No mostramos perfiles, evaluaciones ni rutinas almacenadas sin comprobar la sesión y la respuesta actual del servidor."/>
@@ -307,7 +341,7 @@ function GymWorkspace({state,context}){
       <Metric label="Ingresos del mes" value={`$ ${Number(summary.revenueThisMonth||0).toLocaleString('es-VE',{minimumFractionDigits:2})}`} hint="Pagos confirmados" tone="secondary"/>
     </Box>
     <Section title="Coaching y retención" description="Señales operativas para seguimiento antes de perder una membresía."><Box className="cg-gym-v1124-grid cg-gym-retention-grid" sx={{display:'grid',gridTemplateColumns:{xs:'1fr',sm:'repeat(3,1fr)'},gap:1}}><Metric label="Renovaciones próximas" value={Number(summary.memberships?.expiring||0)}/><Metric label="Clases ≥ 80%" value={highOccupancy}/><Metric label="Clientes con coaching" value={Number(summary.members?.active||0)}/></Box></Section>
-    <Paper className="cg-gym-v1124-tabs" variant="outlined" sx={{px:1,minWidth:0,maxWidth:'100%',overflow:'hidden'}}><Tabs sx={{minWidth:0,maxWidth:'100%'}} value={tab} onChange={(_e,value)=>selectTab(value)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>{[['overview','Operación'],['members','Clientes'],['trainers','Instructores'],['assessments','Evaluaciones'],['routines','Rutinas'],['nutrition','Nutrición'],['classes','Clases']].map(([value,label])=><Tab key={value} value={value} label={label}/>)}</Tabs></Paper>
+    <Paper className="cg-gym-v1124-tabs" variant="outlined" sx={{px:1,minWidth:0,maxWidth:'100%',overflow:'hidden'}}><Tabs sx={{minWidth:0,maxWidth:'100%'}} value={tab} onChange={(_e,value)=>selectTab(value)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>{[['overview','Operación'],['members','Clientes'],['trainers','Instructores'],['assessments','Evaluaciones'],['routines','Rutinas'],['nutrition','Nutrición'],['classes','Clases'],['equipment','Equipos']].map(([value,label])=><Tab key={value} value={value} label={label}/>)}</Tabs></Paper>
     <Box data-gym-panel={tab}>{panels[tab]||overview}</Box>
   </Stack>;
 }

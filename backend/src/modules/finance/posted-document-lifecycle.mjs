@@ -26,8 +26,12 @@ export function preparePostedDocumentIntent(input){
   const actorId=id(input.actorId),documentId=id(input.documentId),effectKey=id(input.effectKey);
   if(!['sales','purchase'].includes(input.kind))throw new PostedDocumentIntentError('KIND_INVALID');
   if(!Number.isSafeInteger(input.expectedRevision)||input.expectedRevision<1||input.expectedRevision>=Number.MAX_SAFE_INTEGER)throw new PostedDocumentIntentError('REVISION_INVALID');
-  const domain=Object.hasOwn(ACTIONS,String(input.from)) ? ACTIONS[input.from] : null;
-  const next=domain && Object.hasOwn(domain,String(input.action)) ? domain[input.action] : null;
+  // Never let caller-controlled objects impersonate a state or an action via
+  // toString(). Otherwise a forged 'issue' skips the #762 numbering guard.
+  if(typeof input.from!=='string'||typeof input.action!=='string')
+    throw new PostedDocumentIntentError('TRANSITION_FORBIDDEN');
+  const domain=Object.hasOwn(ACTIONS,input.from) ? ACTIONS[input.from] : null;
+  const next=domain && Object.hasOwn(domain,input.action) ? domain[input.action] : null;
   if(!next)throw new PostedDocumentIntentError('TRANSITION_FORBIDDEN');
   if(typeof input.immutableSnapshotHash!=='string'||!HASH.test(input.immutableSnapshotHash))throw new PostedDocumentIntentError('SNAPSHOT_REQUIRED');
   if(input.action==='issue'){

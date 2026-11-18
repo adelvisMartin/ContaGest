@@ -7,6 +7,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { runLabScenario } from '../src/modules/hipico-bot/hipico-lab-simulator.js';
 import { labScenarioById } from '../src/modules/hipico-bot/hipico-lab-scenarios.js';
 import { probeSoakHealth, validateSoakHealthUrl } from '../src/modules/hipico-bot/hipico-soak-health.js';
+import { monotonicElapsedMs, remainingSoakMs } from '../../scripts/hipico-soak-monotonic-v120.mjs';
 import { createSoakReleaseEvidence, evaluateSoak, type EvidenceStatus, type SoakDrillEvidence, type SoakSummaryInput } from '../src/modules/hipico-bot/hipico-soak-policy.js';
 
 const backendDir=path.basename(process.cwd())==='backend'?process.cwd():path.join(process.cwd(),'backend');
@@ -182,7 +183,7 @@ try{fs.mkdirSync(outDir,{recursive:false});}catch(error:any){if(error?.code==='E
 fs.writeFileSync(samplesFile,'',{flag:'wx'});
 
 const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();
-const cpuStart=process.cpuUsage();const memoryStart=process.memoryUsage();const start=Date.now();
+const cpuStart=process.cpuUsage();const memoryStart=process.memoryUsage();const start=Date.now();const startedAtMonotonicMs=performance.now();
 let healthChecks=0,healthFailures=0,spoolChecks=0,spoolAvailableChecks=0,decisions=0,lostDecisions=0,duplicateResponses=0,contextLeaks=0,maxBacklogAgeSeconds=0,maxSpoolBytes=0;
 
 type FileStats={files:number;bytes:number;oldestMtimeMs:number|null};
@@ -220,16 +221,17 @@ async function health(){
 }
 function append(row:unknown){fs.appendFileSync(samplesFile,`${JSON.stringify(row)}\n`);}
 
-const endAt=start+durationMinutes*60_000;
-while(Date.now()<endAt){
+// Use elapsed monotonic time for the whole observation interval. UTC timestamps
+// are retained separately for external evidence, which rejects clock skew.
+while(remainingSoakMs(startedAtMonotonicMs,durationMinutes,performance.now())>0){
   const run=runLabScenario(scenario);decisions+=run.transcript.length;lostDecisions+=run.summary.lostDecisions;duplicateResponses+=run.summary.duplicateResponses;contextLeaks+=run.summary.contextLeaks;
   const spool=spoolStats(spoolPath);maxBacklogAgeSeconds=Math.max(maxBacklogAgeSeconds,spool.oldestAgeSeconds);maxSpoolBytes=Math.max(maxSpoolBytes,spool.bytes);
   const mem=process.memoryUsage();const cpu=process.cpuUsage(cpuStart);const healthState=await health();
-  append({at:new Date().toISOString(),elapsedMs:Date.now()-start,rssMb:mem.rss/1048576,heapUsedMb:mem.heapUsed/1048576,externalMb:mem.external/1048576,cpuUserMs:cpu.user/1000,cpuSystemMs:cpu.system/1000,eventLoopP95Ms:eventLoop.percentile(95)/1e6,spool,health:healthState,decisions,duplicateResponses,lostDecisions,contextLeaks});
-  const remaining=endAt-Date.now();if(remaining<=0)break;await new Promise((resolve)=>setTimeout(resolve,Math.min(sampleSeconds*1000,remaining)));
+  append({at:new Date().toISOString(),elapsedMs:monotonicElapsedMs(startedAtMonotonicMs,performance.now()),rssMb:mem.rss/1048576,heapUsedMb:mem.heapUsed/1048576,externalMb:mem.external/1048576,cpuUserMs:cpu.user/1000,cpuSystemMs:cpu.system/1000,eventLoopP95Ms:eventLoop.percentile(95)/1e6,spool,health:healthState,decisions,duplicateResponses,lostDecisions,contextLeaks});
+  const remaining=remainingSoakMs(startedAtMonotonicMs,durationMinutes,performance.now());if(remaining<=0)break;await new Promise((resolve)=>setTimeout(resolve,Math.min(sampleSeconds*1000,remaining)));
 }
 const runEndedAt=Date.now();const eventLoopP95Ms=eventLoop.percentile(95)/1e6;eventLoop.disable();
-const memoryEnd=process.memoryUsage();const durationMs=runEndedAt-start;
+const memoryEnd=process.memoryUsage();const durationMs=monotonicElapsedMs(startedAtMonotonicMs,performance.now());
 
 function loadRunSafetyEvidence(){
   const fallback:Record<SafetyInvariantKey,SafetyInvariantEvidence>={

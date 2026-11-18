@@ -195,3 +195,16 @@ test('confirmed ACK hint restoration never triggers a WhatsApp re-send',async()=
   assert.match(block,/rememberLabSeen\(row\.id\)/);
   assert.doesNotMatch(block,/sendTextInCurrentLab\(|labTestReplyJournal\.begin\(|labTestReplyJournal\.prepare\(/);
 });
+
+test('sender identity from LAB DOM cannot be forged using object string coercion',()=>{
+  const real='false_120363222222222222@g.us_m1_123456789012@lid';
+  const forgery={toString:()=>real};
+  assert.equal(stableLabSenderKey(real),'123456789012@lid');
+  assert.equal(stableLabSenderKey(forgery),'');
+  assert.equal(stableLabSenderKey(new String(real)),'');
+  assert.equal(stableLabSenderKey(undefined),'');
+  assert.equal(stableLabSenderKey(null),'');
+  const forgedRow={id:forgery,text:'¿Qué carrera sigue?',fromMe:false,hasMedia:false};
+  assert.equal(planLabConversation(forgedRow,classifyLocal(forgedRow.text)).sender,'');
+  assert.equal(planLabConversation(forgedRow,classifyLocal(forgedRow.text)).rememberRace,false);
+});

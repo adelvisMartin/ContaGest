@@ -51,10 +51,8 @@ test('Control Hípico invalidates the cached shell that contained the render loo
   // Verify new cache identity plus removal of all prior Hípico shell caches,
   // not a stale literal revision that would freeze offline upgrades.
   assert.doesNotMatch(code, /r29-auto-update-reload/);
-  // A newer shell cache must invalidate the historical r38 cache; the release
-  // sequence can continue advancing without weakening the purge/lifecycle gates.
   assertHipicoShellCacheRotated(code);
-  assert.match(code, /-consolidator-v4-1-3`/, 'the current shell contract must remain v4.1.3');
+  assert.match(code, /-consolidator-v4-1-3`/, 'Hípico shell must retain its v4.1.3 authority');
   assert.match(code, /key\.startsWith\('hipico-control-'\)\s*&&\s*key\s*!==\s*SHELL_CACHE/);
   assert.match(code, /await self\.skipWaiting\(\)/);
   assert.match(code, /await self\.clients\.claim\(\)/);

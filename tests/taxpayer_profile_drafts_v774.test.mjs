@@ -24,3 +24,11 @@ test('#774 blocks untrusted activities and bad provenance',()=>{
   no(()=>go({activityCodes:['../../bad']}));no(()=>go({sourceContentSha256:'bad'}));
   no(()=>go({}, {...ctx,tenantRif:''}));no(()=>go({taxpayerCategory:''}));
 });
+
+test('#774 UTC precision uses chronological instants for mixed seconds and milliseconds',()=>{
+  const from='2026-01-01T00:00:00Z';
+  assert.equal(go({effectiveFrom:from,effectiveTo:'2026-01-01T00:00:00.100Z'}).effectiveTo,'2026-01-01T00:00:00.100Z');
+  assert.equal(go({effectiveFrom:'2026-01-01T00:00:00.100Z',effectiveTo:'2026-01-01T00:00:01Z'}).effectiveTo,'2026-01-01T00:00:01.000Z');
+  no(()=>go({effectiveFrom:'2026-01-01T00:00:00.100Z',effectiveTo:from}));
+  no(()=>go({effectiveFrom:from,effectiveTo:'2026-01-01T00:00:00.000Z'}));
+});

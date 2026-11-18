@@ -5,7 +5,8 @@ const AUTH_SESSION_KEY = 'contagest_auth_session';
 const LEGACY_STATE_PREFIX = 'contagest_ve_enterprise_v7_state';
 
 export const OUTBOX_ALLOWLIST = Object.freeze({
-  'analytics.event': Object.freeze({ method: 'POST', path: '/analytics/events' })
+  'analytics.event': Object.freeze({ method: 'POST', path: '/analytics/events' }),
+  'gym.workout.set': Object.freeze({ method:'POST', path:'/verticals/gym/workout-sessions/:sessionId/sets' })
 });
 
 function hashScopePart(value) {
@@ -22,6 +23,66 @@ export function sessionScope(session) {
   const tenantId = session?.tenantId || session?.tenant?.id || 'anonymous';
   const userId = session?.user?.id || session?.userId || 'anonymous';
   return `${hashScopePart(tenantId)}-${hashScopePart(userId)}`;
+}
+
+const GYM_SET_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const GYM_SET_FIELDS=new Set([
+  'sessionId','routineExerciseId','setNumber','status','loadKg','reps',
+  'rir','rpe','restSeconds','notes','performedExerciseId','substitutionReason'
+]);
+
+function offlineError(code,message){
+  const error=new Error(message);error.code=code;return error;
+}
+
+function validateWorkoutSetPayload(payload){
+  if(!payload||typeof payload!=='object'||Array.isArray(payload))
+    throw offlineError('OFFLINE_WORKOUT_PAYLOAD_INVALID','La serie debe ser un objeto.');
+  if(Object.keys(payload).some((key)=>!GYM_SET_FIELDS.has(key))||
+    !GYM_SET_UUID.test(String(payload.sessionId||''))||
+    !GYM_SET_UUID.test(String(payload.routineExerciseId||''))||
+    !Number.isSafeInteger(payload.setNumber)||payload.setNumber<1||payload.setNumber>100||
+    !['completed','skipped'].includes(payload.status))
+    throw offlineError('OFFLINE_WORKOUT_PAYLOAD_INVALID','Identificadores o campos de serie inválidos.');
+  if(payload.status==='completed'&&
+    (!Number.isSafeInteger(payload.reps)||payload.reps<0||payload.reps>500))
+    throw offlineError('OFFLINE_WORKOUT_PAYLOAD_INVALID','La serie requiere repeticiones válidas.');
+  const numbers=[
+    ['loadKg',0,5000,false],['rir',0,10,false],['rpe',1,10,false],
+    ['restSeconds',0,3600,true]
+  ];
+  if(numbers.some(([field,min,max,integer])=>payload[field]!=null&&
+     (typeof payload[field]!=='number'||!Number.isFinite(payload[field])||
+       payload[field]<min||payload[field]>max||(integer&&!Number.isSafeInteger(payload[field]))))||
+     (payload.notes!=null&&(typeof payload.notes!=='string'||payload.notes.length>2000))||
+     (payload.substitutionReason!=null&&(typeof payload.substitutionReason!=='string'||payload.substitutionReason.length>500))||
+     (payload.performedExerciseId!=null&&!GYM_SET_UUID.test(String(payload.performedExerciseId))))
+    throw offlineError('OFFLINE_WORKOUT_PAYLOAD_INVALID','Valores de la serie fuera de rango.');
+  let encoded;
+  try{encoded=JSON.stringify(payload);}catch{encoded=null;}
+  if(!encoded||encoded.length>8192)
+    throw offlineError('OFFLINE_WORKOUT_PAYLOAD_INVALID','El evento excede el límite offline.');
+  return JSON.parse(encoded);
+}
+
+export function resolveOfflinePath(operation,payload){
+  const authority=Object.hasOwn(OUTBOX_ALLOWLIST,operation)?OUTBOX_ALLOWLIST[operation]:null;
+  if(!authority)throw offlineError('OFFLINE_OPERATION_NOT_ALLOWED','Operación offline no autorizada.');
+  if(operation==='gym.workout.set'){
+    const data=validateWorkoutSetPayload(payload);
+    return authority.path.replace(':sessionId',encodeURIComponent(data.sessionId));
+  }
+  return authority.path;
+}
+
+function assertCurrentOfflineSession(session){
+  if(!session?.tenantId||!(session?.user?.id||session?.userId))
+    throw offlineError('OFFLINE_SESSION_CHANGED','La cola requiere sesión tenant/usuario.');
+  if(typeof localStorage!=='undefined'){
+    const current=parseStoredSession();
+    if(!current||sessionScope(current)!==sessionScope(session))
+      throw offlineError('OFFLINE_SESSION_CHANGED','La sesión cambió; no es seguro sincronizar.');
+  }
 }
 
 function sessionCacheName(session) {
@@ -186,10 +247,15 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
     throw error;
   }
   if (!session?.tenantId || !session?.user?.id) throw new Error('Se requiere sesión tenant/user para usar el outbox offline.');
+  assertCurrentOfflineSession(session);
+  const safePayload=operation==='gym.workout.set'?validateWorkoutSetPayload(payload):payload ?? {};
   const key = String(idempotencyKey || '').trim();
   if (!/^[A-Za-z0-9._:-]{8,128}$/.test(key)) throw new Error('idempotencyKey inválida para operaciones offline reintentables.');
   const database = await openOutbox(session);
   try {
+    // Logout/tenant switch may occur while IndexedDB.open is pending.
+    // Do not create a transaction using an obsolete authenticated scope.
+    assertCurrentOfflineSession(session);
     const transaction = database.transaction('outbox', 'readwrite');
     const store = transaction.objectStore('outbox');
     const id = `${sessionScope(session)}:${operation}:${key}`;
@@ -198,9 +264,11 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
       scopeToken: sessionScope(session),
       operation,
       idempotencyKey: key,
-      payload: payload ?? {},
+      payload: safePayload,
       createdAt: new Date().toISOString(),
       attempts: 0,
+      status: 'pending',
+      nextAttemptAt: null,
       authority
     };
     // An existing idempotency key is a safe retry only for the exact same
@@ -233,6 +301,9 @@ export async function enqueueOfflineOperation({ session, operation, payload, ide
       storedRecord = existing;
     };
     await transactionPromise(transaction);
+    // The session may change AFTER IndexedDB.open and while the transaction
+    // completes. Do not acknowledge an enqueue to the new tenant/user.
+    assertCurrentOfflineSession(session);
     if (conflict) {
       const error = new Error('La clave de idempotencia pertenece a una operación diferente.');
       error.code = 'OFFLINE_IDEMPOTENCY_CONFLICT';
@@ -261,6 +332,9 @@ export function assertOfflineDeliveryAcknowledged(response) {
 async function readOutbox(session) {
   const database = await openOutbox(session);
   try {
+    // Logout/tenant switch may occur while IndexedDB.open is pending.
+    // Do not create a transaction using an obsolete authenticated scope.
+    assertCurrentOfflineSession(session);
     const transaction = database.transaction('outbox', 'readonly');
     const request = transaction.objectStore('outbox').getAll();
     const records = await new Promise((resolve, reject) => {
@@ -268,6 +342,9 @@ async function readOutbox(session) {
       request.onerror = () => reject(request.error || new Error('No se pudo leer el outbox.'));
     });
     await transactionPromise(transaction);
+    // A read whose transaction finishes after logout/tenant switch must not
+    // surface the previous session's workout data to the new UI.
+    assertCurrentOfflineSession(session);
     return records.filter((record) => record.scopeToken === sessionScope(session));
   } finally {
     database.close();
@@ -277,6 +354,9 @@ async function readOutbox(session) {
 async function deleteOutboxRecord(session, id) {
   const database = await openOutbox(session);
   try {
+    // Logout/tenant switch may occur while IndexedDB.open is pending.
+    // Do not create a transaction using an obsolete authenticated scope.
+    assertCurrentOfflineSession(session);
     const transaction = database.transaction('outbox', 'readwrite');
     transaction.objectStore('outbox').delete(id);
     await transactionPromise(transaction);
@@ -285,28 +365,101 @@ async function deleteOutboxRecord(session, id) {
   }
 }
 
-export async function flushOfflineOutbox(session, sender) {
+function retryDelayMs(attempts){
+  return Math.min(300000,1000*2**Math.min(8,Math.max(0,attempts-1)));
+}
+
+async function updateGymOutboxFailure(session,id,error){
+  if(typeof indexedDB==='undefined')return;
+  const database=await openOutbox(session);
+  try{
+    assertCurrentOfflineSession(session);
+    const transaction=database.transaction('outbox','readwrite');
+    const store=transaction.objectStore('outbox');
+    const lookup=store.get(id);
+    lookup.onsuccess=()=>{
+      const record=lookup.result;
+      if(!record||record.scopeToken!==sessionScope(session)||record.operation!=='gym.workout.set')return;
+      const attempts=Number(record.attempts||0)+1;
+      const status=error?.status===409?'conflict':
+        [400,401,403,404,422].includes(error?.status)?'failed':'pending';
+      store.put({...record,attempts,status,
+        errorCode:typeof error?.status==='number'?'HTTP_'+error.status:'NETWORK_RETRY',
+        nextAttemptAt:status==='pending'?new Date(Date.now()+retryDelayMs(attempts)).toISOString():null
+      });
+    };
+    await transactionPromise(transaction);
+  }finally{database.close();}
+}
+
+export async function listOfflineWorkoutQueue(session){
+  assertCurrentOfflineSession(session);
+  const records=await readOutbox(session);
+  return records.filter((record)=>record.operation==='gym.workout.set').map((record)=>({
+    id:record.id,createdAt:record.createdAt,status:record.status||'pending',
+    attempts:record.attempts||0,errorCode:record.errorCode||null,
+    sessionId:record.payload?.sessionId,routineExerciseId:record.payload?.routineExerciseId,
+    setNumber:record.payload?.setNumber
+  }));
+}
+
+export async function discardReviewedWorkoutEvent(session,id){
+  assertCurrentOfflineSession(session);
+  const records=await readOutbox(session);
+  const record=records.find((row)=>row.id===id&&row.operation==='gym.workout.set');
+  if(!record||!['conflict','failed'].includes(record.status))
+    throw offlineError('OFFLINE_DISCARD_NOT_ALLOWED','Solo se pueden descartar eventos con conflicto o fallo definitivo.');
+  await deleteOutboxRecord(session,id);
+  return {discarded:true,sessionId:record.payload?.sessionId,setNumber:record.payload?.setNumber};
+}
+
+export async function flushOfflineOutbox(session, sender, options = {}) {
   if (typeof sender !== 'function') throw new TypeError('sender debe ser una función.');
+  assertCurrentOfflineSession(session);
+  const allowed=Array.isArray(options.operations)?new Set(options.operations):null;
+  const force=options.force===true;
   const records = await readOutbox(session);
   const results = [];
-  for (const record of records.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))) {
+  for (const record of records.sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt))||String(a.id).localeCompare(String(b.id)))) {
+    if(allowed&&!allowed.has(record.operation))continue;
+    if(record.status==='conflict'||record.status==='failed'){
+      results.push({id:record.id,delivered:false,status:record.status,error:record.errorCode||'OFFLINE_REQUIRES_REVIEW'});
+      break;
+    }
+    if(!force&&record.nextAttemptAt&&new Date(record.nextAttemptAt).getTime()>Date.now())break;
     // Resolve offline transport from this source-controlled allowlist, never mutable IndexedDB metadata.
     const authority = Object.hasOwn(OUTBOX_ALLOWLIST, record.operation)
       ? OUTBOX_ALLOWLIST[record.operation] : null;
     if (!authority) continue;
     try {
-      const response = await sender({
-        operation: record.operation,
-        method: authority.method,
-        path: authority.path,
-        payload: record.payload,
-        idempotencyKey: record.idempotencyKey
+      assertCurrentOfflineSession(session);
+      const path=resolveOfflinePath(record.operation,record.payload);
+      const response=await sender({
+        operation:record.operation,method:authority.method,path,
+        payload:record.payload,idempotencyKey:record.idempotencyKey
       });
       assertOfflineDeliveryAcknowledged(response);
-      await deleteOutboxRecord(session, record.id);
-      results.push({ id: record.id, delivered: true, response });
-    } catch (error) {
-      results.push({ id: record.id, delivered: false, error: String(error?.message || error) });
+      assertCurrentOfflineSession(session);
+      await deleteOutboxRecord(session,record.id);
+      results.push({id:record.id,delivered:true,status:'synced',response});
+    }catch(error){
+      if(record.operation==='gym.workout.set'&&error?.code!=='OFFLINE_SESSION_CHANGED'){
+        // A network error can arrive AFTER logout or tenant switch. Do not
+        // reopen an old IndexedDB scope after purge has started.
+        try{
+          assertCurrentOfflineSession(session);
+          await updateGymOutboxFailure(session,record.id,error);
+        }
+        catch(updateError){
+          results.push({id:record.id,delivered:false,status:'failed',
+            error:updateError?.code==='OFFLINE_SESSION_CHANGED'
+              ?'OFFLINE_SESSION_CHANGED':'OFFLINE_OUTBOX_STATE_WRITE_FAILED'});
+          break;
+        }
+      }
+      results.push({id:record.id,delivered:false,
+        status:error?.status===409?'conflict':'pending',
+        error:String(error?.message||error)});
       break;
     }
   }

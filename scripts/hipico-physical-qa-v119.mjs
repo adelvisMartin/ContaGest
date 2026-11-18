@@ -93,11 +93,22 @@ function twoDayEvidenceStatus(result,evidenceFiles,clockMs=Date.now()){
     }
     return millis;
   };
+  // A fixture cannot prove physical QA that allegedly happened before the
+  // recorder was initialized or after its declared completion.
+  const runStarted=parseObserved({observedAtUtc:result.startedAt},'run/startedAt');
+  const runCompleted=result.completedAt==null?clockMs:
+    parseObserved({observedAtUtc:result.completedAt},'run/completedAt');
+  if(runStarted!==null&&runCompleted!==null&&runStarted>runCompleted)
+    errors.push('run: inicio posterior a finalización');
   for(const env of result.environments||[]){
     if(dayIds.some(id=>env.scenarios?.[id]?.status!=='PASS'))continue;
     const [first,second]=dayIds.map(id=>parseObserved(env.scenarios[id],env.id+'/'+id));
     if(first!==null&&second!==null&&second-first<24*60*60*1000)
       errors.push(env.id+': se requieren dos jornadas distintas separadas por >=24 horas');
+    if(first!==null&&runStarted!==null&&first<runStarted)
+      errors.push(env.id+': jornada anterior al inicio del run');
+    if(second!==null&&runCompleted!==null&&second>runCompleted)
+      errors.push(env.id+': jornada posterior a la finalización del run');
     const [firstFiles,secondFiles]=dayIds.map(id=>evidenceFiles
       .filter(item=>item.environment===env.id&&item.scenario===id)
       .map(item=>item.sha256));
@@ -162,6 +173,7 @@ function writeReleaseEvidence(final,target){
   const evidence={
     schema:'hipico-physical-qa-evidence.v119',
     candidateSha:final.candidateSha,
+    startedAt:final.startedAt,
     status:'PASS',
     checkedAt:final.checkedAt,
     completedAt:final.completedAt,

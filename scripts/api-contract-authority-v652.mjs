@@ -107,21 +107,21 @@ function balancedCall(source,openIndex) {
   for(let i=openIndex;i<source.length;i+=1){const ch=source[i];if(quote){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch===quote)quote='';continue;}if(ch==='"'||ch==="'"||ch==='`'){quote=ch;continue;}if(ch==='(')depth+=1;else if(ch===')'){depth-=1;if(depth===0)return source.slice(openIndex+1,i);}} return source.slice(openIndex+1);
 }
 function permissionsFrom(text){return [...text.matchAll(/requirePermission\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m)=>m[1]);}
-function bodySchemaFrom(text,schemaCorpusHash){const match=text.match(/validateBody\(\s*([^,)]+(?:\([^)]*\))?[^,)]*)\s*\)/);return match?`expr:${fingerprint(match[1])}:corpus:${schemaCorpusHash}`:null;}
+function bodySchemaFrom(text,ownerFile,resolveSchema){const match=text.match(/validateBody\(\s*([^,)]+(?:\([^)]*\))?[^,)]*)\s*\)/);return match?'expr:'+fingerprint(match[1])+':corpus:'+resolveSchema(ownerFile,match[1]):null;}
 function responseStatuses(text){const explicit=[...text.matchAll(/\.status\(\s*(\d{3})\s*\)/g)].map((m)=>Number(m[1]));const ternary=[...text.matchAll(/\?\s*(\d{3})\s*:\s*(\d{3})/g)].flatMap((m)=>[Number(m[1]),Number(m[2])]);const all=[...new Set([200,...explicit,...ternary])].sort((a,b)=>a-b);return{success:all.filter((s)=>s<400),errors:all.filter((s)=>s>=400)};}
 function inheritedGuards(source,routeIndex){const prefix=source.slice(0,routeIndex);const guards={tenantRequired:false,permissions:[]};for(const match of prefix.matchAll(/\brouter\.use\s*\(/g)){const args=balancedCall(prefix,match.index+match[0].lastIndexOf('('));if(/^\s*['"`]/.test(args))continue;if(/\brequireTenant\b/.test(args))guards.tenantRequired=true;guards.permissions.push(...permissionsFrom(args));}guards.permissions=[...new Set(guards.permissions)].sort();return guards;}
-function inferRoute({method,fullPath,callText,inherited,source,schemaCorpusHash}) {
-  const permissions=[...new Set([...(inherited.permissions||[]),...permissionsFrom(callText)])].sort(); const tenantRequired=inherited.tenantRequired||/\brequireTenant\b/.test(callText)||permissions.length>0; const bodySchema=bodySchemaFrom(callText,schemaCorpusHash); const statuses=responseStatuses(callText); const errors=new Set(statuses.errors);
+function inferRoute({method,fullPath,callText,inherited,source,resolveSchema}) {
+  const permissions=[...new Set([...(inherited.permissions||[]),...permissionsFrom(callText)])].sort(); const tenantRequired=inherited.tenantRequired||/\brequireTenant\b/.test(callText)||permissions.length>0; const bodySchema=bodySchemaFrom(callText,source,resolveSchema); const statuses=responseStatuses(callText); const errors=new Set(statuses.errors);
   if(tenantRequired)errors.add(401);if(permissions.length)errors.add(403);if(bodySchema)errors.add(422);for(const match of callText.matchAll(/(?:HttpError|AppError)\(\s*(\d{3})/g))errors.add(Number(match[1]));
   const envelope=/^\/(?:api\/v1\/)?health(?:\/|$)|^\/metrics$/.test(fullPath)?'probe':fullPath==='/api/v1/security/csp-report'?'telemetry':'canonical';
   return {method:method.toUpperCase(),path:fullPath,auth:{tenantRequired:Boolean(tenantRequired),permissions},request:{bodySchema},responses:{success:statuses.success,errors:[...errors].sort((a,b)=>a-b)},envelope,deprecated:/@deprecated/.test(callText),source};
 }
-function scanRouteCalls(source,file,basePath,schemaCorpusHash,routerNames='router|app') {
+function scanRouteCalls(source,file,basePath,resolveSchema,routerNames='router|app') {
   const routes=[]; const re=new RegExp(`\\b(?:${routerNames})\\.(get|post|put|patch|delete|options|head)\\s*\\(\\s*(['\"])([^'\"]+)\\2`,'g');
-  for(const match of source.matchAll(re)){const open=source.indexOf('(',match.index);routes.push(inferRoute({method:match[1],fullPath:normalizeApiPath(basePath,match[3]),callText:balancedCall(source,open),inherited:inheritedGuards(source,match.index),source:file,schemaCorpusHash}));} return routes;
+  for(const match of source.matchAll(re)){const open=source.indexOf('(',match.index);routes.push(inferRoute({method:match[1],fullPath:normalizeApiPath(basePath,match[3]),callText:balancedCall(source,open),inherited:inheritedGuards(source,match.index),source:file,resolveSchema}));} return routes;
 }
 function parseMounts(source,file,basePath,reader){const imports=importMap(source,file,reader);const mounts=[];for(const match of source.matchAll(/\b(?:app|router)\.use\s*\(\s*(['"])(\/[^'"]*)\1/g)){const args=balancedCall(source,source.indexOf('(',match.index));for(const[name,target]of imports)if(new RegExp(`\\b${name}\\b`).test(args))mounts.push({file:target,base:normalizeApiPath(basePath,match[2])});}return mounts;}
-function scanManifest(reader,schemaCorpusHash,basePath='/api/v1') {
+function scanManifest(reader,resolveSchema,basePath='/api/v1') {
   const file='backend/src/modules/route-manifest.ts';const source=reader.read(file);const imports=importMap(source,file,reader);const routes=[];const mounts=[];
   // A named CRUD router can have additional middleware mounted on it, as with
   // clientRouter + the canonical CRM preflight route. Follow its declaration
@@ -131,7 +131,7 @@ function scanManifest(reader,schemaCorpusHash,basePath='/api/v1') {
   for(const line of source.split(/\r?\n/)){if(!line.includes('{ id:')||!line.includes('path:')||!line.includes('router:'))continue;const pathMatch=line.match(/path:\s*['"]([^'"]+)['"]/);const routerMatch=line.match(/router:\s*(.+)\s*\}\s*,?\s*$/);if(!pathMatch||!routerMatch)continue;const mountPath=normalizeApiPath(basePath,pathMatch[1]);const expr=routerMatch[1].trim();const crud=expr.match(/createCrudRouter\(\s*\{([\s\S]*)\}\s*\)/);
     const identifier=(expr.match(/^([A-Za-z_$][\w$]*)/)||[])[1];
     const crudBody=crud?.[1]??localCrudRouters.get(identifier);
-    if(crudBody){const permission=(crudBody.match(/permission:\s*['"]([^'"]+)['"]/)||[])[1]||'UNRESOLVED_PERMISSION';const schemaExpr=(crudBody.match(/schema:\s*([A-Za-z0-9_]+)/)||[])[1]||'UNRESOLVED_SCHEMA';const schema=`expr:${fingerprint(schemaExpr)}:corpus:${schemaCorpusHash}`;for(const[method,child,body]of[['GET','/',null],['GET','/:id',null],['POST','/',schema],['PUT','/:id',`partial:${schema}`],['DELETE','/:id',null]])routes.push({method,path:normalizeApiPath(mountPath,child),auth:{tenantRequired:true,permissions:[permission]},request:{bodySchema:body},responses:{success:[200],errors:body?[401,403,422]:[401,403]},envelope:'canonical',deprecated:false,source:file});
+    if(crudBody){const permission=(crudBody.match(/permission:\s*['"]([^'"]+)['"]/)||[])[1]||'UNRESOLVED_PERMISSION';const schemaExpr=(crudBody.match(/schema:\s*([A-Za-z0-9_]+)/)||[])[1]||'UNRESOLVED_SCHEMA';const schema='expr:'+fingerprint(schemaExpr)+':corpus:'+resolveSchema(file,schemaExpr);for(const[method,child,body]of[['GET','/',null],['GET','/:id',null],['POST','/',schema],['PUT','/:id',`partial:${schema}`],['DELETE','/:id',null]])routes.push({method,path:normalizeApiPath(mountPath,child),auth:{tenantRequired:true,permissions:[permission]},request:{bodySchema:body},responses:{success:[200],errors:body?[401,403,422]:[401,403]},envelope:'canonical',deprecated:false,source:file});
       if(identifier&&localCrudRouters.has(identifier)){
         const attaches=new RegExp(`\\b${identifier}\\.use\\s*\\(\\s*([A-Za-z_$][\\w$]*)\\s*\\)`,'g');
         for(const attached of source.matchAll(attaches)){
@@ -144,7 +144,48 @@ function scanManifest(reader,schemaCorpusHash,basePath='/api/v1') {
     else{const target=identifier&&imports.get(identifier);if(target)mounts.push({file:target,base:mountPath});}
   }return{routes,mounts};
 }
-function scanRouterTree(reader,startFile,basePath,schemaCorpusHash,seen,routes){const key=`${startFile}@${basePath}`;if(seen.has(key)||!reader.exists(startFile))return;seen.add(key);const source=reader.read(startFile);routes.push(...scanRouteCalls(source,startFile,basePath,schemaCorpusHash));if(startFile.endsWith('/modules/index.ts')){const manifest=scanManifest(reader,schemaCorpusHash,basePath);routes.push(...manifest.routes);for(const mount of manifest.mounts)scanRouterTree(reader,mount.file,mount.base,schemaCorpusHash,seen,routes);}for(const mount of parseMounts(source,startFile,basePath,reader))scanRouterTree(reader,mount.file,mount.base,schemaCorpusHash,seen,routes);}
+function scanRouterTree(reader,startFile,basePath,resolveSchema,seen,routes){const key=`${startFile}@${basePath}`;if(seen.has(key)||!reader.exists(startFile))return;seen.add(key);const source=reader.read(startFile);routes.push(...scanRouteCalls(source,startFile,basePath,resolveSchema));if(startFile.endsWith('/modules/index.ts')){const manifest=scanManifest(reader,resolveSchema,basePath);routes.push(...manifest.routes);for(const mount of manifest.mounts)scanRouterTree(reader,mount.file,mount.base,resolveSchema,seen,routes);}for(const mount of parseMounts(source,startFile,basePath,reader))scanRouterTree(reader,mount.file,mount.base,resolveSchema,seen,routes);}
+// #652: fingerprint only the schema authority reachable from each request.
+// A global corpus hash falsely marks every unrelated endpoint as breaking.
+function schemaResolver(reader) {
+  const sources=new Map(), imports=new Map(), fingerprints=new Map();
+  const get=(file)=>{
+    if(!sources.has(file))sources.set(file,reader.read(file));
+    return sources.get(file);
+  };
+  const targets=(file)=>{
+    if(!imports.has(file))imports.set(file,importMap(get(file),file,reader));
+    return imports.get(file);
+  };
+  let unresolvedCorpus=null;
+  const fingerprintTree=(file)=>{
+    if(fingerprints.has(file))return fingerprints.get(file);
+    const seen=new Set(), entries=[];
+    const visit=(name)=>{
+      if(seen.has(name))return;
+      seen.add(name);entries.push([name,get(name)]);
+      for(const child of targets(name).values())visit(child);
+    };
+    visit(file);
+    const hash=fingerprint(entries.sort(([a],[b])=>a.localeCompare(b))
+      .map(([name,source])=>name+'\n'+source).join('\n---\n'));
+    fingerprints.set(file,hash);
+    return hash;
+  };
+  return (ownerFile,expression)=>{
+    const identifier=String(expression||'').trim().match(/^([A-Za-z_$][\w$]*)/)?.[1];
+    if(identifier) {
+      const target=targets(ownerFile).get(identifier);
+      if(target)return fingerprintTree(target);
+      const localDefinition=new RegExp('\\b(?:const|let|var|function)\\s+'+identifier+'\\b');
+      if(localDefinition.test(get(ownerFile)))return fingerprintTree(ownerFile);
+    }
+    // Unknown origins are not considered safe: preserve fail-closed corpus
+    // detection until a source schema can be resolved.
+    if(unresolvedCorpus===null)unresolvedCorpus=schemaCorpus(reader);
+    return unresolvedCorpus;
+  };
+}
 function schemaCorpus(reader){const files=reader.list(BACKEND_SRC).filter((file)=>/schema/i.test(path.posix.basename(file))&&/\.(ts|tsx)$/.test(file)).sort();return fingerprint(files.map((file)=>`${file}\n${reader.read(file)}`).join('\n---\n'));}
 function problemFields(source) {
   const required = ['ok','code','message','correlationId'];
@@ -165,9 +206,9 @@ function contractConventions(reader){
   return{successEnvelope:{required:['ok','data','meta']},errorEnvelope:problemFields(observabilitySource || errorSource),correlationHeader,pagination:{style:'take-skip',takeDefault:literalNumber(crud,/DEFAULT_LIST_TAKE\s*=\s*([\d_]+)/,100),takeMax:literalNumber(crud,/MAX_LIST_TAKE\s*=\s*([\d_]+)/,500),skipMax:literalNumber(crud,/MAX_LIST_SKIP\s*=\s*([\d_]+)/,1000000),headers:['X-CG-Page-Take','X-CG-Page-Skip'],filter:'q',sort:'createdAt desc,id desc'},versioning:{strategy:'contract-semver; business routes use /api/v1; probes remain stable aliases',contractVersion:API_CONTRACT_VERSION}};
 }
 export function buildApiContract(reader=localReader()) {
-  const corpus=schemaCorpus(reader);const routes=[];const seen=new Set();const appFile='backend/src/app.ts';const app=reader.read(appFile);routes.push(...scanRouteCalls(app,appFile,'',corpus,'app'));const imports=importMap(app,appFile,reader);
-  for(const match of app.matchAll(/\bapp\.use\s*\(\s*(['"])(\/[^'"]*)\1/g)){const args=balancedCall(app,app.indexOf('(',match.index));const base=normalizeApiPath('',match[2]);for(const[name,target]of imports)if(new RegExp(`\\b${name}\\b`).test(args))scanRouterTree(reader,target,base,corpus,seen,routes);}
-  const healthTarget=imports.get('registerHealthRoutes');if(healthTarget)routes.push(...scanRouteCalls(reader.read(healthTarget),healthTarget,'',corpus,'app'));const apiTarget=imports.get('apiRoutes');if(apiTarget&&!seen.has(`${apiTarget}@/api/v1`))scanRouterTree(reader,apiTarget,'/api/v1',corpus,seen,routes);
+  const resolveSchema=schemaResolver(reader);const routes=[];const seen=new Set();const appFile='backend/src/app.ts';const app=reader.read(appFile);routes.push(...scanRouteCalls(app,appFile,'',resolveSchema,'app'));const imports=importMap(app,appFile,reader);
+  for(const match of app.matchAll(/\bapp\.use\s*\(\s*(['"])(\/[^'"]*)\1/g)){const args=balancedCall(app,app.indexOf('(',match.index));const base=normalizeApiPath('',match[2]);for(const[name,target]of imports)if(new RegExp(`\\b${name}\\b`).test(args))scanRouterTree(reader,target,base,resolveSchema,seen,routes);}
+  const healthTarget=imports.get('registerHealthRoutes');if(healthTarget)routes.push(...scanRouteCalls(reader.read(healthTarget),healthTarget,'',resolveSchema,'app'));const apiTarget=imports.get('apiRoutes');if(apiTarget&&!seen.has(`${apiTarget}@/api/v1`))scanRouterTree(reader,apiTarget,'/api/v1',resolveSchema,seen,routes);
   const sorted=routes.sort((a,b)=>routeKey(a).localeCompare(routeKey(b))||a.source.localeCompare(b.source));const manifest={schemaVersion:652,apiVersion:API_CONTRACT_VERSION,conventions:contractConventions(reader),routes:sorted,conflicts:routeConflicts(sorted)};return{...manifest,manifestSha256:stableContractHash(manifest)};
 }
 export function buildApiContractForRef(ref) { return buildApiContract(gitReader(ref)); }

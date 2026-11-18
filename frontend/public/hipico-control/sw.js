@@ -8,6 +8,7 @@ const APP_SHELL = [
   './assets/js/advanced-group-scope.js', './assets/js/agent-router-pro.js', './assets/js/agent-router.js', './assets/js/app-shell.js', './assets/js/app.js', './assets/js/pwa-update.js',
   './assets/js/theme-bootstrap.js', './assets/js/presentation-preferences.js', './assets/js/shell-ui-v4.js', './assets/js/control-accessibility.js', './assets/js/command-center.js', './assets/js/command-center-shell.js',
   './assets/js/backup-secure-ui.js', './assets/js/backup-v2.js', './assets/js/backup.js', './assets/js/compat.js', './assets/js/dialog-accessibility.js',
+  './assets/js/cloud-tab-signal.js',
   './assets/js/config.js', './assets/js/engine.js', './assets/js/financial-config-guard.js', './assets/js/format.js', './assets/js/help-center.js',
   './assets/js/local-auth.js', './assets/js/notice-bridge.js', './assets/js/offline-status.js', './assets/js/operational-access-guard.js',
   './assets/js/operational-access-policy.js', './assets/js/operational-copy-center.js', './assets/js/operational-ledger.js', './assets/js/operations.js',

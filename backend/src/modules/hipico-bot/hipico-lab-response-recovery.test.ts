@@ -107,3 +107,28 @@ test('typed receipt recovery has no database writes and is gated after backend e
   assert.match(readOnly,/SELECT "id","idempotencyKey"/);
   assert.doesNotMatch(readOnly,/INSERT|UPDATE|DELETE/i);
 });
+
+test('unverified or malformed LAB handoff state never authorizes a replay',()=>{
+  assert.equal(verifyLabResponseRecovery(params({currentHandoff:null})).recovered,true);
+  assert.equal(verifyLabResponseRecovery(params({currentHandoff:{ownership:'bot'}})).recovered,true);
+  for(const forged of [undefined,{}, {ownership:'unknown'}, {ownership:'human'},
+    {ownership:new String('bot')}, false]){
+    const result=verifyLabResponseRecovery(params({currentHandoff:forged}));
+    assert.equal(result.recovered,false,'untrusted handoff: '+String(forged));
+    assert.equal(result.reason,'LAB_RECOVERY_HUMAN_HANDOFF');
+  }
+});
+
+test('malformed recovery candidate values cannot throw or coerce private LAB replies',()=>{
+  const trap=()=>({toString(){throw new Error('UNTRUSTED_COERCION');}});
+  for(const forged of [
+    null,{},candidate({text:42}),candidate({text:['Mensaje recibido']}),
+    candidate({text:trap()}),candidate({responseIdempotencyKey:trap()})
+  ]){
+    assert.deepEqual(
+      verifyLabResponseRecovery(params({candidate:forged})),
+      {recovered:false,reason:'LAB_RECOVERY_CANDIDATE_UNSAFE'}
+    );
+  }
+  assert.equal(verifyLabResponseRecovery(params()).recovered,true);
+});

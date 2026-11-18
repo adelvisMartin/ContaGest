@@ -14,6 +14,8 @@ function runSignOut({ token = 'synthetic-session-token', offline = false,
   failRemote = false, failLocal = false } = {}) {
   const calls = [];
   const context = {
+    sessionEpoch: 0,
+    refreshPromise: null,
     cachedSession: token ? { access_token: token } : null,
     globalThis: { navigator: { onLine: !offline } },
     persistSession: async (session) => {
