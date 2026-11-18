@@ -21,6 +21,7 @@ function validObservation(overrides={}){
       replication:false,
       bypassrls:false,
       serviceRoleMember:false,
+      roleMemberships:[],
       schemaUsage:true,
       schemaCreate:false,
       databaseConnect:true
@@ -196,7 +197,9 @@ test('v24 verifier is catalog-read-only and inventory-driven',async()=>{
   assert.match(source,/ROLLBACK/i);
   assert.doesNotMatch(source,/\bCOMMIT\b/i);
   assert.doesNotMatch(source,/\b(?:ALTER\s+(?:ROLE|TABLE|SCHEMA)|CREATE\s+(?:ROLE|POLICY|TABLE|SCHEMA)|DROP\s+(?:ROLE|POLICY|TABLE|SCHEMA)|TRUNCATE\s+TABLE|GRANT\s+|REVOKE\s+)\b/i);
-  assert.match(source,/information_schema\.role_table_grants/);
+  assert.doesNotMatch(source,/from information_schema\.role_table_grants/);
+  assert.match(source,/has_any_column_privilege/);
+  assert.match(source,/role_memberships/);
   assert.match(source,/pg_policies/);
   assert.match(source,/pg_auth_members/);
   assert.match(source,/has_database_privilege/);
@@ -272,4 +275,29 @@ test('v24 must reject duplicate/invalid table inventory and malformed observatio
     const result=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
     assert.equal(result.status,'FAIL');
   }
+});
+
+test('v24 forbids any extra role membership even when NOINHERIT is configured',()=>{
+  for(const roles of [['pg_read_all_data'],['privileged_team'],['read_team','backup_team']]){
+    const obs=validObservation();obs.role.roleMemberships=roles;
+    const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(report.status,'FAIL');
+    assert.ok(report.findings.includes('ROLE_MEMBERSHIP_FORBIDDEN:'+roles[0]));
+  }
+});
+test('v24 missing membership observation cannot prove the backup role is isolated',()=>{
+  for(const memberships of [undefined,null,'none']){
+    const obs=validObservation();obs.role.roleMemberships=memberships;
+    const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(report.status,'FAIL');
+    assert.ok(report.findings.includes('ROLE_MEMBERSHIPS_NOT_VERIFIED'));
+  }
+});
+test('v24 catalogue queries inspect PUBLIC/column effective grants and all direct memberships',async()=>{
+  const source=await read('scripts/hipico-backup-role-verify-v24.mjs');
+  assert.match(source,/has_table_privilege\('hipico_backup',c\.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'\)/);
+  assert.match(source,/has_any_column_privilege\('hipico_backup',c\.oid,'SELECT,INSERT,UPDATE,REFERENCES'\)/);
+  assert.match(source,/has_any_column_privilege\('hipico_backup',c\.oid,candidate\.privilege\)/);
+  assert.match(source,/array_agg\(granted\.rolname::text order by granted\.rolname\)/);
+  assert.doesNotMatch(source,/from information_schema\.role_table_grants g/);
 });
