@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -48,6 +49,8 @@ router.post('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, re
   const tenantId=ctx(req).tenantId;
   const body=treatmentSheetEntrySchema.parse(req.body||{});
   const now=new Date().toISOString();
+  const requestFingerprint=body.requestKey
+    ?createHash('sha256').update(JSON.stringify(body)).digest('hex'):null;
   const result=await prisma.$transaction(async (tx)=>{
     const hospitalizationRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT h."id",h."patientId",h."encounterId",h."status"
@@ -58,6 +61,27 @@ router.post('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, re
       FOR UPDATE OF h
     `,tenantId,req.params.id);
     const hospitalization=one(hospitalizationRows,'Hospitalización no encontrada.');
+    // A retry is still replayable after discharge, and must not repeat
+    // medication administration or its derived CareMeasurement rows.
+    if(body.requestKey){
+      const previous=await tx.$queryRawUnsafe<any[]>(`
+        SELECT * FROM public."CareHospitalObservation"
+        WHERE "tenantId"=$1 AND "hospitalizationId"=$2
+          AND "values"->>'treatmentSheetVersion'='1'
+          AND "values"->>'treatmentRequestKey'=$3
+        LIMIT 1
+      `,tenantId,hospitalization.id,body.requestKey);
+      if(previous.length){
+        const prior=one(previous);
+        if(prior.values?.treatmentRequestFingerprint!==requestFingerprint)
+          throw new HttpError(409,'La clave de reintento corresponde a otro tratamiento.');
+        return {entry:{
+          ...prior,
+          ...(prior.values&&typeof prior.values==='object'?prior.values:{}),
+          responsibleProfessionalId:prior.professionalId
+        },replayed:true};
+      }
+    }
     if(!['admitted','observed'].includes(String(hospitalization.status))){
       throw new HttpError(409,'La hospitalización ya no admite nuevas tareas o cuidados.');
     }
@@ -77,6 +101,8 @@ router.post('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, re
     const type=body.category==='observation'?'note':body.category;
     const values={
       treatmentSheetVersion:'1',
+      ...(body.requestKey?{treatmentRequestKey:body.requestKey,
+        treatmentRequestFingerprint:requestFingerprint}:{}),
       category:body.category,
       status:body.status,
       title:body.title,
@@ -137,14 +163,16 @@ router.post('/hospitalizations/:id/treatment-sheet', asyncHandler(async (req, re
       }
     }
 
-    return {
+    return {entry:{
       ...row,
       ...values,
       responsibleProfessionalId:row.professionalId
-    };
+    },replayed:false};
   });
 
-  ok(res,result,201);
+  res.setHeader('Idempotency-Replayed',result.replayed?'true':'false');
+  res.setHeader('Cache-Control','no-store');
+  ok(res,result.entry,result.replayed?200:201);
 }));
 
 export default router;
