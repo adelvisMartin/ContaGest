@@ -114,14 +114,14 @@ router.post('/health/appointments', requirePermission('health.manage'), asyncHan
   if(!['scheduled','confirmed','waitlisted'].includes(b.status))throw new HttpError(422,'La cita debe empezar programada, confirmada o en espera.');
   // Keep other Care appointment types backwards compatible.
   const {requestKey,...appointmentData}=b;
-  const requestFingerprint=b.type==='dentistry'&&requestKey
+  const requestFingerprint=requestKey
     ?createHash('sha256').update(JSON.stringify(appointmentData)).digest('hex'):null;
   const created=await prisma.$transaction(async (tx)=>{
     await lockAppointmentSchedule(tx,tenantId);
-    if(b.type==='dentistry'&&requestKey){
+    if(requestKey){
       const previous=await tx.$queryRawUnsafe<any[]>(`
         SELECT * FROM public."CareAppointment"
-        WHERE "tenantId"=$1 AND "type"='dentistry'
+        WHERE "tenantId"=$1
           AND "schedulingMeta"->>'requestKey'=$2 LIMIT 1
       `,tenantId,requestKey);
       if(previous.length){
@@ -142,7 +142,7 @@ router.post('/health/appointments', requirePermission('health.manage'), asyncHan
     const schedulingMeta={
       createdAt:new Date().toISOString(),
       createdBy:actor,
-      ...(b.type==='dentistry'&&requestKey
+      ...(requestKey
         ?{requestKey,requestFingerprint}:{}),
       ...(b.status==='waitlisted'?{waitlist:{requestedAt:new Date().toISOString(),requestedBy:actor}}:{})
     };
