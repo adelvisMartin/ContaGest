@@ -154,3 +154,16 @@ test('#120 summary RSS must contain its own heap at both process boundaries',()=
     f.report.summaryInput.heapEndMb=110;
   });
 });
+
+
+test('#120 sample artifact must be opened atomically without following symlink or leaking an fd',()=>{
+  const source=fs.readFileSync(new URL('../scripts/hipico-soak-samples-proof-v120.mjs',import.meta.url),'utf8');
+  assert.match(source,/fs\.openSync\(samplePath, fs\.constants\.O_RDONLY \| fs\.constants\.O_NOFOLLOW\)/);
+  assert.match(source,/const before = fs\.fstatSync\(fd\)/);
+  assert.match(source,/const content = fs\.readFileSync\(fd\)/);
+  assert.match(source,/const after = fs\.fstatSync\(fd\)/);
+  assert.match(source,/after\.mtimeMs !== before\.mtimeMs/);
+  assert.match(source,/finally \{\s+fs\.closeSync\(fd\)/);
+  assert.doesNotMatch(source,/fs\.lstatSync\(samplePath\)/);
+  assert.doesNotMatch(source,/fs\.readFileSync\(samplePath\)/);
+});
