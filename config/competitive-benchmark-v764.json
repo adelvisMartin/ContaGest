@@ -696,5 +696,7 @@
       "referenceEvidenceLevel": "DOCUMENTED",
       "referenceEvidenceUrl": "https://github.com/evangauer/openvpm"
     }
-  ]
+  ],
+  "ossVerticalExtensionBaselineSha": "03834a6ca1504399011f4b53866fe15b8cfa2557",
+  "ossVerticalExtensionReviewedAt": "2026-11-18"
 }
