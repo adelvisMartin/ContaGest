@@ -74,10 +74,19 @@ jobs:
         run: |
           npm --workspace backend run prisma:deploy
           npx prisma migrate status --schema backend/prisma/schema.prisma
-      - name: Install canonical runtime tenant RLS sidecar in ephemeral DB
+      - name: Provision least-privilege QA roles and canonical tenant RLS policies
         env:
           PGPASSWORD: catalog-ci-only
-        run: psql -h 127.0.0.1 -U postgres -d contagest_catalog_v849_e2e -v ON_ERROR_STOP=1 -f ops/database/runtime-rls-policy-v845.sql
+        shell: bash
+        run: |
+          set -euo pipefail
+          # These credentials exist only inside disposable postgres:17 CI.
+          # Generate per-run; never store or print passwords in artifacts.
+          export CONTAGEST_RUNTIME_PASSWORD="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+          export CONTAGEST_BACKUP_PASSWORD="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+          export CONTAGEST_MONITOR_PASSWORD="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+          psql -h 127.0.0.1 -U postgres -d contagest_catalog_v849_e2e -v ON_ERROR_STOP=1 -f ops/database/provision-security-roles.sql
+          psql -h 127.0.0.1 -U postgres -d contagest_catalog_v849_e2e -v ON_ERROR_STOP=1 -f ops/database/verify-security-roles.sql
       - name: Seed isolated authorization fixtures
         run: npm run seed
       - name: Catalog API/PG17 tenant and concurrency regressions
