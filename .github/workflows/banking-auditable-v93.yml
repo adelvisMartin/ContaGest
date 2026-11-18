@@ -12,6 +12,8 @@ on:
       - 'frontend/src/services/enterpriseOperationsService.js'
       - 'qa/banking-auditable-v93.test.ts'
       - 'qa/admin-user-security-stepup-v1312.test.ts'
+      - 'qa/master-export-negative-v1288.test.ts'
+      - 'backend/src/modules/exports/**'
       - 'backend/src/modules/user-security/user-security.routes.ts'
       - 'frontend/src/services/adminUserSecurityEnhancer.js'
       - 'qa/financial-idempotency-v92.test.ts'
@@ -116,6 +118,12 @@ jobs:
           set -o pipefail
           npm --workspace backend exec -- tsx --test ../qa/admin-user-security-stepup-v1312.test.ts 2>&1 | tee admin-stepup-v1312.log
 
+      - name: Execute #1288 master export tenant/permission negative matrix on PostgreSQL17
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend exec -- tsx --test ../qa/master-export-negative-v1288.test.ts 2>&1 | tee master-export-v1288.log
+
       - name: Execute idempotency regression #92
         shell: bash
         run: |
@@ -136,6 +144,7 @@ jobs:
             seed-v93.log
             banking-v93.log
             admin-stepup-v1312.log
+            master-export-v1288.log
             idempotency-regression-v93.log
           if-no-files-found: warn
           retention-days: 14
