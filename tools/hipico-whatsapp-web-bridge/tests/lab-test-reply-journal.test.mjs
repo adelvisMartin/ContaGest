@@ -212,7 +212,9 @@ test('LAB ACK rejects unexpected persisted private fields and unapproved resolut
       {messageText:'synthetic secret content'},
       {senderJid:'synthetic-sender-id'},
       {sessionToken:'synthetic-token'},
-      {resolution:'synthetic private message'}
+      {resolution:'synthetic private message'},
+      {createdAt:'synthetic private message'},
+      {updatedAt:'2026-02-30T00:00:00.000Z'}
     ]){
       const payload=JSON.stringify({...original,...injected});
       await fs.writeFile(file,payload);
