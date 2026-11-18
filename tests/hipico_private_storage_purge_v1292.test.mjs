@@ -48,11 +48,16 @@ function harness({cloudOwner='owner-a',session={access_token:'synthetic-private-
 
 test('#1292 cloud logout purges primary, archived workspaces, snapshots and outbox',async()=>{
   const h=harness();
+  h.stores.syncMeta.set('identitySwitch',{
+    key:'identitySwitch',previousOwnerId:'owner-a',nextOwnerId:'owner-b'
+  });
   await h.api.clearPrivateSessionState();
   for(const key of ['workspaces','snapshots','outbox'])assert.equal(h.stores[key].size,0,key);
   for(const key of ['cloudSession','cloudOwnerId','mode'])assert.equal(h.settings.has(key),false,key);
   assert.equal(h.api.getSnapshot(),null);
   assert.ok(h.stores.syncMeta.has('sessionCleared'));
+  assert.equal(h.stores.syncMeta.has('identitySwitch'),false,
+    'Cloud logout must remove historical owner IDs from local diagnostics');
 });
 
 test('#1292 pure local mode is not destroyed by cloud logout cleanup',async()=>{
@@ -72,6 +77,8 @@ test('#1292 account switch never archives private state under the previous owner
   assert.equal(h.settings.get('cloudOwnerId'),'owner-b');
   assert.equal(h.api.getSnapshot(),null);
   assert.ok(h.stores.syncMeta.has('identitySwitch'));
+  assert.equal(JSON.stringify(h.stores.syncMeta.get('identitySwitch')).includes('owner-a'),false);
+  assert.equal(JSON.stringify(h.stores.syncMeta.get('identitySwitch')).includes('owner-b'),false);
 });
 
 test('#1292 refreshing the same owner does not purge their offline workspace',async()=>{
