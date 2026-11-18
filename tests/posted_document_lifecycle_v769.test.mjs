@@ -14,7 +14,6 @@ test('#769 intent is immutable and has no effects before #637 transaction',()=>{
 
 test('#769 object-coerced state or issue action never bypasses document sequence authority',()=>{
   const forged=(value)=>({toString:()=>value});
-  const fixture={...base(),sequenceAuthorityVerified:false};
   fail({action:forged('issue'),sequenceAuthorityVerified:false},'TRANSITION_FORBIDDEN');
   fail({from:forged('draft'),sequenceAuthorityVerified:true},'TRANSITION_FORBIDDEN');
   fail({action:new String('issue'),sequenceAuthorityVerified:true},'TRANSITION_FORBIDDEN');
