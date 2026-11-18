@@ -68,7 +68,8 @@ if(!fs.existsSync(path.join(ROOT,'scripts/agent-ticket-router.mjs')))errors.push
 for(const file of [
   'scripts/agent-backlog-closeout.mjs',
   'scripts/agent-backlog-closeout-lib.mjs',
-  'tests/agent_backlog_closeout_v1.test.mjs'
+  'tests/agent_backlog_closeout_v1.test.mjs',
+  'tests/agent_backlog_closeout_cli_v1.test.mjs'
 ]){
   if(!fs.existsSync(path.join(ROOT,file)))errors.push(`SKILL_SOURCE_STALE missing ${file}`);
 }
