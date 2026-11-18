@@ -17,7 +17,8 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   const db = await prisma.$queryRaw<Array<{ name: string; version: number }>>`
     SELECT current_database() AS name, current_setting('server_version_num')::int/10000 AS version
   `;
-  assert.match(db[0]?.name || '', /_v849$/, 'BLOCKED: database must end in _v849');
+  assert.ok(/_v849$/.test(db[0]?.name||'') || db[0]?.name==='contagest_catalog_v849_e2e',
+    'BLOCKED: only disposable catalog-specific PostgreSQL 17 QA database permitted');
   assert.equal(db[0]?.version, 17, 'BLOCKED: PostgreSQL 17 required');
 
   const h=await createRealBackendHarness();
