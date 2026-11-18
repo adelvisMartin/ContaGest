@@ -70,12 +70,13 @@ export function buildObservationTrace(input:{ownerId:string;groupKey:string;grou
   const groupKey=bounded(input.groupKey,180);
   const groupId=bounded(input.groupId,180);
   if(!groupKey||!groupId)throw Object.assign(new Error('Observability requires groupKey and groupId.'),{code:'HIPICO_OBSERVABILITY_SCOPE_INVALID'});
-  const seed=`${ownerId}|${groupKey}|${groupId}|${String(input.sourceRef||'')}`;
+  const scope=`${ownerId}|${groupKey}|${groupId}`;
+  const seed=`${scope}|${String(input.sourceRef||'')}`;
   const requestId=input.requestId
-    ?safeObservationTraceId(input.requestId,'req',seed)
+    ?safeObservationTraceId(input.requestId,'req',scope)
     :`req_${hash(`req|${seed}`).slice(0,32)}`;
   const correlationId=input.correlationId
-    ?safeObservationTraceId(input.correlationId,'corr',seed)
+    ?safeObservationTraceId(input.correlationId,'corr',scope)
     :`corr_${hash(`corr|${seed}`).slice(0,32)}`;
   return{ownerId,groupKey,groupId,requestId,correlationId};
 }
@@ -102,8 +103,9 @@ export function normalizeObservationEvent(input:ObservationInput){
     ownerId:input.ownerId,
     groupKey:bounded(input.groupKey,180),
     groupId:bounded(input.groupId,180),
-    requestId:bounded(input.requestId,180),
-    correlationId:bounded(input.correlationId,180),
+    // Normalize even direct ObservationInput calls that bypass buildObservationTrace.
+    requestId:safeObservationTraceId(input.requestId,'req',`${input.ownerId}|${input.groupKey}|${input.groupId}`),
+    correlationId:safeObservationTraceId(input.correlationId,'corr',`${input.ownerId}|${input.groupKey}|${input.groupId}`),
     candidateSha:SHA.test(String(input.candidateSha||''))?String(input.candidateSha).toLowerCase():candidateSha(),
     stage:input.stage,
     outcome:input.outcome,
