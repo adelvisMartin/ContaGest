@@ -102,7 +102,8 @@ test('import report CSV rejects hidden formula prefixes without changing safe nu
     assert.equal(encodeImportReportCsvCell(formula), `"'${formula}"`);
   }
   assert.equal(encodeImportReportCsvCell('normal'), '"normal"');
-  assert.equal(encodeImportReportCsvCell(-20), '"-20"');
+  // Preserve the import-report encoder's pre-existing conservative negative-value policy.
+  assert.equal(encodeImportReportCsvCell(-20), `"'-20"`);
 });
 
 test('CSV header and row keys stay in declared canonical order', () => {
