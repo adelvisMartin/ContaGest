@@ -130,6 +130,7 @@ El verifier de release v290 descubre `soak-evidence.json` como evidencia opciona
 - SOURCE/LAB/session invariant no verificada al final del run o sin evidence material → `BLOCKED`;
 - número de muestras inferior al 90% de la frecuencia oficial de 30 s → `BLOCKED` (`SOAK_SAMPLE_CADENCE_INSUFFICIENT`), aunque duración/health/spool afirmados parezcan correctos;
 - health/spool sin cobertura suficiente → `BLOCKED`;
+- muestras `health.ok/status/reason` contradictorias, motivo omitido o motivo que no coincide con la clasificación real del probe → evidencia rechazada, aunque `samples.jsonl` tenga un SHA-256 recalculado. Los resultados admitidos son `READY_SHADOW` con HTTP 2xx, fallos HTTP fuera de 2xx, errores de cuerpo/modo/readiness/SOURCE en 2xx, o `HEALTH_REQUEST_FAILED` con status 0. Esto valida integridad interna, no certifica hardware ni autenticidad física;
 - threshold excedido → `FAIL`;
 - sin muestras → `NOT_EXECUTED`;
 - sólo la combinación completa puede producir `PASS`.
