@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const read=(name)=>readFileSync(new URL('../'+name,import.meta.url),'utf8');
-const source=read('frontend/public/hipico-control/assets/js/cloud-session-tab-signal.js');
+const source=read('frontend/public/hipico-control/assets/js/cloud-tab-signal.js');
 const transport=source.replace(/^export /gm,'')
   + '\n({subscribeCloudSessionInvalidation,signalOtherTabsCloudSessionInvalidation})';
 
