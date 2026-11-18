@@ -17,7 +17,8 @@ const fromRemote = () => {
   } catch { return ''; }
 };
 const repo = explicit >= 0 ? args[explicit + 1] : process.env.GITHUB_REPOSITORY || fromRemote();
-if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo || ''))
+if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo || '') ||
+    (repo || '').split('/').some(part => part === '.' || part === '..'))
   throw new Error('CLOSEOUT_REPOSITORY_REQUIRED');
 const token = String(process.env.GITHUB_TOKEN || '').trim();
 const base = `https://api.github.com/repos/${repo}`;
@@ -91,7 +92,7 @@ async function collect() {
 }
 
 try {
-  const state = evaluateBacklogCloseout(await collect());
+  const state = { ...evaluateBacklogCloseout(await collect()), source: 'LIVE_GITHUB_READ_ONLY' };
   console.log(JSON.stringify(state, null, 2));
   if (args.includes('--strict') && (state.issueCount || state.mergeBlocked.length))
     process.exitCode = 1;
