@@ -111,6 +111,10 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
     }
     if (existing?.status==='attended'||existing?.status==='no_show')
       throw new HttpError(409,'La asistencia finalizada no puede reescribirse.');
+    // A cancelled class never happened: preserve its booking history, but
+    // do not allow a fabricated attended/no_show fact after cancellation.
+    if(klass.status==='cancelled'&&['attended','no_show'].includes(body.status))
+      throw new HttpError(409,'Una clase cancelada no admite asistencia ni ausencia.');
     // Attendance is a real event, never a prediction. Preserve the ability
     // to backfill historical classes without introducing artificial grace
     // periods, but reject premature attendance and no-show decisions.
