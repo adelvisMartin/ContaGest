@@ -76,6 +76,11 @@ async function main() {
   const runId = String(process.env.CG_PERF1293_RUN_ID || process.env.GITHUB_RUN_ID || '').trim();
   if (!RUN_ID.test(runId)) reject('RUN_ID_REQUIRED');
   const { MODULE_VISUAL_CATALOG } = await import('../qa/support/module-visual-catalog.mjs');
+  const { PAGE_ROUTES } = await import('../frontend/src/data/pageRegistry.js');
+  if (!Array.isArray(PAGE_ROUTES) || PAGE_ROUTES.length !== MODULE_VISUAL_CATALOG.length ||
+      MODULE_VISUAL_CATALOG.some(item => !PAGE_ROUTES.includes(item.route))) {
+    reject('ROUTE_MATRIX_RUNTIME_VISUAL_DRIFT');
+  }
   const directory = path.resolve('artifacts/performance/v1293', sha, runId, PROFILE);
   const observations = [];
   for (const entry of MODULE_VISUAL_CATALOG) {
