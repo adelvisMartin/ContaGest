@@ -1,0 +1,70 @@
+name: "Agent closeout #841 · live GitHub and skill integrity"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'AGENTS.md'
+      - '.agents/agents/orchestrator.md'
+      - '.agents/skills/contagest-erp-orchestrator/SKILL.md'
+      - '.agents/context/AGENT_SYSTEM_V3.md'
+      - 'scripts/agent-ticket-router.mjs'
+      - 'scripts/agent-backlog-closeout.mjs'
+      - 'scripts/agent-backlog-closeout-lib.mjs'
+      - 'scripts/verify-agent-system-v3.mjs'
+      - 'tests/agent_backlog_closeout_v1.test.mjs'
+      - '.github/workflows/agent-closeout-v841.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  checks: read
+  actions: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  closeout-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+      - name: Assert SHA identity
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Syntax and fail-closed contract regression
+        run: |
+          node --check scripts/agent-ticket-router.mjs
+          node --check scripts/agent-backlog-closeout.mjs
+          node --check scripts/agent-backlog-closeout-lib.mjs
+          node --test tests/agent_backlog_closeout_v1.test.mjs
+      - name: Verify original agent skill contracts and pin policy
+        run: node scripts/verify-agent-system-v3.mjs
+      - name: Read-only live GitHub closeout snapshot
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p artifacts/agent-closeout-v841
+          node scripts/agent-ticket-router.mjs closeout --repo "$GITHUB_REPOSITORY" > artifacts/agent-closeout-v841/live.json
+      - name: Record exact-SHA identity
+        if: always()
+        run: |
+          mkdir -p artifacts/agent-closeout-v841
+          printf 'head_sha=%s\nrun=%s\nattempt=%s\n' "$CANDIDATE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > artifacts/agent-closeout-v841/identity.txt
+      - name: Upload diagnostic report (never authorization to merge)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: agent-closeout-v841-${{ env.CANDIDATE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/agent-closeout-v841
+          if-no-files-found: error
