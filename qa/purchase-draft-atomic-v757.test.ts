@@ -72,7 +72,7 @@ test('#757 draft deletion is atomic, audited and tenant-scoped in disposable Pos
           END IF;
           RETURN NEW;
         END;
-        $`);
+        $$`);
       await h.prisma.$executeRawUnsafe(`
         CREATE TRIGGER "${guard}" BEFORE INSERT ON public."AuditLog"
         FOR EACH ROW EXECUTE FUNCTION public."${guard}"()`);
