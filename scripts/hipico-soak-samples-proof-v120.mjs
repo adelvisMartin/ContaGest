@@ -55,12 +55,29 @@ export function validSoakSamplesProof(manifestPath, report, sampleSeconds = 30) 
         !Number.isFinite(sampleSeconds) || sampleSeconds < 1 || sampleSeconds > 3600) return false;
 
     const samplePath = path.join(path.dirname(manifestPath), 'samples.jsonl');
-    const stats = fs.lstatSync(samplePath);
-    if (!stats.isFile() || stats.isSymbolicLink() ||
-        stats.size < 1 || stats.size > MAX_SAMPLE_BYTES) return false;
-    const bytes = fs.readFileSync(samplePath);
-    if (bytes.byteLength !== stats.size ||
-        crypto.createHash('sha256').update(bytes).digest('hex') !== claimedHash.toLowerCase()) return false;
+    // Open the evidence atomically without following a symlink. A separate
+    // lstat(path) then readFile(path) is a TOCTOU check that can be bypassed
+    // if an artifact path is swapped between calls.
+    if (typeof fs.constants.O_NOFOLLOW !== 'number' ||
+        fs.constants.O_NOFOLLOW === 0) return false;
+    const bytes = (() => {
+      const fd = fs.openSync(samplePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      try {
+        const before = fs.fstatSync(fd);
+        if (!before.isFile() || before.size < 1 || before.size > MAX_SAMPLE_BYTES)
+          throw new Error('HIPICO_SOAK_SAMPLE_INVALID_FILE');
+        const content = fs.readFileSync(fd);
+        const after = fs.fstatSync(fd);
+        if (content.byteLength !== before.size || after.size !== before.size ||
+            after.mtimeMs !== before.mtimeMs)
+          throw new Error('HIPICO_SOAK_SAMPLE_MODIFIED_DURING_READ');
+        return content;
+      } finally {
+        fs.closeSync(fd);
+      }
+    })();
+    if (crypto.createHash('sha256').update(bytes).digest('hex') !== claimedHash.toLowerCase())
+      return false;
 
     // Our producer appends exactly one UTF-8 JSON object and newline per sample.
     const content = bytes.toString('utf8');
