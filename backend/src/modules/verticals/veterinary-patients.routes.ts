@@ -43,7 +43,12 @@ router.get('/procedures', asyncHandler(async (req, res) => {
     FROM public."CareProcedure" c
     JOIN public."CarePatient" p ON p."id"=c."patientId" AND p."tenantId"=c."tenantId" AND p."kind"='animal'
     LEFT JOIN public."CareProfessional" pr ON pr."id"=c."professionalId" AND pr."tenantId"=c."tenantId"
-    WHERE c."tenantId"=$1 AND ($2='' OR c."patientId"=$2) ORDER BY COALESCE(c."performedAt",c."scheduledAt",c."createdAt") DESC LIMITrouter.post('/procedures', asyncHandler(async (req, res) => {
+    WHERE c."tenantId"=$1 AND ($2='' OR c."patientId"=$2) ORDER BY COALESCE(c."performedAt",c."scheduledAt",c."createdAt") DESC LIMIT 1000
+  `, ctx(req).tenantId, patientId);
+  ok(res, rows);
+}));
+
+router.post('/procedures', asyncHandler(async (req, res) => {
   const b = procedureSchema.parse(req.body || {});
   const tenantId = ctx(req).tenantId;
   const created = await prisma.$transaction(async(tx)=>{
