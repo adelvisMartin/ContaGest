@@ -137,6 +137,13 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   );
   assert.equal(matchedCategories.length,1);
   assert.equal(matchedCategories[0].id,category.id);
+  // The Query parser must not coerce array pollution, noncanonical numbers
+  // or scientific notation into a valid page limit.
+  for(const endpoint of ['/service-catalog/categories','/service-catalog/services','/service-catalog/public']){
+    for(const query of ['take=01','take=1e0','take=1&take=2','skip=','skip=+1','skip=1.5']){
+      await h.status(endpoint+'?'+query,422);
+    }
+  }
   const categoryResponse=await h.request('/service-catalog/categories?take=1');
   const serviceResponse=await h.request('/service-catalog/services?take=1');
   assert.equal(categoryResponse.response.headers.get('cache-control'),'private, no-store');
