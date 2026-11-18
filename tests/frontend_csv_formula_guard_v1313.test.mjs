@@ -18,6 +18,13 @@ test('neutralizes formula prefixes after whitespace, BOM and C0/C1 controls', ()
   }
 });
 
+test('zero-width Unicode prefixes cannot hide spreadsheet formulas', () => {
+  for (const prefix of ['\u00ad', '\u034f', '\u061c', '\u180e', '\u2800', '\u3164', '\ufe0f', '\uffa0']) {
+    const formula = prefix + '=HYPERLINK("https://example.invalid")';
+    assert.equal(encodeCsvCell(formula), `"'${formula.replaceAll('"', '""')}"`);
+  }
+});
+
 test('numeric values are not turned into formulas or strings, and null remains empty', () => {
   assert.equal(toCsv([{ balance: -125.5, amount: 123n, empty: null, text: '-125.5' }]),
     '"balance","amount","empty","text"\r\n"-125.5","123","","\'-125.5"');
