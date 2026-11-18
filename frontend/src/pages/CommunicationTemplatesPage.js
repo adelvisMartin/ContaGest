@@ -43,7 +43,7 @@ export const CommunicationTemplatesPage = {
       <div class="cg-message-layout">
         <aside class="surface cg-message-library">
           <header><div><p class="cgx-eyebrow">Biblioteca</p><h3>Plantillas</h3></div><span>${templates.length}</span></header>
-          <div class="cg-message-filter"><select id="messageVerticalFilter" class="select"><option value="">Todas</option><option value="general">General</option><option value="health">Salud</option><option value="veterinary">Veterinaria</option><option value="gym">Gimnasio</option></select></div>
+          <div class="cg-message-filter"><label for="messageVerticalFilter">Área de plantillas</label><select id="messageVerticalFilter" class="select"><option value="">Todas</option><option value="general">General</option><option value="health">Salud</option><option value="veterinary">Veterinaria</option><option value="gym">Gimnasio</option></select></div>
           <div class="cg-message-template-list">${templateCards(templates,data.selectedId)}</div>
         </aside>
 
