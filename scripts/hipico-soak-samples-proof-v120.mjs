@@ -22,6 +22,12 @@ function coherentMemoryBoundary(summary,first,last) {
   // the loop. Each row is sampled near (not at) those boundaries. Allow GC
   // and one polling interval of activity, but reject grossly fictional peaks
   // or growth summaries even when the sample checksum was recomputed.
+  // heapUsed is part of the same process RSS snapshot. Summary boundary
+  // values must be physically coherent before applying sample tolerances.
+  if(typeof summary?.rssStartMb!=='number'||typeof summary?.rssEndMb!=='number'||
+     typeof summary?.heapStartMb!=='number'||typeof summary?.heapEndMb!=='number'||
+     summary.heapStartMb>summary.rssStartMb||summary.heapEndMb>summary.rssEndMb)
+    return false;
   const pairs=[
     [summary?.rssStartMb,first?.rssMb],
     [summary?.rssEndMb,last?.rssMb],
