@@ -8,6 +8,12 @@ export function validateCompetitiveBenchmark(input) {
     return ['invalid manifest collections'];
   if (input.schemaVersion !== 1 || input.ticket !== 764) errors.push('invalid schema/ticket');
   if (!/^[a-f0-9]{40}$/.test(input.mainBaselineSha ?? '')) errors.push('missing baseline SHA');
+  if (input.ossVerticalExtensionBaselineSha !== undefined &&
+      !/^[a-f0-9]{40}$/.test(input.ossVerticalExtensionBaselineSha))
+    errors.push('invalid vertical extension baseline SHA');
+  if (input.ossVerticalExtensionReviewedAt !== undefined &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(input.ossVerticalExtensionReviewedAt))
+    errors.push('invalid vertical extension reviewed date');
   if (input.policy !== 'BENCHMARK_ONLY_NO_SOURCE_CODE_REUSE') errors.push('unsafe reuse policy');
   if (input.candidateEvidence === 'PASS') errors.push('unsubstantiated PASS');
   const sources = new Map();
