@@ -44,6 +44,17 @@ test('CSV quoting encodes commas, quotes and multiline values according to RFC41
   assert.ok(result.startsWith('"rif","name"'));
 });
 
+test('one RFC4180 data record per row across multiple master exports', () => {
+  const csv=masterExportCsv('clients',[
+    {rif:'J-11',name:'Primero',contact:'=HYPERLINK("x")'},
+    {rif:'J-12',name:'Segundo',contact:'-7.50'}
+  ]);
+  const lines=csv.split('\r\n');
+  assert.equal(lines.length,3,'CSV must have one header plus two independent records');
+  assert.ok(lines[1].startsWith('"J-11","Primero","\'=HYPERLINK(""x"")"'));
+  assert.ok(lines[2].startsWith('"J-12","Segundo","-7.50"'));
+});
+
 test('neutralizes spreadsheet formulas even after whitespace/control prefixes', () => {
   const csv = masterExportCsv('clients', [{rif:'=1+1',name:'\t@SUM(A1:A2)',email:' +HYPERLINK("x")'}]);
   assert.ok(csv.includes('"\'=1+1"'));
