@@ -44,9 +44,10 @@ export function verifyLabResponseRecovery(input:{
   if(!row)return{recovered:false,reason:'LAB_RECOVERY_RECEIPT_MISSING'};
   // No result board, participant list, dynamic AI answer, mutation or officiality
   // claims can be replayed without state-version attestations.
-  if(!plan.canSend||plan.handoffRequired||plan.confirmationVerified||
-     plan.intent!=='ACK_RECEIVED'||!plan.text||plan.text.length>1000||
-     plan.evidence||!/^resp_[a-f0-9]{32}$/.test(plan.responseIdempotencyKey)){
+  if(!plan||typeof plan!=='object'||!plan.canSend||plan.handoffRequired||plan.confirmationVerified||
+     plan.intent!=='ACK_RECEIVED'||typeof plan.text!=='string'||!plan.text||plan.text.length>1000||
+     plan.evidence||typeof plan.responseIdempotencyKey!=='string'||
+     !/^resp_[a-f0-9]{32}$/.test(plan.responseIdempotencyKey)){
     return{recovered:false,reason:'LAB_RECOVERY_CANDIDATE_UNSAFE'};
   }
   const digest=crypto.createHash('sha256').update(plan.text).digest('hex');
