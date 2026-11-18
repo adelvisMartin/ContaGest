@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
+import { PAGE_ROUTES } from '../frontend/src/data/pageRegistry.js';
 import { waitForRouteReady } from './support/playwright-determinism.mjs';
 import { fixtureForRequest } from './support/erp-system-fixtures-v155.mjs';
 
@@ -12,6 +13,8 @@ assert.match(candidateSha, /^[a-f0-9]{40}$/, '#1293 needs exact CANDIDATE_SHA');
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase(),
   candidateSha, '#1293 must run on candidate HEAD, not a PR merge ref');
 assert.equal(MODULE_VISUAL_CATALOG.length, 60, '#1293 requires current 60-route authority');
+assert.deepEqual(new Set(MODULE_VISUAL_CATALOG.map(item => item.route)), new Set(PAGE_ROUTES),
+  '#1293 requires the visual catalog to match runtime routes');
 const profile = 'desktop-1440';
 const runId = String(process.env.CG_PERF1293_RUN_ID || process.env.GITHUB_RUN_ID || '').trim();
 assert.match(runId, /^[a-zA-Z0-9_-]{1,80}$/, '#1293 run ID must isolate each campaign');
