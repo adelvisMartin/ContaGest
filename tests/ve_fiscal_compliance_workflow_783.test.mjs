@@ -49,3 +49,21 @@ test('#783 reject partial or injected evidence keys', () => {
     bankMovementId: 'abc', ledgerEntryId: 'def',
   }, clock));
 });
+
+test('#783 cannot attribute compliance evidence to whitespace actors or ambiguous metadata',()=>{
+  for(const actor of [' ',' reviewer','reviewer ']){
+    assert.throws(()=>assertComplianceTransition('draft','REVIEW',actor,source,clock),
+      {message:'COMPLIANCE_TRANSITION_NOT_AUTHORIZED'});
+  }
+  for(const evidence of [{...source,reason:source.reason+' '},
+    {...filing,authority:' MUNICIPAL'},
+    {...filing,receiptReference:'receipt-1 '}]) {
+    const state='legalSourceId' in evidence?'draft':'reviewed';
+    const action=state==='draft'?'REVIEW':'RECORD_EXTERNAL_FILING';
+    assert.throws(()=>assertComplianceTransition(state,action,'operator',evidence,clock),
+      {message:'COMPLIANCE_TRANSITION_NOT_AUTHORIZED'});
+  }
+  assert.throws(()=>assertComplianceTransition('draft','REVIEW','operator',source,
+    {getTime:()=>clock.getTime(),toISOString:()=>clock.toISOString()}),
+    {message:'COMPLIANCE_TRANSITION_NOT_AUTHORIZED'});
+});
