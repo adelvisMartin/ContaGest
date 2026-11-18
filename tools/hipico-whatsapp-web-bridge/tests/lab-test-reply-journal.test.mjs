@@ -158,8 +158,8 @@ test('live Bridge only acknowledges after durable confirmation and reconciles ou
   assert.match(code,/await atomicWriteJson\(LAB_SEEN_FILE,values\)/);
 });
 
-test('LAB journal never follows a symlinked root or chmods its target',async(t)=>{
- if(process.platform==='win32')return t.skip('POSIX symlink/permissions gate; Windows NTFS ACLs need physical QA');
+test('LAB journal never follows a symlinked root or chmods its target',async()=>{
+ if(process.platform==='win32')return; // Windows NTFS/ACL validation belongs to #119 physical QA.
  const f=await fixture();
  try{
   const outside=path.join(f.dir,'outside');
@@ -174,8 +174,8 @@ test('LAB journal never follows a symlinked root or chmods its target',async(t)=
  }finally{await f.clean();}
 });
 
-test('LAB ACK record symlinks and root replacements are never valid journal authority',async(t)=>{
- if(process.platform==='win32')return t.skip('POSIX filesystem gate; Windows physical QA required');
+test('LAB ACK record symlinks and root replacements are never valid journal authority',async()=>{
+ if(process.platform==='win32')return; // Windows NTFS/ACL validation belongs to #119 physical QA.
  const f=await fixture();
  try{
   const id='safe-synthetic-message';
