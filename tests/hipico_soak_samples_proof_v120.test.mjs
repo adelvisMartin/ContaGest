@@ -158,7 +158,7 @@ test('#120 summary RSS must contain its own heap at both process boundaries',()=
 
 test('#120 sample artifact must be opened atomically without following symlink or leaking an fd',()=>{
   const source=fs.readFileSync(new URL('../scripts/hipico-soak-samples-proof-v120.mjs',import.meta.url),'utf8');
-  assert.match(source,/fs\.openSync\(samplePath, fs\.constants\.O_RDONLY \| fs\.constants\.O_NOFOLLOW\)/);
+  assert.match(source,/fs\.openSync\(samplePath,\s+fs\.constants\.O_RDONLY \| fs\.constants\.O_NOFOLLOW \| fs\.constants\.O_NONBLOCK\)/);
   assert.match(source,/const before = fs\.fstatSync\(fd\)/);
   assert.match(source,/const content = fs\.readFileSync\(fd\)/);
   assert.match(source,/const after = fs\.fstatSync\(fd\)/);
@@ -166,4 +166,16 @@ test('#120 sample artifact must be opened atomically without following symlink o
   assert.match(source,/finally \{\s+fs\.closeSync\(fd\)/);
   assert.doesNotMatch(source,/fs\.lstatSync\(samplePath\)/);
   assert.doesNotMatch(source,/fs\.readFileSync\(samplePath\)/);
+});
+
+
+test('#120 blocking pipe artifacts fail closed before invoking readFileSync',()=>{
+  const source=fs.readFileSync(new URL('../scripts/hipico-soak-samples-proof-v120.mjs',import.meta.url),'utf8');
+  assert.match(source,/typeof fs\.constants\.O_NONBLOCK !== 'number'/);
+  assert.match(source,/fs\.constants\.O_NONBLOCK === 0/);
+  const flags=source.indexOf('fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK');
+  const firstStat=source.indexOf('const before = fs.fstatSync(fd)');
+  const read=source.indexOf('const content = fs.readFileSync(fd)');
+  assert.ok(flags>0&&firstStat>flags&&read>firstStat,
+    'FIFO safety must take effect before inspection and content read');
 });
