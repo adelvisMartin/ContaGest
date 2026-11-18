@@ -7,7 +7,7 @@ test('Gym #795 real PostgreSQL: new plan version preserves historical meals and 
   assert.notEqual(String(process.env.NODE_ENV||'').toLowerCase(),'production');
   const h=await createRealBackendHarness();
   const tag=randomUUID();
-  let memberId='',ingredientId='';
+  let memberId='',ingredientId='',secondaryIngredientId='';
   const planIds:string[]=[];
   t.after(async()=>{
     await h.close().catch(()=>undefined);
@@ -18,7 +18,8 @@ test('Gym #795 real PostgreSQL: new plan version preserves historical meals and 
       await h.prisma.$executeRawUnsafe('DELETE FROM public."GymMeal" WHERE "tenantId"=$1 AND "nutritionPlanId"=$2',h.tenant.id,planId).catch(()=>undefined);
     }
     for(const planId of planIds.slice().reverse())await h.prisma.$executeRawUnsafe('DELETE FROM public."GymNutritionPlan" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,planId).catch(()=>undefined);
-    if(ingredientId)await h.prisma.$executeRawUnsafe('DELETE FROM public."GymIngredient" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,ingredientId).catch(()=>undefined);
+    for(const id of [ingredientId,secondaryIngredientId].filter(Boolean))
+      await h.prisma.$executeRawUnsafe('DELETE FROM public."GymIngredient" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,id).catch(()=>undefined);
     if(memberId)await h.prisma.$executeRawUnsafe('DELETE FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,memberId).catch(()=>undefined);
   });
   const member=await h.ok('/verticals/gym/members',{method:'POST',body:JSON.stringify({
@@ -29,6 +30,23 @@ test('Gym #795 real PostgreSQL: new plan version preserves historical meals and 
     name:'QA 795 Ingredient '+tag,defaultUnit:'g',active:true
   })});
   ingredientId=ingredient.id;
+  const secondary=await h.ok('/verticals/gym/ingredients',{method:'POST',body:JSON.stringify({
+    name:'QA 795 Ingredient '+tag+' second',defaultUnit:'g',active:true
+  })});
+  secondaryIngredientId=secondary.id;
+  const match=encodeURIComponent('QA 795 Ingredient '+tag);
+  const page1=await h.request('/verticals/gym/ingredients?q='+match+'&take=1');
+  assert.equal(page1.response.status,200);
+  assert.equal(page1.response.headers.get('X-Pagination-Has-More'),'true');
+  assert.equal(page1.response.headers.get('X-Pagination-Next-Skip'),'1');
+  const page2=await h.request('/verticals/gym/ingredients?q='+match+'&take=1&skip=1');
+  assert.equal(page2.response.status,200);
+  assert.equal(page2.response.headers.get('X-Pagination-Has-More'),'false');
+  assert.deepEqual(new Set([page1.data[0].id,page2.data[0].id]),
+    new Set([ingredientId,secondaryIngredientId]));
+  await h.status('/verticals/gym/ingredients?active=banana',422);
+  await h.status('/verticals/gym/ingredients?take=0',422);
+  await h.status('/verticals/gym/ingredients?skip=-1',422);
   const meal=(qty:number)=>({
     dayIndex:1,dayOfWeek:1,sortOrder:1,mealType:'Desayuno',servings:1,
     items:[{ingredientId,quantity:qty,unit:'g'}],alternatives:[]
