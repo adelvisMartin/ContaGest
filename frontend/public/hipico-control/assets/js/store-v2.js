@@ -348,7 +348,8 @@ export async function bindCloudIdentity(userId) {
     await flushWorkspaceWrites();
     await clearStore("workspaces"); await clearStore("outbox"); await clearStore("snapshots");
     lastWorkspaceSnapshot = null;
-    await putRecord("syncMeta", { key: "identitySwitch", previousOwnerId: previous, nextOwnerId: next, switchedAt: nowIso() });
+    // Diagnostic metadata must not retain identifiers of either cloud user.
+    await putRecord("syncMeta", { key: "identitySwitch", switchedAt: nowIso() });
   }
   await setSetting("cloudOwnerId", next); return { changed: Boolean(previous && previous !== next), ownerId: next };
 }
@@ -368,6 +369,7 @@ export async function clearPrivateSessionState() {
     lastWorkspaceSnapshot = null;
     await setSetting("cloudOwnerId", null);
     await setSetting("mode", null);
+    await deleteRecord("syncMeta", "identitySwitch");
   }
   await clearStore("outbox");
   await putRecord("syncMeta", { key: "sessionCleared", clearedAt: nowIso() });
