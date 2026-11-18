@@ -68,6 +68,26 @@ test('Gym #787 PG17: capacity, FIFO waitlist and promotion',async(t)=>{
   assert.equal(bookings.find((x:any)=>x.memberId===waitingId).status,'booked');
   assert.equal(bookings.find((x:any)=>x.memberId===members[2]).status,'waitlisted');
   assert.equal(bookings.filter((x:any)=>x.status==='booked').length,1);
+  // A cancelled occurrence must not acquire fake attendance/no-show, even
+  // after its original time passes. This is a run-owned disposable fixture.
+  const pastStart=new Date(Date.now()-7200000).toISOString();
+  const pastEnd=new Date(Date.now()-3600000).toISOString();
+  await h.prisma.$executeRawUnsafe(`
+    UPDATE public."GymClass"
+    SET "status"='cancelled',"startsAt"=$3::timestamptz,"endsAt"=$4::timestamptz
+    WHERE "tenantId"=$1 AND "id"=$2
+  `,h.tenant.id,klass.id,pastStart,pastEnd);
+  assert.equal((await post(waitingId,'attended')).response.status,409,
+    'cancelled class cannot gain an attended event');
+  assert.equal((await post(waitingId,'no_show')).response.status,409,
+    'cancelled class cannot gain a fabricated absence');
+  const unchangedCancelled=await h.ok('/verticals/gym/classes/'+klass.id+'/bookings');
+  assert.equal(unchangedCancelled.find((x:any)=>x.memberId===waitingId).status,'booked');
+  const releasedAfterClassCancelled=await post(waitingId,'cancelled');
+  assert.equal(releasedAfterClassCancelled.response.status,201,
+    'cancelled class must still allow releasing a booking');
+  assert.equal(releasedAfterClassCancelled.data.promotedBookingId,null,
+    'cancelled class must not promote waiting members');
 
   // New class: first-in-line loses eligibility before the confirmed seat is
   // cancelled. Do not silently promote the frozen membership; use the next
