@@ -70,34 +70,6 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   });
   assert.equal(categoryAudits.length,2,'Idempotent retry must not create an extra audit row');
 
-  // Whichever side wins the row lock, a category must never be archived
-  // while a new non-archived service is successfully created.
-  const raceCategory=await h.ok('/service-catalog/categories',{
-    method:'POST',body:JSON.stringify({slug:'race-'+suffix,name:'Categoría concurrente QA'})
-  });
-  const [raceArchive,raceCreate]=await Promise.all([
-    h.request(`/service-catalog/categories/${raceCategory.id}/status`,{
-      method:'PATCH',body:JSON.stringify({status:'archived'})
-    }),
-    h.request('/service-catalog/services',{
-      method:'POST',body:JSON.stringify({
-        name:'Servicio concurrente QA '+suffix,categoryId:raceCategory.id,
-        productId:ownProduct.id,modality:'onsite',durationMinutes:20
-      })
-    })
-  ]);
-  assert.ok((raceArchive.response.status===200&&raceCreate.response.status===422)||
-    (raceArchive.response.status===409&&raceCreate.response.status===201),
-    'Concurrent archive/create must serialize: no archived category with live service');
-  const raceState=await h.prisma.serviceCatalogCategory.findFirst({
-    where:{tenantId:h.tenant.id,id:raceCategory.id},select:{status:true}
-  });
-  const raceAttached=await h.prisma.serviceDefinition.count({
-    where:{tenantId:h.tenant.id,categoryId:raceCategory.id,status:{not:'archived'}}
-  });
-  assert.ok(raceState?.status==='active'||raceAttached===0,
-    'Category archived concurrently while live service was created');
-
   const created=await h.ok('/service-catalog/services',{
     method:'POST',body:JSON.stringify({
       name:'Consulta QA '+suffix,categoryId:category.id,productId:ownProduct.id,
@@ -280,6 +252,34 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
       modality:'onsite',durationMinutes:20
     })
   });
+
+  // Whichever side wins the row lock, a category must never be archived
+  // while a new non-archived service is successfully created.
+  const raceCategory=await h.ok('/service-catalog/categories',{
+    method:'POST',body:JSON.stringify({slug:'race-'+suffix,name:'Categoría concurrente QA'})
+  });
+  const [raceArchive,raceCreate]=await Promise.all([
+    h.request(`/service-catalog/categories/${raceCategory.id}/status`,{
+      method:'PATCH',body:JSON.stringify({status:'archived'})
+    }),
+    h.request('/service-catalog/services',{
+      method:'POST',body:JSON.stringify({
+        name:'Servicio concurrente QA '+suffix,categoryId:raceCategory.id,
+        productId:ownProduct.id,modality:'onsite',durationMinutes:20
+      })
+    })
+  ]);
+  assert.ok((raceArchive.response.status===200&&raceCreate.response.status===422)||
+    (raceArchive.response.status===409&&raceCreate.response.status===201),
+    'Concurrent archive/create must serialize: no archived category with live service');
+  const raceState=await h.prisma.serviceCatalogCategory.findFirst({
+    where:{tenantId:h.tenant.id,id:raceCategory.id},select:{status:true}
+  });
+  const raceAttached=await h.prisma.serviceDefinition.count({
+    where:{tenantId:h.tenant.id,categoryId:raceCategory.id,status:{not:'archived'}}
+  });
+  assert.ok(raceState?.status==='active'||raceAttached===0,
+    'Category archived concurrently while live service was created');
 
   const noToken=await h.request('/service-catalog/services',{},'');
   assert.equal(noToken.response.status,401);
