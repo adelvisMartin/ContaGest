@@ -50,9 +50,11 @@ export function signalOtherTabsCloudSessionInvalidation() {
   }
   if (typeof window === 'undefined') return false;
   try {
+    const storage = window.localStorage;
+    if (!storage) return false;
     const nonce = typeof globalThis.crypto?.randomUUID === 'function'
       ? globalThis.crypto.randomUUID() : String(Math.random());
-    window.localStorage?.setItem(STORAGE_KEY, `${Date.now()}:${nonce}`);
+    storage.setItem(STORAGE_KEY, `${Date.now()}:${nonce}`);
     return true;
   } catch {
     return false;
