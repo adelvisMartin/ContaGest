@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { veterinaryPatientPatchSchema } from './veterinary.schemas.js';
+import { veterinaryMicrochipTaken } from './veterinary-microchip-ownership.mjs';
 
 const router = Router();
 const ctx = (req: any) => req.context as { tenantId: string };
@@ -11,7 +12,10 @@ function changed<T extends Record<string, unknown>>(body: T, key: keyof T) {
 
 router.patch('/health/patients/:id', asyncHandler(async (req, res) => {
   const b = veterinaryPatientPatchSchema.parse(req.body || {});
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
+  const rows = await prisma.$transaction(async(tx)=>{
+    if(changed(b,'microchip')&&await veterinaryMicrochipTaken(tx,ctx(req).tenantId,b.microchip,req.params.id))
+      throw new HttpError(409,'El microchip ya está asignado a otra mascota de esta empresa.');
+    return tx.$queryRawUnsafe<any[]>(`
     UPDATE public."CarePatient" SET
       "displayName"=CASE WHEN $3 THEN $4 ELSE "displayName" END,
       "species"=CASE WHEN $5 THEN $6 ELSE "species" END,
@@ -38,7 +42,7 @@ router.patch('/health/patients/:id', asyncHandler(async (req, res) => {
   changed(b,'color'), b.color ?? null,
   changed(b,'sex'), b.sex ?? null,
   changed(b,'birthDate'), b.birthDate || null,
-  changed(b,'microchip'), b.microchip ?? null,
+  changed(b,'microchip'), b.microchip?.trim() || null,
   changed(b,'guardianName'), b.guardianName ?? null,
   changed(b,'guardianPhone'), b.guardianPhone ?? null,
   changed(b,'guardianEmail'), b.guardianEmail ?? null,
@@ -46,6 +50,7 @@ router.patch('/health/patients/:id', asyncHandler(async (req, res) => {
   changed(b,'conditions'), b.conditions ?? null,
   changed(b,'notes'), b.notes ?? null,
   changed(b,'active'), b.active ?? true);
+  });
   if (!rows.length) throw new HttpError(404, 'Mascota no encontrada.');
   ok(res, rows[0]);
 }));
