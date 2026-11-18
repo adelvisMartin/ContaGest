@@ -130,3 +130,15 @@ test('#120 recomputing the sample digest cannot make a failed HTTP health probe 
     rows[100].health={ok:true,status:200,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5};
   }));
 });
+
+test('#120 missing or forged health classification fails even after sample digest recomputation',()=>{
+  check(f=>mutateRows(f,rows=>{
+    delete rows[20].health.reason;
+  }));
+  check(f=>mutateRows(f,rows=>{
+    rows[20].health.reason='HEALTH_HTTP_FAILURE';
+  }));
+  check(f=>mutateRows(f,rows=>{
+    rows[20].health={ok:false,status:503,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5};
+  }));
+});
