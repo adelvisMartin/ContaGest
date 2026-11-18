@@ -108,6 +108,30 @@ The two external source repos are immutable pinned and **advisory-only** in `age
 
 OmniRoute is a separate AI gateway and is not installed: the existing deterministic router already serves task/skill selection. REA was introduced separately in PR #997 and is not silently declared merged.
 
+## Backlog closeout · live read-only orchestration (#841)
+
+The project already has one Agent System v3, its 11 agent profiles,
+27 ACTIVE project-owned routed skills, five execution capability skills and
+a version-pinned external advisory lockfile. Do not create another parallel
+orchestrator or activate external agents merely to reduce a ticket counter.
+
+For an exact live inventory (and optional nonzero exit while unfinished):
+
+```bash
+node scripts/agent-ticket-router.mjs closeout --repo adelvisMartin/ContaGest
+node scripts/agent-ticket-router.mjs closeout --repo adelvisMartin/ContaGest --strict
+```
+
+The closeout path fetches GitHub only for **read-only triage**: paginated open
+epics, open PRs, current main SHA, SHA-bound check runs and available branch
+protection. A closed/merged PR is not proof that the epic's acceptance
+criteria passed. `mergeable=true` is not sufficient; `dirty`,
+`unstable`, pending/failed/skipped checks, missing/unknown protection,
+stale SHA and open acceptance blockers prevent automatic merge/close.
+The 17–20 ticket range is a planning target, not a closure gate. Required
+domain skill routing, local/PostgreSQL/browser/production/physical evidence
+and serial merges remain mandatory under this file.
+
 ## Agent System v3 · deterministic routing and evidence
 Before a non-trivial ticket change, run the composed ticket router:
 
