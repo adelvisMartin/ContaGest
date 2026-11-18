@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { ctx, one } from './verticals.shared.js';
+import { veterinaryHospitalStatusTransitionAllowed, veterinaryHospitalCageLockKey } from './veterinary-hospitalization-policy.mjs';
 import {
   hospitalizationSchema,
   hospitalizationStatusSchema
@@ -29,14 +30,6 @@ router.get('/hospitalizations', asyncHandler(async (req, res) => {
   ok(res, rows);
 }));
 
-// Active admissions occupy one patient and, if assigned, one physical cage.
-const ACTIVE_STATES = ['admitted', 'observed'] as const;
-const allowedHospitalStatus = (previous:string,next:string) => (
-  previous==='admitted' ? ['observed','discharged','transferred','cancelled'].includes(next) :
-  previous==='observed' ? ['discharged','transferred','cancelled'].includes(next) :
-  false
-);
-
 router.post('/hospitalizations', asyncHandler(async (req, res) => {
   const b = hospitalizationSchema.parse(req.body || {});
   const tenantId=ctx(req).tenantId;
@@ -56,7 +49,7 @@ router.post('/hospitalizations', asyncHandler(async (req, res) => {
     if(ward&&cage){
       await tx.$queryRawUnsafe(
         'SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
-        `vet:hospital:cage:${tenantId}:${ward.toLowerCase()}:${cage.toLowerCase()}`
+        veterinaryHospitalCageLockKey(tenantId,ward,cage)
       );
     }
     const patients=await tx.$queryRawUnsafe<Array<{id:string}>>(`
@@ -135,7 +128,7 @@ router.patch('/hospitalizations/:id/status', asyncHandler(async (req, res) => {
       `,tenantId,current.id);
       return one(unchanged);
     }
-    if(!allowedHospitalStatus(current.status,b.status))
+    if(!veterinaryHospitalStatusTransitionAllowed(current.status,b.status))
       throw new HttpError(409,'Transición de hospitalización no permitida.');
     const changed=await tx.$queryRawUnsafe<any[]>(`
       UPDATE public."CareHospitalization"
