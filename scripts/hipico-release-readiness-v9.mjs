@@ -1,7 +1,10 @@
 const STATUS_VALUES = new Set(['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
 
 function normalizeStatus(value) {
-  const normalized = String(value || 'NOT_EXECUTED').trim().toUpperCase();
+  // External CI/evidence records must supply primitive status text. An object
+  // that stringifies to PASS cannot confer a release verdict by coercion.
+  if (typeof value !== 'string') return 'NOT_EXECUTED';
+  const normalized = value.trim().toUpperCase();
   return STATUS_VALUES.has(normalized) ? normalized : 'NOT_EXECUTED';
 }
 
