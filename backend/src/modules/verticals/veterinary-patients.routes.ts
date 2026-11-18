@@ -21,16 +21,36 @@ router.get('/observations', asyncHandler(async (req, res) => {
 router.post('/observations', asyncHandler(async (req, res) => {
   const b = observationSchema.parse(req.body || {});
   const tenantId=ctx(req).tenantId;
-  if(b.professionalId){
-    const professionals=await prisma.$queryRawUnsafe<any[]>(`SELECT "id" FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2 LIMIT 1`,tenantId,b.professionalId);
-    if(!professionals.length)throw new HttpError(422,'El profesional no pertenece al tenant activo.');
-  }
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    INSERT INTO public."CareHospitalObservation" ("id","tenantId","hospitalizationId","professionalId","observedAt","type","values","note","createdAt")
-    SELECT gen_random_uuid()::text,$1,h."id",$3,COALESCE($4::timestamptz,now()),$5,$6::jsonb,$7,now()
-    FROM public."CareHospitalization" h WHERE h."id"=$2 AND h."tenantId"=$1 AND h."status" IN ('admitted','observed') RETURNING *
-  `, ctx(req).tenantId, b.hospitalizationId, b.professionalId || null, b.observedAt || null, b.type, JSON.stringify(b.values), b.note || null);
-  ok(res, one(rows, 'Hospitalización activa no encontrada.'), 201);
+  const created=await prisma.$transaction(async(tx)=>{
+    // Serialize the observation with discharge/cancellation transitions.
+    // The status transition route takes FOR UPDATE on this same row; a
+    // clinical entry cannot be committed after the admission is closed.
+    const hospitalizations=await tx.$queryRawUnsafe<Array<{id:string}>>(`
+      SELECT "id" FROM public."CareHospitalization"
+      WHERE "tenantId"=$1 AND "id"=$2 AND "status" IN ('admitted','observed')
+      FOR SHARE
+    `,tenantId,b.hospitalizationId);
+    if(hospitalizations.length!==1)
+      throw new HttpError(404,'Hospitalización activa no encontrada.');
+
+    if(b.professionalId){
+      const professionals=await tx.$queryRawUnsafe<Array<{id:string}>>(`
+        SELECT "id" FROM public."CareProfessional"
+        WHERE "tenantId"=$1 AND "id"=$2 FOR SHARE
+      `,tenantId,b.professionalId);
+      if(professionals.length!==1)
+        throw new HttpError(422,'El profesional no pertenece al tenant activo.');
+    }
+    const rows=await tx.$queryRawUnsafe<any[]>(`
+      INSERT INTO public."CareHospitalObservation"
+        ("id","tenantId","hospitalizationId","professionalId","observedAt","type","values","note","createdAt")
+      VALUES (gen_random_uuid()::text,$1,$2,$3,COALESCE($4::timestamptz,now()),$5,$6::jsonb,$7,now())
+      RETURNING *
+    `,tenantId,b.hospitalizationId,b.professionalId||null,b.observedAt||null,
+      b.type,JSON.stringify(b.values),b.note||null);
+    return one(rows);
+  });
+  ok(res,created,201);
 }));
 
 router.get('/procedures', asyncHandler(async (req, res) => {
