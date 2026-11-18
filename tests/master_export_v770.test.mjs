@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
+import { encodeImportReportCsvCell } from '../backend/src/modules/imports/import-report-csv-cell.ts';
 import { MASTER_EXPORT_FIELDS, masterExportCell, masterExportRows, masterExportCsv, masterExportPayload, encodeMasterExportCsvCell } from '../backend/src/modules/exports/master-export.ts';
 
 const meta = Object.freeze({ skip: 0, take: 100, hasMore: false, exportedAt: '2026-10-15T00:00:00.000Z' });
@@ -68,6 +69,17 @@ test('spreadsheet CSV guard rejects Unicode invisible prefixes and C1 controls',
   assert.ok(csv.includes(`"'\u200B@SUM(A1:A2)"`));
 });
 
+test('Unicode default-ignorable prefixes cannot bypass backend CSV formula protection', () => {
+  const hiddenPrefixes = ['\u00ad', '\u034f', '\u061c', '\u180e', '\u2800', '\u3164', '\ufe0f', '\uffa0'];
+  for (const prefix of hiddenPrefixes) {
+    const formula = prefix + '=HYPERLINK("https://example.invalid")';
+    const expected = `"'${formula.replaceAll('"', '""')}"`;
+    assert.equal(encodeMasterExportCsvCell(formula), expected, JSON.stringify(prefix));
+  }
+  assert.equal(encodeMasterExportCsvCell('-20.00'), '"-20.00"');
+  assert.equal(encodeMasterExportCsvCell('normal'), '"normal"');
+});
+
 test('generic and master backend CSV cells share Unicode-safe formula mitigation', () => {
   for (const input of ['\u200B=1+1','\u2060@SUM(A1:A2)','\t-HYPERLINK("x")']) {
     assert.equal(encodeMasterExportCsvCell(input), `"'${input.replaceAll('"','""')}"`);
@@ -82,6 +94,15 @@ test('generic backend CSV endpoint uses audited shared cell policy and no-store'
   assert.match(route,/router\.use\(\(_req, res, next\) =>/);
   assert.match(route,/cache-control', 'no-store, max-age=0'/);
   assert.match(route,/x-content-type-options', 'nosniff'/);
+});
+
+test('import report CSV rejects hidden formula prefixes without changing safe numeric cells', () => {
+  for (const prefix of ['\u00ad', '\u034f', '\u180e', '\ufe0f']) {
+    const formula = prefix + '@SUM(1,2)';
+    assert.equal(encodeImportReportCsvCell(formula), `"'${formula}"`);
+  }
+  assert.equal(encodeImportReportCsvCell('normal'), '"normal"');
+  assert.equal(encodeImportReportCsvCell(-20), '"-20"');
 });
 
 test('CSV header and row keys stay in declared canonical order', () => {
