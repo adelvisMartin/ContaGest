@@ -31,6 +31,24 @@ For the complete machine-readable rows, read [config/competitive-benchmark-v764.
 
 Notes: S.A.C. is specifically the `Sistema de Asistencia Comercial` described by Sumeria, **not** the unrelated Dominican product SAC Enterprise. The category `Bodega/POS` is not a company, library or API. `Ecologic` remains unresolved; do not conflate it with unrelated ecological companies or create product-feature claims. Odoo Community vs Enterprise/modules have distinct licenses, so the LGPL evidence applies only to Community 19. Gálac's `SaC` commercial plan is **not** a separate SAC software product.
 
+## #707: published-feature link ownership guard (2026-11-18)
+
+The manifest-only validator now requires every `DOCUMENTED` reference to stay on the
+**same official publisher origin** as its product source; for GitHub product repositories,
+the exact `owner/repository` path must match, not merely the shared `github.com` host.
+The existing ERPNext exception is limited to the first-party documentation prefix
+`https://docs.frappe.io/erpnext` because ERPNext's maintained feature documentation
+uses Frappe's documentation origin. An unrelated HTTPS vendor, another GitHub
+repository or a lookalike Frappe path cannot substantiate a competing product's feature.
+
+This is **structural provenance enforcement**, not proof that a vendor maintains,
+currently ships or licenses a feature. External documentation is advisory,
+`SOURCE_REUSE=NONE` remains mandatory, and no runtime parity `EXISTS` can be inferred.
+When the vendor publishes documentation from another verified origin, a dedicated
+source-review decision and regression must precede changing the allowlist.
+Run `node --test tests/competitive_benchmark_v764.test.mjs tests/competitive_benchmark_url_safety_v764.test.mjs`
+after the manifest validator, and require exact-HEAD workflow evidence before merge.
+
 ## Feature-level claim provenance
 
 Every feature row has a `referenceEvidenceLevel` independent from ContaGest's own `assessmentLevel`:

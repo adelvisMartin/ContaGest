@@ -47,7 +47,7 @@ export function validateBridgeGroupIdentity(payload:BridgeIdentityPayload,env:Ru
   const groupId=normalizeBridgeGroupId(payload.groupId);
   const role=payload.channelRole;
   const channelKey=payload.channelKey.trim();
-  const labChannelKey=(payload.labChannelKey||'').trim();
+  const labChannelKey=typeof payload.labChannelKey==='string'?payload.labChannelKey.trim():'';
   const valid=role==='source'
     ? groupId===config.sourceGroupId&&channelKey===config.sourceChannelKey&&labChannelKey===config.labChannelKey
     : role==='lab'
