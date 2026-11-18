@@ -6,6 +6,7 @@ import {createRealBackendHarness} from './support/real-backend-harness.ts';
 test('#814 PG17 lab order: clinical references tenant/patient scoped and order+tests atomic',async t=>{
   const h=await createRealBackendHarness();
   const patients:string[]=[], professionals:string[]=[], encounters:string[]=[], orders:string[]=[];
+  let externalTenantId='',externalPetId='',externalProfessionalId='';
   t.after(async()=>{
     try{
       for(const id of orders){
@@ -25,6 +26,13 @@ test('#814 PG17 lab order: clinical references tenant/patient scoped and order+t
       for(const id of patients)await h.prisma.$executeRawUnsafe(
         'DELETE FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2',
         h.tenant.id,id);
+      if(externalProfessionalId)await h.prisma.$executeRawUnsafe(
+        'DELETE FROM public."CareProfessional" WHERE "tenantId"=$1 AND "id"=$2',
+        externalTenantId,externalProfessionalId);
+      if(externalPetId)await h.prisma.$executeRawUnsafe(
+        'DELETE FROM public."CarePatient" WHERE "tenantId"=$1 AND "id"=$2',
+        externalTenantId,externalPetId);
+      if(externalTenantId)await h.prisma.tenant.deleteMany({where:{id:externalTenantId}});
     }finally{await h.close();}
   });
   const run=randomUUID();
@@ -45,6 +53,22 @@ test('#814 PG17 lab order: clinical references tenant/patient scoped and order+t
     status:'draft',clinicalData:{}
   })});
   encounters.push(encounter.id);
+  const external=await h.prisma.tenant.create({data:{
+    rif:'QA814-LAB-'+run.slice(0,14),name:'QA foreign laboratory',
+    legalName:'QA foreign laboratory',status:'active',plan:'commercial',settings:{}
+  }});
+  externalTenantId=external.id;
+  externalPetId=randomUUID();externalProfessionalId=randomUUID();
+  await h.prisma.$executeRawUnsafe(`
+    INSERT INTO public."CarePatient"
+      ("id","tenantId","kind","displayName","active","emergencyContact","createdAt","updatedAt")
+    VALUES ($1,$2,'animal',$3,true,'{}'::jsonb,now(),now())
+  `,externalPetId,externalTenantId,'QA foreign lab patient '+run);
+  await h.prisma.$executeRawUnsafe(`
+    INSERT INTO public."CareProfessional"
+      ("id","tenantId","fullName","specialty","status","schedule","createdAt","updatedAt")
+    VALUES ($1,$2,$3,'veterinary','active','{}'::jsonb,now(),now())
+  `,externalProfessionalId,externalTenantId,'QA foreign lab clinician '+run);
 
   const body={
     patientId:a.id,professionalId:pro.id,priority:'routine',fasting:false,
@@ -59,6 +83,10 @@ test('#814 PG17 lab order: clinical references tenant/patient scoped and order+t
   assert.equal(wrongPatient.response.status,422);
   const missingPro=await post({professionalId:randomUUID()});
   assert.equal(missingPro.response.status,422);
+  const tenantPatient=await post({patientId:externalPetId});
+  assert.equal(tenantPatient.response.status,404,'foreign tenant pet is not a valid patient');
+  const tenantClinician=await post({professionalId:externalProfessionalId});
+  assert.equal(tenantClinician.response.status,422,'foreign tenant clinician cannot authorize a lab order');
   const missingPatient=await post({patientId:randomUUID()});
   assert.equal(missingPatient.response.status,404);
   const invalidEncounter=await post({encounterId:randomUUID()});
