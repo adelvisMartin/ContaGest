@@ -48,3 +48,15 @@ test('#757 public issued cancellation remains on its existing reversible route',
   assert.match(routes, /await copyLedgerLineSnapshotsForReversal\(/);
   assert.match(routes, /if \(purchase\.status === 'draft'\) throw new HttpError\(409/);
 });
+
+test('#757 PG17 audit-failure probe is scoped to disposable tenant, cleans trigger and checks rollback', () => {
+  const qa = readFileSync(new URL('../qa/purchase-draft-atomic-v757.test.ts', import.meta.url), 'utf8');
+  assert.match(qa, /createRealBackendHarness\(\)/);
+  assert.match(qa, /LANGUAGE plpgsql AS \$\$/);
+  assert.match(qa, /END;\s*\$\$`\);/);
+  assert.match(qa, /DROP TRIGGER IF EXISTS/);
+  assert.match(qa, /DROP FUNCTION IF EXISTS/);
+  assert.match(qa, /await h\.status\(.*500.*DELETE/);
+  assert.match(qa, /purchaseInvoiceLine\.count/);
+  assert.match(qa, /foreign tenant draft is not exposed or deleted/);
+});
