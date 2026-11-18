@@ -1,3 +1,4 @@
+import { assertHipicoShellCacheRotated } from './support/hipico-shell-cache-contract.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
@@ -52,9 +53,8 @@ test('Control Hípico invalidates the cached shell that contained the render loo
   assert.doesNotMatch(code, /r29-auto-update-reload/);
   // A newer shell cache must invalidate the historical r38 cache; the release
   // sequence can continue advancing without weakening the purge/lifecycle gates.
-  const revision = code.match(/const SHELL_CACHE\s*=\s*`\$\{CACHE_VERSION\}-shell-r(\d+)-consolidator-v4-1-3`/);
-  assert.ok(revision, 'the service worker must define a versioned shell cache');
-  assert.ok(Number(revision[1]) > 38, 'the cache must supersede the looping r38 shell');
+  assertHipicoShellCacheRotated(code);
+  assert.match(code, /-consolidator-v4-1-3`/, 'the current shell contract must remain v4.1.3');
   assert.match(code, /key\.startsWith\('hipico-control-'\)\s*&&\s*key\s*!==\s*SHELL_CACHE/);
   assert.match(code, /await self\.skipWaiting\(\)/);
   assert.match(code, /await self\.clients\.claim\(\)/);
