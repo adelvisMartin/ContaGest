@@ -70,3 +70,22 @@ test('#892 known informational statuses remain usable without enabling SOURCE or
   assert.equal(answer.source, 'LECTURA_CANÓNICA_LIMITADA');
   assert.equal(answer.reason, 'CANONICAL_RACE_SUMMARY');
 });
+
+test('#892 an object-coerced backend reason cannot escape into LAB presentation metadata', () => {
+  const forged = { toString: () => 'LAB_CANONICAL_UNAVAILABLE' };
+  const answer = selectLabAnswer({
+    canonical: { available: false, reason: forged, text: 'Resultado no confirmado' },
+    localFallback: 'No hay datos autorizados.'
+  });
+  assert.equal(answer.source, 'ORIENTACIÓN_LOCAL_SIN_DATOS_CANÓNICOS');
+  assert.equal(answer.reason, 'LAB_LOCAL_ONLY');
+  assert.equal(typeof answer.reason, 'string');
+  assert.equal(answer.text, 'No hay datos autorizados.');
+  // Normal, primitive backend status remains auditable without becoming send authority.
+  const ordinary = selectLabAnswer({
+    canonical: { available: false, reason: 'LAB_CANONICAL_UNAVAILABLE', text: 'No confiable' },
+    localFallback: 'Sin datos.'
+  });
+  assert.equal(ordinary.reason, 'LAB_CANONICAL_UNAVAILABLE');
+  assert.equal(ordinary.text, 'Sin datos.');
+});
