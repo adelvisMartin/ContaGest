@@ -45,7 +45,7 @@ export function validateCompetitiveBenchmark(input) {
     if (!s) errors.push('unknown product: ' + f.productId);
     if (!f.module || !f.referenceFeature || !f.assessment) errors.push('incomplete matrix row: ' + f.id);
     if (!['DOCUMENTED','PROVISIONAL','UNRESOLVED'].includes(f.referenceEvidenceLevel)) errors.push('invalid reference evidence: ' + f.id);
-    if (f.referenceEvidenceLevel === 'DOCUMENTED' && (s?.sourceLevel !== 'OFFICIAL' || !isHttps(f.referenceEvidenceUrl))) errors.push('unsupported reference feature claim: ' + f.id);
+    if (f.referenceEvidenceLevel === 'DOCUMENTED' && (s?.sourceLevel !== 'OFFICIAL' || !isOfficialFeatureEvidence(f.referenceEvidenceUrl, s))) errors.push('unsupported reference feature claim: ' + f.id);
     if (f.referenceEvidenceLevel !== 'DOCUMENTED' && f.referenceEvidenceUrl != null) errors.push('unverified reference cannot carry evidence URL: ' + f.id);
     if ((s?.sourceLevel === 'UNRESOLVED') !== (f.referenceEvidenceLevel === 'UNRESOLVED')) errors.push('reference identity/evidence mismatch: ' + f.id);
     if (!['EXISTS','PARTIAL','MISSING','NOT_APPLICABLE'].includes(f.status)) errors.push('invalid classification: ' + f.id);
@@ -83,6 +83,32 @@ function isHttps(url) {
   } catch {
     return false;
   }
+}
+
+
+/**
+ * A working HTTPS URL is insufficient evidence of a vendor's feature.
+ * Keep claims bound to the source publisher. For GitHub-hosted products,
+ * the owner/repository path is mandatory; github.com alone is not provenance.
+ * ERPNext's first-party Frappe docs are a reviewed cross-origin exception.
+ * This is structural provenance validation, not live URL verification.
+ */
+export function isOfficialFeatureEvidence(referenceUrl, source) {
+  if (!source || source.sourceLevel !== 'OFFICIAL' ||
+      !isHttps(referenceUrl) || !isHttps(source.sourceUrl)) return false;
+  const reference = new URL(referenceUrl);
+  const primary = new URL(source.sourceUrl);
+  if (reference.origin === primary.origin) {
+    if (primary.hostname !== 'github.com') return true;
+    const ownerRepo = primary.pathname.split('/').filter(Boolean).slice(0, 2);
+    const actual = reference.pathname.split('/').filter(Boolean);
+    return ownerRepo.length === 2 && actual[0] === ownerRepo[0] && actual[1] === ownerRepo[1];
+  }
+  // Frappe publishes ERPNext's own selling/assets documentation on this
+  // separate official domain; other unrelated hosts are never accepted.
+  return source.id === 'erpnext' &&
+    reference.origin === 'https://docs.frappe.io' &&
+    (reference.pathname === '/erpnext' || reference.pathname.startsWith('/erpnext/'));
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
