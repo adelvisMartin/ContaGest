@@ -72,6 +72,7 @@ const required59=[
   'tests/tenant_isolation_adversarial_issue_641.test.mjs',
   'tests/db_security_hardening_v635.test.mjs',
   'tests/db_security_audit_v635.test.mjs',
+  'tests/accounting_draft_audit_atomicity_v637.test.mjs',
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
 
