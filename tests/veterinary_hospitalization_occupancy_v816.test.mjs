@@ -73,7 +73,7 @@ test('#816 observations cannot race a terminal hospitalization status transition
     'Lock admission before persisting observation');
   assert.match(observation,/FROM public\."CareHospitalization"/);
   assert.match(observation,/WHERE "tenantId"=\$1 AND "id"=\$2 AND "status" IN \('admitted','observed'\)/);
-  assert.match(observation,/WHERE "tenantId"=\$1 AND "id"=\$2 FOR SHARE/);
+  assert.match(observation,/WHERE "tenantId"=\$1 AND "id"=\$2 AND "status" IN \('admitted','observed'\)\s+FOR SHARE/);
   assert.match(observation,/FROM public\."CareProfessional"/);
   assert.match(observation,/tx\.\$queryRawUnsafe/);
   assert.doesNotMatch(observation,/await prisma\.\$queryRawUnsafe/);
