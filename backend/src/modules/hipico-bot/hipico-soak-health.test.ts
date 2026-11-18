@@ -54,3 +54,16 @@ test('#120 HTTP 200 HTML fallback or maintenance page must not pass release', as
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'HEALTH_BODY_INVALID');
 });
+
+test('#120 a JSON-shaped login page cannot falsely certify 24-hour soak readiness',async()=>{
+  const fakePage=async()=>new Response(JSON.stringify(safe),{
+    status:200,headers:{'content-type':'text/html; charset=utf-8'}
+  });
+  const failed=await probeSoakHealth('https://bridge.example/health','',fakePage as typeof fetch);
+  assert.deepEqual(failed,{ok:false,status:200,reason:'HEALTH_BODY_INVALID'});
+
+  const valid=async()=>new Response(JSON.stringify(safe),{
+    status:200,headers:{'content-type':'application/json; charset=utf-8'}
+  });
+  assert.equal((await probeSoakHealth('https://bridge.example/health','',valid as typeof fetch)).ok,true);
+});
