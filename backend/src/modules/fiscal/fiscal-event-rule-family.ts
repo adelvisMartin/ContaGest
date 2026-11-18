@@ -30,6 +30,10 @@ export function assertFiscalDocumentRuleFamily(input:Readonly<{
     if(family && !input.ruleKeys.some(key=>classOf(key)===family))reject();
     if(input.kind==='withholding' &&
        !input.ruleKeys.some(key=>['ret_iva','islr'].includes(classOf(key))))reject();
+    // IVA withholding is specifically RET_IVA. An ISLR rule alone cannot
+    // authorize an IVA retention document, even within a mixed preview.
+    if(input.kind==='withholding' && input.module==='iva' &&
+       !input.ruleKeys.some(key=>classOf(key)==='ret_iva'))reject();
     if(input.ruleKeys.some(key=>!Object.values(PREFIX).includes(classOf(key))))reject();
   }
 }

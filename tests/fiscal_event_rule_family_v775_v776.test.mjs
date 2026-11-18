@@ -26,3 +26,14 @@ test('#775/#776/#778 reviewed fiscal issuance cannot mix unrelated tax families'
     ...valid,module:'retiva',kind:'withholding',ruleKeys:['iva.general','ret_iva.purchase']
   }));
 });
+
+test('#775 IVA withholding cannot substitute an ISLR rule for RET_IVA',()=>{
+  bad({kind:'withholding',ruleKeys:['iva.general','islr.service']});
+  bad({kind:'withholding',ruleKeys:['iva.general']});
+  assert.doesNotThrow(()=>assertFiscalDocumentRuleFamily({
+    ...valid,kind:'withholding',ruleKeys:['iva.general','ret_iva.purchase']
+  }));
+  assert.doesNotThrow(()=>assertFiscalDocumentRuleFamily({
+    ...valid,kind:'withholding',ruleKeys:['iva.general','ret_iva.purchase','islr.service']
+  }));
+});
