@@ -1,6 +1,6 @@
 import { CLOUD_CONFIG, canUseLabDirectTableFallback, cloudConfigurationStatus } from "./config.js";
 import { loadCloudSession, saveCloudSession } from "./store.js";
-import { subscribeCloudSessionInvalidation, signalOtherTabsCloudSessionInvalidation } from "./cloud-session-tab-signal.js";
+import { subscribeCloudSessionInvalidation, signalOtherTabsCloudSessionInvalidation } from "./cloud-tab-signal.js";
 let cachedSession = null;
 let refreshPromise = null;
 let sessionEpoch = 0;
