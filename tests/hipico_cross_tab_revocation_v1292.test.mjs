@@ -88,6 +88,19 @@ test('#1292 callers fail safely when cross-tab transport is not usable',()=>{
   assert.equal(env.api.signalOtherTabsCloudSessionInvalidation(),false);
 });
 
+test('#1292 cross-tab module is a public offline shell dependency, not a sensitive fetch path',()=>{
+  const sw=read('frontend/public/hipico-control/sw.js');
+  const auth=read('frontend/public/hipico-control/assets/js/supabase.js');
+  assert.match(auth,/from "\.\/cloud-tab-signal\.js"/);
+  assert.match(sw,/['"]\.\/assets\/js\/cloud-tab-signal\.js['"]/);
+  const staticModulePath='/hipico-control/assets/js/cloud-tab-signal.js';
+  const privateRouteGuard=/\/(?:api|auth)(?:\/|$)|session|token|license|webhook|rpc|rest\/v1/i;
+  assert.equal(privateRouteGuard.test(staticModulePath),false,
+    'Module URL must not bypass the service-worker offline cache');
+  assert.doesNotMatch(sw,/cloud-session-tab-signal\.js/,
+    'The legacy filename cannot be precached because the worker rejects it');
+});
+
 test('#1292 cross-tab event is wired to the canonical session epoch and clears private UI',()=>{
   const auth=read('frontend/public/hipico-control/assets/js/supabase.js');
   const ui=read('frontend/public/hipico-control/assets/js/app.js');
