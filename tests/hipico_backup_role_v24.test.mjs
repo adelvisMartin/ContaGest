@@ -69,6 +69,30 @@ test('v24 role verification fails closed if the observed database connection is 
   }
 });
 
+test('v24 unknown or omitted dangerous privileges cannot produce PASS',()=>{
+  const privilegeCodes={
+    superuser:'ROLE_SUPERUSER_FORBIDDEN',
+    createdb:'ROLE_CREATEDB_FORBIDDEN',
+    createrole:'ROLE_CREATEROLE_FORBIDDEN',
+    replication:'ROLE_REPLICATION_FORBIDDEN',
+    bypassrls:'ROLE_BYPASSRLS_FORBIDDEN',
+    serviceRoleMember:'SERVICE_ROLE_MEMBERSHIP_FORBIDDEN',
+    schemaCreate:'PUBLIC_SCHEMA_CREATE_FORBIDDEN'
+  };
+  for(const [key,code] of Object.entries(privilegeCodes)){
+    for(const value of [undefined,null,'false',0]){
+      const observation=validObservation();
+      if(value===undefined)delete observation.role[key];
+      else observation.role[key]=value;
+      const result=classifyBackupRoleVerification({
+        candidateSha:SHA,observation,mode:'STEADY_STATE',now:NOW
+      });
+      assert.equal(result.status,'FAIL',`${key}=${String(value)}`);
+      assert.ok(result.findings.includes(code),`${key}=${String(value)}`);
+    }
+  }
+});
+
 test('v24 PRE_ROLLOUT allows canonical tables that do not exist yet and records them as deferred',()=>{
   const obs=validObservation();
   obs.observedTables[0]={...obs.observedTables[0],exists:false,select:false,rls:false,backupPolicy:false};
