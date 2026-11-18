@@ -58,3 +58,4 @@ test('#743 existing CSV structure remains an independent RFC4180 parser', () => 
   assert.match(code, /parseStatementCsvRows/);
   assert.doesNotMatch(code, /resolveStatementCsvHeaders/);
 });
+
