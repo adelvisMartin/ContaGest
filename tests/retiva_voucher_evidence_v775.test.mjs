@@ -6,3 +6,13 @@ test('article 16 numbering is exactly AAAAMMSSSSSSSS',()=>{assert.equal(formatRe
 test('complete sample retains source hash and first/last dates',()=>{assert.equal(assertRetivaVoucherEvidence(sample).applicationEvidenceSha256,sample.applicationEvidenceSha256);});
 test('reject period mismatch, absent agent and supplier evidence',()=>{deny({number:'20260900000001'});deny({number:'20261000000000'});deny({agentRif:'not-a-rif'});deny({supplierFiscalAddress:''});deny({applicationEvidenceSha256:'b'});});
 test('reject amount beyond IVA, unsafe money or chronology mismatch',()=>{deny({withheldVatMinor:1700});deny({withheldVatMinor:-1});deny({invoiceVatMinor:Number.MAX_SAFE_INTEGER+1});deny({recognizedAt:'2026-09-20T00:00:00.000Z'});deny({deliveredAt:'2026-10-01T00:00:00.000Z'});});
+
+test('#775 voucher chronology uses UTC instants with mixed fractional precision',()=>{
+  const earlier='2026-10-02T10:00:00Z';
+  const later='2026-10-02T10:00:00.100Z';
+  assert.doesNotThrow(()=>assertRetivaVoucherEvidence({
+    ...sample,invoiceDate:earlier,recognizedAt:later,deliveredAt:later
+  }));
+  deny({invoiceDate:later,recognizedAt:earlier,deliveredAt:later});
+  deny({invoiceDate:earlier,recognizedAt:later,deliveredAt:earlier});
+});
