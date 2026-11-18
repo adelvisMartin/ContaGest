@@ -32,3 +32,19 @@ test('#820 public portal does not add raw diagnostic payloads or token exposure'
   assert.doesNotMatch(publicRoute,/res\.json\(\{[^}]*accessToken/s);
   assert.doesNotMatch(publicRoute,/SELECT .*"tokenSha256".*RETURNING/s);
 });
+
+
+test('#820 two concurrent grants for one tenant/patient use the same DB transaction lock',()=>{
+  const source=readFileSync(new URL('../backend/src/modules/verticals/veterinary-guardian.routes.ts',import.meta.url),'utf8');
+  const create=source.split("router.post('/guardian-portal/grants'")[1]
+    .split("router.post('/guardian-portal/grants/:id/revoke'")[0];
+  const tx=create.indexOf('prisma.$transaction(async (tx)=>');
+  const lock=create.indexOf('veterinary:guardian-grant:');
+  const revoke=create.indexOf('UPDATE public."VeterinaryGuardianPortalGrant"');
+  const insert=create.indexOf('INSERT INTO public."VeterinaryGuardianPortalGrant"');
+  assert.ok(tx>=0&&lock>tx&&revoke>lock&&insert>revoke);
+  assert.match(create,/pg_advisory_xact_lock\(hashtextextended\(\$1,0\)\)::text AS locked/);
+  assert.match(create,/veterinary:guardian-grant:\$\{tenantId\}:\$\{body\.patientId\}/);
+  assert.match(create,/WHERE "tenantId"=\$1 AND "patientId"=\$2 AND "revokedAt" IS NULL/);
+  assert.match(create,/WHERE "tenantId"=\$1 AND "id"=\$2 AND "kind"='animal' AND "active"=true/);
+});
