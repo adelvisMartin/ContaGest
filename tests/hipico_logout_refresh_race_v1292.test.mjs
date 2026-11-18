@@ -38,6 +38,9 @@ function harness({ refreshResponse, signinResponse = null, signupResponse = null
   const writes = [];
   const context = {
     initialSession: oldSession,
+    // This harness tests the auth lifecycle; cross-tab message transport has
+    // a separate source-based regression below.
+    signalOtherTabsCloudSessionInvalidation: () => {},
     globalThis: { navigator: { onLine: true } },
     authHeaders: (token) => ({ Authorization: token ? `Bearer ${token}` : 'anon' }),
     validateCredentials: (email, password) => ({ email, password }),
