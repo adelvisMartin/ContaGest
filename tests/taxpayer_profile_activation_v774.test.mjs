@@ -1,10 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {assertProfileReview,assertProfileActivation,resolveActiveTaxpayerProfile} from '../backend/src/modules/fiscal/taxpayer-profile-activation-policy.ts';
-const sample={id:'p1',tenantId:'A',rifSnapshot:'J-123',version:1,status:'ACTIVE',effectiveFrom:new Date('2099-01-01T00:00:00Z'),effectiveTo:new Date('2099-02-01T00:00:00Z'),sourceReference:'QA-reviewed',sourceContentSha256:'a'.repeat(64),legalSourceId:'11111111-1111-4111-8111-111111111111',createdBy:'one',reviewedBy:'two',activatedBy:'three'};
+import {assertProfileReview,assertProfileActivation,resolveActiveTaxpayerProfile,requiresVerifiedTaxpayerProfile} from '../backend/src/modules/fiscal/taxpayer-profile-activation-policy.ts';
+import {readFileSync} from 'node:fs';
+const sample={id:'p1',tenantId:'A',rifSnapshot:'J-123',version:1,status:'ACTIVE',jurisdiction:'Municipio confirmado',taxpayerCategory:'special_notified',activityCodes:['ACT-1'],effectiveFrom:new Date('2099-01-01T00:00:00Z'),effectiveTo:new Date('2099-02-01T00:00:00Z'),sourceReference:'QA-reviewed',sourceContentSha256:'a'.repeat(64),legalSourceId:'11111111-1111-4111-8111-111111111111',createdBy:'one',reviewedBy:'two',activatedBy:'three'};
 const ctx={tenantId:'A',rif:'J-123',at:new Date('2099-01-01T00:00:00Z')};
 const denied=fn=>assert.throws(fn,/TAXPAYER_PROFILE_NOT_AUTHORIZED/);
 test('#774 distinct creator/reviewer/activator',()=>{assertProfileReview({...sample,status:'DRAFT',reviewedBy:null,activatedBy:null},'two');assertProfileActivation({...sample,status:'REVIEWED',activatedBy:null},'three');denied(()=>assertProfileReview({...sample,status:'DRAFT',reviewedBy:null,activatedBy:null},'one'));denied(()=>assertProfileActivation({...sample,status:'REVIEWED',activatedBy:null},'two'));});
 test('#774 UTC interval first instant inclusive, last exclusive',()=>{assert.equal(resolveActiveTaxpayerProfile([sample],ctx).id,'p1');denied(()=>resolveActiveTaxpayerProfile([sample],{...ctx,at:new Date('2099-02-01T00:00:00Z')}));denied(()=>resolveActiveTaxpayerProfile([sample],{...ctx,at:new Date('2098-12-31T23:59:59Z')}));});
 test('#774 reject tenant/RIF spoof, missing or ambiguous profiles',()=>{denied(()=>resolveActiveTaxpayerProfile([sample],{...ctx,tenantId:'B'}));denied(()=>resolveActiveTaxpayerProfile([sample],{...ctx,rif:'J-FAKE'}));denied(()=>resolveActiveTaxpayerProfile([],ctx));denied(()=>resolveActiveTaxpayerProfile([sample,sample],ctx));});
 test('#774 rejects unreviewed versions and incomplete source evidence',()=>{for(const changed of [{status:'DRAFT'},{reviewedBy:null},{sourceContentSha256:'invalid'},{activatedBy:'one'},{version:0},{legalSourceId:null},{legalSourceId:'not-a-uuid'}])denied(()=>resolveActiveTaxpayerProfile([{...sample,...changed}],ctx));});
+
+test('#774 reject malformed fiscal classification before issuing a taxpayer profile snapshot',()=>{
+  for(const changed of [
+    {jurisdiction:''},{jurisdiction:' Municipio '},{taxpayerCategory:''},
+    {activityCodes:[]},{activityCodes:'ACT-1'},{activityCodes:['ACT-1','ACT-1']},
+    {activityCodes:['ACT|2']},{activityCodes:[1]},{sourceReference:' a '}
+  ]) denied(()=>resolveActiveTaxpayerProfile([{...sample,...changed}],ctx));
+});
+test('#778 IGTF issuance requires a reviewed tenant taxpayer profile and snapshot',()=>{
+  for(const module of ['iva','islr','retiva','igtf'])
+    assert.equal(requiresVerifiedTaxpayerProfile(module,'invoice'),true,module);
+  assert.equal(requiresVerifiedTaxpayerProfile('fiscal','withholding'),true);
+  assert.equal(requiresVerifiedTaxpayerProfile('fiscal','supporting_document'),false);
+  const routes=readFileSync(new URL('../backend/src/modules/fiscal/fiscal.routes.ts',import.meta.url),'utf8');
+  assert.match(routes,/const requiresProfile = requiresVerifiedTaxpayerProfile\(req\.body\.module, req\.body\.kind\)/);
+  assert.match(routes,/requiresProfile\s*\? await getEffectiveTaxpayerProfile\(tx, ctx\.tenantId, effectiveAt\)/);
+});

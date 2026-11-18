@@ -21,6 +21,7 @@ function validObservation(overrides={}){
       replication:false,
       bypassrls:false,
       serviceRoleMember:false,
+      roleMemberships:[],
       schemaUsage:true,
       schemaCreate:false,
       databaseConnect:true
@@ -35,6 +36,8 @@ function validObservation(overrides={}){
       backupPolicy:i%2===0
     })),
     crossScopeGrants:[],
+    authScopeAccess:[],
+    defaultPrivileges:[],
     ...overrides
   };
 }
@@ -218,7 +221,9 @@ test('v24 verifier is catalog-read-only and inventory-driven',async()=>{
   assert.match(source,/ROLLBACK/i);
   assert.doesNotMatch(source,/\bCOMMIT\b/i);
   assert.doesNotMatch(source,/\b(?:ALTER\s+(?:ROLE|TABLE|SCHEMA)|CREATE\s+(?:ROLE|POLICY|TABLE|SCHEMA)|DROP\s+(?:ROLE|POLICY|TABLE|SCHEMA)|TRUNCATE\s+TABLE|GRANT\s+|REVOKE\s+)\b/i);
-  assert.match(source,/information_schema\.role_table_grants/);
+  assert.doesNotMatch(source,/from information_schema\.role_table_grants/);
+  assert.match(source,/has_any_column_privilege/);
+  assert.match(source,/role_memberships/);
   assert.match(source,/pg_policies/);
   assert.match(source,/pg_auth_members/);
   assert.match(source,/has_database_privilege/);
@@ -238,4 +243,103 @@ test('v24 workflow is manual verification-only and never provisions',async()=>{
   assert.match(workflow,/node scripts\/hipico-backup-role-verify-v24\.mjs/);
   assert.doesNotMatch(workflow,/provision-hipico-backup-role\.sh/);
   assert.match(workflow,/actions\/upload-artifact/);
+});
+
+
+test('v24 unknown privileged flags cannot prove a least-privilege connection',()=>{
+  for(const [flag,error] of [
+    ['superuser','ROLE_SUPERUSER_FORBIDDEN'],['createdb','ROLE_CREATEDB_FORBIDDEN'],
+    ['createrole','ROLE_CREATEROLE_FORBIDDEN'],['replication','ROLE_REPLICATION_FORBIDDEN'],
+    ['bypassrls','ROLE_BYPASSRLS_FORBIDDEN'],
+    ['serviceRoleMember','SERVICE_ROLE_MEMBERSHIP_FORBIDDEN'],
+    ['schemaCreate','PUBLIC_SCHEMA_CREATE_FORBIDDEN']
+  ])for(const value of [undefined,null,true]){
+    const observation=validObservation();
+    observation.role[flag]=value;
+    const report=classifyBackupRoleVerification({candidateSha:SHA,observation,now:NOW});
+    assert.equal(report.status,'FAIL',flag);
+    assert.ok(report.findings.includes(error),flag);
+  }
+});
+
+test('v24 unknown grants, auth schema or default grants evidence must not report PASS',()=>{
+  for(const [key,code] of [
+    ['crossScopeGrants','CROSS_SCOPE_GRANTS_NOT_VERIFIED'],
+    ['authScopeAccess','AUTH_SCOPE_ACCESS_NOT_VERIFIED'],
+    ['defaultPrivileges','DEFAULT_PRIVILEGES_NOT_VERIFIED']
+  ])for(const value of [undefined,null]){
+    const obs=validObservation();obs[key]=value;
+    const result=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(result.status,'FAIL',key);
+    assert.ok(result.findings.includes(code));
+  }
+});
+
+test('v24 table privilege proof must explicitly include all permission and RLS fields',()=>{
+  for(const [key,code] of [
+    ['mutablePrivileges','MUTABLE_PRIVILEGES_NOT_VERIFIED'],
+    ['rls','RLS_STATE_NOT_VERIFIED'],
+    ['backupPolicy','BACKUP_POLICY_NOT_VERIFIED']
+  ]){
+    const obs=validObservation();delete obs.observedTables[0][key];
+    const result=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(result.status,'FAIL',key);
+    assert.ok(result.findings.some(f=>f.startsWith(code)),key);
+  }
+});
+
+test('v24 must reject duplicate/invalid table inventory and malformed observations',()=>{
+  for(const change of [
+    obs=>obs.expectedTables[24]=obs.expectedTables[0],
+    obs=>obs.expectedTables[24]='other_schema',
+    obs=>obs.observedTables[24]={...obs.observedTables[0]},
+    obs=>obs.observedTables[24]=null
+  ]){
+    const obs=validObservation();change(obs);
+    const result=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(result.status,'FAIL');
+  }
+});
+
+test('v24 forbids any extra role membership even when NOINHERIT is configured',()=>{
+  for(const roles of [['pg_read_all_data'],['privileged_team'],['read_team','backup_team']]){
+    const obs=validObservation();obs.role.roleMemberships=roles;
+    const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(report.status,'FAIL');
+    assert.ok(report.findings.includes('ROLE_MEMBERSHIP_FORBIDDEN:'+roles[0]));
+  }
+});
+test('v24 missing membership observation cannot prove the backup role is isolated',()=>{
+  for(const memberships of [undefined,null,'none']){
+    const obs=validObservation();obs.role.roleMemberships=memberships;
+    const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(report.status,'FAIL');
+    assert.ok(report.findings.includes('ROLE_MEMBERSHIPS_NOT_VERIFIED'));
+  }
+});
+test('v24 catalogue queries inspect PUBLIC/column effective grants and all direct memberships',async()=>{
+  const source=await read('scripts/hipico-backup-role-verify-v24.mjs');
+  assert.match(source,/has_table_privilege\('hipico_backup',c\.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'\)/);
+  assert.match(source,/has_any_column_privilege\('hipico_backup',c\.oid,'SELECT,INSERT,UPDATE,REFERENCES'\)/);
+  assert.match(source,/has_any_column_privilege\('hipico_backup',c\.oid,candidate\.privilege\)/);
+  assert.match(source,/array_agg\(granted\.rolname::text order by granted\.rolname\)/);
+  assert.doesNotMatch(source,/from information_schema\.role_table_grants g/);
+});
+
+test('v24 manual SQL preflight and Node both reject non-service memberships and effective write privileges',async()=>{
+  const sql=await read('ops/database/verify-hipico-backup-role.sql');
+  const node=await read('scripts/hipico-backup-role-verify-v24.mjs');
+  // SQL remains a manual preflight, not permission for GitHub Actions to
+  // provision a role or mutate production data.
+  assert.match(sql,/ROLE_MEMBERSHIP_FORBIDDEN:/);
+  assert.match(sql,/FROM pg_auth_members m/);
+  assert.match(sql,/member\.rolname='hipico_backup'/);
+  assert.match(sql,/has_table_privilege\('hipico_backup',c\.oid,candidate\.privilege\)/);
+  assert.match(sql,/has_any_column_privilege\('hipico_backup',c\.oid,candidate\.privilege\)/);
+  assert.match(sql,/has_table_privilege\('hipico_backup',c\.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'\)/);
+  assert.match(sql,/has_any_column_privilege\('hipico_backup',c\.oid,'SELECT,INSERT,UPDATE,REFERENCES'\)/);
+  assert.doesNotMatch(sql,/FROM information_schema\.role_table_grants g/i);
+  assert.match(node,/has_any_column_privilege\('hipico_backup',c\.oid,candidate\.privilege\)/);
+  assert.match(node,/roleMemberships/);
+  assert.doesNotMatch(sql,/\b(?:ALTER ROLE|CREATE ROLE|GRANT CONNECT|REVOKE ALL PRIVILEGES)\b/i);
 });

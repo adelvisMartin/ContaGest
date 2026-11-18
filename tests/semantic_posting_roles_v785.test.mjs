@@ -45,3 +45,13 @@ test('#785 purchase roles use AP credit, VAT input debit and COGS debit', () => 
 test('#785 posting rejects a self-parented mapped account without altering other roles',()=>{
   deny([{...good[0],parentCode:good[0].accountCode},...good.slice(1)]);
 });
+
+test('#785 posting rejects non-canonical whitespace in code returned by stored role mapping',()=>{
+  for(const code of [' SYN-ar','SYN-ar ','\tSYN-ar','   ']){
+    deny([{...good[0],accountCode:code},...good.slice(1)]);
+  }
+});
+
+test('#785 posting rejects a self-parented mapped account without altering other roles',()=>{
+  deny([{...good[0],parentCode:good[0].accountCode},...good.slice(1)]);
+});

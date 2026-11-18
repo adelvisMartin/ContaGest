@@ -11,6 +11,14 @@ const fail = (): never => { throw new Error('TAXPAYER_PROFILE_NOT_AUTHORIZED'); 
 const SHA = /^[a-f0-9]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const actor = (value: unknown): value is string => typeof value === 'string' && value.trim() === value && !!value;
+const field = (value: unknown, max: number): value is string =>
+  actor(value) && value.length >= 3 && value.length <= max;
+const ACTIVITY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,59}$/;
+
+/** The issuer must bind every regulated IGTF event to a reviewed tenant profile. */
+export function requiresVerifiedTaxpayerProfile(module: string, kind: string): boolean {
+  return ['iva', 'islr', 'retiva', 'igtf'].includes(module) || kind === 'withholding';
+}
 export function assertProfileReview(p: ActiveTaxpayerProfile, actorId: string) {
   if (!p || p.status !== 'DRAFT' || !actor(actorId) || !actor(p.createdBy) ||
       actorId === p.createdBy || p.reviewedBy || p.activatedBy) fail();
@@ -40,7 +48,11 @@ export function resolveActiveTaxpayerProfile(
   if (!Number.isSafeInteger(p.version) || p.version <= 0 ||
       !actor(p.createdBy) || !actor(p.reviewedBy) || !actor(p.activatedBy) ||
       new Set([p.createdBy,p.reviewedBy,p.activatedBy]).size !== 3 ||
-      !actor(p.sourceReference) || !SHA.test(p.sourceContentSha256) ||
+      !field(p.jurisdiction, 120) || !field(p.taxpayerCategory, 80) ||
+      !Array.isArray(p.activityCodes) || p.activityCodes.length < 1 || p.activityCodes.length > 20 ||
+      !p.activityCodes.every((item: unknown) => typeof item === 'string' && ACTIVITY.test(item)) ||
+      new Set(p.activityCodes).size !== p.activityCodes.length ||
+      !field(p.sourceReference, 240) || !SHA.test(p.sourceContentSha256) ||
       typeof p.legalSourceId !== 'string' || !UUID.test(p.legalSourceId)) fail();
   return p;
 }

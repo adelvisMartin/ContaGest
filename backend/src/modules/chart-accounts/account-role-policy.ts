@@ -15,11 +15,13 @@ export function assertSemanticAccountBinding(
   account: PostingAccount | null,
   request: Readonly<{ tenantId: string; role: SemanticAccountRole; expectedNature?: 'debit' | 'credit' }>,
 ) {
-  if (!request || typeof request.tenantId !== 'string' || !request.tenantId ||
+  if (!request || typeof request.tenantId !== 'string' || !request.tenantId.trim() ||
+      request.tenantId.trim() !== request.tenantId ||
       !SEMANTIC_ACCOUNT_ROLES.includes(request.role) ||
       (request.expectedNature !== undefined && !['debit', 'credit'].includes(request.expectedNature)) ||
       !account || account.tenantId !== request.tenantId ||
-      typeof account.code !== 'string' || !account.code ||
+      typeof account.code !== 'string' || !account.code.trim() ||
+      account.code.trim() !== account.code ||
       account.active !== true || account.allowPosting !== true ||
       !['debit', 'credit'].includes(account.nature) ||
       (request.expectedNature && account.nature !== request.expectedNature) ||

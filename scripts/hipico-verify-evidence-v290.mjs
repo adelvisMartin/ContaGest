@@ -3,6 +3,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { validHipicoDrRestoreEvidence } from './hipico-dr-restore-policy-v839.mjs';
+import { evidenceStatusesConflict } from './hipico-evidence-status-consistency-v839.mjs';
+import { consistentEvidenceSha, evidenceMentionsSha } from './hipico-evidence-sha-consistency-v839.mjs';
+import { validHipicoPhysicalMaterial } from './hipico-physical-material-integrity-v119.mjs';
 import { validSoakMetricEvidence } from './hipico-soak-metric-integrity-v120.mjs';
 import { validSoakSamplesProof } from './hipico-soak-samples-proof-v120.mjs';
 
@@ -41,10 +44,6 @@ async function walk(directory, output = []) {
     else if (entry.isFile()) output.push(absolute);
   }
   return output;
-}
-
-function evidenceSha(data) {
-  return String(data?.sha || data?.candidateSha || data?.buildCommit || '').trim().toLowerCase();
 }
 
 function evidenceStatus(data) {
@@ -281,16 +280,31 @@ const optionalDescriptors = [
   }
 ];
 
-function findDescriptor(descriptor) {
+async function findDescriptor(descriptor) {
   const candidates = parsed.filter((item) => item.name === descriptor.name);
-  const sameSha = candidates.filter((item) => evidenceSha(item.data) === sha);
+  // Include every report claiming the candidate in ANY identity field. An
+  // internally contradictory artifact must not disappear from the conflict
+  // check while a second, consistent PASS report is selected.
+  const sameSha = candidates.filter((item) => evidenceMentionsSha(item.data, sha));
+  const inconsistent = sameSha.find((item) => consistentEvidenceSha(item.data) !== sha);
+  if (inconsistent) {
+    return { id: descriptor.id, status: 'FAIL',
+      file: path.relative(evidenceRoot, inconsistent.file),
+      reason: 'EVIDENCE_SHA_FIELDS_CONFLICT' };
+  }
   const schemaMatch = descriptor.schemas.length
     ? sameSha.filter((item) => descriptor.schemas.includes(String(item.data?.schema || '')))
     : sameSha;
+  // A stale or rerun FAIL must not be hidden by another PASS under the same SHA/schema.
+  if (evidenceStatusesConflict(sameSha, evidenceStatus, descriptor.schemas)) {
+    return { id: descriptor.id, status: 'FAIL',
+      file: path.relative(evidenceRoot, sameSha[0].file),
+      reason: 'CONFLICTING_SAME_SHA_EVIDENCE' };
+  }
   const pass = schemaMatch.find((item) => evidenceStatus(item.data) === 'PASS');
   const selected = pass || schemaMatch[0] || sameSha[0] || candidates[0] || null;
   if (!selected) return { id: descriptor.id, status: 'NOT_EXECUTED', file: null, reason: 'EVIDENCE_MISSING' };
-  if (evidenceSha(selected.data) !== sha) {
+  if (consistentEvidenceSha(selected.data) !== sha) {
     return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'SHA_MISMATCH' };
   }
   if (descriptor.schemas.length && !descriptor.schemas.includes(String(selected.data?.schema || ''))) {
@@ -301,6 +315,10 @@ function findDescriptor(descriptor) {
   }
   if (typeof descriptor.validate === 'function' && descriptor.validate(selected.data) !== true) {
     return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'EVIDENCE_CONTRACT_MISMATCH' };
+  }
+  if (descriptor.id === 'physicalQa' &&
+      !(await validHipicoPhysicalMaterial(selected.file, selected.data?.evidenceFiles))) {
+    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'PHYSICAL_MATERIAL_NOT_VERIFIED' };
   }
   // #120: a syntactically valid samplesSha256 does not prove that the actual
   // producer's samples.jsonl exists, was preserved, or matches the summary.
@@ -319,8 +337,10 @@ function findDescriptor(descriptor) {
   };
 }
 
-const required = requiredDescriptors.map(findDescriptor);
-const optional = optionalDescriptors.map(findDescriptor);
+const [required, optional] = await Promise.all([
+  Promise.all(requiredDescriptors.map(findDescriptor)),
+  Promise.all(optionalDescriptors.map(findDescriptor))
+]);
 const screenshots = files.filter((file) => file.endsWith('.png') && file.includes(`${path.sep}hipico-v105${path.sep}${sha}${path.sep}`));
 const browserStatus = screenshots.length ? 'PASS' : 'NOT_EXECUTED';
 const browser = {

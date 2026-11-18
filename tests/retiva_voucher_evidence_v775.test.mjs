@@ -16,3 +16,27 @@ test('#775 voucher chronology uses UTC instants with mixed fractional precision'
   deny({invoiceDate:later,recognizedAt:earlier,deliveredAt:later});
   deny({invoiceDate:earlier,recognizedAt:later,deliveredAt:earlier});
 });
+
+test('#775 fiscal recognition month is the voucher period, not the earlier invoice month',()=>{
+  assert.doesNotThrow(()=>assertRetivaVoucherEvidence({...sample,
+    invoiceDate:'2026-09-30T23:59:59.000Z',
+    recognizedAt:'2026-10-01T00:00:00.000Z'}));
+  deny({recognizedAt:'2026-11-01T00:00:00.000Z',deliveredAt:'2026-11-02T00:00:00.000Z'});
+  deny({recognizedAt:'2026-09-30T23:59:59.000Z',invoiceDate:'2026-09-01T00:00:00.000Z',
+    deliveredAt:'2026-10-01T00:00:00.000Z'});
+});
+test('#775 a voucher cannot certify withholding with zero taxable/VAT/retained amount',()=>{
+  deny({taxableMinor:0});
+  deny({invoiceVatMinor:0,withheldVatMinor:0});
+  deny({withheldVatMinor:0});
+});
+
+test('#775 voucher chronology uses UTC instants with mixed fractional precision',()=>{
+  const earlier='2026-10-02T10:00:00Z';
+  const later='2026-10-02T10:00:00.100Z';
+  assert.doesNotThrow(()=>assertRetivaVoucherEvidence({
+    ...sample,invoiceDate:earlier,recognizedAt:later,deliveredAt:later
+  }));
+  deny({invoiceDate:later,recognizedAt:earlier,deliveredAt:later});
+  deny({invoiceDate:earlier,recognizedAt:later,deliveredAt:earlier});
+});

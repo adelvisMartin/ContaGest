@@ -65,6 +65,8 @@ export function classifyBackupRoleVerification({
     if(role.replication!==false)findings.push('ROLE_REPLICATION_FORBIDDEN');
     if(role.bypassrls!==false)findings.push('ROLE_BYPASSRLS_FORBIDDEN');
     if(role.serviceRoleMember!==false)findings.push('SERVICE_ROLE_MEMBERSHIP_FORBIDDEN');
+    if(!Array.isArray(role.roleMemberships))findings.push('ROLE_MEMBERSHIPS_NOT_VERIFIED');
+    else for(const member of role.roleMemberships)findings.push('ROLE_MEMBERSHIP_FORBIDDEN:'+member);
     if(role.schemaUsage!==true)findings.push('PUBLIC_SCHEMA_USAGE_REQUIRED');
     if(role.schemaCreate!==false)findings.push('PUBLIC_SCHEMA_CREATE_FORBIDDEN');
     if(role.databaseConnect!==true)findings.push('DATABASE_CONNECT_REQUIRED');
@@ -73,6 +75,7 @@ export function classifyBackupRoleVerification({
   const expected=Array.isArray(observation.expectedTables)?observation.expectedTables:[];
   const observed=Array.isArray(observation.observedTables)?observation.observedTables:[];
   if(expected.length!==25)findings.push(`INVENTORY_COUNT_INVALID:${expected.length}`);
+  if(new Set(expected).size!==expected.length || expected.some(name=>typeof name!=='string'||!/^hipico_[a-z0-9_]+$/.test(name))) findings.push('INVENTORY_NOT_UNIQUE_OR_INVALID');
   if(observed.length!==expected.length)findings.push(`OBSERVED_TABLE_COUNT_MISMATCH:${observed.length}:${expected.length}`);
 
   const observedByTable=new Map(observed.map((item)=>[item.table,item]));
@@ -88,12 +91,18 @@ export function classifyBackupRoleVerification({
       continue;
     }
     if(item.select!==true)findings.push(`SELECT_REQUIRED:${table}`);
+    if(!Array.isArray(item.mutablePrivileges))findings.push(`MUTABLE_PRIVILEGES_NOT_VERIFIED:${table}`);
+    if(item.rls!==true && item.rls!==false)findings.push(`RLS_STATE_NOT_VERIFIED:${table}`);
+    if(item.backupPolicy!==true && item.backupPolicy!==false)findings.push(`BACKUP_POLICY_NOT_VERIFIED:${table}`);
     for(const privilege of Array.isArray(item.mutablePrivileges)?item.mutablePrivileges:[]){
       findings.push(`MUTABLE_PRIVILEGE:${table}:${privilege}`);
     }
     if(item.rls===true&&item.backupPolicy!==true)findings.push(`RLS_POLICY_MISSING:${table}`);
   }
 
+  if(!Array.isArray(observation.crossScopeGrants))findings.push('CROSS_SCOPE_GRANTS_NOT_VERIFIED');
+  if(!Array.isArray(observation.authScopeAccess))findings.push('AUTH_SCOPE_ACCESS_NOT_VERIFIED');
+  if(!Array.isArray(observation.defaultPrivileges))findings.push('DEFAULT_PRIVILEGES_NOT_VERIFIED');
   for(const crossScopeGrant of Array.isArray(observation.crossScopeGrants)?observation.crossScopeGrants:[]){
     findings.push(`CROSS_SCOPE_GRANT:${crossScopeGrant}`);
   }
@@ -179,6 +188,7 @@ export async function observeBackupRole({
           replication:false,
           bypassrls:false,
           serviceRoleMember:false,
+          roleMemberships:[],
           schemaUsage:false,
           schemaCreate:false,
           databaseConnect:false
@@ -195,6 +205,13 @@ export async function observeBackupRole({
           join pg_roles granted on granted.oid=m.roleid
           where member.rolname='hipico_backup' and granted.rolname='service_role'
         ) as service_role_member,
+        coalesce((
+          select array_agg(granted.rolname::text order by granted.rolname)
+          from pg_auth_members m
+          join pg_roles member on member.oid=m.member
+          join pg_roles granted on granted.oid=m.roleid
+          where member.rolname='hipico_backup'
+        ),ARRAY[]::text[]) as role_memberships,
         has_database_privilege('hipico_backup',current_database(),'CONNECT') as database_connect,
         has_schema_privilege('hipico_backup','public','USAGE') as schema_usage,
         has_schema_privilege('hipico_backup','public','CREATE') as schema_create
@@ -221,14 +238,16 @@ export async function observeBackupRole({
             and 'hipico_backup'=any(p.roles)
             and lower(p.cmd)='select'
         ) as backup_policy,
-        coalesce((
-          select array_agg(g.privilege_type order by g.privilege_type)
-          from information_schema.role_table_grants g
-          where g.grantee='hipico_backup'
-            and g.table_schema='public'
-            and g.table_name=e.table_name
-            and g.privilege_type<>'SELECT'
-        ),array[]::text[]) as mutable_privileges
+        -- Effective permissions include PUBLIC and inherited ACLs; column
+        -- grants can also permit a write even without table-level UPDATE.
+        ARRAY(
+          select candidate.privilege
+          from unnest(ARRAY['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']::text[]) AS candidate(privilege)
+          where has_table_privilege('hipico_backup',c.oid,candidate.privilege)
+            or (candidate.privilege in ('INSERT','UPDATE','REFERENCES')
+              and has_any_column_privilege('hipico_backup',c.oid,candidate.privilege))
+          order by candidate.privilege
+        ) as mutable_privileges
       from expected e
       left join pg_class c
         on c.oid=to_regclass(format('public.%I',e.table_name))
@@ -236,11 +255,18 @@ export async function observeBackupRole({
     `,[expectedTables]);
 
     const crossScopeResult=await client.query(`
-      select distinct format('%I.%I',g.table_schema,g.table_name) as qualified_name
-      from information_schema.role_table_grants g
-      where g.grantee='hipico_backup'
-        and g.table_schema='public'
-        and not (g.table_name=any($1::text[]))
+      -- role_table_grants omits PUBLIC and is sensitive to the observer's
+      -- enabled roles. Query the target role's effective privileges instead.
+      select distinct format('%I.%I',n.nspname,c.relname) as qualified_name
+      from pg_class c
+      join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='public'
+        and c.relkind in ('r','p','v','m','f')
+        and not (c.relname=any($1::text[]))
+        and (
+          has_table_privilege('hipico_backup',c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+          or has_any_column_privilege('hipico_backup',c.oid,'SELECT,INSERT,UPDATE,REFERENCES')
+        )
       order by qualified_name
     `,[expectedTables]);
 
@@ -318,6 +344,7 @@ export async function observeBackupRole({
         replication:roleRow.replication===true,
         bypassrls:roleRow.bypassrls===true,
         serviceRoleMember:privilegeRow.service_role_member===true,
+        roleMemberships:Array.isArray(privilegeRow.role_memberships)?privilegeRow.role_memberships:null,
         schemaUsage:privilegeRow.schema_usage===true,
         schemaCreate:privilegeRow.schema_create===true,
         databaseConnect:privilegeRow.database_connect===true

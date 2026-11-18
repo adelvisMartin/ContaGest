@@ -33,6 +33,7 @@ export function assertSemanticPostingRoles(
   for (const row of rows) {
     if (!row || row.tenantId !== tenantId || !required.has(row.role) || byRole[row.role] ||
         typeof row.accountCode !== 'string' || !row.accountCode.trim() ||
+        row.accountCode.trim() !== row.accountCode ||
         typeof row.name !== 'string' || !row.name.trim() ||
         row.nature !== SEMANTIC_POSTING_NATURE[row.role] ||
         row.active !== true || row.allowPosting !== true ||

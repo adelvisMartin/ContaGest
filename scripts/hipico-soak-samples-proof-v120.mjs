@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { validSoakSampleSummary } from './hipico-soak-sample-summary-v120.mjs';
 
 const HASH = /^[a-f0-9]{64}$/i;
@@ -53,6 +54,24 @@ export function validSoakSamplesProof(manifestPath, report, sampleSeconds = 30) 
         !HASH.test(String(claimedHash || '')) || !Number.isSafeInteger(count) ||
         count < 1 || count > 500_000 || start === null || end === null || end <= start ||
         !Number.isFinite(sampleSeconds) || sampleSeconds < 1 || sampleSeconds > 3600) return false;
+
+    // Bind the report to the actual local manifest without following a symlink.
+    if (typeof fs.constants.O_NOFOLLOW !== 'number' || !fs.constants.O_NOFOLLOW ||
+        typeof fs.constants.O_NONBLOCK !== 'number' || !fs.constants.O_NONBLOCK) return false;
+    const manifestFd = fs.openSync(manifestPath,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    let manifestBytes;
+    try {
+      const before = fs.fstatSync(manifestFd);
+      if (!before.isFile() || before.size < 1 || before.size > MAX_SAMPLE_BYTES) return false;
+      manifestBytes = fs.readFileSync(manifestFd);
+      const after = fs.fstatSync(manifestFd);
+      if (manifestBytes.length !== before.size || after.size !== before.size ||
+          after.mtimeMs !== before.mtimeMs) return false;
+    } finally {
+      fs.closeSync(manifestFd);
+    }
+    if (!isDeepStrictEqual(JSON.parse(manifestBytes.toString('utf8')), report)) return false;
 
     const samplePath = path.join(path.dirname(manifestPath), 'samples.jsonl');
     // Open the evidence atomically without following a symlink. A separate

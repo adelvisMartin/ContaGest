@@ -14,7 +14,15 @@ export function assertFiscalDocumentRuleFamily(input:Readonly<{
     !Array.isArray(input.ruleKeys)||input.ruleKeys.length<1||input.ruleKeys.length>20||
     input.ruleKeys.some(k=>typeof k!=='string'||!/^[a-z0-9][a-z0-9._:-]{1,79}$/i.test(k))||
     new Set(input.ruleKeys).size!==input.ruleKeys.length)reject();
+  // A fiscal issuance cannot borrow unrelated tax families from another
+  // transaction. IVA may carry reviewed VAT/RET_IVA/ISLR components, while a
+  // dedicated RET_IVA document must not double as an ISLR or IGTF certificate.
+  const allowed: Readonly<Record<string, readonly string[]>> = {
+    iva:['iva','ret_iva','islr'], retiva:['ret_iva','iva'],
+    islr:['islr'], igtf:['igtf'], municipal:['municipal']
+  };
   const family=PREFIX[input.module];
+  if (family && input.ruleKeys.some(key=>!allowed[input.module].includes(classOf(key))))reject();
   const required=input.kind==='withholding'||Boolean(family);
   if(required) {
     if(!input.explicitEffectiveAt ||
@@ -22,8 +30,10 @@ export function assertFiscalDocumentRuleFamily(input:Readonly<{
     if(family && !input.ruleKeys.some(key=>classOf(key)===family))reject();
     if(input.kind==='withholding' &&
        !input.ruleKeys.some(key=>['ret_iva','islr'].includes(classOf(key))))reject();
+    // IVA withholding is specifically RET_IVA. An ISLR rule alone cannot
+    // authorize an IVA retention document, even within a mixed preview.
+    if(input.kind==='withholding' && input.module==='iva' &&
+       !input.ruleKeys.some(key=>classOf(key)==='ret_iva'))reject();
     if(input.ruleKeys.some(key=>!Object.values(PREFIX).includes(classOf(key))))reject();
-    if((input.module==='islr'||input.module==='igtf')&&
-       input.ruleKeys.some(key=>classOf(key)!==family))reject();
   }
 }

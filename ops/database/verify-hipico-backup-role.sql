@@ -87,6 +87,13 @@ WHERE EXISTS (
 );
 
 INSERT INTO hipico_backup_violations(finding)
+SELECT 'ROLE_MEMBERSHIP_FORBIDDEN:'||granted.rolname
+FROM pg_auth_members m
+JOIN pg_roles member ON member.oid=m.member
+JOIN pg_roles granted ON granted.oid=m.roleid
+WHERE member.rolname='hipico_backup';
+
+INSERT INTO hipico_backup_violations(finding)
 SELECT 'DATABASE_CONNECT_REQUIRED'
 WHERE NOT has_database_privilege('hipico_backup',current_database(),'CONNECT');
 
@@ -110,13 +117,24 @@ FROM hipico_backup_scope s
 WHERE to_regclass(format('public.%I',s.table_name)) IS NOT NULL
   AND NOT has_table_privilege('hipico_backup',format('public.%I',s.table_name),'SELECT');
 
+-- Effective table + column grants include PUBLIC and enabled role ACLs.
+-- Inspect actual privileges, not information_schema.role_table_grants (direct only).
 INSERT INTO hipico_backup_violations(finding)
-SELECT DISTINCT 'MUTABLE_PRIVILEGE:'||g.table_name||':'||g.privilege_type
-FROM information_schema.role_table_grants g
-JOIN hipico_backup_scope s ON s.table_name=g.table_name
-WHERE g.grantee='hipico_backup'
-  AND g.table_schema='public'
-  AND g.privilege_type<>'SELECT';
+SELECT DISTINCT 'MUTABLE_PRIVILEGE:'||s.table_name||':'||candidate.privilege
+FROM hipico_backup_scope s
+JOIN pg_class c ON c.oid=to_regclass(format('public.%I',s.table_name))
+JOIN pg_namespace n ON n.oid=c.relnamespace
+CROSS JOIN LATERAL unnest(
+  ARRAY['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']::text[]
+) AS candidate(privilege)
+WHERE n.nspname='public'
+  AND (
+    has_table_privilege('hipico_backup',c.oid,candidate.privilege)
+    OR (
+      candidate.privilege IN ('INSERT','UPDATE','REFERENCES')
+      AND has_any_column_privilege('hipico_backup',c.oid,candidate.privilege)
+    )
+  );
 
 INSERT INTO hipico_backup_violations(finding)
 SELECT 'RLS_POLICY_MISSING:'||s.table_name
@@ -135,13 +153,20 @@ WHERE n.nspname='public'
       AND lower(p.cmd)='select'
   );
 
+-- A PUBLIC grant or column-only SELECT outside the 25-table inventory
+-- is still effective cross-scope access for hipico_backup.
 INSERT INTO hipico_backup_violations(finding)
-SELECT DISTINCT 'CROSS_SCOPE_GRANT:'||g.table_schema||'.'||g.table_name||':'||g.privilege_type
-FROM information_schema.role_table_grants g
-WHERE g.grantee='hipico_backup'
-  AND g.table_schema='public'
+SELECT DISTINCT 'CROSS_SCOPE_GRANT:'||format('%I.%I',n.nspname,c.relname)
+FROM pg_class c
+JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='public'
+  AND c.relkind IN ('r','p','v','m','f')
   AND NOT EXISTS (
-    SELECT 1 FROM hipico_backup_scope s WHERE s.table_name=g.table_name
+    SELECT 1 FROM hipico_backup_scope s WHERE s.table_name=c.relname
+  )
+  AND (
+    has_table_privilege('hipico_backup',c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+    OR has_any_column_privilege('hipico_backup',c.oid,'SELECT,INSERT,UPDATE,REFERENCES')
   );
 
 INSERT INTO hipico_backup_violations(finding)
@@ -173,6 +198,7 @@ SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='auth') AS auth_schema_ex
       OR has_table_privilege('hipico_backup',c.oid,'TRUNCATE')
       OR has_table_privilege('hipico_backup',c.oid,'REFERENCES')
       OR has_table_privilege('hipico_backup',c.oid,'TRIGGER')
+      OR has_any_column_privilege('hipico_backup',c.oid,'SELECT,INSERT,UPDATE,REFERENCES')
     );
 
   INSERT INTO hipico_backup_violations(finding)
