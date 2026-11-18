@@ -15,6 +15,7 @@ export function selectLabAnswer({canonical=null,plan=null,localFallback=''}={}){
   return{
     text:(guidance||String(localFallback||'No tengo datos autorizados para responder.')).slice(0,1500),
     source:'ORIENTACIÓN_LOCAL_SIN_DATOS_CANÓNICOS',
-    reason:/^[A-Z0-9_]{4,80}$/.test(String(canonical?.reason||''))?canonical.reason:'LAB_LOCAL_ONLY'
+    reason:typeof canonical?.reason==='string' && /^[A-Z0-9_]{4,80}$/.test(canonical.reason)
+      ? canonical.reason : 'LAB_LOCAL_ONLY'
   };
 }
