@@ -6,12 +6,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { isDeepStrictEqual } from 'node:util';
+import { isDeepStrictEqual, TextDecoder } from 'node:util';
 import { validSoakSampleSummary } from './hipico-soak-sample-summary-v120.mjs';
 
 const HASH = /^[a-f0-9]{64}$/i;
 const UTC = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
 const MAX_SAMPLE_BYTES = 32 * 1024 * 1024;
+// Fail closed on malformed byte streams instead of accepting U+FFFD replacement
+// characters in a sample or manifest whose SHA was recomputed.
+const strictUtf8 = new TextDecoder('utf-8',{fatal:true,ignoreBOM:true});
 function utcMs(value) {
   if (typeof value !== 'string' || !UTC.test(value)) return null;
   const ms = Date.parse(value);
@@ -71,7 +74,7 @@ export function validSoakSamplesProof(manifestPath, report, sampleSeconds = 30) 
     } finally {
       fs.closeSync(manifestFd);
     }
-    if (!isDeepStrictEqual(JSON.parse(manifestBytes.toString('utf8')), report)) return false;
+    if (!isDeepStrictEqual(JSON.parse(strictUtf8.decode(manifestBytes)), report)) return false;
 
     const samplePath = path.join(path.dirname(manifestPath), 'samples.jsonl');
     // Open the evidence atomically without following a symlink. A separate
@@ -103,7 +106,7 @@ export function validSoakSamplesProof(manifestPath, report, sampleSeconds = 30) 
       return false;
 
     // Our producer appends exactly one UTF-8 JSON object and newline per sample.
-    const content = bytes.toString('utf8');
+    const content = strictUtf8.decode(bytes);
     if (!content.endsWith('\n')) return false;
     const lines = content.slice(0, -1).split('\n');
     if (lines.length !== count) return false;
