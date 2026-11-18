@@ -19,6 +19,13 @@ const ACK_RESOLUTIONS=new Set([
   null,'SAFE_PRE_SEND_FAILURE','UNCERTAIN_LAB_DELIVERY',
   'PROCESS_RESTART_DURING_SEND','VISIBLE_OUTGOING_TAG'
 ]);
+// The journal writes UTC ISO timestamps. Reject forged free-form values:
+// otherwise an attacker can store a secret in a permitted timestamp field.
+const ACK_TIMESTAMP=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+function isCanonicalAckTimestamp(value){
+  return typeof value==='string'&&ACK_TIMESTAMP.test(value)&&
+    Number.isFinite(Date.parse(value))&&new Date(value).toISOString()===value;
+}
 
 export function labTestTagForMessage(externalId){
   return '[LABTEST:'+crypto.createHash('sha256').update(String(externalId)).digest('hex').slice(0,10)+']';
@@ -80,6 +87,8 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
        // sender or session data through later object-spread persistence.
        Object.keys(record).some(key=>!ACK_RECORD_KEYS.has(key))||
        !ACK_RESOLUTIONS.has(record.resolution)||
+       !isCanonicalAckTimestamp(record.createdAt)||
+       !isCanonicalAckTimestamp(record.updatedAt)||
        !Number.isInteger(record.attempts)||record.attempts<0||
        (expected&&(record.idHash!==expected.idHash||record.tag!==expected.tag))){
       throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');
