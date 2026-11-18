@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {constants as fsConstants} from 'node:fs';
 import { atomicWriteJson } from './spool-journal.mjs';
 import { normalizeGroupId } from './group-identity.mjs';
 
@@ -31,9 +32,21 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
     return{idHash,file:path.join(root,idHash+'.json'),tag:labTestTagForMessage(externalId)};
   }
   function stamp(){return new Date(now()).toISOString();}
+  // A symlink must never redirect LAB ACKs to another directory or cause
+  // chmod() to change an unrelated folder on the same workstation.
+  async function assertRootSafe(){
+    let st;
+    try{st=await fs.lstat(root);}
+    catch(error){if(error?.code==='ENOENT')return false;throw error;}
+    if(!st.isDirectory()||st.isSymbolicLink())
+      throw new Error('LAB_TEST_JOURNAL_ROOT_UNSAFE');
+    return true;
+  }
   async function ensure(){
     await fs.mkdir(root,{recursive:true,mode:0o700});
-    await fs.chmod(root,0o700).catch(()=>{});
+    await assertRootSafe();
+    await fs.chmod(root,0o700);
+    await assertRootSafe();
   }
   function validate(record,expected=null){
     if(!record||typeof record!=='object'||Array.isArray(record)||
@@ -47,13 +60,32 @@ export function createLabTestReplyJournal({rootDir,labGroupId,sourceGroupId='',n
     return record;
   }
   async function loadFile(file,expected=null){
-    let data;
-    try{data=await fs.readFile(file,'utf8');}
+    if(!(await assertRootSafe()))return null;
+    let stat;
+    try{stat=await fs.lstat(file);}
     catch(error){if(error?.code==='ENOENT')return null;throw error;}
-    try{return validate(JSON.parse(data),expected);}
-    catch{throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');}
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.size>65_536)
+      throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');
+    let handle;
+    try{
+      // Pin the file descriptor and reject a swapped symlink on POSIX.
+      handle=await fs.open(file,fsConstants.O_RDONLY|
+        (process.platform==='win32'?0:fsConstants.O_NOFOLLOW));
+      const opened=await handle.stat();
+      if(!opened.isFile()||opened.size>65_536||
+         (process.platform!=='win32'&&(opened.dev!==stat.dev||opened.ino!==stat.ino)))
+        throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');
+      const data=await handle.readFile('utf8');
+      return validate(JSON.parse(data),expected);
+    }catch(error){
+      if(error?.code==='ENOENT')return null;
+      throw new Error('LAB_TEST_JOURNAL_RECORD_INVALID');
+    }finally{await handle?.close();}
   }
   async function verifyScope(){
+    // Scope was checked previously, but the containing directory itself may
+    // have been replaced after initialization. Always inspect that boundary.
+    if(!(await assertRootSafe())){scopeVerified=true;return;}
     if(scopeVerified)return;
     let files;
     try{files=await fs.readdir(root);}
