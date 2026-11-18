@@ -75,7 +75,14 @@ test('installed PWA precaches the complete Hípico JavaScript module tree and at
   const missing = jsFiles(root).filter((file) => !sw.includes(`'./assets/js/${file}'`) && !sw.includes(`"./assets/js/${file}"`));
   assert.deepEqual(missing, [], `JavaScript modules missing from APP_SHELL: ${missing.join(', ')}`);
   assert.match(sw, /const SHELL_CACHE\s*=\s*`\$\{CACHE_VERSION\}-shell-r\d+-[a-z0-9-]+`/i);
-  assert.match(sw, /cache\.addAll\(\[\.\.\.APP_SHELL_URLS\]\)/);
+  // #1292: never bulk-add responses that may be private. Every shell
+  // resource must be fetched without credentials and screened before cache.put.
+  const prime = sw.slice(sw.indexOf('async function primeShell()'), sw.indexOf("self.addEventListener('install'"));
+  assert.match(prime, /Promise\.all\(\[\.\.\.APP_SHELL_URLS\]\.map\(async/);
+  assert.match(prime, /new Request\(url, \{ cache: 'reload', credentials: 'omit', redirect: 'error' \}\)/);
+  assert.match(prime, /if \(!cacheablePublicResponse\(response\)\) throw new Error\('HIPICO_PRIVATE_SHELL_RESPONSE'\)/);
+  assert.match(prime, /await cache\.put\(request, response\)/);
+  assert.doesNotMatch(prime, /cache\.addAll\s*\(/);
   assert.match(sw, /key\.startsWith\('hipico-control-'\)\s*&&\s*key\s*!==\s*SHELL_CACHE/);
   assert.match(sw, /caches\.delete\(key\)/);
   assert.match(sw, /isSensitive\(url\).*cache:\s*'no-store'/s);
