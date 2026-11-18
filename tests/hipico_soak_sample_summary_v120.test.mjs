@@ -69,3 +69,27 @@ test('#120 a healthy result must be a 2xx READY_SHADOW observation',()=>{
     ok:false,status:503,reason:'HEALTH_HTTP_FAILURE',latencyMs:5
   }}),base[2]],{...summary,healthFailures:1}),true);
 });
+
+test('#120 health evidence must match actual classified reason, status and success flags',()=>{
+  const valid={...base[1].health};
+  const attempts=[
+    {ok:true,status:200,latencyMs:5},
+    {...valid,reason:'UNKNOWN'},
+    {...valid,reason:'HEALTH_BODY_INVALID'},
+    {ok:false,status:200,reason:'HEALTH_HTTP_FAILURE',latencyMs:5},
+    {ok:false,status:503,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5},
+    {ok:false,status:503,reason:'HEALTH_REQUEST_FAILED',latencyMs:5},
+    {ok:false,status:0,reason:'HEALTH_HTTP_FAILURE',latencyMs:5},
+    {ok:false,status:0,reason:'READY_SHADOW',latencyMs:5},
+  ];
+  for(const health of attempts)assert.equal(check([base[0],row(1,{health}),base[2]],
+    {...summary,healthFailures:health.ok?0:1}),false,JSON.stringify(health));
+  const legitimate=[
+    {ok:false,status:503,reason:'HEALTH_HTTP_FAILURE',latencyMs:5},
+    {ok:false,status:0,reason:'HEALTH_REQUEST_FAILED',latencyMs:5},
+    {ok:false,status:200,reason:'SOURCE_WRITE_POSSIBLE',latencyMs:5},
+    {ok:false,status:200,reason:'HEALTH_MODE_MISMATCH',latencyMs:5}
+  ];
+  for(const health of legitimate)assert.equal(check([base[0],row(1,{health}),base[2]],
+    {...summary,healthFailures:1}),true,JSON.stringify(health));
+});
