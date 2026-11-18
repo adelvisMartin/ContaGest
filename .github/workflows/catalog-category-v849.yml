@@ -6,6 +6,7 @@ on:
       - 'backend/src/modules/service-catalog/**'
       - 'qa/service-catalog-real-v849.test.ts'
       - 'tests/service_catalog_api_contract_v849.test.mjs'
+      - 'tests/catalog_category_roles_ci_v849.test.mjs'
       - 'scripts/run-authoritative-contracts.mjs'
       - '.github/workflows/catalog-category-v849.yml'
   workflow_dispatch:
@@ -65,7 +66,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
       - name: Catalog source and schema contracts
-        run: node --test tests/service_catalog_api_contract_v849.test.mjs tests/service_catalog_schema_v849.test.mjs
+        run: node --test tests/service_catalog_api_contract_v849.test.mjs tests/service_catalog_schema_v849.test.mjs tests/catalog_category_roles_ci_v849.test.mjs
       - name: Prepare isolated PostgreSQL baseline
         env:
           PGPASSWORD: catalog-ci-only
