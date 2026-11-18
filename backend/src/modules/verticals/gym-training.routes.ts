@@ -349,7 +349,7 @@ router.post('/gym/workout-sessions', requirePermission('gym.manage'), asyncHandl
     } : null;
     const prescription=await tx.$queryRawUnsafe<any[]>(`
       SELECT re."id",re."routineId",re."exerciseId",
-        COALESCE(e."name",'Ejercicio retirado') AS "exerciseName",
+        COALESCE(e."name",'Ejercicio retirado') AS "exerciseName",e."muscleGroup",
         re."dayOfWeek",re."sortOrder",re."sets",re."reps",
         re."loadKg",re."restSeconds",re."tempo",re."notes",
         re."intensityTechnique",re."techniqueConfig",
@@ -485,6 +485,15 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
     `,tenantId,sessionId);
     const session=one(sessionRows,'Sesión de entrenamiento no encontrada.');
     if(session.status!=='in_progress')throw new HttpError(409,'La sesión ya está completada.');
+    // Session prescription was captured server-side at start. Do not let
+    // later edits to the routine silently reinterpret a performed set.
+    // Legacy sessions created before snapshots can still use the former
+    // live-routine lookup, but a present snapshot is authoritative.
+    const snapshot=Array.isArray(session.routineSnapshot)?session.routineSnapshot:null;
+    const prescribedSnapshot=snapshot?.find((entry:any)=>
+      entry&&entry.id===b.routineExerciseId&&entry.routineId===session.routineId)||null;
+    if(snapshot&&!prescribedSnapshot)
+      throw new HttpError(409,'El ejercicio no forma parte de la prescripción inicial de esta sesión.');
 
     const exerciseRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT re."id",re."routineId",re."exerciseId",e."muscleGroup"
@@ -496,6 +505,8 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
     `,tenantId,b.routineExerciseId,session.routineId);
     if(!exerciseRows.length)throw new HttpError(422,'El ejercicio no pertenece a la rutina de esta sesión.');
     const prescribedExercise=exerciseRows[0];
+    if(prescribedSnapshot&&prescribedSnapshot.exerciseId!==prescribedExercise.exerciseId)
+      throw new HttpError(409,'La rutina cambió después de iniciar la sesión; revisa la prescripción original.');
 
     let performedExerciseId:string|null=null;
     let substitutionReason:string|null=null;
@@ -508,7 +519,9 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
       `,tenantId,b.performedExerciseId);
       if(!substituteRows.length)throw new HttpError(422,'El ejercicio sustituto no pertenece al tenant activo.');
       const substitute=substituteRows[0];
-      const prescribedMuscle=String(prescribedExercise.muscleGroup||'').trim().toLocaleLowerCase('es');
+      const originalMuscle=prescribedSnapshot&&Object.hasOwn(prescribedSnapshot,'muscleGroup')
+        ?prescribedSnapshot.muscleGroup:prescribedExercise.muscleGroup;
+      const prescribedMuscle=String(originalMuscle||'').trim().toLocaleLowerCase('es');
       const substituteMuscle=String(substitute.muscleGroup||'').trim().toLocaleLowerCase('es');
       if(!prescribedMuscle||!substituteMuscle||prescribedMuscle!==substituteMuscle){
         throw new HttpError(422,'El ejercicio sustituto debe conservar el mismo grupo muscular.');
@@ -519,9 +532,9 @@ router.post('/gym/workout-sessions/:id/sets', requirePermission('gym.manage'), a
 
     const duplicate=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."GymWorkoutSet"
-      WHERE "sessionId"=$1 AND "routineExerciseId"=$2 AND "setNumber"=$3
+      WHERE "tenantId"=$4 AND "sessionId"=$1 AND "routineExerciseId"=$2 AND "setNumber"=$3
       LIMIT 1
-    `,session.id,b.routineExerciseId,b.setNumber);
+    `,session.id,b.routineExerciseId,b.setNumber,tenantId);
     if(duplicate.length)throw new HttpError(409,'La serie indicada ya fue registrada.');
 
     const completed=b.status==='completed';
