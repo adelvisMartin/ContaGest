@@ -105,11 +105,15 @@ while IFS= read -r uuid; do
   [[ "$uuid" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$ ]] || {
     echo "Invalid auth UUID in encrypted identity list." >&2; exit 7;
   }
-  psql "$HIPICO_RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -v user_id="$uuid" -c "
-    insert into auth.users(id,email)
-    values (:'user_id'::uuid, :'user_id' || '@restore.invalid')
-    on conflict(id) do nothing
-  " >/dev/null
+  # -c sends literal SQL to libpq, bypassing psql's :var interpolation.
+  # Read from stdin so psql safely quotes the already UUID-validated value.
+  # Quoted heredoc prevents shell interpolation, accidental SQL expansion and
+  # leaking the identity into a generated SQL argv.
+  psql "$HIPICO_RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -v user_id="$uuid" >/dev/null <<'SQL'
+INSERT INTO auth.users(id,email)
+VALUES (:'user_id'::uuid, :'user_id' || '@restore.invalid')
+ON CONFLICT(id) DO NOTHING;
+SQL
 done < "$tmpdir/auth-user-ids.txt"
 
 export DATABASE_URL="$HIPICO_RESTORE_DATABASE_URL"
