@@ -28,8 +28,8 @@ test('#757 draft deletion is atomic, audited and tenant-scoped in disposable Pos
     const purchase = await h.ok('/purchases', {
       method: 'POST',
       body: JSON.stringify({
-        number: ${RUN}-${label}, fiscalPeriod: '2097-07', status: 'draft',
-        lines: [{ description: ${RUN} test, quantity: '1.000', unitCost: '17.25', taxRate: '0' }],
+        number: `${RUN}-${label}`, fiscalPeriod: '2097-07', status: 'draft',
+        lines: [{ description: `${RUN} test`, quantity: '1.000', unitCost: '17.25', taxRate: '0' }],
       }),
     }) as { id: string; status: string };
     invoiceIds.push(purchase.id);
@@ -42,7 +42,7 @@ test('#757 draft deletion is atomic, audited and tenant-scoped in disposable Pos
 
   await t.test('success deletes only the draft and persists exactly one actor audit', async () => {
     const purchase = await draft('SUCCESS');
-    const result = await h.ok($/purchases/${purchase.id}, { method: 'DELETE' }) as { deleted: boolean; id: string };
+    const result = await h.ok(`/purchases/${purchase.id}`, { method: 'DELETE' }) as { deleted: boolean; id: string };
     assert.deepEqual(result, { deleted: true, id: purchase.id });
     assert.equal(await h.prisma.purchaseInvoice.count({ where: { id: purchase.id, tenantId: h.tenant.id } }), 0);
     const audit = await h.prisma.auditLog.findMany({
@@ -62,7 +62,7 @@ test('#757 draft deletion is atomic, audited and tenant-scoped in disposable Pos
     assert.match(purchase.id, /^[a-f0-9-]{36}$/i);
     assert.match(h.tenant.id, /^[a-f0-9-]{36}$/i);
     try {
-      await h.prisma.$executeRawUnsafe($
+      await h.prisma.$executeRawUnsafe(`
         CREATE FUNCTION public."${guard}"() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
           IF NEW."tenantId"='${h.tenant.id}'
@@ -72,14 +72,14 @@ test('#757 draft deletion is atomic, audited and tenant-scoped in disposable Pos
           END IF;
           RETURN NEW;
         END;
-        $$$);
-      await h.prisma.$executeRawUnsafe($
+        $`);
+      await h.prisma.$executeRawUnsafe(`
         CREATE TRIGGER "${guard}" BEFORE INSERT ON public."AuditLog"
-        FOR EACH ROW EXECUTE FUNCTION public."${guard}"()$);
-      await h.status($/purchases/${purchase.id}, 500, { method: 'DELETE' });
+        FOR EACH ROW EXECUTE FUNCTION public."${guard}"()`);
+      await h.status(`/purchases/${purchase.id}`, 500, { method: 'DELETE' });
     } finally {
-      await h.prisma.$executeRawUnsafe($DROP TRIGGER IF EXISTS "${guard}" ON public."AuditLog"$);
-      await h.prisma.$executeRawUnsafe($DROP FUNCTION IF EXISTS public."${guard}"()$);
+      await h.prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${guard}" ON public."AuditLog"`);
+      await h.prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS public."${guard}"()`);
     }
     assert.equal(await h.prisma.purchaseInvoice.count({
       where: { id: purchase.id, tenantId: h.tenant.id },
@@ -89,22 +89,22 @@ test('#757 draft deletion is atomic, audited and tenant-scoped in disposable Pos
     assert.equal(await h.prisma.auditLog.count({
       where: { tenantId: h.tenant.id, entityId: purchase.id, action: 'delete-draft' },
     }), 0);
-    await h.ok($/purchases/${purchase.id}, { method: 'DELETE' });
+    await h.ok(`/purchases/${purchase.id}`, { method: 'DELETE' });
   });
 
   await t.test('foreign tenant draft is not exposed or deleted', async () => {
     const tenant = await h.prisma.tenant.create({
-      data: { rif: ${RUN}-TENANT-B, name: ${RUN} tenant B, legalName: 'QA isolated tenant' },
+      data: { rif: `${RUN}-TENANT-B`, name: `${RUN} tenant B`, legalName: 'QA isolated tenant' },
     });
     otherTenantId = tenant.id;
     const purchase = await h.prisma.purchaseInvoice.create({
       data: {
-        tenantId: tenant.id, number: ${RUN}-FOREIGN, fiscalPeriod: '2097-07', status: 'draft',
+        tenantId: tenant.id, number: `${RUN}-FOREIGN`, fiscalPeriod: '2097-07', status: 'draft',
         lines: { create: [{ description: 'QA isolated supplier invoice', quantity: '1.000',
           unitCost: '1.00', taxRate: '0', total: '1.00' }] },
       },
     });
-    await h.status($/purchases/${purchase.id}, 404, { method: 'DELETE' });
+    await h.status(`/purchases/${purchase.id}`, 404, { method: 'DELETE' });
     assert.equal(await h.prisma.purchaseInvoice.count({
       where: { id: purchase.id, tenantId: tenant.id },
     }), 1, 'Tenant A must never delete tenant B draft');
@@ -112,7 +112,7 @@ test('#757 draft deletion is atomic, audited and tenant-scoped in disposable Pos
 
   await t.test('missing draft returns 404 without audit side effect', async () => {
     const unknown = randomUUID();
-    await h.status($/purchases/${unknown}, 404, { method: 'DELETE' });
+    await h.status(`/purchases/${unknown}`, 404, { method: 'DELETE' });
     assert.equal(await h.prisma.auditLog.count({
       where: { tenantId: h.tenant.id, entity: 'PurchaseInvoice', entityId: unknown, action: 'delete-draft' },
     }), 0);
