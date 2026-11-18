@@ -5,6 +5,7 @@ import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
 import { ctx, one, num } from './verticals.shared.js';
 import { parseCareAppointmentReadWindow } from './care-appointment-range.js';
+import { veterinaryMicrochipTaken } from './veterinary-microchip-ownership.mjs';
 import {
   patientSchema,
   professionalSchema,
@@ -58,11 +59,16 @@ router.get('/health/patients', requirePermission('health.manage'), asyncHandler(
 router.post('/health/patients', requirePermission('health.manage'), asyncHandler(async (req, res) => {
   const tenantId = ctx(req).tenantId;
   const b = patientSchema.parse(req.body || {});
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
+  const patient=await prisma.$transaction(async(tx)=>{
+    if(b.kind==='animal' && await veterinaryMicrochipTaken(tx,tenantId,b.microchip))
+      throw new HttpError(409,'El microchip ya está asignado a otra mascota de esta empresa.');
+    const rows = await tx.$queryRawUnsafe<any[]>(`
     INSERT INTO public."CarePatient" ("id","tenantId","kind","firstName","lastName","displayName","idNumber","birthDate","sex","phone","email","address","photoUrl","species","breed","color","microchip","guardianName","guardianPhone","guardianEmail","emergencyContact","allergies","conditions","notes","active","createdAt","updatedAt")
     VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7::date,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,$21,$22,$23,$24,now(),now()) RETURNING *
-  `, tenantId,b.kind,b.firstName||null,b.lastName||null,b.displayName,b.idNumber||null,b.birthDate||null,b.sex||null,b.phone||null,b.email||null,b.address||null,b.photoUrl||null,b.species||null,b.breed||null,b.color||null,b.microchip||null,b.guardianName||null,b.guardianPhone||null,b.guardianEmail||null,JSON.stringify(b.emergencyContact),b.allergies||null,b.conditions||null,b.notes||null,b.active);
-  ok(res, one(rows), 201);
+  `, tenantId,b.kind,b.firstName||null,b.lastName||null,b.displayName,b.idNumber||null,b.birthDate||null,b.sex||null,b.phone||null,b.email||null,b.address||null,b.photoUrl||null,b.species||null,b.breed||null,b.color||null,b.kind==='animal'?(b.microchip?.trim()||null):(b.microchip||null),b.guardianName||null,b.guardianPhone||null,b.guardianEmail||null,JSON.stringify(b.emergencyContact),b.allergies||null,b.conditions||null,b.notes||null,b.active);
+    return one(rows);
+  });
+  ok(res,patient,201);
 }));
 
 router.get('/health/professionals', requirePermission('health.manage'), asyncHandler(async (req, res) => {
