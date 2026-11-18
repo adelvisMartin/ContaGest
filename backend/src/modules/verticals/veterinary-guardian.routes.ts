@@ -53,6 +53,12 @@ router.post('/guardian-portal/grants', requirePermission('communications.manage'
       FOR SHARE
     `,tenantId,body.patientId);
     const patient=one(patientRows,'Mascota activa no encontrada.');
+    // Two concurrent grant rotations must never both leave valid tokens.
+    // Serialize by tenant+patient before revoking and inserting the new grant.
+    await tx.$queryRawUnsafe(
+      'SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',
+      `veterinary:guardian-grant:${tenantId}:${body.patientId}`
+    );
 
     await tx.$executeRawUnsafe(`
       UPDATE public."VeterinaryGuardianPortalGrant"

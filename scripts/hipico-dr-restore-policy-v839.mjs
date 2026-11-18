@@ -22,6 +22,9 @@ export function validHipicoDrRestoreEvidence(data, expectedInventorySha256, cano
       !String(data.backupId||'').trim() ||
       !String(data.restoreTestId||'').trim() ||
       !String(data.targetDatabase||'').trim() ||
+      !/^[a-zA-Z_][a-zA-Z0-9_]*(?:_drill|_restore)$/.test(String(data.restoreDatabase||'')) ||
+      !['localhost','127.0.0.1','[::1]'].includes(String(data.restoreHost||'')) ||
+      data.restoreDatabase===data.targetDatabase ||
       !Number.isFinite(Date.parse(String(data.checkedAt||''))) ||
       Date.parse(data.checkedAt)>Date.now()+60000 ||
       !Array.isArray(data.presentTables) ||

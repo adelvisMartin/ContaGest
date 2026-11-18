@@ -311,21 +311,36 @@ export const HealthcarePage = {
     document.querySelectorAll('[data-toggle-panel]').forEach((button)=>button.addEventListener('click',()=>document.getElementById(button.dataset.togglePanel)?.classList.toggle('is-collapsed')));
     document.querySelectorAll('[data-care-patient]').forEach((button)=>button.addEventListener('click',()=>loadPatient(button.dataset.carePatient)));
 
-    const handle = (id,service,transform=(data)=>data,success='Registro guardado.') => document.getElementById(id)?.addEventListener('submit',async(event)=>{
+    const handle = (id,service,transform=(data)=>data,success='Registro guardado.',{idempotent=false}={}) => document.getElementById(id)?.addEventListener('submit',async(event)=>{
       event.preventDefault();
       const form=event.currentTarget;
       if(!form.reportValidity()) return;
       const data=Object.fromEntries(new FormData(form));
+      if(idempotent){
+        const signature=JSON.stringify(data);
+        if(form.dataset.careRequestSignature!==signature){
+          form.dataset.careRequestKey=crypto.randomUUID();
+          form.dataset.careRequestSignature=signature;
+        }
+      }
       const submit=form.querySelector('[type="submit"]');
       submit?.setAttribute('disabled','disabled');
-      try { await service(transform(data,form)); Toast.show(success,'success'); form.reset(); await load({silent:true}); }
-      catch(error){Toast.show(error.message,'error');}
+      try {
+        await service(transform(data,form));
+        if(idempotent){
+          delete form.dataset.careRequestKey;
+          delete form.dataset.careRequestSignature;
+        }
+        Toast.show(success,'success');
+        form.reset();
+        await load({silent:true});
+      }catch(error){Toast.show(error.message,'error');}
       finally{submit?.removeAttribute('disabled');}
     });
 
     handle('carePatientForm',HealthVerticalService.createPatient,(data)=>({...data,kind:'human',active:true}),'Paciente registrado.');
     handle('careProfessionalForm',HealthVerticalService.createProfessional,(data)=>({...data,status:'active',schedule:{}}),'Profesional registrado.');
-    handle('careAppointmentForm',HealthVerticalService.createAppointment,(data)=>({...data,status:'scheduled',channel:'onsite'}),'Cita agendada.');
+    handle('careAppointmentForm',HealthVerticalService.createAppointment,(data,form)=>({...data,status:'scheduled',channel:'onsite',requestKey:form.dataset.careRequestKey}),'Cita agendada.',{idempotent:true});
     handle('careEncounterForm',HealthVerticalService.createEncounter,(data,form)=>({...data,confidential:Boolean(form.confidential?.checked),status:'signed',diagnosisCodes:[],clinicalData:{}}),'Historia clínica actualizada.');
     handle('careMeasurementForm',HealthVerticalService.createMeasurement,(data)=>({...data,metadata:{}}),'Medición registrada.');
 

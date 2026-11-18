@@ -23,8 +23,10 @@ test('41/51 calculates volume frequency set adherence and PRs',()=>{
 
 test('41/51 e1RM uses explicit Epley estimate only for applicable rep ranges',()=>{
   const routes=gymBackendSource();
-  assert.match(routes,/reps>=1&&reps<=12/);
-  assert.match(routes,/load\*\(1\+reps\/30\)/);
+  const estimator=read('backend/src/modules/verticals/gym-performance-estimate.mjs');
+  assert.match(routes,/gymEpleyEstimate\(load,reps\)/);
+  assert.match(estimator,/reps<1\|\|reps>12/);
+  assert.match(estimator,/loadKg\*\(1\+reps\/30\)/);
   assert.match(routes,/bestEstimated1RmKg/);
 });
 

@@ -4,7 +4,7 @@ import { dentalClinicalDataSchema, dentalTreatmentPlanClinicalDataSchema } from 
 
 export const ACTIVE_APPOINTMENT_STATUSES=['scheduled','confirmed','checked_in','in_progress'] as const;
 export const lockAppointmentSchedule = async (tx:Prisma.TransactionClient, tenantId:string) => {
-  await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',`care-appointment:${tenantId}`);
+  await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked',`care-appointment:${tenantId}`);
 };
 export const assertAppointmentSlotAvailable = async (tx:Prisma.TransactionClient, input:{
   tenantId:string; appointmentId?:string; patientId:string; professionalId?:string|null;

@@ -109,7 +109,7 @@ router.post('/health/consents/dental-treatment', requirePermission('health.manag
 
   const consent=await prisma.$transaction(async (tx)=>{
     await tx.$queryRawUnsafe<any[]>(`
-      SELECT pg_advisory_xact_lock(hashtextextended($1,0))
+      SELECT pg_advisory_xact_lock(hashtextextended($1,0))::text AS locked
     `,`${tenantId}:${body.treatmentPlanEncounterId}:${DENTAL_CONSENT_KIND}`);
     const patientRows=await tx.$queryRawUnsafe<any[]>(`
       SELECT "id" FROM public."CarePatient"

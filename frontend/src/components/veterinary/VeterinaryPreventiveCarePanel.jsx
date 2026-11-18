@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Box, Divider, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
 import { CgButton, CgDataTable, CgEmptyState, CgSelect, CgState, CgStatusChip, CgTextField } from '../ui/cg/CgPrimitives.jsx';
 import { HealthVerticalService, VeterinaryService } from '../../services/verticalService.js';
 import { reportVeterinaryError } from './veterinaryError.js';
+import { scheduleOptionalPreventiveReminder } from './preventive-reminder-policy.mjs';
 
 const localDate=()=>{const now=new Date();return new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);};
 const rows=(value)=>Array.isArray(value)?value:value?.data||[];
@@ -38,7 +39,9 @@ export function VeterinaryPreventiveCarePanel({
   const [reminderChannel,setReminderChannel]=useState('whatsapp');
   const [reminderDays,setReminderDays]=useState('7');
   const [saving,setSaving]=useState(false);
+  const vaccineRequestKeyRef=useRef('');
   const [error,setError]=useState('');
+  const [reminderWarning,setReminderWarning]=useState('');
 
   const preventiveEncounters=useMemo(()=>rows(encounters)
     .filter((item)=>item.type==='veterinary-preventive'&&item.clinicalData?.preventiveCare),[encounters]);
@@ -98,11 +101,19 @@ export function VeterinaryPreventiveCarePanel({
     event.preventDefault();
     if(!patient?.id||!name.trim()){setError('Selecciona una mascota e indica el preventivo.');return;}
     if(reminderEnabled&&!nextDueAt){setError('El recordatorio requiere un próximo vencimiento.');return;}
-    setSaving(true);setError('');
+    setSaving(true);setError('');setReminderWarning('');
     try{
       let created;
       if(kind==='vaccine'){
+        // Reuse the same key if a response is lost, never a second dose.
+        if(!vaccineRequestKeyRef.current){
+          if(typeof globalThis.crypto?.randomUUID!=='function'){
+            throw new Error('El navegador no puede garantizar una clave de operación segura.');
+          }
+          vaccineRequestKeyRef.current=globalThis.crypto.randomUUID();
+        }
         created=await HealthVerticalService.createImmunization({
+          requestKey:vaccineRequestKeyRef.current,
           patientId:patient.id,
           professionalId:professionalId||null,
           vaccine:name.trim(),
@@ -137,11 +148,17 @@ export function VeterinaryPreventiveCarePanel({
       const eventRecord=kind==='vaccine'
         ? {id:created.id,kind,label:created.vaccine,performedAt:created.administeredAt,nextDueAt:created.nextDueAt,source:created}
         : {id:created.id,kind,label:created.clinicalData?.preventiveCare?.name||name.trim(),performedAt:created.clinicalData?.preventiveCare?.performedAt||created.createdAt,nextDueAt:created.clinicalData?.preventiveCare?.nextDueAt,source:created};
-      const reminder=await scheduleReminder(eventRecord);
+      // A failure in optional messaging must not report that clinical
+      // persistence failed or invite a duplicate vaccine administration.
+      const {reminder,reminderNotConfirmed}=await scheduleOptionalPreventiveReminder(scheduleReminder,eventRecord,reminderEnabled);
+      vaccineRequestKeyRef.current='';
       onCreated?.({kind,record:created,reminder});
+      if(reminderNotConfirmed)setReminderWarning(
+        'El preventivo fue registrado. No se confirmó el recordatorio: verifica Comunicaciones antes de programarlo otra vez.'
+      );
       setName('');setDose('');setLot('');setNotes('');setNextDueAt('');setReminderEnabled(false);
     }catch(cause){
-      setError(reportVeterinaryError('preventive.save',cause,'No se registró el cuidado preventivo.'));
+      setError(reportVeterinaryError('preventive.save',cause,'No se pudo confirmar el alta. Consulta el historial antes de reintentar.'));
     }
     finally{setSaving(false);}
   }
@@ -182,6 +199,7 @@ export function VeterinaryPreventiveCarePanel({
       </Paper>
 
       {error?<Box mt={1}><CgState severity="error" title="No se registró el preventivo">{error}</CgState></Box>:null}
+      {reminderWarning?<Box mt={1}><CgState severity="warning" title="Preventivo guardado; recordatorio no confirmado">{reminderWarning}</CgState></Box>:null}
       <CgButton type="submit" disabled={!patient||saving} sx={{mt:1}}>{saving?'Guardando…':'Registrar preventivo'}</CgButton>
     </Box>
 

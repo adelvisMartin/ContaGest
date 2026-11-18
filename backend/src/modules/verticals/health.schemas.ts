@@ -51,7 +51,8 @@ export const appointmentSchema = z.object({
   channel: z.enum(['onsite','telemedicine','home_visit']).default('onsite'),
   room: optionalText,
   recallDueAt: dateText.optional().nullable(),
-  notes: optionalText
+  notes: optionalText,
+  requestKey: z.string().uuid().optional()
 }).superRefine((value, refinement) => {
   const startsAt=new Date(value.startsAt).getTime();
   const endsAt=new Date(value.endsAt).getTime();
@@ -309,6 +310,7 @@ export const veterinaryVitalBatchSchema =z.object({
 
 export const immunizationSchema = z.object({
   patientId: z.string().min(10),
+  requestKey: z.string().uuid().optional(),
   professionalId: z.string().optional().nullable(),
   vaccine: z.string().trim().min(2).max(180),
   dose: optionalText,
@@ -357,3 +359,6 @@ export const dentalTreatmentConsentSchema = z.object({
 export const consentRevocationSchema = z.object({
   reason: z.string().trim().min(5).max(500)
 });
+
+/** #747 history query contracts live with the clinical schema authority. */
+export const dentalChartHistoryQuerySchema=z.object({patientId:z.string().trim().min(10).max(160)}).strict();

@@ -25,7 +25,7 @@ function normalizeCountsForTables(value,tables){
   if(JSON.stringify(keys)!==JSON.stringify(expected))return null;
   const normalized={};
   for(const table of tables){
-    const count=Number(value[table]);
+    const count=value[table];
     if(!Number.isSafeInteger(count)||count<0)return null;
     normalized[table]=count;
   }
@@ -64,6 +64,8 @@ export function buildBackupEvidence({
   backupId,
   restoreTestId,
   targetDatabase,
+  restoreDatabase,
+  restoreHost,
   scope,
   migrationChain,
   tableManifestSha256,
@@ -96,6 +98,8 @@ export function buildBackupEvidence({
   const sha=String(candidateSha||'').trim().toLowerCase();
   const tableHash=String(tableManifestSha256||'').trim().toLowerCase();
   const sourceDb=String(targetDatabase||'').trim();
+  const restoredDb=String(restoreDatabase||'').trim();
+  const restoredHost=String(restoreHost||'').trim().toLowerCase();
   const backup=String(backupId||'').trim();
   const restore=String(restoreTestId||'').trim();
   const scopeValue=String(scope||'').trim();
@@ -106,6 +110,12 @@ export function buildBackupEvidence({
   if(!backup)reasons.push('BACKUP_ID_REQUIRED');
   if(!restore)reasons.push('RESTORE_TEST_ID_REQUIRED');
   if(!sourceDb)reasons.push('TARGET_DATABASE_REQUIRED');
+  if(!/^[a-zA-Z_][a-zA-Z0-9_]*(?:_drill|_restore)$/.test(restoredDb))
+    reasons.push('RESTORE_DATABASE_NOT_DISPOSABLE');
+  if(!['localhost','127.0.0.1','[::1]'].includes(restoredHost))
+    reasons.push('RESTORE_HOST_NOT_LOOPBACK');
+  if(restoredDb&&sourceDb&&restoredDb===sourceDb)
+    reasons.push('RESTORE_SOURCE_TARGET_COLLISION');
   if(scopeValue!==EXPECTED_SCOPE)reasons.push('BACKUP_SCOPE_MISMATCH');
   if(chainValue!==EXPECTED_CHAIN)reasons.push('MIGRATION_CHAIN_MISMATCH');
   if(!SHA64.test(tableHash))reasons.push('TABLE_MANIFEST_SHA_INVALID');
@@ -138,6 +148,8 @@ export function buildBackupEvidence({
     backupId:backup||null,
     restoreTestId:restore||null,
     targetDatabase:sourceDb||null,
+    restoreDatabase:restoredDb||null,
+    restoreHost:restoredHost||null,
     checkedAt:validTime?now.toISOString():null,
     scope:scopeValue||null,
     migrationChain:chainValue||null,
@@ -168,6 +180,8 @@ async function main(){
     backupId:process.env.HIPICO_BACKUP_ID,
     restoreTestId:process.env.HIPICO_RESTORE_TEST_ID,
     targetDatabase:process.env.HIPICO_BACKUP_TARGET_DATABASE,
+    restoreDatabase:process.env.HIPICO_RESTORE_DATABASE_NAME,
+    restoreHost:process.env.HIPICO_RESTORE_HOST,
     scope:process.env.HIPICO_BACKUP_SCOPE,
     migrationChain:process.env.HIPICO_BACKUP_MIGRATION_CHAIN,
     tableManifestSha256:process.env.HIPICO_BACKUP_TABLE_MANIFEST_SHA256,

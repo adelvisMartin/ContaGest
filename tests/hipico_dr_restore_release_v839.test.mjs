@@ -11,7 +11,8 @@ const candidateSha='a'.repeat(40);
 const fixture=()=>({
   schema:'hipico-schema-backup-evidence.v17',candidateSha,status:'PASS',
   restoreVerified:true,backupId:'isolated-fixture-not-operational',
-  restoreTestId:'local-fixture-not-operational',targetDatabase:'isolated_drill',
+  restoreTestId:'local-fixture-not-operational',targetDatabase:'source_db',
+  restoreDatabase:'isolated_drill',restoreHost:'127.0.0.1',
   checkedAt:new Date().toISOString(),scope:'hipico-canonical-v12-v27',
   migrationChain:'v12-v27',tableManifestSha256:tableHash,
   mode:'STEADY_STATE',canonicalTableCount:25,sourceTableCount:25,
@@ -36,6 +37,11 @@ test('#839 missing, partial or deferred backup cannot authorize stable release',
     {...fixture(),reasons:['COUNT_MISMATCH']},
     {...fixture(),tableManifestSha256:'b'.repeat(64)},
     {...fixture(),checkedAt:new Date(Date.now()+3600000).toISOString()},
+    {...fixture(),restoreDatabase:'production'},
+    {...fixture(),restoreDatabase:'source_db'},
+    {...fixture(),restoreDatabase:null},
+    {...fixture(),restoreHost:'remote.internal'},
+    {...fixture(),restoreHost:null},
     {...fixture(),presentTables:[...tables.slice(1),'hipico_noncanonical']},
   ]) assert.equal(validHipicoDrRestoreEvidence(partial,tableHash,tables),false);
 });

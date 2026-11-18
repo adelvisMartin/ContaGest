@@ -81,7 +81,7 @@ test('global utilities expose settings, help and accessible icon controls', () =
 test('service worker rotates beyond r30 and caches the complete v4.1 css dependency graph', () => {
   assert.doesNotMatch(sw, /shell-r29-auto-update-reload/);
   assert.doesNotMatch(sw, /shell-r30-ui-system-v4-1`/);
-  assert.match(sw, /shell-r38-consolidator-v4-1-3/);
+  assert.match(sw, /shell-r39-consolidator-v4-1-3/);
   assert.match(sw, /platform-tokens-v1\.css/);
   assert.match(sw, /ui-system-v3-compat\.css/);
   assert.match(sw, /ui-system-v4\.css/);

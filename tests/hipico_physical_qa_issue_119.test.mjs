@@ -13,6 +13,9 @@ function prepareCompleteEvidence(dir,file,sha,evidence='proof.log'){
   assert.equal(run(['init',`--file=${file}`,'--force','--operator=QA'],sha).status,0);
   for(const [id,mode] of [['browser','pwa-browser'],['pwa','pwa-standalone'],['apk','android-apk']])assert.equal(run(['add-env',`--file=${file}`,`--id=${id}`,`--mode=${mode}`,'--device=Device',`--source-session-hash=${sourceHash}`,`--lab-session-hash=${labHash}`,...(mode==='android-apk'?['--apk-version=1.13.0-rc3','--apk-sha256='+('a'.repeat(64))]:[])],sha).status,0);
   const raw=JSON.parse(fs.readFileSync(file,'utf8'));
+  // Synthetic fixtures declare a coherent initialization four days earlier;
+  // a run initialized today cannot claim physical observations days ago.
+  raw.startedAt=new Date(Date.now()-4*86400000).toISOString();
   const dayOne='day-one.log', dayTwo='day-two.log';
   fs.writeFileSync(path.join(dir,dayOne),'synthetic separate day 1 fixture');
   fs.writeFileSync(path.join(dir,dayTwo),'synthetic separate day 2 fixture');

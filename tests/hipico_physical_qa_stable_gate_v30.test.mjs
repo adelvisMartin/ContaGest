@@ -30,6 +30,7 @@ function completePhysicalQa(dir,file,sha){
     ],sha).status,0);
   }
   const raw=JSON.parse(fs.readFileSync(file,'utf8'));
+  raw.startedAt=new Date(Date.now()-4*86400000).toISOString();
   for(const env of raw.environments){
     for(const scenario of catalog.scenarios){
       const first=scenario.id==='source-to-lab-e2e-day-1', second=scenario.id==='source-to-lab-e2e-day-2';
