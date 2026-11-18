@@ -9,6 +9,8 @@ test('all selected products have source, classification and issue mapping', () =
   assert.deepEqual(validateCompetitiveBenchmark(original), []);
   assert.equal(original.sources.length, 16);
   assert.equal(original.features.length, 33);
+  assert.equal(original.ossVerticalExtensionBaselineSha, '03834a6ca1504399011f4b53866fe15b8cfa2557');
+  assert.equal(original.ossVerticalExtensionReviewedAt, '2026-11-18');
   assert.ok(original.features.length >= 20);
 });
 test('rejects duplicate feature identifiers', () => {
@@ -100,4 +102,13 @@ test('#707 source-only validator fails closed on malformed arrays or nested rows
     assert.doesNotThrow(() => validateCompetitiveBenchmark(brokenFeature));
     assert.ok(validateCompetitiveBenchmark(brokenFeature).includes('invalid feature row'));
   }
+});
+
+test('#707 forged extension baseline cannot silently become release provenance', () => {
+  const altered=clone();
+  altered.ossVerticalExtensionBaselineSha='not-a-commit';
+  assert.match(validateCompetitiveBenchmark(altered).join(';'),/invalid vertical extension baseline SHA/);
+  altered.ossVerticalExtensionBaselineSha=original.ossVerticalExtensionBaselineSha;
+  altered.ossVerticalExtensionReviewedAt='tomorrow';
+  assert.match(validateCompetitiveBenchmark(altered).join(';'),/invalid vertical extension reviewed date/);
 });
