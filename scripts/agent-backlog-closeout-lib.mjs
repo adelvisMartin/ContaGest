@@ -75,7 +75,7 @@ export function evaluateBacklogCloseout(input) {
       decision: blockers.length ? 'BLOCKED' : 'HUMAN_REVIEW_REQUIRED' };
   });
   return {
-    schemaVersion: 1, source: 'LIVE_GITHUB_READ_ONLY', mainSha: input.mainSha,
+    schemaVersion: 1, source: 'EVALUATED_SNAPSHOT_NOT_LIVE_PROOF', mainSha: input.mainSha,
     issueCount: issues.length, openPrCount: prs.length,
     targetBand: { min: 17, max: 20, inBand: issues.length >= 17 && issues.length <= 20,
       automaticIssueClosure: false },
