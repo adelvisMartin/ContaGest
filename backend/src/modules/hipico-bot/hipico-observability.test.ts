@@ -65,12 +65,12 @@ test('#1314 raw observation input cannot bypass trace sanitization',()=>{
 
 test('#1314 legacy support bundles normalize output IDs and keep private scoped filter aliases',()=>{
   const store=fs.readFileSync(new URL('./hipico-observability.store.ts',import.meta.url),'utf8');
-  assert.match(store,/requestId:safeObservationTraceId\\(row\\.request_id,'req',scope\\)/);
-  assert.match(store,/correlationId:safeObservationTraceId\\(row\\.correlation_id,'corr',scope\\)/);
-  assert.match(store,/OR correlation_id=\\$\\{legacyCorrelationId\\}/);
-  assert.match(store,/WHERE owner_id=\\$\\{input.ownerId\\}::uuid/);
-  assert.match(store,/AND group_key=\\$\\{input.groupKey\\}/);
-  assert.match(store,/AND group_id=\\$\\{input.groupId\\}/);
+  assert.match(store,/requestId:safeObservationTraceId\(row\.request_id,'req',scope\)/);
+  assert.match(store,/correlationId:safeObservationTraceId\(row\.correlation_id,'corr',scope\)/);
+  assert.match(store,/OR correlation_id=\$\{legacyCorrelationId\}/);
+  assert.match(store,/WHERE owner_id=\$\{input.ownerId\}::uuid/);
+  assert.match(store,/AND group_key=\$\{input.groupKey\}/);
+  assert.match(store,/AND group_id=\$\{input.groupId\}/);
 });
 
 test('metadata sanitizer removes credentials and message/identity payloads recursively',()=>{
