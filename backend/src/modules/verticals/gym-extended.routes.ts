@@ -57,12 +57,15 @@ router.post('/gym/payments', requirePermission('gym.manage'), asyncHandler(async
     if (body.membershipId && body.status === 'paid') {
       const changed = await tx.$executeRawUnsafe(`
         UPDATE public."GymMembership"
-        SET "balance"=GREATEST(0,"balance"-$2),"updatedAt"=now()
+        SET "balance"="balance"-$2,"updatedAt"=now()
         WHERE "id"=$1 AND "tenantId"=$3 AND "memberId"=$4
+          AND "balance">=$2
       `,body.membershipId,body.amount,tenantId,body.memberId);
-      // Even an unexpected update failure must roll back the inserted payment.
+      // Do not silently discard overpayments by flooring balance to zero.
+      // Until the shared finance authority supports a linked advance/credit,
+      // refuse the excess and roll back the just-inserted payment atomically.
       if (changed !== 1)
-        throw new HttpError(409, 'No se pudo aplicar el pago a la membresía.');
+        throw new HttpError(409, 'El pago excede el saldo pendiente o la membresía cambió.');
     }
     return one(rows);
   });
@@ -111,6 +114,10 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
     }
     if (existing?.status==='attended'||existing?.status==='no_show')
       throw new HttpError(409,'La asistencia finalizada no puede reescribirse.');
+    // A cancelled class never happened: preserve its booking history, but
+    // do not allow a fabricated attended/no_show fact after cancellation.
+    if(klass.status==='cancelled'&&['attended','no_show'].includes(body.status))
+      throw new HttpError(409,'Una clase cancelada no admite asistencia ni ausencia.');
     // Attendance is a real event, never a prediction. Preserve the ability
     // to backfill historical classes without introducing artificial grace
     // periods, but reject premature attendance and no-show decisions.

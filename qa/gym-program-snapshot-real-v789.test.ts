@@ -7,7 +7,7 @@ test('Gym #789: session binds effective immutable program version + routine pres
   assert.notEqual(String(process.env.NODE_ENV||'').toLowerCase(),'production');
   const h=await createRealBackendHarness();
   const id=randomUUID();
-  let memberId='',routineId='',exerciseId='',secondExerciseId='',sessionId='',v1='',v2='';
+  let memberId='',routineId='',exerciseId='',secondExerciseId='',raceExerciseId='',sessionId='',v1='',v2='';
   t.after(async()=>{
     await h.close().catch(()=>undefined);
     if(sessionId)await h.prisma.$executeRawUnsafe(
@@ -24,7 +24,7 @@ test('Gym #789: session binds effective immutable program version + routine pres
       'DELETE FROM public."GymRoutine" WHERE "tenantId"=$1 AND "id"=$2',
       h.tenant.id,routineId
     ).catch(()=>undefined);
-    for(const id of [exerciseId,secondExerciseId].filter(Boolean))await h.prisma.$executeRawUnsafe(
+    for(const id of [exerciseId,secondExerciseId,raceExerciseId].filter(Boolean))await h.prisma.$executeRawUnsafe(
       'DELETE FROM public."GymExercise" WHERE "tenantId"=$1 AND "id"=$2',
       h.tenant.id,id
     ).catch(()=>undefined);
@@ -45,6 +45,20 @@ test('Gym #789: session binds effective immutable program version + routine pres
     name:'QA 789 Exercise '+id+' secondary',category:'strength',muscleGroup:'legs',active:true
   })});
   secondExerciseId=secondary.id;
+  const createExercise=(name:string)=>h.request('/verticals/gym/exercises',{
+    method:'POST',body:JSON.stringify({name,category:'strength',muscleGroup:'legs',active:true})
+  });
+  const mixedCase=await Promise.all([
+    createExercise('QA 789 RACE '+id),
+    createExercise('qa 789 race '+id)
+  ]);
+  assert.deepEqual(mixedCase.map(r=>r.response.status).sort((a,b)=>a-b),
+    [201,409],'concurrent case-insensitive names must result in only one row');
+  raceExerciseId=mixedCase.find(r=>r.response.status===201)!.data.id;
+  const duplicateEdit=await h.request('/verticals/gym/exercises/'+raceExerciseId,{
+    method:'PATCH',body:JSON.stringify({name:exercise.name.toUpperCase()})
+  });
+  assert.equal(duplicateEdit.response.status,409,'rename must respect same normalized uniqueness');
   const search=encodeURIComponent('QA 789 Exercise '+id);
   const firstPage=await h.request('/verticals/gym/exercises?q='+search+'&take=1');
   assert.equal(firstPage.response.status,200);

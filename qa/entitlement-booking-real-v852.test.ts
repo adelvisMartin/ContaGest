@@ -49,6 +49,11 @@ test('#852 manual grant → unique right → booking/consume same tx → rollbac
       productId:product.id,name:'Otro beneficio QA '+label,scope:'ALL',quantity:'1.000'
     })
   });
+  for(const endpoint of ['/customer-entitlements/benefits']){
+    for(const query of ['take=01','take=1e0','take=1&take=2','skip=','skip=+1','skip=1.5']){
+      await h.status(endpoint+'?'+query,422);
+    }
+  }
   const firstBenefitPage=await h.request('/customer-entitlements/benefits?take=1&skip=0');
   assert.equal(firstBenefitPage.response.status,200);
   assert.equal(firstBenefitPage.response.headers.get('X-Pagination-Has-More'),'true');

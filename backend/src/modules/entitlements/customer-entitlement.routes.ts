@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { canonicalPageInteger } from '../../shared/http-query-pagination.mjs';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -27,8 +28,8 @@ const create=z.object({
   if(!valid)context.addIssue({code:'custom',message:'Alcance de beneficio inválido.'});
 });
 const rightsPagination=z.object({
-  take:z.coerce.number().int().min(1).max(100).default(100),
-  skip:z.coerce.number().int().min(0).max(100000).default(0)
+  take:z.preprocess(canonicalPageInteger,z.number().int().min(1).max(100).default(100)),
+  skip:z.preprocess(canonicalPageInteger,z.number().int().min(0).max(100000).default(0))
 }).strict();
 const grant=z.object({
   benefitId:uuid,beneficiaryId:uuid,effectKey:z.string().regex(/^[A-Za-z0-9:_-]{8,128}$/),

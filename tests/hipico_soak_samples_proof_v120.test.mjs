@@ -211,3 +211,39 @@ test('#120 verifier rejects a caller-side report differing from the stored JSON'
     assert.equal(validSoakSamplesProof(f.manifestPath,f.report),false);
   } finally {f.cleanup();}
 });
+
+
+test('#120 malformed UTF-8 sample bytes are rejected even if the SHA-256 is recomputed',()=>{
+  const f=setup();
+  try{
+    const file=path.join(f.root,'samples.jsonl');
+    const bytes=fs.readFileSync(file);
+    const needle=Buffer.from('"rssMb":128');
+    const index=bytes.indexOf(needle);
+    assert.ok(index>0);
+    // This is a syntactically valid JSON string after lossy UTF-8 decoding.
+    // A replacement-character parser would accept it as an extra field.
+    const forged=Buffer.concat([
+      bytes.subarray(0,index),Buffer.from('"qaNote":"'),
+      Buffer.from([0xff]),Buffer.from('",'),bytes.subarray(index)
+    ]);
+    fs.writeFileSync(file,forged);
+    f.report.evidenceIntegrity.samplesSha256=crypto.createHash('sha256').update(forged).digest('hex');
+    fs.writeFileSync(f.manifestPath,JSON.stringify(f.report));
+    assert.equal(validSoakSamplesProof(f.manifestPath,f.report),false);
+  }finally{f.cleanup();}
+});
+
+test('#120 malformed UTF-8 manifest bytes cannot be accepted through replacement characters',()=>{
+  const f=setup();
+  try{
+    f.report.qaNote='\ufffd';
+    let bytes=Buffer.from(JSON.stringify(f.report));
+    const needle=Buffer.from('\ufffd');
+    const index=bytes.indexOf(needle);
+    assert.ok(index>0);
+    bytes=Buffer.concat([bytes.subarray(0,index),Buffer.from([0xff]),bytes.subarray(index+needle.length)]);
+    fs.writeFileSync(f.manifestPath,bytes);
+    assert.equal(validSoakSamplesProof(f.manifestPath,f.report),false);
+  }finally{f.cleanup();}
+});

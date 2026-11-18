@@ -22,3 +22,14 @@ test('#787 attendance cannot be claimed before start or no-show before class end
   assert.match(block,/throw new HttpError\(409,'No se puede registrar asistencia/);
   assert.match(block,/throw new HttpError\(409,'No se puede marcar ausencia/);
 });
+
+
+test('#787 cancelled classes cannot gain attended or no-show facts, but remain cancellable',()=>{
+  const guard=block.indexOf("if(klass.status==='cancelled'&&['attended','no_show'].includes(body.status))");
+  const write=block.indexOf('INSERT INTO public."GymClassBooking"');
+  const temporal=block.indexOf('const now = new Date()');
+  assert.ok(guard>0&&guard<temporal&&temporal<write,'reject fabricated attendance before changing booking');
+  assert.match(block,/throw new HttpError\(409,'Una clase cancelada no admite asistencia ni ausencia\.'/);
+  // Do not prevent cleanup of a cancelled class's existing reservations.
+  assert.doesNotMatch(block,/klass\.status==='cancelled'&&body\.status==='cancelled'/);
+});

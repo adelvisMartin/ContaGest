@@ -1,4 +1,5 @@
 import { Router, type Response } from 'express';
+import { canonicalPageInteger } from '../../shared/http-query-pagination.mjs';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
@@ -44,13 +45,13 @@ const status=z.object({
   visibility:z.enum(['internal','public']).default('internal')
 }).strict();
 const listQuery=z.object({
-  take:z.coerce.number().int().min(1).max(100).default(50),
-  skip:z.coerce.number().int().min(0).max(100000).default(0)
+  take:z.preprocess(canonicalPageInteger,z.number().int().min(1).max(100).default(50)),
+  skip:z.preprocess(canonicalPageInteger,z.number().int().min(0).max(100000).default(0))
 }).strict();
 // Keep legacy default page sizes while allowing bounded, tenant-scoped filters.
 const categoryListQuery=z.object({
-  take:z.coerce.number().int().min(1).max(100).default(100),
-  skip:z.coerce.number().int().min(0).max(100000).default(0),
+  take:z.preprocess(canonicalPageInteger,z.number().int().min(1).max(100).default(100)),
+  skip:z.preprocess(canonicalPageInteger,z.number().int().min(0).max(100000).default(0)),
   status:z.enum(['active','archived']).optional(),
   search:z.string().trim().min(1).max(80).optional()
 }).strict();
