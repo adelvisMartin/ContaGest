@@ -7,7 +7,7 @@ test('Gym #792: pause/resume/abandon are atomic, replay-safe and audited',async(
   assert.notEqual(String(process.env.NODE_ENV||'').toLowerCase(),'production');
   const h=await createRealBackendHarness();
   const run=randomUUID();
-  let memberId='',routineId='',exerciseId='';
+  let memberId='',routineId='',exerciseId='',alternativeExerciseId='';
   const sessions:string[]=[];
   t.after(async()=>{
     await h.close().catch(()=>undefined);
@@ -17,7 +17,8 @@ test('Gym #792: pause/resume/abandon are atomic, replay-safe and audited',async(
       await h.prisma.$executeRawUnsafe('DELETE FROM public."GymWorkoutSession" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,sessionId).catch(()=>undefined);
     }
     if(routineId)await h.prisma.$executeRawUnsafe('DELETE FROM public."GymRoutine" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,routineId).catch(()=>undefined);
-    if(exerciseId)await h.prisma.$executeRawUnsafe('DELETE FROM public."GymExercise" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,exerciseId).catch(()=>undefined);
+    for(const id of [exerciseId,alternativeExerciseId].filter(Boolean))
+      await h.prisma.$executeRawUnsafe('DELETE FROM public."GymExercise" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,id).catch(()=>undefined);
     if(memberId)await h.prisma.$executeRawUnsafe('DELETE FROM public."GymMember" WHERE "tenantId"=$1 AND "id"=$2',h.tenant.id,memberId).catch(()=>undefined);
   });
   const member=await h.ok('/verticals/gym/members',{method:'POST',body:JSON.stringify({
@@ -38,6 +39,36 @@ test('Gym #792: pause/resume/abandon are atomic, replay-safe and audited',async(
   });
   const first=await start();
   sessions.push(first.id);
+  assert.equal(first.routineSnapshot[0].exerciseId,exerciseId);
+  assert.equal(Object.hasOwn(first.routineSnapshot[0],'muscleGroup'),true);
+  const alternative=await h.ok('/verticals/gym/exercises',{method:'POST',body:JSON.stringify({
+    name:'QA 792 Edited Exercise '+run,active:true
+  })});
+  alternativeExerciseId=alternative.id;
+  const prescribedId=first.routineSnapshot[0].id;
+  try{
+    const changed=await h.prisma.$executeRawUnsafe(
+      'UPDATE public."GymRoutineExercise" SET "exerciseId"=$3 WHERE "tenantId"=$1 AND "id"=$2',
+      h.tenant.id,prescribedId,alternativeExerciseId
+    );
+    assert.equal(changed,1);
+    await h.status('/verticals/gym/workout-sessions/'+first.id+'/sets',409,{
+      method:'POST',body:JSON.stringify({
+        routineExerciseId:prescribedId,setNumber:1,status:'completed',reps:8
+      })
+    });
+  }finally{
+    await h.prisma.$executeRawUnsafe(
+      'UPDATE public."GymRoutineExercise" SET "exerciseId"=$3 WHERE "tenantId"=$1 AND "id"=$2',
+      h.tenant.id,prescribedId,exerciseId
+    );
+  }
+  const validSet=await h.ok('/verticals/gym/workout-sessions/'+first.id+'/sets',{
+    method:'POST',body:JSON.stringify({
+      routineExerciseId:prescribedId,setNumber:1,status:'completed',reps:8
+    })
+  });
+  assert.equal(validSet.replayed,false);
   const path='/verticals/gym/workout-sessions/'+first.id;
   const change=(action:string,eventKey=randomUUID(),reason:string|null=null)=>h.request(path+'/transition',{
     method:'POST',body:JSON.stringify({action,eventKey,reason})
