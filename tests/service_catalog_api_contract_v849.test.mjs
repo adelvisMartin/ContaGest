@@ -8,7 +8,7 @@ test('#849 one authenticated tenant-scoped API entry point, no unauthenticated p
   assert.match(manifest,/path: '\/service-catalog'/);
   assert.match(routes,/router\.use\(requireTenant\)/);
   assert.match(routes,/router\.use\(requirePermission\('admin\.manage'\)\)/);
-  assert.match(routes,/projectPublicServiceCatalog\(\{tenantId,rows\}\)/);
+  assert.match(routes,/projectPublicServiceCatalog\(\{tenantId,rows:rows\.slice\(0,pagination\.take\)\}\)/);
   assert.match(routes,/private, no-store/);
   assert.match(routes,/status:'active',visibility:'public'/);
   assert.doesNotMatch(routes,/tenantId:\s*req\.body\.tenantId/);
@@ -40,4 +40,30 @@ test('#849 changed staff/location assignment increments service version and immu
     assert.match(body,/if\(Boolean\(exists\)!==enabled\)/);
   }
   assert.match(service,/staff:staff\.map\(item=>item\.employeeId\),locations:locations\.map\(item=>item\.locationId\)/);
+});
+
+test('#849 category status mutation requires tenant/RBAC and strict request body',()=>{
+  assert.match(routes,/router\.use\(requireTenant\)/);
+  assert.match(routes,/router\.use\(requirePermission\('admin\.manage'\)\)/);
+  assert.match(routes,/const categoryStatus=z\.object\(\{\s*status:z\.enum\(\['active','archived'\]\)\s*\}\)\.strict\(\)/);
+  assert.match(routes,/router\.patch\('\/categories\/:id\/status',validateBody\(categoryStatus\)/);
+  assert.match(routes,/setServiceCategoryStatus\(ctx\(req\),id\.data,req\.body\.status\)/);
+  assert.doesNotMatch(routes,/tenantId:req\.body\.tenantId/);
+});
+test('#849 category archival must serialize against service creation and preserve revisions',()=>{
+  const category=service.split('export async function setServiceCategoryStatus(')[1]
+    .split('export async function createCatalogService(')[0];
+  const refs=service.split('async function validateRefs(')[1]
+    .split('async function snapshotRevision(')[0];
+  assert.match(service,/async function lockedCategory\(/);
+  assert.match(service,/FROM public\."ServiceCatalogCategory"/);
+  assert.match(service,/FOR UPDATE/);
+  assert.match(refs,/await lockedCategory\(tx,tenantId,categoryId\)/);
+  assert.match(category,/prisma\.\$transaction\(async tx=>/);
+  assert.match(category,/await lockedCategory\(tx,ctx\.tenantId,categoryId\)/);
+  assert.match(category,/status:\{not:'archived'\}/);
+  assert.match(category,/SERVICE_CATEGORY_IN_USE/);
+  assert.match(category,/if\(before\.status===status\)/);
+  assert.match(category,/await audit\(tx,ctx,'service-category\.status'/);
+  assert.doesNotMatch(category,/serviceStep\.delete|serviceDefinitionRevision\.delete|serviceDefinition\.delete/);
 });
