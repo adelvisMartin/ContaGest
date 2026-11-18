@@ -200,3 +200,31 @@ test('LAB ACK record symlinks and root replacements are never valid journal auth
   await assert.rejects(()=>f.journal.read(id),/LAB_TEST_JOURNAL_ROOT_UNSAFE/);
  }finally{await f.clean();}
 });
+
+test('LAB ACK rejects unexpected persisted private fields and unapproved resolution text',async()=>{
+  const f=await fixture();
+  try{
+    const id='lab-minimal-durable-ack';
+    const created=await f.journal.prepare(id);
+    const file=path.join(f.rootDir,created.record.idHash+'.json');
+    const original=created.record;
+    for(const injected of [
+      {messageText:'synthetic secret content'},
+      {senderJid:'synthetic-sender-id'},
+      {sessionToken:'synthetic-token'},
+      {resolution:'synthetic private message'}
+    ]){
+      const payload=JSON.stringify({...original,...injected});
+      await fs.writeFile(file,payload);
+      await assert.rejects(()=>f.journal.read(id),/LAB_TEST_JOURNAL_RECORD_INVALID/);
+      await assert.rejects(()=>f.journal.begin(id),/LAB_TEST_JOURNAL_RECORD_INVALID/);
+      await assert.rejects(()=>f.journal.prepare(id),/LAB_TEST_JOURNAL_RECORD_INVALID/);
+      await assert.rejects(()=>f.make().initialize(),/LAB_TEST_JOURNAL_RECORD_INVALID/);
+      assert.equal(await fs.readFile(file,'utf8'),payload,'invalid disk evidence must not be silently overwritten');
+    }
+    await fs.writeFile(file,JSON.stringify(original));
+    assert.equal((await f.journal.read(id)).state,'prepared');
+    assert.equal((await f.journal.begin(id)).state,'sending');
+    assert.equal((await f.journal.markAmbiguous(id)).resolution,'UNCERTAIN_LAB_DELIVERY');
+  }finally{await f.clean();}
+});
