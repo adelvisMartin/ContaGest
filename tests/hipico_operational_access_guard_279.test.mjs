@@ -1,3 +1,4 @@
+import { assertHipicoShellCacheRotated } from './support/hipico-shell-cache-contract.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -91,7 +92,7 @@ test('self-access UI delegates to the canonical authenticated cloud client', asy
 });
 
 test('PWA rotates its cache-first shell when access bootstrap JS changes', () => {
-  assert.match(serviceWorkerSource, /shell-r39-consolidator-v4-1-3/);
+  assertHipicoShellCacheRotated(serviceWorkerSource);
   assert.match(serviceWorkerSource, /key\.startsWith\('hipico-control-'\) && key !== SHELL_CACHE/);
   assert.doesNotMatch(serviceWorkerSource, /shell-r26-access-bootstrap-local-group-recovery/);
 });

@@ -1,3 +1,4 @@
+import { assertHipicoShellCacheRotated } from './support/hipico-shell-cache-contract.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import test from 'node:test';
@@ -145,7 +146,7 @@ test('service worker caches current v4 graph, rotates old caches, never caches a
     'assets/css/ui-system-v3-compat.css','assets/css/ui-system-v4.css',
     'assets/css/ui-system-v4-convergence.css','help-center.js'
   ]) assert.ok(sw.includes(asset), 'missing offline asset ' + asset);
-  assert.match(sw, /shell-r39-consolidator-v4-1-3/);
+  assertHipicoShellCacheRotated(sw);
   assert.match(sw, /key\.startsWith\('hipico-control-'\) && key !== SHELL_CACHE/);
   assert.match(sw, /isSensitive\(url\) \|\| isRuntimeMetadata\(url\)/);
   assert.match(sw, /fetch\(request, \{ cache: 'no-store' \}\)/);

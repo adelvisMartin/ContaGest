@@ -1,3 +1,4 @@
+import { assertHipicoShellCacheRotated } from './support/hipico-shell-cache-contract.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
@@ -50,7 +51,8 @@ test('Control Hípico invalidates the cached shell that contained the render loo
   // Verify new cache identity plus removal of all prior Hípico shell caches,
   // not a stale literal revision that would freeze offline upgrades.
   assert.doesNotMatch(code, /r29-auto-update-reload/);
-  assert.match(code, /shell-r39-consolidator-v4-1-3/);
+  assertHipicoShellCacheRotated(code);
+  assert.match(code, /-consolidator-v4-1-3`/, 'Hípico shell must retain its v4.1.3 authority');
   assert.match(code, /key\.startsWith\('hipico-control-'\)\s*&&\s*key\s*!==\s*SHELL_CACHE/);
   assert.match(code, /await self\.skipWaiting\(\)/);
   assert.match(code, /await self\.clients\.claim\(\)/);
