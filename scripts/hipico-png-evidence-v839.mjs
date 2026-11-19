@@ -86,7 +86,8 @@ export function validHipicoPngEvidence(bytes) {
           !['IDAT', 'IEND', 'PLTE'].includes(type))) return false;
       if (type === 'PLTE') {
         if (palette || sawImageData || !length || length % 3 !== 0 || length > 768 ||
-            [0, 4].includes(header.colorType)) return false;
+            [0, 4].includes(header.colorType) ||
+            (header.colorType === 3 && length / 3 > 2 ** header.depth)) return false;
         palette = true;
       } else if (type === 'IDAT') {
         if (imageDataEnded || (header.colorType === 3 && !palette)) return false;
