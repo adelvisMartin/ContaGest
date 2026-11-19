@@ -10,11 +10,19 @@ const PROFILE = 'desktop-1440';
 const METRICS = ['routeReadyMs', 'lcpMs', 'cls', 'resourceCount', 'transferBytes',
   'jsTransferBytes', 'cssTransferBytes', 'mockedApiRequests'];
 const OPTIONAL = new Set(['lcpMs', 'cls']);
+const INTEGER_METRICS = new Set(['resourceCount', 'transferBytes', 'jsTransferBytes',
+  'cssTransferBytes', 'mockedApiRequests']);
+const ENVIRONMENT_KEYS = Object.freeze(['nodeVersion', 'osPlatform', 'osArch', 'cpuModel',
+  'cpuLogicalCores', 'browserVersion', 'networkProfile', 'viewportWidth', 'viewportHeight',
+  'colorScheme', 'reducedMotion']);
 
 function reject(reason) { throw new Error(`PERF1293_CAMPAIGN_${reason}`); }
 function isMetric(value) { return typeof value === 'number' && Number.isFinite(value) && value >= 0; }
 export function validateLabEnvironment(env) {
   if (!env || typeof env !== 'object' || Array.isArray(env)) reject('ENVIRONMENT_REQUIRED');
+  if (Object.keys(env).sort().join('\u0000') !== [...ENVIRONMENT_KEYS].sort().join('\u0000')) {
+    reject('ENVIRONMENT_INVALID');
+  }
   const strings = ['nodeVersion', 'osPlatform', 'osArch', 'cpuModel', 'browserVersion', 'networkProfile',
     'colorScheme', 'reducedMotion'];
   if (strings.some(key => typeof env[key] !== 'string' || !env[key].trim() || env[key].length > 160) ||
@@ -29,9 +37,11 @@ function stats(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
   const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+  const standardDeviation = Math.sqrt(variance);
+  if (![mean, variance, standardDeviation].every(Number.isFinite)) reject('METRIC_INVALID');
   return { samples: values.length, min: sorted[0], p50: percentile(sorted, 0.5),
     p75: percentile(sorted, 0.75), p95: percentile(sorted, 0.95), max: sorted.at(-1),
-    mean, variance, standardDeviation: Math.sqrt(variance) };
+    mean, variance, standardDeviation };
 }
 
 /** Repeated laboratory render measurements, NEVER user field CWV or authenticated API/DB latency. */
@@ -60,7 +70,7 @@ export function summarizeLabCampaigns({ candidateSha, catalog, campaigns }) {
         !Array.isArray(summary.missingRoutes) || summary.missingRoutes.length !== 0 ||
         !Array.isArray(summary.routes) || summary.routes.length !== 60) reject('SUMMARY_AUTHORITY_INVALID');
     validateLabEnvironment(summary.labEnvironment);
-    const fingerprint = JSON.stringify(summary.labEnvironment);
+    const fingerprint = JSON.stringify(ENVIRONMENT_KEYS.map(key => summary.labEnvironment[key]));
     if (environmentFingerprint !== null && environmentFingerprint !== fingerprint) reject('ENVIRONMENT_MISMATCH');
     environmentFingerprint = fingerprint;
     runIds.add(summary.runId);
@@ -71,7 +81,10 @@ export function summarizeLabCampaigns({ candidateSha, catalog, campaigns }) {
           row.realApiP95Ms !== null || row.realDbP95Ms !== null || !row.lab) reject('ROUTE_AUTHORITY_INVALID');
       for (const key of METRICS) {
         const value = row.lab[key];
-        if (!(OPTIONAL.has(key) && value === null) && !isMetric(value)) reject('METRIC_INVALID');
+        if (!(OPTIONAL.has(key) && value === null) &&
+            (!isMetric(value) || (INTEGER_METRICS.has(key) && !Number.isSafeInteger(value)))) {
+          reject('METRIC_INVALID');
+        }
       }
       if (row.lab.inpMs !== null || row.lab.jsTransferBytes + row.lab.cssTransferBytes > row.lab.transferBytes) {
         reject('METRIC_PROVENANCE_INVALID');
