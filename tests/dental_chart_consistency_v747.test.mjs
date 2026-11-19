@@ -9,7 +9,7 @@ const validate=new Function(js+'; return dentalChartConsistencyIssues;')();
 const chart=(tooth,surfaces,heading)=>({tooth:heading,odontogram:{tooth,surfaces}});
 
 test('#747 periodontal inputs keep a persistent per-site label required by CgTextField and WCAG',()=>{
-  const panel=readFileSync('frontend/src/components/dentistry/PeriodontalChartPanel.jsx','utf8');
+  const panel=fs.readFileSync('frontend/src/components/dentistry/PeriodontalChartPanel.jsx','utf8');
   assert.match(panel,/label=\{\x60Sondaje \$\{row\.site\} \(mm\)\x60\}/);
   assert.match(panel,/label=\{\x60Margen gingival \$\{row\.site\} \(mm\)\x60\}/);
   assert.doesNotMatch(panel,/<CgTextField[^>]*value=\{row\.(?:probingDepthMm|gingivalMarginMm)\}[^>]*inputProps=\{\{[^}]*aria-label/);
