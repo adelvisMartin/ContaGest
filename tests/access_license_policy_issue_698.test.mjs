@@ -60,3 +60,19 @@ test('#698 policy boundary remains presentation/client-side only and does not be
   assert.doesNotMatch(source,/BackendApi|fetch\(|Prisma|tenantId\s*=|permission\s*=/);
   assert.match(source,/canAccessByRole/);
 });
+
+test('#1362: reissuing a license cannot silently overwrite an existing account password or status',()=>{
+  const routes=fs.readFileSync('backend/src/modules/licenses/licenses.routes.ts','utf8');
+  assert.match(routes,/const user = existingUser \|\| await tx\.userProfile\.create/);
+  assert.doesNotMatch(routes,/tx\.userProfile\.update\(\{[\s\S]*?passwordHash/);
+  assert.match(routes,/temporaryPassword: issuedPassword/);
+  assert.match(routes,/const issuedPassword=createdUser\?temporaryPassword:null/);
+});
+
+test('#1362: reused account receives a clear license-only UX, never a fake temporary password',()=>{
+  const page=fs.readFileSync('frontend/src/pages/LicensesPage.js','utf8');
+  assert.match(page,/hasTemporaryPassword/);
+  assert.match(page,/Cuenta existente: conserva su contraseña actual/);
+  assert.match(page,/Contraseña sin cambios/);
+  assert.match(page,/La cuenta existente conserva su contraseña/);
+});
