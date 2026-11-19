@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {parseStatementCsvRows as parse, StatementCsvStructureError, MAX_STATEMENT_CSV_COLUMNS, MAX_STATEMENT_CSV_ROWS, MAX_STATEMENT_CSV_FIELDS, MAX_STATEMENT_CSV_FIELD_CHARS} from '../backend/src/modules/bank-reconciliation/statement-csv-structure.ts';
 
 test('unquoted bank statement rows preserve all columns',()=>{
@@ -53,4 +54,12 @@ test('bank CSV global field budget limits delimiter amplification',()=>{
   const row='x,'.repeat(fieldsPerLine-1)+'x\n';
   assert.throws(()=>parse(row.repeat(Math.floor(MAX_STATEMENT_CSV_FIELDS/fieldsPerLine)+1)),
     (error)=>error instanceof StatementCsvStructureError && error.code==='BANK_STATEMENT_CSV_LIMIT_EXCEEDED');
+});
+
+test('bank reconciliation CI records and names evidence with the exact candidate SHA',()=>{
+  const workflow=readFileSync(new URL('../.github/workflows/bank-reconciliation-v237.yml',import.meta.url),'utf8');
+  assert.ok(workflow.includes('ref: ${{ env.CANDIDATE_SHA }}'));
+  assert.ok(workflow.includes('test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"'));
+  assert.ok(workflow.includes('"$CANDIDATE_SHA" "$GITHUB_WORKFLOW" "$GITHUB_RUN_ID"'));
+  assert.ok(workflow.includes('name: bank-reconciliation-v237-${{ env.CANDIDATE_SHA }}'));
 });
