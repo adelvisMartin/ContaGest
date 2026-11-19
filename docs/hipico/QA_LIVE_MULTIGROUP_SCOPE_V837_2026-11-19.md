@@ -20,6 +20,12 @@
 - [ ] **AC-MG-05 / release:** Node22 `npm ci`, `node --test tests/hipico_live_multigroup_ui_scope_v837.test.mjs tests/hipico_multigroup_hardening_279.test.mjs tests/hipico_multigroup_runtime_277.test.mjs`, `npm run test:hipico`, `npm run qa:hipico`, checks exact-SHA. No marcar PASS sin ejecutar.
 - [ ] **AC-MG-06 / permisos:** backend/DB rechazan consultas cruzadas por owner/tenant; esta corrección solo trata presentación local, **no sustituye autenticación ni RLS**.
 
+## Actualización de la PWA y consistencia offline
+
+**SOURCE_VERIFIED:** `sw.js` servía `app.js` desde `SHELL_CACHE` en modo *cache-first* y el shell anterior `r39` no se invalidaba con un cambio solo en `app.js`. Sin rotación, un cliente PWA controlado podía mantener el JS legado incluso después de corregir el código del repositorio. El incremento mínimo `r39→r40` en `SHELL_CACHE` fuerza a una nueva instalación a precargar recursos estáticos con `credentials: omit`; `activate` elimina caches anteriores de este namespace, no IndexedDB, workspace, saldos, licencias ni outbox. `pwa-update.js` ya gestiona `registration.update()`, `skipWaiting` y una recarga acotada al cambio de controlador.
+
+**QA específico:** `tests/hipico_live_multigroup_ui_scope_v837.test.mjs` verifica que `index.html` cargue `app.js`, que SW use revisión de shell al menos 40, que `app.js` / `operational-ledger.js` / `pwa-update.js` estén en precache y que la rotación conserve limpieza de caches, adopción de cliente y ausencia de borrado de IndexedDB. `tests/hipico_shell_cache_revision_contract.test.mjs` ya permite versiones posteriores a r39 y protege namespace, navegación y privacidad. Esto es **contrato de código**; la instalación/actualización real offline en Chromium/Android queda `NOT_EXECUTED`.
+
 ## Matriz de regresión y performance
 
 Casos sintéticos 1000×: grupos A/B/C, default A, sin grupo legado, selección grupo, grupo desconocido, sin registros; filtrado por `scopeItems` debe ser determinista. Los 1000 escenarios modelados/ejecutados en prueba Node no son 1000 ciclos de refactor ni pruebas de backend/PostgreSQL/Android.
@@ -49,9 +55,11 @@ Casos sintéticos 1000×: grupos A/B/C, default A, sin grupo legado, selección 
 | --- | --- |
 | Código fuente y rutas | SOURCE_REVIEW |
 | 2 suites de scope × 1.000 en Node aislado con helper transcrito | PASS aislado, **NO** repositorio completo |
+| 7 pruebas focalizadas Node22 (copia mínima de snippets) | PASS aislado; test sobre archivos originales NOT_EXECUTED |
 | Test del nuevo archivo contra checkout real | NOT_EXECUTED hasta CI/checkout |
 | PG17 tenant/owner A/B | NOT_EXECUTED; sin cambios API/DB |
 | Microbenchmark sintético de render de códigos (Node22, 1 ejecución) | OBSERVED aislado; NO producción ni browser |
+| Renovación offline de SW y caché r40 | SOURCE_REVIEW; prueba real PWA NOT_EXECUTED |
 | Browser/mobile/Playwright, claro/oscuro | NOT_EXECUTED |
 | Hípico Physical QA/soak/restore | NOT_EXECUTED; owner #839 |
 | CI GitHub candidate SHA | PENDING al crear PR |
