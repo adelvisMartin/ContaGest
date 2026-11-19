@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { labEnvironmentFingerprint, LAB_METRIC_KEYS } from './performance-route-campaign-v1293.mjs';
 
 const SHA = /^[a-f0-9]{40}$/;
 const ROUTE = /^[a-z][a-z0-9-]{0,63}$/;
@@ -25,6 +26,8 @@ export function summarizeRouteEvidence({ candidateSha, runId, catalog, observati
   if (!Array.isArray(observations)) reject('OBSERVATIONS_INVALID');
   const known = new Set(catalog.map(item => item.route));
   const byRoute = new Map();
+  let labEnvironment = null;
+  let environmentFingerprint = null;
   for (const row of observations) {
     if (!row || typeof row !== 'object' || row.schemaVersion !== 1293 ||
         row.candidateSha !== candidateSha || row.runId !== runId || !known.has(row.route) || byRoute.has(row.route) ||
@@ -32,10 +35,22 @@ export function summarizeRouteEvidence({ candidateSha, runId, catalog, observati
         row.fixtureProvenance !== 'SYNTHETIC_TEST_ONLY' || row.captureMode !== 'LAB_RENDER_ONLY') {
       reject('OBSERVATION_AUTHORITY_INVALID');
     }
+    const fingerprint = labEnvironmentFingerprint(row.labEnvironment);
+    if (environmentFingerprint !== null && fingerprint !== environmentFingerprint) {
+      reject('ENVIRONMENT_MISMATCH_WITHIN_RUN');
+    }
+    environmentFingerprint = fingerprint;
+    if (labEnvironment === null) labEnvironment = row.labEnvironment;
     const m = row.metrics;
-    if (!m || !metric(m.routeReadyMs) || !metric(m.lcpMs, true) || !metric(m.cls, true) ||
+    if (!m || typeof m !== 'object' || Array.isArray(m) ||
+        Object.keys(m).length !== LAB_METRIC_KEYS.length ||
+        LAB_METRIC_KEYS.some(key => !Object.hasOwn(m, key)) ||
+        !metric(m.routeReadyMs) || !metric(m.lcpMs, true) || !metric(m.cls, true) ||
         m.inpMs !== null || !Number.isSafeInteger(m.resourceCount) || m.resourceCount < 0 ||
         !Number.isSafeInteger(m.transferBytes) || m.transferBytes < 0 ||
+        !Number.isSafeInteger(m.jsTransferBytes) || m.jsTransferBytes < 0 ||
+        !Number.isSafeInteger(m.cssTransferBytes) || m.cssTransferBytes < 0 ||
+        m.jsTransferBytes + m.cssTransferBytes > m.transferBytes ||
         !Number.isSafeInteger(m.mockedApiRequests) || m.mockedApiRequests < 0) {
       reject('OBSERVATION_METRICS_INVALID');
     }
@@ -55,7 +70,7 @@ export function summarizeRouteEvidence({ candidateSha, runId, catalog, observati
     schemaVersion: 1293, candidateSha, runId, profile: PROFILE,
     sourceOfRoutes: 'qa/support/module-visual-catalog.mjs',
     fixtureProvenance: 'SYNTHETIC_TEST_ONLY',
-    measurementType: 'synthetic-chromium-render-only',
+    measurementType: 'synthetic-chromium-render-only', labEnvironment,
     routeCount: routes.length, measuredRouteCount: byRoute.size,
     missingRoutes: routes.filter(row => row.status === NOT_EXECUTED).map(row => row.route),
     status: byRoute.size === 60 ? 'LAB_BASELINE_ONLY' : NOT_EXECUTED,

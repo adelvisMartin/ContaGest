@@ -2,18 +2,16 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
 import { PAGE_ROUTES } from '../frontend/src/data/pageRegistry.js';
 import { waitForRouteReady } from './support/playwright-determinism.mjs';
 import { fixtureForRequest } from './support/erp-system-fixtures-v155.mjs';
+import { assertLocalLabOrigin, isAllowedLabRequest, isAllowedLabRedirect, isAllowedLabSocket } from './support/performance-lab-isolation-v1293.mjs';
 
 const targetBase = String(process.env.QA_BASE_URL || '').trim();
-if (targetBase) {
-  const target = new URL(targetBase);
-  assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(target.hostname),
-    '#1293 refuses production/staging hosts: only isolated local webServer is authorized');
-}
+if (targetBase) assertLocalLabOrigin(targetBase);
 const candidateSha = String(process.env.CANDIDATE_SHA || '').trim().toLowerCase();
 assert.match(candidateSha, /^[a-f0-9]{40}$/, '#1293 needs exact CANDIDATE_SHA');
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim().toLowerCase(),
@@ -33,7 +31,7 @@ const session = {
   audience: 'staff', expiresAt: Date.now() + 8 * 60 * 60 * 1000,
 };
 
-test.use({ viewport: { width: 1440, height: 900 }, colorScheme: 'light', reducedMotion: 'reduce' });
+test.use({ viewport: { width: 1440, height: 900 }, colorScheme: 'light', reducedMotion: 'reduce', serviceWorkers: 'block' });
 
 autoInstallObservers();
 function autoInstallObservers() {
@@ -66,15 +64,58 @@ function autoInstallObservers() {
 }
 
 for (const item of MODULE_VISUAL_CATALOG) {
-  test(`#1293 route performance lab ${item.route}`, async ({ page, browserName }) => {
+  test(`#1293 route performance lab ${item.route}`, async ({ page, browserName, browser }, testInfo) => {
     assert.equal(browserName, 'chromium', 'This first campaign is Chromium only');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
+    const allowedOrigin = assertLocalLabOrigin(testInfo.project.use.baseURL);
+    let blockedExternalRequests = 0;
+    let blockedExternalSockets = 0;
+    let observedExternalRequests = 0;
+    let observedExternalSockets = 0;
+    let unsafeRedirectResponses = 0;
+    page.on('request', request => {
+      // Redirects might bypass page.route; WebSocket upgrades have their own URL scheme.
+      const permitted = request.resourceType() === 'websocket' ?
+        isAllowedLabSocket(request.url(), allowedOrigin) :
+        isAllowedLabRequest(request.url(), allowedOrigin);
+      if (!permitted) observedExternalRequests += 1;
+    });
+    page.on('websocket', socket => {
+      if (!isAllowedLabSocket(socket.url(), allowedOrigin)) observedExternalSockets += 1;
+    });
+    page.on('response', response => {
+      const status = response.status();
+      const location = status >= 300 && status < 400 ? response.headers().location : null;
+      if (location && !isAllowedLabRedirect(location, response.url(), allowedOrigin)) {
+        unsafeRedirectResponses += 1;
+      }
+    });
+    await page.routeWebSocket('**/*', socket => {
+      if (!isAllowedLabSocket(socket.url(), allowedOrigin)) {
+        blockedExternalSockets += 1;
+        return socket.close({ code: 1008, reason: 'LAB_NETWORK_ISOLATION' });
+      }
+      socket.connectToServer();
+    });
     let mockedApiRequests = 0;
-    await page.route('**/api/**', async (route) => {
-      mockedApiRequests += 1;
+    await page.route('**/*', async (route) => {
       const request = route.request();
+      const permitted = request.resourceType() === 'websocket' ?
+        isAllowedLabSocket(request.url(), allowedOrigin) :
+        isAllowedLabRequest(request.url(), allowedOrigin);
+      if (!permitted) {
+        blockedExternalRequests += 1;
+        await route.abort('blockedbyclient');
+        return;
+      }
       const pathname = new URL(request.url()).pathname;
+      if (request.resourceType() === 'websocket' ||
+          (pathname !== '/api' && !pathname.startsWith('/api/'))) {
+        await route.continue();
+        return;
+      }
+      mockedApiRequests += 1;
       if (pathname.endsWith('/auth/me')) {
         await route.fulfill({ status: 200, contentType: 'application/json',
           body: JSON.stringify({ ok: true, data: session }) });
@@ -100,16 +141,34 @@ for (const item of MODULE_VISUAL_CATALOG) {
       requestAnimationFrame(() => requestAnimationFrame(() => {
         const resources = performance.getEntriesByType('resource');
         const m = globalThis.__cgPerf1293;
+        const bytes = r => r.transferSize || 0;
+        const jsTransferBytes = resources.filter(r => /\.(?:m?js|jsx|tsx?)$/i.test(new URL(r.name, location.href).pathname))
+          .reduce((sum, r) => sum + bytes(r), 0);
+        const cssTransferBytes = resources.filter(r => /\.css$/i.test(new URL(r.name, location.href).pathname))
+          .reduce((sum, r) => sum + bytes(r), 0);
         resolve({ lcpMs: m.lcpSupported ? m.lcpMs : null,
           cls: m.clsSupported ? m.cls : null,
           resourceCount: resources.length,
-          transferBytes: resources.reduce((sum, r) => sum + (r.transferSize || 0), 0) });
+          transferBytes: resources.reduce((sum, r) => sum + bytes(r), 0),
+          jsTransferBytes, cssTransferBytes });
       }));
     }));
     const routeReadyMs = performance.now() - started;
+    assert.equal(blockedExternalRequests, 0, 'Lab attempted direct foreign network requests');
+    assert.equal(blockedExternalSockets, 0, 'Lab attempted foreign WebSocket connections');
+    assert.equal(observedExternalRequests, 0, 'Lab observed foreign requests, including redirect chains');
+    assert.equal(observedExternalSockets, 0, 'Lab observed foreign WebSocket connections');
+    assert.equal(unsafeRedirectResponses, 0, 'Lab observed unsafe HTTP redirect targets');
     assert.deepEqual(errors, [], 'Route emitted JavaScript errors during lab capture');
+    const cpus = os.cpus();
+    const labEnvironment = {
+      nodeVersion: process.version, osPlatform: process.platform, osArch: process.arch,
+      cpuModel: cpus[0]?.model || 'unknown', cpuLogicalCores: cpus.length,
+      browserVersion: browser.version(), networkProfile: 'UNTHROTTLED_NOT_VERIFIED',
+      viewportWidth: 1440, viewportHeight: 900, colorScheme: 'light', reducedMotion: 'reduce',
+    };
     const sample = {
-      schemaVersion: 1293, candidateSha, runId, route: item.route, profile,
+      schemaVersion: 1293, candidateSha, runId, route: item.route, profile, labEnvironment,
       browser: 'chromium', fixtureProvenance: 'SYNTHETIC_TEST_ONLY',
       captureMode: 'LAB_RENDER_ONLY',
       metrics: { routeReadyMs, ...browserMetrics,
