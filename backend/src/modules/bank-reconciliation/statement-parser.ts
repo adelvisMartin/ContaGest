@@ -31,9 +31,12 @@ export type ParsedStatement = {
 const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const clean = (value: unknown, max = 1000) => String(value ?? '').replace(/\u0000/g, '').trim().slice(0, max);
 const isSafeNegativeNumber = (value:string) => /^-\d+(?:[.,]\d+)?$/.test(value);
+// Untrusted statement fields may be copied to spreadsheets or audit views.
+// Invisible Unicode prefixes must not conceal an executable formula marker.
+const SPREADSHEET_FORMULA_PREFIX = /^[\u0000-\u0020\u007f-\u009f\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u180e\u2000-\u200f\u2028-\u202e\u202f\u205f\u2060-\u2069\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0]*[=+\-@]/u;
 const safeText = (value: unknown, field: string, max = 1000) => {
   const text = clean(value, max);
-  if (/^[=+@\t\r]/.test(text) || (text.startsWith('-') && !isSafeNegativeNumber(text))) {
+  if (SPREADSHEET_FORMULA_PREFIX.test(text) && !isSafeNegativeNumber(text)) {
     throw new HttpError(422, `Celda potencialmente ejecutable en ${field}.`, { code: 'BANK_STATEMENT_FORMULA_CELL', field });
   }
   return text || null;

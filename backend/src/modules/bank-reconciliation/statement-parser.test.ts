@@ -19,6 +19,26 @@ test('CSV formula injection falla seguro en campos conocidos',()=>{
   assert.throws(()=>parse('estado.csv','date,amount,reference,memo\n2026-09-01,100.00,REF-1,-1+2\n'),(error:any)=>error?.details?.code==='BANK_STATEMENT_FORMULA_CELL'||/potencialmente ejecutable/i.test(error?.message));
 });
 
+test('CSV rejects hidden Unicode prefixes before formulas in bank memo/reference/raw fields',()=>{
+  for(const value of [
+    '\u200b=HYPERLINK("https://invalid.example")',
+    '\u2060@SUM(A1)',
+    '\u034f+SUM(1)',
+    '\ufeff-2+3',
+    '\u180e=1+1'
+  ]){
+    for(const field of ['reference','memo','extra']){
+      const csv=`date,amount,${field}\n2026-09-01,100.00,"${value.replaceAll('"','""')}"\n`;
+      assert.throws(()=>parse('estado.csv',csv),(error:any)=>
+        error?.details?.code==='BANK_STATEMENT_FORMULA_CELL'
+        || error?.code==='BANK_STATEMENT_FORMULA_CELL'
+        || /potencialmente ejecutable/i.test(error?.message),`${field}:${JSON.stringify(value)}`);
+    }
+  }
+  const numericReference=parse('estado.csv','date,amount,reference\n2026-09-01,100.00,-125.50\n');
+  assert.equal(numericReference.lines[0].reference,'-125.50');
+});
+
 test('CSV formula injection falla seguro también en columnas raw no mapeadas',()=>{
   assert.throws(()=>parse('estado.csv','date,amount,reference,extra\n2026-09-01,100.00,REF-1,@SUM(A1:A2)\n'),(error:any)=>error?.details?.code==='BANK_STATEMENT_FORMULA_CELL'||/potencialmente ejecutable/i.test(error?.message));
 });
