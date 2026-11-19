@@ -28,3 +28,25 @@ test('#708 duplicate row keys are still denied', () => {
   tampered.rows[1].key = tampered.rows[0].key;
   assert.ok(auditErpParityMatrix(tampered).includes('PARITY_KEY_INVALID'));
 });
+
+test('#708 10k deterministic adversarial gap-owner mutations fail closed',()=>{
+  const baseline=structuredClone(valid);
+  baseline.rows=baseline.rows.map(row=>({...row,classification:'NOT_VERIFIED',evidencePath:null}));
+  assert.deepEqual(auditErpParityMatrix(baseline),[]);
+  for(let i=0;i<10000;i++){
+    const sample=structuredClone(baseline);
+    const index=i%sample.rows.length;
+    if(i%3===0){
+      sample.rows[index].issue=sample.rows[(index+1)%sample.rows.length].issue;
+      const result=auditErpParityMatrix(sample);
+      assert.ok(result.includes('PARITY_OWNER_DUPLICATE'));
+      assert.ok(result.includes('PARITY_OWNER_MISSING'));
+    }else if(i%3===1){
+      sample.rows[index].key=sample.rows[(index+1)%sample.rows.length].key;
+      assert.ok(auditErpParityMatrix(sample).includes('PARITY_KEY_INVALID'));
+    }else{
+      sample.rows[index].classification='VERIFIED';
+      assert.ok(auditErpParityMatrix(sample).includes('PARITY_UNVERIFIED_GAP'));
+    }
+  }
+});
