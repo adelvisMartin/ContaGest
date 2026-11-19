@@ -116,3 +116,36 @@ test('#1362 every Store persistence/export boundary uses the secret-free project
   assert.match(page,/credentials:_oneTime, \.\.\.licenseSummary/);
   assert.match(page,/draft\.licenses=\[licenseSummary,/);
 });
+
+test('#1362 shared clinical permission cannot cross Vet and Care route families in a demo',()=>{
+  const middleware=fs.readFileSync('backend/src/shared/middleware/context.ts','utf8');
+  const policy=fs.readFileSync('backend/src/shared/licensing/clinicalDemoRoutePolicy.ts','utf8');
+  assert.match(middleware,/clinicalDemoRouteAllowed\(permission, modules, originalUrl\)/);
+  assert.match(middleware,/enforceClientLicense\(ctx, permission, req\.originalUrl\)/);
+  assert.match(middleware,/license\.plan === 'trial' \|\| config\.commercialUse === 'demostracion'/);
+  assert.match(policy,/modules\.includes\('veterinaria'\)/);
+  assert.match(policy,/modules\.includes\('salud'\) \|\| modules\.includes\('odontologia'\)/);
+  assert.doesNotMatch(policy,/client\.tenantId|req\.query\.tenantId/);
+});
+
+test('#1362 prospect options and records use canonical manifest without admin routes',()=>{
+  const ui=fs.readFileSync('frontend/src/services/demoAccessService.js','utf8');
+  const routes=fs.readFileSync('backend/src/modules/demos/demos.routes.ts','utf8');
+  const contracts=fs.readFileSync('backend/src/modules/demos/demos.contracts.ts','utf8');
+  const license=fs.readFileSync('backend/src/modules/licenses/licenses.contracts.ts','utf8');
+  assert.match(ui,/ACCESS_MANIFEST\.modules/);
+  assert.match(ui,/blockedDemoPermissions\.has\(item\.permission\)/);
+  assert.doesNotMatch(ui,/modules:\s*\[/);
+  assert.match(routes,/from '\.\/demos\.contracts\.js'/);
+  assert.match(contracts,/SAFE_DEMO_MODULES\.has\(value\)/);
+  assert.match(contracts,/\.strict\(\)/);
+  assert.match(license,/SAFE_DEMO_MODULES/);
+});
+
+test('#1362 legacy scope hydration removes old stored secrets, not just in-memory copies',()=>{
+  const store=fs.readFileSync('frontend/src/state/store.js','utf8');
+  assert.match(store,/const sanitized = withoutClinicalCache\(saved\)/);
+  assert.match(store,/if \(current !== safe\)/);
+  assert.match(store,/localStorage\.setItem\(key, safe\)/);
+  assert.match(store,/localStorage\.removeItem\(key\)/);
+});
