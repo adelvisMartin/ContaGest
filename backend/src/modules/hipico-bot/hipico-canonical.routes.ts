@@ -294,6 +294,10 @@ router.get('/domain/:aggregateKind/:aggregateKey', async (req, res) => {
     if (!data) return res.status(404).json({ ok: false, error: 'HIPICO_DOMAIN_AGGREGATE_NOT_FOUND' });
     return res.json({ ok: true, data, sourceWrite: false, monetaryWrite: false });
   } catch (error: any) {
+    const permanentVersionError=canonicalPermanentVersionResponse(error);
+    if(permanentVersionError){
+      return res.status(permanentVersionError.status).json(permanentVersionError.body);
+    }
     console.error('[hipico-canonical] domain read failed', {
       error: error?.message || String(error),
       aggregateKind: kind.data
