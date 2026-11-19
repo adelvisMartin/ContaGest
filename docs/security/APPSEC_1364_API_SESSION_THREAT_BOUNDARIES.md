@@ -132,3 +132,27 @@ Exact current regression blob SHAs at evidence time:
 - **Weakness:** source-scoped tests cannot certify actual PostgreSQL, native bridge, rate limiting, UX or app binary.
 - **Threat:** a shared limiter absent under horizontal scaling can weaken throttling; evidence required for deployment topology and response metrics.
 - **Decision:** PARTIAL / NOT_READY_FOR_MERGE. Preserve draft PR, keep #1364 open, no Control Hípico or production deployments.
+
+## Seventh pass — uncontrolled sync export destination and HTTP 307 (2026-11-19)
+
+**Risk path source-reviewed end-to-end:** `SettingsPage.mount` reads `Store.get().settings.backendUrl` from a user-editable backend URL; `DataSyncService.pushAll` serializes 14 business resources, including clients, ledger, banking and suppliers, and uses `apiClient.apiPost`. Previously that client followed a 307 to another HTTP host and `DataSyncService` did not validate destination trust. This is an outbound export boundary; no real customer data or external servers were accessed.
+
+### Reproduced and fixed
+
+1. **Redirect POST leak (RED→GREEN, real local HTTP):** two ephemeral `node:http` servers, synthetic financial payload and a 307 Location to the second server. Before: `apiPost` followed the redirect and the negative assertion failed; after: both `apiGet` and `apiPost` set `redirect:'error'`; the second server received **zero requests** while ordinary GET/POST still succeeded. No redirect-to-external credential or body transfer.
+2. **Untrusted manual backend URL (RED→GREEN):** a browser-context test called legacy `apiClient.apiPost('https://malicious.example/api/v1', ...)` and confirmed the pre-change transport attempted it; a separate source audit showed Settings selected the target. Rather than modify generic transport contracts further, `DataSyncService.health/pushAll/pullAll` now performs one fail-closed `resolveApprovedSyncBase` preflight before any transfer. Trust is defined by the existing canonical `resolveApprovedApiBase`: same-origin HTTPS or bundle-approved HTTPS; local loopback only in development; native release needs an approved HTTPS backend. The helper also preserves the legacy approved origin-root form to avoid changing accepted URL shapes unnecessarily.
+3. **UX copy:** the Settings `backendUrl` field has `aria-describedby='backendSyncOriginHint'` linking to text that explains approved destinations. The project `Field` component is source-verified to forward `attrs` to the input. No browser, mobile or screen-reader testing is claimed.
+
+### Targeted verified QA, exact source files
+
+- Seven files were reconstructed in a partial Node 22.16.0 workspace and matched against GitHub blob SHA via `git hash-object`: `apiClient.js`, `apiBaseOriginPolicy.mjs`, `dataSyncService.js`, `uiEnhancementService.js`, `api_client_redirect_guard_v1364.test.mjs`, `data_sync_origin_guard_v1364.test.mjs`, `data_sync_service_guard_v1364.test.mjs`.
+- `node --check` passed for all 7/7; `node --test tests/api_client_redirect_guard_v1364.test.mjs tests/data_sync_origin_guard_v1364.test.mjs tests/data_sync_service_guard_v1364.test.mjs` passed **12/12**, 0 failures, 0 skips.
+- Evidence: `qa-sync-origin-20261119.log`, SHA256 `f3829af545febcbb2329ebecb032fff8eb2dcbd8211bd038b6d35fae9dd24161`.
+- The repository's `npm run test:security:api-base` now includes all seven #1364 test files; the entire merged suite was NOT EXECUTED in a complete checkout. Earlier six suites' results must not be transferred to a new SHA.
+- The manually configured backend URL is now subject to an **explicit contract change**. If an existing tenant integrates a custom remote sync host not present in `VITE_API_BASE_URL` or `VITE_API_ALLOWED_ORIGINS`, the sync correctly rejects it until the approved HTTPS destination is provisioned in the bundle. Acceptance review and release testing are required before merge.
+
+### Remaining security scope
+
+**Still unverified:** approval of configured cross-origin sync destinations by owner; Android HTTPS/cookie/CSRF integration; A/B PostgreSQL17 tenant isolation and data authorization; deployed 429/Retry-After under synthetic abuse and replica scaling; encrypted backups/rotation; CSP enforcing vs Report-Only; Play AAB physical checks; full lint/typecheck/build/E2E; second AppSec reviewer and exact-HEAD CI. WebView and browser UI accessibility were inspected in source only, **not physically verified**. No automated scraping against third-party sites, production, Control Hípico SOURCE, or real personal data was used.
+
+**Decision:** PARTIAL, draft PR / NOT READY FOR MERGE.
