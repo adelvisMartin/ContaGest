@@ -78,7 +78,14 @@ export function classifyBackupRoleVerification({
   if(new Set(expected).size!==expected.length || expected.some(name=>typeof name!=='string'||!/^hipico_[a-z0-9_]+$/.test(name))) findings.push('INVENTORY_NOT_UNIQUE_OR_INVALID');
   if(observed.length!==expected.length)findings.push(`OBSERVED_TABLE_COUNT_MISMATCH:${observed.length}:${expected.length}`);
 
-  const observedByTable=new Map(observed.map((item)=>[item.table,item]));
+  // A malformed catalog row must produce a reproducible FAIL, never a
+  // TypeError that aborts the verification or hides the remaining findings.
+  const validObserved=observed.filter((item)=>item&&typeof item==='object'
+    && !Array.isArray(item)&&typeof item.table==='string');
+  if(validObserved.length!==observed.length)findings.push('TABLE_OBSERVATION_INVALID');
+  if(new Set(validObserved.map((item)=>item.table)).size!==validObserved.length)
+    findings.push('OBSERVED_TABLE_DUPLICATE');
+  const observedByTable=new Map(validObserved.map((item)=>[item.table,item]));
   for(const table of expected){
     const item=observedByTable.get(table);
     if(!item){
