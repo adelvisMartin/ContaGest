@@ -44,8 +44,12 @@ const head = gitHead();
 if (head && head !== sha) throw new Error(`HIPICO_RELEASE_REPORT_SHA_MISMATCH:${head}:${sha}`);
 
 const verified = await readJson('evidence-verification.json');
-const evidence = verified && String(verified.sha || '').toLowerCase() === sha ? status(verified.status) : 'NOT_EXECUTED';
-const optionalEvidence = Array.isArray(verified?.optional) ? verified.optional : [];
+// Never display a physical/soak/DR PASS from another candidate as a current
+// per-gate result, even when the aggregate readiness would remain blocked.
+const verifiedMatchesCandidate = verified && String(verified.sha || '').toLowerCase() === sha;
+const evidence = verifiedMatchesCandidate ? status(verified.status) : 'NOT_EXECUTED';
+const optionalEvidence = verifiedMatchesCandidate && Array.isArray(verified.optional)
+  ? verified.optional : [];
 const productionSchemaArtifact = status(optionalEvidence.find((item) => item?.id === 'productionSchema')?.status);
 const productionSchemaJob = status(process.env.HIPICO_GATE_PRODUCTION_SCHEMA);
 const productionSchemaStatus = combineProductionSchemaGate(productionSchemaJob, productionSchemaArtifact);
