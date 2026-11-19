@@ -20,6 +20,8 @@ on:
       - 'qa/financial-decimal-real-v90.test.ts'
       - 'qa/support/real-backend-harness.ts'
       - 'qa/postmerge-financial-domain-v17.test.ts'
+      - 'qa/purchase-draft-atomic-v757.test.ts'
+      - 'tests/purchase_draft_atomicity_v757.test.mjs'
       - 'tests/financial_decimal_issue_90.test.mjs'
       - 'tests/ci_ephemeral_database_contract.test.mjs'
       - 'docs/ADR_FINANCIAL_DECIMAL_V90.md'
@@ -59,6 +61,7 @@ jobs:
 
     env:
       NODE_ENV: test
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       CI: 'true'
       API_MODE: prisma
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/contagest_financial_v90_e2e?schema=public
@@ -73,8 +76,13 @@ jobs:
       ALLOW_PUBLIC_REGISTER: 'false'
 
     steps:
-      - name: Descargar código
+      - name: Descargar código en el SHA exacto del PR
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+      - name: Verificar identidad SHA del candidato
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
       - name: Configurar Node 22
         uses: actions/setup-node@v7
@@ -116,6 +124,8 @@ jobs:
 
       - name: "Ejecutar contratos estáticos #90"
         run: node --test tests/financial_decimal_issue_90.test.mjs
+      - name: "Verificar regresión transaccional de compras #757"
+        run: node --test tests/purchase_draft_atomicity_v757.test.mjs
 
       - name: Ejecutar primitive y golden datasets
         shell: bash
@@ -134,6 +144,11 @@ jobs:
         run: |
           set -o pipefail
           npm run test:backend:financial:real 2>&1 | tee financial-regression-v90.log
+      - name: Borrado de compras #757 con auditoría y rollback PostgreSQL 17
+        shell: bash
+        run: |
+          set -o pipefail
+          npm --workspace backend exec -- tsx --test ../qa/purchase-draft-atomic-v757.test.ts 2>&1 | tee purchase-draft-atomic-v757.log
 
       - name: Verificar tipos exactos y escalas en PostgreSQL
         if: always()
@@ -159,6 +174,7 @@ jobs:
             financial-decimal-unit-v90.log
             financial-decimal-real-v90.log
             financial-regression-v90.log
+            purchase-draft-atomic-v757.log
             financial-schema-v90.log
           if-no-files-found: warn
           retention-days: 14

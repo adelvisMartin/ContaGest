@@ -63,8 +63,12 @@ test('26/51 order remains processing until every ordered placeholder has a value
 
 test('26/51 lab order references and reads remain tenant-scoped',()=>{
   const source=backend();
-  assert.match(source,/CareProfessional" WHERE "tenantId"=\$1 AND "id"=\$2/);
-  assert.match(source,/CareEncounter" WHERE "tenantId"=\$1 AND "id"=\$2 AND "patientId"=\$3/);
+  // Inspect the actual diagnostics subrouter, not its former monolithic
+  // facade. The SQL reference order is (tenant, patient, encounter); keep
+  // the negative boundary meaningful instead of expecting stale formatting.
+  const order = source.split("router.post('/lab-orders'")[1]?.split("router.get('/lab-results'")[0] || '';
+  assert.match(order,/CareProfessional"\s+WHERE\s+"tenantId"=\$1\s+AND\s+"id"=\$2\s+FOR SHARE/);
+  assert.match(order,/CareEncounter"\s+WHERE\s+"tenantId"=\$1\s+AND\s+"patientId"=\$2\s+AND\s+"id"=\$3\s+FOR SHARE/);
   assert.match(source,/p\."tenantId"=o\."tenantId"/);
   assert.match(source,/pr\."tenantId"=o\."tenantId"/);
   assert.match(source,/r\."tenantId"=o\."tenantId"/);

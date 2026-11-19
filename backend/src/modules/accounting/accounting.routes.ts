@@ -116,29 +116,33 @@ router.post('/entries', requirePermission('accounting.post'), validateBody(entry
     }
   }, async (tx) => {
     const entry = await createLedgerEntry({ tenantId: ctx.tenantId, ...req.body, source: 'manual' }, tx);
+    // Audit must commit with the draft and idempotency record, not after.
+    await writeAudit({
+      tenantId: ctx.tenantId, userId: ctx.userId,
+      action: 'ledger.entry.created', entity: 'LedgerEntry', entityId: entry.id,
+      after: { entry: JSON.parse(JSON.stringify(entry)), requestId: requestId(req) },
+      ipAddress: ctx.ip, userAgent: ctx.userAgent
+    }, tx);
     return { data: entry, resourceType: 'LedgerEntry', resourceId: entry.id };
   });
   res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
   if (execution.replayed) {
     await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'idempotency.replay', entity: 'LedgerEntry', entityId: (execution.data as any).id, after: { scope: 'accounting.entries.create', recordId: execution.recordId, originalRequestId: execution.originalRequestId, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  } else {
-    await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.created', entity: 'LedgerEntry', entityId: (execution.data as any).id, after: { entry: execution.data, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   }
   ok(res, execution.data, execution.responseCode);
 }));
 
 router.patch('/entries/:id', requirePermission('accounting.post'), validateBody(entrySchema), asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const before = await prisma.ledgerEntry.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { lines: true } });
-  if (!before) throw new HttpError(404, 'Asiento contable no encontrado.');
   const updated = await updateDraftLedgerEntry({
     tenantId: ctx.tenantId,
-    entryId: before.id,
+    entryId: req.params.id,
     fiscalPeriod: req.body.fiscalPeriod,
     description: req.body.description,
-    lines: req.body.lines
+    lines: req.body.lines,
+    audit: { userId: ctx.userId, ipAddress: ctx.ip, userAgent: ctx.userAgent,
+      requestId: requestId(req) }
   });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'ledger.entry.draft-updated', entity: 'LedgerEntry', entityId: updated.id, before, after: { entry: updated, requestId: requestId(req) }, ipAddress: ctx.ip, userAgent: ctx.userAgent });
   ok(res, updated);
 }));
 

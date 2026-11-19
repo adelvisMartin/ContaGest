@@ -27,6 +27,9 @@ Affected component/route, interaction causality, focus owner, viewport/device, r
 ## Invariants
 Motion explains hierarchy/state/causality; prefer transform/opacity; dense ERP actions stay fast; consistent easing/direction; never remount/move focused inputs due background changes; no global pointer cancellation; honor reduced motion; avoid autoplay decorative motion in accounting/login/medical/destructive flows.
 
+## Pinned Motion reference skills
+The existing `emil-motion` pin covers `skills/emil-design-eng/SKILL.md`, `skills/animation-vocabulary/SKILL.md`, `skills/animate/SKILL.md`, `skills/animate/RECIPES.md`, `skills/review-animations/SKILL.md`, `skills/review-animations/STANDARDS.md` and `skills/find-animation-opportunities/SKILL.md`. Run `npm run skills:sync` to materialize these reviewed Markdown files under `.agents/vendor/emil-motion/` (ignored by Git). Route `--intent motion-review` only when an advisory slot remains; this does not install or execute upstream code.
+
 ## Workflow
 Characterize interaction; identify one motion owner; implement minimal transform/opacity transition; verify enter/exit pair, focus/native behavior, responsive performance and reduced-motion fallback.
 

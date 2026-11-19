@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
+import { writeAudit } from '../../shared/services/audit.service.js';
 import { assertManualPostingAccounts } from './manual-posting-policy.js';
 import type { SemanticPostingAccount } from '../chart-accounts/semantic-posting-policy.js';
 import {
@@ -283,8 +284,9 @@ async function lockScopedLedgerEntry(tx: Prisma.TransactionClient, tenantId: str
 }
 
 export async function updateDraftLedgerEntry(input: {
-  tenantId: string; entryId: string; fiscalPeriod: string; description: string; lines: LedgerLineInput[];
+  tenantId: string; entryId: string; fiscalPeriod: string; description: string; lines: LedgerLineInput[]; audit?: LedgerAuditContext;
 }) {
+  const actorId = requirePostingActor(input.audit?.userId);
   return prisma.$transaction(async (tx) => {
     await lockScopedLedgerEntry(tx, input.tenantId, input.entryId);
     const entry = await tx.ledgerEntry.findFirst({
@@ -298,7 +300,7 @@ export async function updateDraftLedgerEntry(input: {
     assertBalanced(normalizedLines);
     await assertPeriodOpen(input.tenantId, entry.fiscalPeriod, tx);
     await assertPeriodOpen(input.tenantId, input.fiscalPeriod, tx);
-    return tx.ledgerEntry.update({
+    const updated = await tx.ledgerEntry.update({
       where: { id: entry.id, tenantId: input.tenantId },
       data: {
         fiscalPeriod: input.fiscalPeriod, description: input.description,
@@ -313,6 +315,16 @@ export async function updateDraftLedgerEntry(input: {
       },
       include: { lines: true, reversalOf: true, reversedBy: true }
     });
+    // Commit the change and its forensic before/after evidence together.
+    // An audit failure aborts the enclosing Prisma transaction.
+    await writeAudit({
+      tenantId: input.tenantId, userId: actorId,
+      action: 'ledger.entry.draft-updated', entity: 'LedgerEntry', entityId: updated.id,
+      before: JSON.parse(JSON.stringify(entry)),
+      after: { entry: JSON.parse(JSON.stringify(updated)), requestId: input.audit?.requestId || null },
+      ipAddress: input.audit?.ipAddress, userAgent: input.audit?.userAgent
+    }, tx);
+    return updated;
   });
 }
 

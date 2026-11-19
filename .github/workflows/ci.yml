@@ -54,6 +54,9 @@ jobs:
       - name: Architecture boundaries
         run: npm run audit:architecture
 
+      - name: Hallmark Motion and QA workflow contracts
+        run: npm run test:skills:ui
+
       - name: Database authority
         run: npm run audit:database-authority
 

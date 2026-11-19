@@ -577,6 +577,52 @@
       }
     },
     {
+      "id": "contagest-hallmark",
+      "status": "ACTIVE",
+      "purpose": "Source-grounded advisory Hallmark audits below canonical project UI/functional authority.",
+      "triggers": [
+        "explicit Hallmark audit",
+        "existing screen critique"
+      ],
+      "requiredInputs": [
+        "affected route",
+        "visual owner and functional baseline",
+        "exact SHA"
+      ],
+      "authoritativeSources": [
+        "AGENTS.md UI standards",
+        "canonical UI/Hípico code",
+        "rendered browser evidence",
+        "pinned Hallmark Markdown"
+      ],
+      "prohibitedActions": [
+        "execute upstream scripts",
+        "add alternate CSS authority",
+        "invent business facts",
+        "override accessibility"
+      ],
+      "expectedEvidence": [
+        "ranked findings",
+        "source-grounded conflict review",
+        "risk-proportional browser verification"
+      ],
+      "minimumValidation": [
+        "SOURCE_REVIEW",
+        "LOCAL_STATIC"
+      ],
+      "riskEscalation": "Focus, accessibility, security or functional regression blocks release.",
+      "dependencies": [
+        "contagest-ui-audit",
+        "contagest-functional-module-audit"
+      ],
+      "provenance": {
+        "kind": "project-owned-wrapper",
+        "version": "3",
+        "sourceLock": "hallmark",
+        "path": ".agents/skills/contagest-hallmark/SKILL.md"
+      }
+    },
+    {
       "id": "contagest-ui-ux-pro-max",
       "status": "ACTIVE",
       "purpose": "Supplement project-owned UI review with pinned UI/UX design intelligence without creating a second visual authority.",

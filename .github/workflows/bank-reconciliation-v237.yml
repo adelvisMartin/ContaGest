@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'backend/src/modules/bank-reconciliation/**'
+      - 'tests/bank_statement_csv_headers_v743.test.mjs'
+      - 'tests/bank_statement_csv_structure_v743.test.mjs'
       - 'backend/src/modules/index.ts'
       - 'backend/src/modules/accounting/**'
       - 'backend/src/modules/approvals/**'
@@ -51,8 +53,14 @@ jobs:
       JWT_SECRET: reconciliation-ci-only-secret-more-than-thirty-two-characters
       LICENSE_HASH_SECRET: reconciliation-ci-license-secret-more-than-thirty-two-characters
       CORS_ORIGIN: http://127.0.0.1:8080
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+      - name: Assert exact candidate SHA
+        run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -70,7 +78,9 @@ jobs:
       - name: Build frontend and backend
         run: npm run build
       - name: Parser and upload-threat regressions
-        run: npm --workspace backend exec -- tsx --test src/modules/bank-reconciliation/statement-parser.test.ts
+        run: |
+          npm --workspace backend exec -- tsx --test src/modules/bank-reconciliation/statement-parser.test.ts
+          node --experimental-strip-types --test tests/bank_statement_csv_headers_v743.test.mjs tests/bank_statement_csv_structure_v743.test.mjs
       - name: PostgreSQL matching concurrency tenant and rounding acceptance
         run: npm --workspace backend exec -- tsx --test ../qa/bank-reconciliation-v237.integration.test.ts
       - name: PostgreSQL retry target-race dedupe and RLS hardening

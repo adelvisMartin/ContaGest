@@ -15,6 +15,7 @@ import { ONE } from '../../shared/financial/decimal.js';
 import { convertToFunctional, functionalizeBalancedLedgerLines, resolveFxContext } from '../../shared/financial/fx.js';
 import { copyLedgerLineSnapshotsForReversal, getFxPolicy, recordDocumentSnapshot, recordLedgerLineSnapshots } from '../currency/fx.repository.js';
 import { parseCrudListWindow } from '../crud-policy.js';
+import { deletePurchaseDraft } from './purchase-draft.service.js';
 
 const router = Router();
 router.use(requireTenant, requirePermission('purchases.manage'));
@@ -299,12 +300,14 @@ router.patch('/:id/cancel', validateBody(cancellationSchema), asyncHandler(async
 
 router.delete('/:id', asyncHandler(async (req, res) => {
   const ctx = context(req);
-  const purchase = await prisma.purchaseInvoice.findFirst({ where: { id: req.params.id, tenantId: ctx.tenantId }, include: { lines: true } });
-  if (!purchase) throw new HttpError(404, 'Compra no encontrada.');
-  if (purchase.status !== 'draft') throw new HttpError(409, 'Solo se eliminan compras en borrador. Las compras emitidas deben anularse.');
-  await prisma.purchaseInvoice.delete({ where: { id: purchase.id } });
-  await writeAudit({ tenantId: ctx.tenantId, userId: ctx.userId, action: 'delete-draft', entity: 'PurchaseInvoice', entityId: purchase.id, before: purchase, ipAddress: ctx.ip, userAgent: ctx.userAgent });
-  ok(res, { deleted: true, id: purchase.id });
+  const result = await deletePurchaseDraft({
+    tenantId: ctx.tenantId,
+    actorId: requireActor(ctx),
+    purchaseId: req.params.id,
+    ipAddress: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+  ok(res, result);
 }));
 
 export default router;
