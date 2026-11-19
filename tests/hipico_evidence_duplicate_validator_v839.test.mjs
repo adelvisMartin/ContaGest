@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
+import { validHipicoPngEvidence } from '../scripts/hipico-png-evidence-v839.mjs';
 
 const SHA = 'a'.repeat(40);
 const verifier = fileURLToPath(new URL('../scripts/hipico-verify-evidence-v290.mjs', import.meta.url));
@@ -112,7 +113,7 @@ test('#839 PostgreSQL gate rejects old PG16 evidence on a PG17 release', (t) => 
   assert.equal(verify(root, 'postgresGate', 'required').status, 'PASS');
 });
 
-function syntheticPng() {
+function syntheticPng({ indexed = false, paletteEntries = 2 } = {}) {
   // Real, valid PNG bytes produced without a browser: never authoritative
   // without an independent exact-SHA Chromium execution artifact.
   const crc32 = (bytes) => {
@@ -136,14 +137,25 @@ function syntheticPng() {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // RGBA, 8 bits/channel
-  ihdr[9] = 6;
-  const pixels = Buffer.alloc(height * (width * 4 + 1));
+  ihdr[8] = indexed ? 1 : 8;
+  ihdr[9] = indexed ? 3 : 6;
+  const pixels = Buffer.alloc(height *
+    (indexed ? 1 + Math.ceil(width / 8) : width * 4 + 1));
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-    chunk('IHDR', ihdr), chunk('IDAT', deflateSync(pixels)), chunk('IEND')
+    chunk('IHDR', ihdr),
+    ...(indexed ? [chunk('PLTE', Buffer.alloc(paletteEntries * 3))] : []),
+    chunk('IDAT', deflateSync(pixels)),
+    chunk('IEND')
   ]);
 }
+
+test('#839 indexed PNG palette entries cannot exceed bit-depth capacity', () => {
+  const valid = syntheticPng({ indexed: true, paletteEntries: 2 });
+  const invalid = syntheticPng({ indexed: true, paletteEntries: 4 });
+  assert.equal(validHipicoPngEvidence(valid), true);
+  assert.equal(validHipicoPngEvidence(invalid), false);
+});
 
 test('#839 a PNG alone never fabricates browser PASS without exact-SHA Chromium', (t) => {
   const root = fixture(t);
