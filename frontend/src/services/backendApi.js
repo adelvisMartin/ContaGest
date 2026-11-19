@@ -190,6 +190,9 @@ async function fetchApi(baseUrl, path, options) {
   try {
     return await fetch(`${baseUrl}${path}`, { ...options, redirect:'error' });
   } catch (error) {
+    // A failed mutation may already be committed remotely. Never replay it
+    // against a second origin; financial retries use the existing idempotency key.
+    if (isUnsafeMethod(options.method) || error?.name === 'AbortError') throw error;
     const fallback = sameOriginFallback(baseUrl);
     if (!fallback) throw error;
     localStorage.removeItem(API_BASE_KEY);
