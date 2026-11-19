@@ -52,12 +52,16 @@ test('BackendApi keeps credentialed requests on approved origins and blocks redi
     ], 'read-only fallback must remain on the same trusted origin');
     assert.ok(safeReadAttempts.every((call) => call.options.redirect === 'error'));
 
+    // GET fallback resets the user-configured URL. Reapply the approved endpoint
+    // to exercise the intended POST failure path rather than testing the reset default.
+    BackendApi.setBaseUrl('https://contagest.example/api/v1');
     // A POST can have committed before the fetch fails: never replay it at the fallback.
     const countBeforePost = calls.length;
     await assert.rejects(BackendApi.post('/api/v1/session-test', {}), (error) => error.status === 0);
     assert.equal(calls.length, countBeforePost + 1);
     assert.equal(calls.at(-1).url, 'https://contagest.example/api/v1/session-test');
 
+    BackendApi.setBaseUrl('https://contagest.example/api/v1');
     const countBeforeAbort = calls.length;
     globalThis.fetch = async (url, options) => {
       calls.push({ url, options });
@@ -72,6 +76,16 @@ test('BackendApi keeps credentialed requests on approved origins and blocks redi
     assert.equal(NativeApi.baseUrl, '', 'Android release requires an explicitly configured HTTPS API');
     await assert.rejects(NativeApi.get('/health'), (error) => error.status === 503);
     assert.equal(calls.length, countBeforeAbort + 1, 'native misconfiguration must not issue a fetch');
+
+    // The JS transport must refuse any production site accidentally served over cleartext HTTP.
+    delete globalThis.window.Capacitor;
+    globalThis.window.location = {
+      origin:'http://contagest.example', hostname:'contagest.example', protocol:'http:'
+    };
+    const { BackendApi: InsecureWebApi } = await import('../frontend/src/services/backendApi.js?security1364-insecure');
+    assert.equal(InsecureWebApi.baseUrl, '');
+    await assert.rejects(InsecureWebApi.get('/health'), (error) => error.status === 503);
+    assert.equal(calls.length, countBeforeAbort + 1, 'insecure production shell must not issue a fetch');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete globalThis[key];
