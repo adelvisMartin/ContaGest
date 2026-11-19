@@ -31,7 +31,7 @@ const session = {
   audience: 'staff', expiresAt: Date.now() + 8 * 60 * 60 * 1000,
 };
 
-test.use({ viewport: { width: 1440, height: 900 }, colorScheme: 'light', reducedMotion: 'reduce' });
+test.use({ viewport: { width: 1440, height: 900 }, colorScheme: 'light', reducedMotion: 'reduce', serviceWorkers: 'block' });
 
 autoInstallObservers();
 function autoInstallObservers() {
