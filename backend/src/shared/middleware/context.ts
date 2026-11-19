@@ -10,6 +10,7 @@ import { readAccessToken, readCsrfToken, validateCsrfAgainstSession } from '../a
 import { hasPlatformAccess, isPlatformPermission } from '../identity/platformAccess.js';
 import { HttpError } from '../http.js';
 import { PERMISSION_MODULES } from '../contracts/accessManifest.js';
+import { clinicalDemoRouteAllowed } from '../licensing/clinicalDemoRoutePolicy.js';
 
 const DEV_TENANT_ID_HEADER = 'x-tenant-id';
 const DEV_USER_ID_HEADER = 'x-user-id';
@@ -183,7 +184,7 @@ function enabledModules(value: unknown) {
   return [];
 }
 
-async function enforceClientLicense(ctx: RequestContext, permission: string) {
+async function enforceClientLicense(ctx: RequestContext, permission: string, originalUrl: string) {
   if (!ctx.userId || !ctx.tenantId) throw new HttpError(401, 'No hay usuario autenticado.');
   // `Role.system` is role lifecycle metadata only. The only customer-license bypass is
   // a verified platform-scoped identity carrying platform.manage in the internal tenant.
@@ -192,13 +193,19 @@ async function enforceClientLicense(ctx: RequestContext, permission: string) {
   const license = await prisma.licenseKey.findFirst({
     where: { tenantId:ctx.tenantId, userId:ctx.userId, status:'active', expiresAt:{ gt:new Date() } },
     orderBy: { createdAt:'desc' },
-    select: { id:true, modules:true, expiresAt:true, status:true }
+    select: { id:true, modules:true, expiresAt:true, status:true, plan:true }
   });
   if (!license) throw new HttpError(403, 'La licencia fue revocada, venció o no pertenece al usuario activo.');
   const allowedModules = PERMISSION_MODULES[permission] || [];
   const modules = enabledModules(license.modules);
   if (allowedModules.length && !allowedModules.some((module) => modules.includes(module))) {
     throw new HttpError(403, `La licencia no habilita la operación requerida (${permission}).`);
+  }
+  const config = license.modules && typeof license.modules === 'object' && !Array.isArray(license.modules)
+    ? license.modules as Record<string,unknown> : {};
+  if ((license.plan === 'trial' || config.commercialUse === 'demostracion') &&
+      !clinicalDemoRouteAllowed(permission, modules, originalUrl)) {
+    throw new HttpError(403, 'La demostración no habilita esta área clínica.');
   }
 }
 
@@ -215,7 +222,7 @@ export function requirePermission(permission: string) {
         return next();
       }
 
-      await enforceClientLicense(ctx, permission);
+      await enforceClientLicense(ctx, permission, req.originalUrl);
       const allowed = await prisma.userRole.count({
         where: { userId:ctx.userId, role:{ tenantId:ctx.tenantId, permissions:{ some:{ permission:{ key:permission } } } } }
       });
