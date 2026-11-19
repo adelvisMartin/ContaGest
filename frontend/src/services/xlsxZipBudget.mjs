@@ -27,3 +27,23 @@ export function assertSafeImportXml(source) {
     throw new TypeError('XLSX_XML_DTD_FORBIDDEN');
   return source;
 }
+
+
+// ZIP's CRC-32 detects accidental payload corruption; not cryptographic authenticity.
+const CRC_TABLE = Uint32Array.from({length:256}, (_, value) => {
+  let crc = value;
+  for (let i=0;i<8;i++) crc = (crc & 1) ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+  return crc >>> 0;
+});
+export function assertZipCrc32(bytes, expected) {
+  if (!(bytes instanceof Uint8Array) || !Number.isSafeInteger(expected) ||
+      expected < 0 || expected > 0xffffffff) {
+    throw new TypeError('XLSX_ZIP_CRC_MISMATCH');
+  }
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  if (((crc ^ 0xffffffff) >>> 0) !== expected) {
+    throw new TypeError('XLSX_ZIP_CRC_MISMATCH');
+  }
+  return true;
+}
