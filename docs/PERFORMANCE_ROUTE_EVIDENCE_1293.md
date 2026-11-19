@@ -188,3 +188,42 @@ primero como FAIL y después pasó. Resultado local actualizado en Node 22.16.0:
 **22/22 tests PASS**, sintaxis y hashes de los seis archivos JS de validación
 verificados. **Aún no hay ejecución de Playwright Chromium real**, por lo que
 esta instrumentación de red sigue siendo hipótesis de integración pendiente.
+
+
+### Quinta revisión QA: esquema compartido y 60 rutas sin deriva
+
+**Antes de editar**, se verificó que el HEAD del PR parte de la misma base
+`main@bb13003cb77efc1c4c37390a0c6d8414f6232aa9`, con el ticket
+#1293 todavía abierto y Actions en cola. La copia parcial aislada contenía
+los seis blobs JavaScript del PR; todos pasaron sintaxis y 22/22 unit tests
+en Node v22.16.0 antes de los nuevos cambios. **No era un checkout completo
+del repositorio**, por lo que no se ejecutó el router v3, Playwright ni build.
+
+**Defecto confirmado (RED):** el comparador multirun aceptaba
+`row.lab.sessionToken`, `row.lab.rawRequest` o una clave renombrada,
+aunque el agregador original ya rechazaba claves no esperadas.
+Una regresión negativa falló con `Missing expected exception`.
+El comparador exige ahora conjunto exacto de claves y no admite
+propiedades adicionales, campos faltantes ni arrays como métricas.
+
+**Refactor mínimo:** `LAB_METRIC_KEYS` exportado una sola vez por
+`performance-route-campaign-v1293.mjs` y reutilizado por el validador
+`performance-route-evidence-v1293.mjs`. La dependencia ya existía
+para el fingerprint, no se añadió paquete ni ciclo de importaciones.
+Un test adicional comprueba que el esquema compartido es inmutable y
+coincide con las observaciones.
+
+**Resultado real:** `node --test tests/*.test.mjs` en el directorio aislado
+`contagest-1293` → **24 PASS, 0 FAIL, 0 SKIP**; `node --check` de
+los seis archivos JS → **PASS**. Los hashes `git hash-object` de todos
+los archivos actualizados coinciden con los blobs publicados en la
+rama del PR. El catálogo visual y `pageRegistry` consultados
+directamente en GitHub contienen **60 rutas únicas cada uno**,
+coinciden en sus identificadores y orden; esto no sustituye la ejecución
+de navegación/UX de cada ruta.
+
+**Resultado no autorizado a inferir:** que la UI es más rápida, que
+el backend/PG17 cumplen p95 o que Control Hípico es funcional en
+offline/móvil. `LOCAL_BROWSER_E2E=NOT_EXECUTED`,
+`LOCAL_POSTGRES=NOT_EXECUTED`, `LOCAL_BUILD=NOT_EXECUTED`,
+`REMOTE_CI=BLOCKED` mientras existan checks en cola.
