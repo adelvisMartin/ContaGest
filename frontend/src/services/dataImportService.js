@@ -1,5 +1,5 @@
 import { BackendApi } from './backendApi.js';
-import { assertXlsxZipBudget, assertXlsxZipEntryName } from './xlsxZipBudget.mjs';
+import { assertXlsxZipBudget, assertXlsxZipEntryName, assertSafeImportXml } from './xlsxZipBudget.mjs';
 import { parseDelimitedImport } from './delimitedImportParser.mjs';
 
 export const IMPORT_TEMPLATE_VERSION='v1';
@@ -68,7 +68,7 @@ async function unzipEntries(arrayBuffer){
   return entries;
 }
 
-const xml=(text)=>{const doc=new DOMParser().parseFromString(text,'application/xml');if(doc.querySelector('parsererror'))throw new Error('XLSX contiene XML inválido.');return doc;};
+const xml=(text)=>{const doc=new DOMParser().parseFromString(assertSafeImportXml(text),'application/xml');if(doc.querySelector('parsererror'))throw new Error('XLSX contiene XML inválido.');return doc;};
 const lettersToIndex=(ref)=>{const letters=String(ref||'').match(/^[A-Z]+/i)?.[0]?.toUpperCase()||'A';let value=0;for(const char of letters)value=value*26+(char.charCodeAt(0)-64);return value-1;};
 
 async function parseXlsx(file){
