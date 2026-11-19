@@ -82,6 +82,9 @@ test('canonical writer takes aggregate lock then timestamps committed evidence',
   assert.match(writer.slice(locked, insert), /current\.stateVersion>=Number\.MAX_SAFE_INTEGER/);
   assert.match(integration, /cannot apply a transition beyond MAX_SAFE_INTEGER or append evidence/);
   assert.match(integration, /A rejected transition must not leave append-only evidence behind/);
+  assert.match(integration, /Aggregate updatedAt must not predate the applied result event/);
+  assert.match(writer.slice(insert), /updated_at=clock_timestamp\(\)/);
+  assert.doesNotMatch(writer.slice(insert), /updated_at=now\(\)/);
   assert.match(integration, /persistHipicoDomainEvent\(\{/);
   assert.match(integration, /assert\.equal\(beforeCorrection\.available, true\)/);
   assert.match(integration, /assert\.equal\(published\.available, false\)/);
