@@ -73,3 +73,35 @@ test('#1293 guards route catalog integrity and source provenance', () => {
   runs[0].fixtureProvenance = 'PRODUCTION';
   assert.throws(() => measure(runs), /PERF1293_CAMPAIGN_SUMMARY_AUTHORITY/);
 });
+
+test('#1293 rejects fractional counters and resource transfer byte counts', () => {
+  for (const [key, value] of [
+    ['resourceCount', 10.5],
+    ['transferBytes', 1000.5],
+    ['jsTransferBytes', 600.5],
+    ['cssTransferBytes', 100.5],
+    ['mockedApiRequests', 2.5],
+  ]) {
+    const runs = base();
+    runs[1].routes[0].lab[key] = value;
+    assert.throws(() => measure(runs), /PERF1293_CAMPAIGN_METRIC_INVALID/, key);
+  }
+});
+
+test('#1293 rejects statistics overflow instead of serializing Infinity to null', () => {
+  const runs = base();
+  for (const run of runs) run.routes[0].lab.routeReadyMs = 1e308;
+  assert.throws(() => measure(runs), /PERF1293_CAMPAIGN_METRIC_INVALID/);
+});
+
+test('#1293 treats equivalent environment keys as the same fingerprint', () => {
+  const runs = base();
+  runs[1].labEnvironment = Object.fromEntries(Object.entries(env).reverse());
+  assert.equal(measure(runs).campaignCount, 5);
+});
+
+test('#1293 prevents unreviewed runner metadata in output', () => {
+  const runs = base();
+  runs[1].labEnvironment = { ...env, accessToken: 'never-record-this' };
+  assert.throws(() => measure(runs), /PERF1293_CAMPAIGN_ENVIRONMENT_INVALID/);
+});
