@@ -10,6 +10,16 @@ import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
 function assertIsolatedPg17() {
   const connection = new URL(String(process.env.DATABASE_URL || ''));
   const database = decodeURIComponent(connection.pathname.slice(1));
+  // prisma.ts prioritizes DATABASE_RUNTIME_URL over DATABASE_URL. Never let a
+  // preexisting developer/prod override redirect this destructive QA fixture.
+  assert.equal(String(process.env.DATABASE_RUNTIME_URL || '').trim(), '',
+    'PG17 synthetic QA refuses DATABASE_RUNTIME_URL overrides');
+  const admin = new URL(String(process.env.HIPICO_E2E_ADMIN_URL || ''));
+  assert.ok(['127.0.0.1', 'localhost', '::1'].includes(admin.hostname),
+    'PG17 synthetic QA requires a local ephemeral database allocator');
+  assert.equal(admin.pathname, '/postgres');
+  assert.equal(admin.hostname, connection.hostname);
+  assert.equal(admin.port || '5432', connection.port || '5432');
   assert.ok(['127.0.0.1', 'localhost', '::1'].includes(connection.hostname),
     'Canonical snapshot integration must not connect to a remote database');
   assert.match(database, /^hipico_e2e_[a-z0-9_]{8,63}$/,
@@ -131,6 +141,39 @@ test('PostgreSQL 17 canonical snapshot stays consistent under a concurrent write
     readHipicoDomainAggregate({ ...scope, groupKey: '' }),
     /HIPICO_DOMAIN_READ_SCOPE_REQUIRED/
   );
+
+  // This separate probe exercises actual PostgreSQL RLS as a non-owner role.
+  // Service-level group filtering above is different from the owner's RLS policy.
+  async function visibleAs(actingOwner: string | null) {
+    return prisma.$transaction(async tx => {
+      await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
+      if (actingOwner) {
+        await tx.$queryRaw`SELECT set_config('request.jwt.claim.sub', ${actingOwner}, true)`;
+      }
+      const aggregates = await tx.$queryRaw<Array<{ ownerId: string; groupKey: string }>>`
+        SELECT owner_id::text AS "ownerId", group_key AS "groupKey"
+        FROM public.hipico_domain_aggregates
+        WHERE aggregate_key = ${aggregateKey} ORDER BY group_key
+      `;
+      const events = await tx.$queryRaw<Array<{ ownerId: string; groupKey: string }>>`
+        SELECT owner_id::text AS "ownerId", group_key AS "groupKey"
+        FROM public.hipico_domain_events
+        WHERE aggregate_key = ${aggregateKey} ORDER BY group_key, event_type
+      `;
+      return { aggregates, events };
+    });
+  }
+  const ownerAView = await visibleAs(ownerA);
+  assert.deepEqual(ownerAView.aggregates, [
+    { ownerId: ownerA, groupKey: groupA },
+    { ownerId: ownerA, groupKey: groupB }
+  ]);
+  assert.deepEqual(ownerAView.events.map(row => row.groupKey), [groupA, groupA, groupB]);
+  assert.ok(ownerAView.events.every(row => row.ownerId === ownerA));
+  const ownerBView = await visibleAs(ownerB);
+  assert.deepEqual(ownerBView.aggregates, [{ ownerId: ownerB, groupKey: groupA }]);
+  assert.deepEqual(ownerBView.events, [{ ownerId: ownerB, groupKey: groupA }]);
+  assert.deepEqual(await visibleAs(null), { aggregates: [], events: [] });
 });
 
 test.after(async () => {
