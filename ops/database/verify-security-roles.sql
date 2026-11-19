@@ -49,7 +49,20 @@ BEGIN
   IF helper_path IS DISTINCT FROM 'pg_catalog' THEN
     RAISE EXCEPTION 'contagest_runtime_tenant_id debe fijar search_path=pg_catalog; actual=%', helper_path;
   END IF;
-  IF has_function_privilege('PUBLIC',helper_oid,'EXECUTE') THEN
+  -- PUBLIC is an ACL pseudo-grantee (OID 0), not a pg_roles entry. Using
+  -- has_function_privilege('PUBLIC', ...) raises "role PUBLIC does not exist"
+  -- on PostgreSQL 17 and prevents verification of the real revocation.
+  -- Inspect the effective function ACL, including implicit default grants.
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc function_acl
+    CROSS JOIN LATERAL aclexplode(
+      COALESCE(function_acl.proacl, acldefault('f', function_acl.proowner))
+    ) AS privilege
+    WHERE function_acl.oid=helper_oid
+      AND privilege.grantee=0
+      AND privilege.privilege_type='EXECUTE'
+  ) THEN
     RAISE EXCEPTION 'PUBLIC no puede ejecutar contagest_runtime_tenant_id.';
   END IF;
   IF NOT has_function_privilege('contagest_runtime',helper_oid,'EXECUTE') THEN

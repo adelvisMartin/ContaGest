@@ -39,3 +39,14 @@ test('#849 exact-head workflow keeps checks active and artifacts attributable to
   assert.match(workflow, /if: always\(\)/);
   assert.doesNotMatch(workflow, /continue-on-error: true|test\.skip\(|waitForTimeout/);
 });
+
+test('#849 PostgreSQL 17 PUBLIC function grant verifier uses ACL pseudo-grantee, not a nonexistent login role',()=>{
+  const sql=readFileSync(new URL('../ops/database/verify-security-roles.sql',import.meta.url),'utf8');
+  assert.doesNotMatch(sql,/IF has_function_privilege\('PUBLIC',helper_oid,'EXECUTE'\)/,
+    'PUBLIC must never be passed to role-name privilege APIs');
+  assert.match(sql,/aclexplode\(/);
+  assert.match(sql,/acldefault\('f',\s*function_acl\.proowner\)/);
+  assert.match(sql,/privilege\.grantee=0/);
+  assert.match(sql,/privilege\.privilege_type='EXECUTE'/);
+  assert.match(sql,/IF NOT has_function_privilege\('contagest_runtime',helper_oid,'EXECUTE'\)/);
+});
