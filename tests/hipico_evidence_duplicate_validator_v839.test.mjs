@@ -202,6 +202,36 @@ test('#839 a PNG alone never fabricates browser PASS without exact-SHA Chromium'
   assert.equal(result.screenshotCount, 0);
   assert.equal(result.reason, 'BROWSER_EVIDENCE_MISSING');
 
+  // A valid zlib stream followed by unused bytes can be accepted by
+  // inflateSync unless its consumed-input length is checked. Recompute the
+  // IDAT CRC so this regression exercises the inflater, not the CRC gate.
+  const original = syntheticPng();
+  const injected = Buffer.from('ignored-by-zlib');
+  const idatBody = Buffer.concat([
+    Buffer.from('IDAT'),
+    original.subarray(payloadOffset, payloadOffset + payloadLength),
+    injected
+  ]);
+  const expandedSize = Buffer.alloc(4);
+  expandedSize.writeUInt32BE(payloadLength + injected.length);
+  let expandedChecksum = 0xffffffff;
+  for (const value of idatBody) {
+    expandedChecksum = crcTable[(expandedChecksum ^ value) & 0xff] ^
+      (expandedChecksum >>> 8);
+  }
+  const expandedCrc = Buffer.alloc(4);
+  expandedCrc.writeUInt32BE((expandedChecksum ^ 0xffffffff) >>> 0);
+  const disguisedPng = Buffer.concat([
+    original.subarray(0, idatStart),
+    expandedSize, idatBody, expandedCrc,
+    original.subarray(payloadOffset + payloadLength + 4)
+  ]);
+  writeFileSync(imagePath, disguisedPng);
+  result = verify(root, 'browserVisualEvidence', 'browser');
+  assert.equal(result.status, 'NOT_EXECUTED');
+  assert.equal(result.screenshotCount, 0);
+  assert.equal(result.reason, 'BROWSER_EVIDENCE_MISSING');
+
   writeFileSync(imagePath, 'invalid empty screenshot placeholder');
   result = verify(root, 'browserVisualEvidence', 'browser');
   assert.equal(result.status, 'NOT_EXECUTED');
