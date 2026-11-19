@@ -72,3 +72,22 @@ test('#1293 refuses mixed runner/browser conditions within one lab run', () => {
       labEnvironment: { ...labEnvironment, browserVersion: 'different' },
     })] }), /PERF1293_ENVIRONMENT_MISMATCH/);
 });
+
+test('#1293 same-run environment identity is independent of JSON property order', () => {
+  const equivalent = Object.fromEntries(Object.entries(labEnvironment).reverse());
+  const summary = summarizeRouteEvidence({ candidateSha: sha, runId, catalog,
+    observations: [observation('route-0'), observation('route-1', { labEnvironment: equivalent })] });
+  assert.equal(summary.measuredRouteCount, 2);
+});
+
+test('#1293 refuses undocumented metrics that could leak sensitive data into artifacts', () => {
+  const valid = observation('route-0');
+  for (const extras of [
+    { sessionToken: 'never-publish-me' },
+    { rawUrl: 'https://example.test/?authorization=secret' },
+  ]) {
+    assert.throws(() => summarizeRouteEvidence({ candidateSha: sha, runId, catalog,
+      observations: [observation('route-0', { metrics: { ...valid.metrics, ...extras } })] }),
+    /PERF1293_OBSERVATION_METRICS_INVALID/);
+  }
+});
