@@ -27,3 +27,29 @@ test('#747 dental create AND amendment reuse schema guard',()=>{
   assert.match(schema,/clinicalData: dentalClinicalDataSchema/);
   assert.match(schema,/dentalClinicalDataSchema\.safeParse\(value\.clinicalData\)/);
 });
+
+const periodontalSource=fs.readFileSync('backend/src/modules/verticals/dental-periodontal-value.ts','utf8');
+const periodontalJs=stripTypeScriptTypes(periodontalSource)
+  .replace('export function normalizePeriodontalInteger','function normalizePeriodontalInteger');
+const normalizePeriodontal=new Function(periodontalJs+'; return normalizePeriodontalInteger;')();
+
+test('#710 periodontal blank, null, Boolean and nondecimal values never become clinical zero',()=>{
+  for(const invalid of ['', '  ', null, undefined, false, true, [], {}, 'Infinity','NaN','0xA','1e3','1.5']){
+    assert.ok(Number.isNaN(normalizePeriodontal(invalid)),String(invalid));
+  }
+});
+
+test('#710 valid numeric periodontal values keep sign and explicit zero',()=>{
+  for(const [value,expected] of [[0,0],['0',0],[' 0 ',0],['2.0',2],['-1',-1],[3,3]]){
+    assert.equal(normalizePeriodontal(value),expected,String(value));
+  }
+});
+
+test('#710 four periodontal fields reuse the same bounded non-coercing policy',()=>{
+  const schema=fs.readFileSync('backend/src/modules/verticals/health.schemas.ts','utf8');
+  assert.match(schema,/z\.preprocess\(normalizePeriodontalInteger,z\.number\(\)\.int\(\)\.min\(min\)\.max\(max\)\)/);
+  for(const [field,bounds] of [
+    ['probingDepthMm','0,15'],['gingivalMarginMm','-10,20'],
+    ['mobilityGrade','0,3'],['furcationGrade','0,3']
+  ])assert.ok(schema.includes(`${field}: periodontalInteger(${bounds})`),field);
+});
