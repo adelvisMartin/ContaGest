@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { assertXlsxZipBudget, assertXlsxZipEntryName, assertSafeImportXml } from '../frontend/src/services/xlsxZipBudget.mjs';
+import { assertXlsxZipBudget, assertXlsxZipEntryName, assertSafeImportXml, assertZipCrc32 } from '../frontend/src/services/xlsxZipBudget.mjs';
 
 test('#770 accepts bounded XLSX entries',()=>{
   assert.equal(assertXlsxZipBudget({count:6,compressed:100,uncompressed:1000,total:2000}),3000);
@@ -41,4 +41,14 @@ test('#770 untrusted XLSX XML cannot declare DTD or entities',()=>{
     assert.throws(()=>assertSafeImportXml(malicious),{message:'XLSX_XML_DTD_FORBIDDEN'});
   const source=readFileSync(new URL('../frontend/src/services/dataImportService.js',import.meta.url),'utf8');
   assert.match(source,/parseFromString\(assertSafeImportXml\(text\)/);
+});
+
+test('#770 ZIP CRC32 catches mutated XML payload before parsing',()=>{
+  const correct=new TextEncoder().encode('123456789');
+  assert.equal(assertZipCrc32(correct,0xcbf43926),true);
+  assert.equal(assertZipCrc32(new Uint8Array(),0),true);
+  assert.throws(()=>assertZipCrc32(new TextEncoder().encode('12345678x'),0xcbf43926),/XLSX_ZIP_CRC_MISMATCH/);
+  assert.throws(()=>assertZipCrc32(correct,null),/XLSX_ZIP_CRC_MISMATCH/);
+  const service=readFileSync(new URL('../frontend/src/services/dataImportService.js',import.meta.url),'utf8');
+  assert.match(service,/assertZipCrc32\(content,crc\)/);
 });
