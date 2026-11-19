@@ -49,13 +49,26 @@ Casos sintéticos 1000×: grupos A/B/C, default A, sin grupo legado, selección 
 
 **Aplicabilidad:** #1010 está cerrado por consolidación administrativa dentro de #837, pero su ADR requiere confirmar que remates son producto realmente deseado, los roles, precio de reserva, moneda y autoridad de caja *antes* de diseñar schema/pagos. Remate de caballos (pujas/adjudicación) y apuestas de carrera (pizarras/liquidaciones) son dominios distintos. Ni este fix ni el benchmark abren pagos reales, pujas online, extracción privada o autoenvío WhatsApp SOURCE.
 
+## Revisión adicional UX/UI, seguridad y rendimiento del historial de movimientos (2026-11-19)
+
+**Hallazgo SOURCE_VERIFIED:** el consumidor real `renderMovements()` reconstruía el mapa de participantes por cada `pCode()`, también para contrapartes; en la misma plantilla insertaba `m.currency || "VES"` sin codificar como HTML. `workspace-input-safety.js` valida identificadores/grupos/fechas de movimientos, pero no impone validación general al texto de moneda importado. Los orígenes sincronizados/restaurados son superficie de entrada no confiable, por tanto se consideró riesgo de XSS almacenado **por inspección de sumidero**, no explotación confirmada del navegador.
+
+**Corrección mínima publicada:** `renderMovements()` construye `const participantsById = pMap()` una sola vez en el render y llama `pCode(m.participantId, participantsById)` y `pCode(m.counterpartyId, participantsById)`. Inserta el valor de moneda mediante `escapeHtml(m.currency || "VES")`; no modifica valores persistidos ni introdujo un nuevo escape, modelo o caché global. Respeta el grupo actualmente seleccionado después de cada cambio.
+
+**Regresión de código añadida:** el test `hipico_live_multigroup_ui_scope_v837.test.mjs` ahora incluye dos pruebas adicionales: ejecución por `node:vm` del código fuente real de `renderMovements` con `escapeHtml` del repositorio, lectura de grupos y HTML malicioso, y 1.000 movimientos/1.000 participantes confirmando un solo índice y 1.000 filas. Se prueba además la ausencia de etiquetas del grupo ajeno tras cambio A↔B.
+
+**Evidencia ejecutada:** entorno local Node 22, `node --check runtime-slice.mjs` + `node --check smoke.test.mjs` + `node --test smoke.test.mjs`, en archivo temporal con funciones exactas transcritas de fuentes GitHub y dobles ligeros de UI: **3/3 PASS** (renderizado XSS, 1.000 movimientos, 1.000 variaciones de grupo). **Limitación importante:** NO se ejecutaron los nueve tests contra el árbol completo, los builds, PG17, Playwright ni navegadores. No se ofrece porcentaje de aceleración de la PWA; la prueba solo demuestra la reducción del conteo de construcción del índice, no LCP/INP.
+
+**FODA actualizado:** Fortaleza: UI con escaping y selector canónicos reutilizables; Oportunidad: reducir trabajo redundante de mapas en el historial; Debilidad: sumidero de moneda sin escaping y búsqueda O(participantes) por línea; Amenaza: XSS desde moneda importada o datos de otros grupos si se reintroduce wildcard. NOW: escape y mapa por render con test, ya incluidos. FOLLOW_UP: review de campos no escapados en otras vistas solamente si reproducibles y separados del ticket. REJECT: sanitizar con regex indiscriminada, alterar importes o introducir otra capa de estado.
+
 ## Evidencia y riesgos pendientes
 
 | Gate | Estado en este anexo |
 | --- | --- |
 | Código fuente y rutas | SOURCE_REVIEW |
 | 2 suites de scope × 1.000 en Node aislado con helper transcrito | PASS aislado, **NO** repositorio completo |
-| 7 pruebas focalizadas Node22 (copia mínima de snippets) | PASS aislado; test sobre archivos originales NOT_EXECUTED |
+| 9 pruebas de contrato fuente registradas en GitHub | RUN IN FULL CHECKOUT = NOT_EXECUTED |
+| 3 pruebas nuevas de smoke en Node22 con funciones transcritas | PASS aislado; no navegador ni checkout completo |
 | Test del nuevo archivo contra checkout real | NOT_EXECUTED hasta CI/checkout |
 | PG17 tenant/owner A/B | NOT_EXECUTED; sin cambios API/DB |
 | Microbenchmark sintético de render de códigos (Node22, 1 ejecución) | OBSERVED aislado; NO producción ni browser |
