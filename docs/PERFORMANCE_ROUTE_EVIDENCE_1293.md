@@ -65,3 +65,42 @@ sin cinco campañas comparables, el tablero de percentiles queda `NOT_EXECUTED`.
 Quedan pendientes roles, usuarios reales, móvil 360/390/430, Hípico, LCP/INP/CLS
 p75 de campo, API p95, EXPLAIN PostgreSQL 17 y antes/después de optimizaciones.
 No modificar presupuestos ni optimizar servicios financieros por estas medidas.
+
+## Auditoría QA incremental · 2026-11-19 · precisión de percentiles y Hípico
+
+Revisión con pruebas RED → GREEN sobre el comparador: inicialmente se reprodujeron
+cuatro fallos (contadores fraccionarios, varianza infinita/JSON nulo, deriva falsa
+por orden de campos JSON y metadatos del runner no permitidos). El comparador
+ahora exige enteros seguros para los cinco contadores/tamaños, estadísticas
+finitas y fingerprint canónico con lista explícita de campos para evitar
+introducción accidental de datos del entorno no revisados.
+
+**Evidencia limitada:** las ocho pruebas unitarias de este comparador pasaron
+aisladamente en Node 22.16.0 sobre blobs exactos del PR. No reemplazan el gate
+Playwright, tests antiguos, `npm ci`, build, PostgreSQL ni CI exact-SHA.
+
+### Control Hípico es un producto separado
+
+La autoridad `qa/support/hipico-visual-catalog-v105.mjs` define nueve vistas
+(`dashboard`, `race`, `whatsapp`, `advanced`, `participants`, `history`,
+`reports`, `polla`, `settings`) y siete perfiles de viewport. Su suite
+`qa/hipico-visual-functional-v105.spec.mjs` aporta fixtures local-only,
+normal/empty/offline, arranque/loading/error y accesibilidad de la PWA.
+**No deducir métricas de rendimiento de capturas de pantalla ni de pruebas de layout.**
+
+Los recorridos prioritarios a **medir en una campaña Hípico futura** son:
+captura y consulta de carrera activa, adelantadas, cambio de grupo,
+participantes, histórico, cierres/saldos y recuperación offline. Probar
+cada recorrido con fixture sintético aislado, ausencia de mensajes SOURCE
+automatizados, prevención de doble operación y permisos del grupo; capturar
+tiempos de primer dato útil y de interacción, payloads y consultas reales
+sobre PostgreSQL efímero antes de proponer optimizaciones.
+
+La revisión competitiva se limita a patrones públicos de tareas y a
+documentación técnica; **no** implica scraping de usuarios, apuestas privadas,
+credenciales, datos propietarios ni APIs no autorizadas. No cambiar reglas
+de remate, liquidación, comisiones, FX, saldos o apuestas a partir de diseños
+de terceros. Debe mantenerse separado el producto Hípico del ERP 60 rutas.
+
+**Estado QA Hípico en este PR: NOT_EXECUTED para rendimiento.** No hay
+benchmark before/after ni perfil API/DB Hípico que permita afirmar mejoras.
