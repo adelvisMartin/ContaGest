@@ -1,5 +1,6 @@
 import { BET_OPTIONS, calculateJugarDisponible, calculatePolla, calculateRaceSummary, calculateRiskMatrix, parseAmount, parseQuickBet, roundMoney, settleBet } from "./engine.js";
 import { csvEscape, generateBalancesWhatsappText, generateBetReceiptText, generateDailySummaryText, generateWhatsappText, money, number, shortDate } from "./format.js";
+import { scopeItems as scopeGroupItems } from "./operational-ledger.js";
 import { createBlankWorkspace } from "./seed.js";
 import { backupFilename, deliverJsonBackup, serializeWorkspaceBackup } from "./backup.js";
 import { clearLocalWorkspace, createSnapshot, downloadBlob, downloadFile, enqueueOutbox, flushWorkspaceWrites, getAppMode, initializeStorage, listOutbox, listSnapshots, loadLocalWorkspace, queueWorkspaceSave, removeOutbox, requestPersistentStorage, restoreSnapshot, saveLocalWorkspace, setAppMode, storageDiagnostics } from "./store.js";
@@ -49,7 +50,7 @@ let shadowRefreshTimer = null;
 function groupList() { return workspace?.config?.groups || workspace?.config?.whatsappGroups || []; }
 function activeGroupId() { return workspace?.config?.activeGroupId || workspace?.config?.activeWhatsappGroupId || groupList()[0]?.id || "group-1"; }
 function activeGroup() { return groupList().find((group) => group.id === activeGroupId()) || groupList()[0] || { id: "group-1", name: "Triple Crown", companyName: workspace?.config?.clubName || "CLUB HIPICO TRIPLE CROWN", color: "#7ea596", currency: workspace?.config?.currency || "Bs.", exchangeRate: workspace?.config?.exchangeRate || 160, commission: workspace?.config?.commission || .05, showConversion: true, autoRate: true, footerMessage: workspace?.config?.footerMessage || "" }; }
-function groupItems(items, groupId = activeGroupId()) { return (items || []).filter((item) => !item.groupId || item.groupId === groupId); }
+function groupItems(items, groupId = activeGroupId()) { return scopeGroupItems(workspace, items, groupId); }
 function groupParticipants() { return groupItems(workspace?.participants).filter((participant) => participant.active !== false); }
 function activeCurrency() { return activeGroup().currency || "Bs."; }
 function activeCompany() { return activeGroup().companyName || activeGroup().name || "Control Hípico"; }
