@@ -72,6 +72,11 @@ export function createApp(options: { readinessCheck?: ReadinessCheck } = {}) {
   // Health and bounded CSP telemetry above remain available for diagnosis.
   app.use(enforceProductionSecrets);
 
+  // Generic media uploads can contain up to 3 MiB of binary data (~4 MiB Base64).
+  // Parse this exact endpoint before the global 1 MiB JSON limit; retain all auth/CSRF gates below.
+  // Reject invalid cookie CSRF before parsing a large upload body; retain the global CSRF gate.
+  app.post('/api/v1/media/upload', csrfProtection, express.json({ limit: '5mb' }));
+
   app.use(express.json({
     limit: env.JSON_BODY_LIMIT,
     verify: (req, _res, buffer) => {

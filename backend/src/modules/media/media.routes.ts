@@ -140,8 +140,31 @@ function parseDataUrl(value: string) {
   const mime = match[1];
   const extension = allowedMime.get(mime);
   if (!extension) throw new HttpError(422, 'Tipo de imagen no permitido.');
-  const bytes = Buffer.from(match[2].replace(/\s/g, ''), 'base64');
+  const encoded = match[2].replace(/[\r\n]/g, '');
+  // Validate padding and unused bits before decoding: Buffer.from silently truncates malformed Base64.
+  // Scan linearly; backtracking expressions over the 5 MB input can exhaust the JS stack.
+  const paddingAt = encoded.indexOf('=');
+  const payload = paddingAt < 0 ? encoded : encoded.slice(0, paddingAt);
+  const paddingLength = encoded.length - payload.length;
+  const remainder = payload.length % 4;
+  const invalidPadding = paddingLength > 0 && (
+    paddingLength > 2 || remainder + paddingLength !== 4 || /[^=]/.test(encoded.slice(paddingAt))
+  );
+  const lastSextet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    .indexOf(payload.charAt(payload.length - 1));
+  if (remainder === 1 || invalidPadding || /[^A-Za-z0-9+/]/.test(payload)
+    || (remainder === 2 && (lastSextet & 15) !== 0)
+    || (remainder === 3 && (lastSextet & 3) !== 0)) {
+    throw new HttpError(422, 'La codificación base64 de la imagen no es válida.');
+  }
+  // Reject oversized content before allocating a decoded Buffer.
+  if (Math.floor(payload.length * 3 / 4) > MAX_BYTES) {
+    throw new HttpError(413, 'La imagen debe pesar entre 1 byte y 3 MB.');
+  }
+  const bytes = Buffer.from(encoded, 'base64');
   if (!bytes.length || bytes.length > MAX_BYTES) throw new HttpError(413, 'La imagen debe pesar entre 1 byte y 3 MB.');
+  // Reject MIME spoofing before a private object is stored or signed.
+  validateClinicalMagic(bytes, mime);
   return { mime, extension, bytes };
 }
 
@@ -158,8 +181,8 @@ function validateClinicalMagic(bytes: Buffer, mime: string) {
     : mime==='image/png'
       ? bytes.length>=8&&bytes.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))
       : mime==='image/webp'
-        ? bytes.length>=12&&bytes.subarray(0,4).toString('ascii')==='RIFF'&&bytes.subarray(8,12).toString('ascii')==='WEBP'
-        : bytes.length>=5&&bytes.subarray(0,5).toString('ascii')==='%PDF-';
+        ? bytes.length>=12&&bytes.subarray(0,4).equals(Buffer.from('RIFF'))&&bytes.subarray(8,12).equals(Buffer.from('WEBP'))
+        : bytes.length>=5&&bytes.subarray(0,5).equals(Buffer.from('%PDF-'));
   if(!valid) throw new HttpError(422,'La firma binaria del archivo no coincide con su tipo declarado.');
   return extension;
 }
@@ -238,6 +261,7 @@ router.post('/upload', asyncHandler(async (req, res) => {
   });
   if (error) throw new HttpError(502, `No se pudo almacenar la imagen: ${error.message}`);
 
+  let signedUrl = '';
   try {
     await registerStorageObject({
       tenantId: context.tenantId,
@@ -248,16 +272,21 @@ router.post('/upload', asyncHandler(async (req, res) => {
       subjectId: body.entityId,
       checksum: crypto.createHash('sha256').update(image.bytes).digest('hex')
     });
+    const { data: signed, error: signError } = await storage.storage.from(BUCKET).createSignedUrl(path, 3600);
+    if (signError || !signed?.signedUrl) throw new HttpError(502, 'No se pudo firmar la URL temporal de la imagen.');
+    signedUrl = signed.signedUrl;
     await updateEntityPhoto(context.tenantId, body.entityType, body.entityId, path);
   } catch (registrationError) {
-    await storage.storage.from(BUCKET).remove([path]).catch(() => undefined);
-    await markStorageObjectDeleted({ tenantId: context.tenantId, bucket: BUCKET, objectKey: path }).catch(() => undefined);
+    const { error: cleanupError } = await storage.storage.from(BUCKET).remove([path])
+      .catch(() => ({ error: true }));
+    // Failed removals must stay active in the lifecycle registry for orphan reconciliation.
+    if (!cleanupError) {
+      await markStorageObjectDeleted({ tenantId: context.tenantId, bucket: BUCKET, objectKey: path }).catch(() => undefined);
+    }
     throw registrationError;
   }
 
-  const { data: signed, error: signError } = await storage.storage.from(BUCKET).createSignedUrl(path, 3600);
-  if (signError) throw new HttpError(502, `Imagen guardada, pero no se pudo firmar la URL: ${signError.message}`);
-  ok(res, { path, signedUrl: signed.signedUrl, expiresIn: 3600, alt: body.alt || '' }, 201);
+  ok(res, { path, signedUrl, expiresIn: 3600, alt: body.alt || '' }, 201);
 }));
 
 router.get('/dental-attachments', asyncHandler(async (req,res)=>{
