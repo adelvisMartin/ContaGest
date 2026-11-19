@@ -14,11 +14,14 @@ test('IndexedDB schema is versioned and outbox has a unique idempotency index', 
   assert.match(source, /ConstraintError/);
 });
 
-test('identity switch archives old primary state and clears private pending mutation stores', async () => {
+test('identity switch purges old private state rather than archiving a former owner', async () => {
   const source = await read('frontend/public/hipico-control/assets/js/store-v2.js');
-  assert.match(source, /archived:\$\{previous\}/);
-  assert.match(source, /clearStore\("outbox"\)/);
-  assert.match(source, /clearStore\("snapshots"\)/);
+  const switching = source.slice(source.indexOf('export async function bindCloudIdentity('),
+    source.indexOf('export async function loadCloudSession(', source.indexOf('export async function bindCloudIdentity(')));
+  assert.match(switching, /await clearStore\("workspaces"\)/);
+  assert.match(switching, /await clearStore\("outbox"\)/);
+  assert.match(switching, /await clearStore\("snapshots"\)/);
+  assert.doesNotMatch(switching, /archived:\$\{previous\}/);
   const facade = await read('frontend/public/hipico-control/assets/js/store.js');
   assert.match(facade, /binding\.changed/);
   assert.match(facade, /location\?\.reload/);
