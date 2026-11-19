@@ -36,6 +36,12 @@ test('malicious column names are guarded; safe data and zero rows remain stable'
   assert.equal(toCsv([]), '');
 });
 
+test('legacy CSV service named export remains available after extraction', async () => {
+  const service = await import('../frontend/src/services/csv.js');
+  const util = await import('../frontend/src/utils/csvFormulaGuard.js');
+  assert.equal(service.neutralizeSpreadsheetFormula, util.neutralizeSpreadsheetFormula);
+});
+
 test('shared CSV policy guards invisible prefixes and retains typed numeric cells', async () => {
   const { neutralizeSpreadsheetFormula } = await import('../frontend/src/utils/csvFormulaGuard.js');
   for (const input of [

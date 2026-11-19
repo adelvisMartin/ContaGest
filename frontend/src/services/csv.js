@@ -1,5 +1,7 @@
 import { downloadText } from '../utils/dom.js';
 import { neutralizeSpreadsheetFormula } from '../utils/csvFormulaGuard.js';
+// Preserve the public export added in #1354 for existing consumers.
+export { neutralizeSpreadsheetFormula };
 
 export function encodeCsvCell(value) {
   const safe = neutralizeSpreadsheetFormula(value);
