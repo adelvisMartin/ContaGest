@@ -1,4 +1,11 @@
 #requires -Version 5.1
+# Local evidence must match the current remote PR branch, not only a clean
+# checkout of some previous SHA. A disconnected/stale remote blocks certification.
+param(
+  [Parameter(Mandatory = $true)]
+  [ValidatePattern('^[0-9a-fA-F]{40}$')]
+  [string]$CandidateSha
+)
 # Control Hipico #837: disposable PostgreSQL17 QA on Docker Desktop for Windows.
 # No shared databases, no persistent volumes, and no remote host access.
 $ErrorActionPreference = 'Stop'
@@ -55,6 +62,19 @@ try {
   $headSha = (& git rev-parse HEAD).Trim()
   Assert-Exit 'resolve candidate SHA'
   if ($headSha -notmatch '^[0-9a-f]{40}$') { throw 'Candidate SHA invalid.' }
+  $expectedSha = $CandidateSha.ToLowerInvariant()
+  $branchName = (& git branch --show-current).Trim()
+  Assert-Exit 'resolve candidate branch'
+  if ($branchName -ne 'fix/837-hipico-consistent-canonical-read-20261119') {
+    throw ('Wrong branch for #837 QA: ' + $branchName)
+  }
+  $remoteRef = 'refs/heads/' + $branchName
+  $remoteLine = (& git ls-remote --heads origin $remoteRef | Select-Object -First 1)
+  Assert-Exit 'fresh remote candidate HEAD lookup'
+  $remoteSha = ([string]$remoteLine -split '\s+')[0].ToLowerInvariant()
+  if ($headSha -ne $expectedSha -or $remoteSha -ne $expectedSha) {
+    throw ('Stale candidate. Local HEAD, -CandidateSha and remote PR branch must match exactly.')
+  }
   $dirty = (& git status --porcelain --untracked-files=normal)
   Assert-Exit 'candidate worktree status'
   if ($dirty) { throw 'Refusing to certify a dirty worktree; commit or stash changes first.' }
@@ -177,6 +197,12 @@ VALUES
   $dirtyAfter = (& git status --porcelain --untracked-files=normal)
   Assert-Exit 'post-test candidate worktree status'
   if ($dirtyAfter) { throw 'Generated or test files modified the candidate worktree.' }
+  $remoteLineAfter = (& git ls-remote --heads origin $remoteRef | Select-Object -First 1)
+  Assert-Exit 'verify remote PR HEAD remained unchanged during QA'
+  $remoteShaAfter = ([string]$remoteLineAfter -split '\s+')[0].ToLowerInvariant()
+  if ($remoteShaAfter -ne $expectedSha) {
+    throw 'PR HEAD changed during QA. This run cannot certify the current candidate.'
+  }
   $testPassed = $true
 }
 finally {
