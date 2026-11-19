@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'backend/src/modules/commercial/**'
+      - 'backend/src/modules/purchases/**'
       - 'backend/src/shared/commercial/**'
       - 'backend/prisma/**'
       - 'frontend/src/pages/LicensesPage.js'
@@ -16,6 +17,7 @@ on:
       - 'frontend/src/services/csv.js'
       - 'tests/frontend_csv_formula_guard_v1313.test.mjs'
       - 'qa/commercial-backend-real-v23.test.ts'
+      - 'qa/purchase-draft-atomic-v757.test.ts'
       - 'qa/erp-operational-crud-v664.test.ts'
       - 'tests/qa_append_only_audit_cleanup_v638_v664.test.mjs'
       - 'qa/crud-audit-atomicity-v638.test.ts'
@@ -25,6 +27,7 @@ on:
       - 'backend/src/shared/services/audit.service.ts'
       - 'tests/crud_factory_hardening_issue_638.test.mjs'
       - 'tests/commercial_console_issue_23.test.mjs'
+      - 'tests/purchase_draft_atomicity_v757.test.mjs'
       - 'tests/v11_15_service_restriction_governance.test.mjs'
       - 'ops/database/prepare-supabase-ephemeral.sql'
       - 'package.json'
@@ -114,6 +117,9 @@ jobs:
       - name: Ejecutar contratos comerciales y de gobernanza
         run: node --test tests/frontend_csv_formula_guard_v1313.test.mjs tests/commercial_console_issue_23.test.mjs tests/v11_15_service_restriction_governance.test.mjs
 
+      - name: Purchase draft tenant references and atomic audit contracts
+        run: node --test tests/purchase_draft_atomicity_v757.test.mjs
+
       - name: CRUD audit and tenant guards on PostgreSQL 17
         run: |
           node --test tests/crud_factory_hardening_issue_638.test.mjs
@@ -125,6 +131,9 @@ jobs:
         run: |
           set -o pipefail
           npm run test:backend:commercial:real 2>&1 | tee e2e-commercial-v23.log
+
+      - name: Purchase draft reference negatives on PostgreSQL 17
+        run: npm --workspace backend exec -- tsx --test ../qa/purchase-draft-atomic-v757.test.ts
 
       - name: Registrar procedencia de evidencia por SHA
         if: always()

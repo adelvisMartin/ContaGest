@@ -91,6 +91,45 @@ test('#757 draft deletion is atomic, audited and tenant-scoped in disposable Pos
     await h.ok(`/purchases/${purchase.id}`, { method: 'DELETE' });
   });
 
+
+  await t.test('purchase creation rejects cross-tenant supplier and products without invoice or ledger side effects', async () => {
+    const foreign = await h.prisma.tenant.create({
+      data: { rif: `${RUN}-REF-TB`, name: `${RUN} reference tenant`, legalName: 'QA isolated tenant' },
+    });
+    try {
+      const supplier = await h.prisma.supplier.create({
+        data: { tenantId: foreign.id, rif: `${RUN}-SUP`, name: 'QA foreign supplier' },
+      });
+      const product = await h.prisma.product.create({
+        data: { tenantId: foreign.id, sku: `${RUN}-SKU`, name: 'QA foreign product' },
+      });
+      const rows = [
+        { suffix: 'SUPPLIER', supplierId: supplier.id, productId: undefined },
+        { suffix: 'PRODUCT', supplierId: undefined, productId: product.id },
+      ];
+      for (const row of rows) {
+        const number = `${RUN}-REF-${row.suffix}`;
+        await h.status('/purchases', 409, {
+          method: 'POST',
+          body: JSON.stringify({
+            number, fiscalPeriod: '2097-07', status: 'draft',
+            ...(row.supplierId ? { supplierId: row.supplierId } : {}),
+            lines: [{ description: 'QA cross-tenant reference', quantity: '1.000', unitCost: '17.25', taxRate: '0',
+              ...(row.productId ? { productId: row.productId } : {}) }],
+          }),
+        });
+        assert.equal(await h.prisma.purchaseInvoice.count({
+          where: { tenantId: h.tenant.id, number },
+        }), 0, 'A rejected reference cannot leave a PurchaseInvoice');
+        assert.equal(await h.prisma.ledgerEntry.count({
+          where: { tenantId: h.tenant.id, source: 'purchase' },
+        }), 0, 'A rejected draft must not post to the ledger');
+      }
+    } finally {
+      await h.prisma.tenant.delete({ where: { id: foreign.id } });
+    }
+  });
+
   await t.test('foreign tenant draft is not exposed or deleted', async () => {
     const tenant = await h.prisma.tenant.create({
       data: { rif: `${RUN}-TENANT-B`, name: `${RUN} tenant B`, legalName: 'QA isolated tenant' },

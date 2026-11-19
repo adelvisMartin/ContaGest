@@ -61,3 +61,17 @@ test('#757 PG17 audit-failure probe is scoped to disposable tenant, cleans trigg
   assert.match(qa, /purchaseInvoiceLine\.count/);
   assert.match(qa, /foreign tenant draft is not exposed or deleted/);
 });
+
+test('#757 purchase creation revalidates supplier/product references in the financial transaction',()=>{
+  assert.match(routes, /import \{ validateTenantMutationReferences \} from '\.\.\/\.\.\/shared\/middleware\/tenant-reference-guard\.js'/);
+  const start=routes.indexOf("router.post('/', validateBody(purchaseSchema)");
+  const end=routes.indexOf("router.patch('/:id/cancel'",start);
+  assert.ok(start>=0&&end>start);
+  const create=routes.slice(start,end);
+  const command=create.indexOf("}, async (tx) => {");
+  const check=create.indexOf("await validateTenantMutationReferences(tx, ctx.tenantId, '/purchases', req.body);",command);
+  const insert=create.indexOf('await tx.purchaseInvoice.create(',command);
+  const ledger=create.indexOf('await tx.ledgerEntry.create(',command);
+  assert.ok(command>=0&&check>command&&insert>check&&ledger>insert);
+  assert.doesNotMatch(create.slice(command,insert),/await prisma\.supplier\.create|await prisma\.product\.create/);
+});
