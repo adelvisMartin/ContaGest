@@ -76,3 +76,26 @@ test('1000 deterministic hostile API base combinations stay outside the trust bo
   }
   assert.equal(checked, 1000);
 });
+
+test('production HTTP shell cannot send credentialed API requests even to approved HTTPS backend', () => {
+  const options = {
+    currentOrigin:'http://contagest.example',
+    configuredOrigins:['https://api.contagest.example'],
+    fallback:'/api/v1',
+    development:false,
+    native:false
+  };
+  assert.equal(resolveApprovedApiBase('/api/v1', options), '');
+  assert.equal(resolveApprovedApiBase('https://api.contagest.example/api/v1', options), '');
+});
+
+test('production HTTPS shell and explicit local development remain operational', () => {
+  assert.equal(resolveApprovedApiBase('/api/v1', {
+    currentOrigin:'https://contagest.example',fallback:'/api/v1'
+  }), '/api/v1');
+  assert.equal(resolveApprovedApiBase('http://localhost:3030/api/v1', {
+    currentOrigin:'http://localhost:8080',
+    fallback:'http://localhost:3030/api/v1',
+    development:true
+  }), 'http://localhost:3030/api/v1');
+});
