@@ -113,3 +113,16 @@ test('#1293 canonical fingerprint handles the same environment regardless of JSO
   assert.notEqual(labEnvironmentFingerprint(env),
     labEnvironmentFingerprint({ ...env, browserVersion: 'different' }));
 });
+
+
+test('#1293 rejects undocumented per-route lab keys in forged multi-run summaries', () => {
+  for (const change of [
+    lab => { lab.sessionToken = 'must-never-enter-artifact'; },
+    lab => { lab.rawRequest = 'https://other.test/private?token=secret'; },
+    lab => { delete lab.mockedApiRequests; lab.renamedCounter = 2; },
+  ]) {
+    const runs = base();
+    change(runs[2].routes[0].lab);
+    assert.throws(() => measure(runs), /PERF1293_CAMPAIGN_METRIC_PROVENANCE_INVALID/);
+  }
+});
