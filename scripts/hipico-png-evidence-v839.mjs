@@ -103,9 +103,13 @@ export function validHipicoPngEvidence(bytes) {
         header.depth * header.channels, header.interlace);
       if (!layout || !compressedSize) return false;
       try {
-        const raw = inflateSync(Buffer.concat(compressed, compressedSize),
-          { maxOutputLength: MAX_RAW_BYTES });
-        if (raw.length !== layout.total) return false;
+        const { buffer: raw, engine } = inflateSync(
+          Buffer.concat(compressed, compressedSize),
+          { maxOutputLength: MAX_RAW_BYTES, info: true });
+        // zlib can accept a complete stream with unconsumed trailing bytes.
+        // A screenshot proof must not conceal extra IDAT data.
+        if (engine.bytesWritten !== compressedSize || raw.length !== layout.total)
+          return false;
         let cursor = 0;
         for (const pass of layout.rows) {
           for (let row = 0; row < pass.count; row++) {
