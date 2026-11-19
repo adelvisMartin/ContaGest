@@ -133,8 +133,7 @@ GRANT USAGE ON SCHEMA auth TO authenticated;
   $migrations = @(
     'supabase/sql/hipico_v14_canonical_domain.sql',
     'supabase/sql/hipico_v16_operator_confirmation_audit.sql',
-    'backend/prisma/migrations/20260911211500_hipico_domain_source_identity/migration.sql',
-    'backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/migration.sql'
+    'backend/prisma/migrations/20260911211500_hipico_domain_source_identity/migration.sql'
   )
   for ($index = 0; $index -lt $migrations.Count; $index++) {
     $from = Join-Path $repoRoot $migrations[$index]
@@ -144,6 +143,31 @@ GRANT USAGE ON SCHEMA auth TO authenticated;
     & docker @dockerArgs exec -T postgres17 psql -v ON_ERROR_STOP=1 -U postgres -d $database -f $target
     Assert-Exit ('apply migration ' + $migrations[$index])
   }
+  # Existing pre-index rows make this an upgrade rehearsal, not just create-empty QA.
+  $preIndexFixture = @'
+INSERT INTO public.hipico_domain_aggregates
+  (owner_id,group_key,aggregate_kind,aggregate_key,status,state_version)
+VALUES
+  ('22222222-2222-4222-8222-222222222222','pg17-upgrade-fixture',
+   'race','qa_preindex_existing','OPEN',1);
+INSERT INTO public.hipico_domain_events
+  (id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_key,
+   event_type,disposition,previous_state,next_state,reason,event_timestamp)
+VALUES
+  ('pg17-upgrade-event-v837','22222222-2222-4222-8222-222222222222',
+   'pg17-upgrade-fixture','race','qa_preindex_existing','qa-existing-message',
+   'RACE_OPENED','applied','PREPARING','OPEN','VALID_TRANSITION',
+   '2026-11-19T09:00:00Z'::timestamptz);
+'@
+  $preIndexFixture | & docker @dockerArgs exec -T postgres17 psql -v ON_ERROR_STOP=1 -U postgres -d $database
+  Assert-Exit 'pre-index canonical upgrade fixture'
+  $indexFile = 'backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/migration.sql'
+  $indexPath = Join-Path $repoRoot $indexFile
+  & docker cp $indexPath ($containerId + ':/tmp/hipico-qa-recorded-index.sql')
+  Assert-Exit 'copy nonblocking index migration'
+  & docker @dockerArgs exec -T postgres17 psql -v ON_ERROR_STOP=1 -U postgres -d $database -f /tmp/hipico-qa-recorded-index.sql
+  Assert-Exit 'apply nonblocking index to existing canonical events'
+
   'GRANT SELECT ON public.hipico_domain_aggregates, public.hipico_domain_events TO authenticated;' |
     & docker @dockerArgs exec -T postgres17 psql -v ON_ERROR_STOP=1 -U postgres -d $database
   Assert-Exit 'fixture-only RLS reader grants'
