@@ -1,84 +1,62 @@
-# Control Hípico #837 — verificación de snapshot canónico en PostgreSQL 17
+# Control Hípico #837 — reproducible PostgreSQL 17, RLS and local Docker QA
 
-**Autoridad:** `AGENTS.md`, `docs/hipico/AGENTS.md` y AC de #837. Esta guía no declara PASS ni habilita SOURCE de WhatsApp. **No conecta bases existentes de desarrollo/producción.**
+**Status is determined by executed logs at the candidate SHA, never by this document.** Owner: #837; existing business admission and release authorities are unchanged. SOURCE WhatsApp remains NO_GO; auction financial operations remain blocked by #1010.
 
-## Qué se comprueba
+## What the QA gate proves (and does not prove)
 
-- La lectura de un agregado y sus eventos conserva el mismo snapshot con un escritor real concurrente.
-- La siguiente lectura ve el nuevo estado y sus dos eventos.
-- Grupo A/B y owner A/B permanecen aislados, incluso con el mismo `aggregateKey`.
-- Una consulta ausente no obtiene eventos de otra identidad; el scope vacío falla cerrado.
-- Se exige PostgreSQL **17**, un nombre efímero `hipico_e2e_*` y servidor `localhost`.
+The real integration probe `backend/src/modules/hipico-bot/hipico-domain-query.pg17.integration.ts` runs with a separate PostgreSQL 17 writer while the canonical reader holds one `RepeatableRead` snapshot. It verifies:
 
-La ruta bajo prueba es `backend/src/modules/hipico-bot/hipico-domain-query.pg17.integration.ts`; no forma parte del glob unitario y **no usa skip**. El workflow `.github/workflows/hipico-domain-snapshot-pg17.yml` ejecuta este mismo caso y elimina la base aun cuando falla.
+1. Aggregate `OPEN/v1` and `RACE_OPENED` event belong to the same snapshot even after a concurrent transaction commits `CLOSED/v2` and `RACE_CLOSED`.
+2. The next read sees `CLOSED/v2` and its events. The query remains bounded and scoped by owner, group, kind and key; missing scope fails closed.
+3. Service-level `ownerId/groupKey` filtering is tested with overlapping keys. Independently, **PostgreSQL RLS** is tested after `SET LOCAL ROLE authenticated`, with per-owner test claims and no-claim denial. A superuser SQL filter alone would not establish RLS.
+4. The test refuses `DATABASE_RUNTIME_URL` overrides, non-local hosts, mismatched allocator host/port and names outside `hipico_e2e_*`; PostgreSQL major must equal 17.
+5. BIGINT state versions outside JavaScript's safe integer range fail closed rather than silently rounding.
 
-## Docker Desktop en Windows — ejecución local segura
+These are synthetic QA fixtures, not official external racing results, financial balances or remates. RLS is owner-based in the existing SQL policy; group-level separation is guaranteed by the server's query scope, not by pretending a group RLS policy exists.
 
-Prerequisitos: Docker Desktop con contenedores Linux, Node 22, npm, Git y acceso al repositorio. En PowerShell, desde la raíz de una copia de trabajo limpia de `fix/837-hipico-consistent-canonical-read-20261119`:
+## Execute with your own Docker Desktop on Windows
 
-```powershell
-npm ci --workspace backend --include-workspace-root --no-audit --no-fund
-npm --workspace backend run typecheck
-
-# El puerto del host es aleatorio y solo escucha en 127.0.0.1.
-$container = 'hipico-pg17-837-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
-docker run --rm -d --name $container -p '127.0.0.1::5432' `
-  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=hipico_qa_only `
-  -e POSTGRES_DB=postgres --health-cmd 'pg_isready -U postgres -d postgres' `
-  --health-interval 1s --health-retries 20 postgres:17-alpine
-
-# Comprueba salud antes de seguir: docker inspect --format '{{.State.Health.Status}}' $container
-$binding = docker port $container 5432/tcp | Select-Object -First 1
-$port = [int](($binding -split ':')[-1])
-$env:HIPICO_E2E_ADMIN_URL = "postgresql://postgres:hipico_qa_only@127.0.0.1:$port/postgres"
-$env:HIPICO_E2E_RUN_ID = 'local837'
-$env:HIPICO_E2E_STATE_FILE = 'artifacts/qa/hipico-v290/database-state-local837.json'
-
-node scripts/hipico-ephemeral-db-v290.mjs create
-$state = Get-Content $env:HIPICO_E2E_STATE_FILE -Raw | ConvertFrom-Json
-$database = $state.databaseName
-$env:HIPICO_E2E_DATABASE_NAME = $database
-$env:DATABASE_URL = "postgresql://postgres:hipico_qa_only@127.0.0.1:$port/$database"
-$env:DIRECT_DATABASE_URL = $env:DATABASE_URL
-
-@'
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-    CREATE ROLE authenticated NOLOGIN;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-    CREATE ROLE anon NOLOGIN;
-  END IF;
-END
-$$;
-CREATE SCHEMA IF NOT EXISTS auth;
-CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
-'@ | docker exec -i $container psql -v ON_ERROR_STOP=1 -U postgres -d $database
-
-$files = @(
-  'supabase/sql/hipico_v14_canonical_domain.sql',
-  'supabase/sql/hipico_v16_operator_confirmation_audit.sql',
-  'backend/prisma/migrations/20260911211500_hipico_domain_source_identity/migration.sql'
-)
-foreach ($file in $files) {
-  Get-Content $file -Raw | docker exec -i $container psql -v ON_ERROR_STOP=1 -U postgres -d $database
-  if ($LASTEXITCODE -ne 0) { throw "Migration failed: $file" }
-}
-
-npm --workspace backend exec -- tsx --test src/modules/hipico-bot/hipico-domain-query.pg17.integration.ts
-```
-
-**Limpieza obligatoria, incluso si la prueba falla:** ejecutar los siguientes comandos dentro de un bloque `finally` si se automatiza la secuencia; si se hace manualmente, ejecutarlos antes de terminar la sesión.
+Prerequisites: Docker Desktop in Linux-containers mode, Docker Compose v2, Node.js 22, npm, Git, and a **clean checkout of the exact PR SHA**. Run PowerShell from the ContaGest repository root:
 
 ```powershell
-node scripts/hipico-ephemeral-db-v290.mjs drop
-docker rm -f $container
-Remove-Item Env:DATABASE_URL,Env:DIRECT_DATABASE_URL,Env:HIPICO_E2E_DATABASE_NAME,Env:HIPICO_E2E_ADMIN_URL,Env:HIPICO_E2E_RUN_ID,Env:HIPICO_E2E_STATE_FILE -ErrorAction SilentlyContinue
+git fetch origin
+git switch fix/837-hipico-consistent-canonical-read-20261119
+git pull --ff-only
+git rev-parse HEAD
+git status --short
+.\scripts\hipico-domain-snapshot-pg17-local.ps1
 ```
 
-**Advertencia:** el procedimiento manual no gestiona errores anteriores a `drop` por sí solo; el flujo automatizado en GitHub Actions sí lleva `if: always()` y es la evidencia preferida para CI. No reusar nombres/URLs fuera del prefijo efímero ni conectar bases compartidas. Si alguna variable ya existía en la sesión, respaldar su valor y restaurarlo en vez de eliminarla. Los datos y las credenciales anteriores son exclusivamente sintéticos de QA.
+The script `scripts/hipico-domain-snapshot-pg17-local.ps1` performs and reports:
 
-## Evidencia y criterio de cierre
+- Dirty-worktree and Git SHA verification, environment fail-closed checks, Node22 + Docker Compose availability.
+- Reproducible backend npm-lock install, Agent System v3 router, backend lint/typecheck, Hípico test suite and build.
+- An isolated `postgres:17-alpine` Compose project with ephemeral host port bound only to `127.0.0.1`, **tmpfs only**, a random synthetic QA password and health-gated startup using `docker compose up --wait` (no fixed sleeps).
+- Creation of a unique `hipico_e2e_*` database, then the canonical v14/v16/source-identity migrations on **only that database**.
+- The exact same real-write/snapshot/RLS integration test used by GitHub Actions.
+- A PowerShell `finally` that drops the database, shuts down only the unique QA project and restores previous environment variables—even when tests fail.
 
-Un test PG17 positivo no acredita por sí mismo versión final de informe diario, interfaz PWA, PDF/XLSX, WhatsApp SOURCE, QA físico #119, soak #120, DR #842 ni Go/No-Go #839. Registrar commit exacto, PostgreSQL major, comando, log y estado de la base destruida. **Un check queued, skipped o que no corrió es NOT_EXECUTED y jamás PASS.**
+No real WhatsApp session, buyer, horse, betting account, financial ledger or production database is accessed. A non-zero test exit **must not** be claimed as PASS. If a cleanup failure is reported, inspect the **unique QA project name** before taking action; never run broad Docker cleanup commands against unrelated projects.
+
+If PowerShell policy blocks execution, use your organization's approved local-script policy; do not disable security controls globally.
+
+## GitHub CI equivalent
+
+`.github/workflows/hipico-domain-snapshot-pg17.yml` uses `postgres:17-alpine`, isolates the QA database with `scripts/hipico-ephemeral-db-v290.mjs`, routes the ticket via Agent System v3, runs typecheck and the real integration test, and drops the database in an `if: always()` step. The temporary `authenticated` role `GRANT SELECT` exists **only inside this synthetic test database**; production permissions and RLS migrations are not modified.
+
+Evidence for approval must name **full SHA, job URL, PASS/FAIL output, PG17 version, schema migration result, and cleanup status**. A queued job, skipped job, check from an older SHA, or a local mock is not PASS.
+
+## Domain boundary: remates, apuestas and source provenance
+
+The existing `docs/hipico/AUCTION_ADMISSION_V1010.md` marks auctions **BLOCKED** pending owner approval of business model, buyer eligibility, money authority, disputes, currency, permits and terms. A sale lot/hammer price is not a recreational race wager or an ERP ledger posting.
+
+Public benchmarking (not a production data feed) may use publicly accessible official pages such as:
+- [Keeneland 2026 sales buyer guide](https://www.keeneland.com/sales/buyers-guide-sales/) for **examples** of buyer registration, eligibility and conditions to discuss with the owner—not to clone legal rules.
+- [Keeneland November 2026 sale information](https://www.keeneland.com/sales/2026/14/november-breeding-stock-sale/about/) for publicly posted catalog context.
+- [TwinSpires terms](https://www.twinspires.com/terms/) for restrictions on third-party Equibase racing data. Automated scraping or redistribution is **not authorized by mere public access**.
+
+Do not create crawler selectors, harvest records, bypass access controls, import unlicensed race/horse data or generate official-looking outcomes until source permission, provenance, retention, consent, rate limits and product authority are documented. Distinguish externally verified result from internal operator result and synthetic simulation.
+
+## Remaining release gates
+
+This focused patch **does not** certify UI/UX mobile and keyboard, Chromium/Firefox/WebKit, physical PWA/APK #119, 24–72h soak #120, DR #842, shared reports/ledger #1018, WhatsApp SOURCE #1011 or final GO/NO-GO #839. Keep PR #1367 in DRAFT until exact-SHA CI and relevant reviews complete.
