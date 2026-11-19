@@ -99,7 +99,10 @@ export async function readHipicoDomainAggregate(
         AND group_key=${groupKey}
         AND aggregate_kind=${input.aggregateKind}
         AND aggregate_key=${aggregateKey}
-      ORDER BY event_timestamp DESC,id DESC
+      -- event_timestamp is supplied by the source and can be backdated.
+      -- Canonical evidence must be ordered by DB recording time so that
+      -- a later correction cannot hide behind a previous result.
+      ORDER BY created_at DESC,id DESC
       LIMIT ${limit}
     `;
 
