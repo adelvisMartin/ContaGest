@@ -142,6 +142,7 @@ async function validateExistingCredential(params: {
       AND "status"='active'
       AND "credentialHash"=${credentialHash}
       AND ("userId" IS NULL OR "userId"=${params.userId || null})
+      AND ("credentialExpiresAt" IS NULL OR "credentialExpiresAt">now())
   `;
   if (refreshed !== 1) {
     throw new HttpError(403, 'La credencial fue revocada o cambió de estado.');
