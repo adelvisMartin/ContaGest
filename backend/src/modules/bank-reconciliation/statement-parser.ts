@@ -157,6 +157,13 @@ function parseCamt(text:string,defaultCurrency:string): ParsedStatement {
   const lines=entries.map((block,index)=>{
     const amountValue=amount(xmlText(block,'Amt'));
     const indicator=xmlText(block,'CdtDbtInd').toUpperCase();
+    // CAMT requires an explicit credit/debit direction. An absent/invalid code
+    // must never be silently interpreted as a credit on a financial import.
+    if(indicator!=='CRDT'&&indicator!=='DBIT'){
+      throw new HttpError(422,'Dirección crédito/débito inválida en CAMT.',{
+        code:'BANK_STATEMENT_DIRECTION_INVALID',row:index+1
+      });
+    }
     const signed=indicator==='DBIT'&&money(amountValue).gt(0)?serializeDecimal(money(amountValue).negated(),2):amountValue;
     const currencyMatch=block.match(/<(?:\w+:)?Amt[^>]*\bCcy=["']([A-Za-z]{3,4})["']/i);
     const currency=normalizeCurrency(currencyMatch?.[1]||defaultCurrency,defaultCurrency);
