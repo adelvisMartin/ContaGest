@@ -2,15 +2,13 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { labEnvironmentFingerprint } from './performance-route-campaign-v1293.mjs';
+import { labEnvironmentFingerprint, LAB_METRIC_KEYS } from './performance-route-campaign-v1293.mjs';
 
 const SHA = /^[a-f0-9]{40}$/;
 const ROUTE = /^[a-z][a-z0-9-]{0,63}$/;
 const RUN_ID = /^[a-zA-Z0-9_-]{1,80}$/;
 const PROFILE = 'desktop-1440';
 const NOT_EXECUTED = 'NOT_EXECUTED';
-const METRIC_KEYS = Object.freeze(['routeReadyMs', 'lcpMs', 'cls', 'inpMs',
-  'resourceCount', 'transferBytes', 'jsTransferBytes', 'cssTransferBytes', 'mockedApiRequests']);
 
 function reject(message) { throw new Error(`PERF1293_${message}`); }
 function metric(value, nullable = false) {
@@ -45,8 +43,8 @@ export function summarizeRouteEvidence({ candidateSha, runId, catalog, observati
     if (labEnvironment === null) labEnvironment = row.labEnvironment;
     const m = row.metrics;
     if (!m || typeof m !== 'object' || Array.isArray(m) ||
-        Object.keys(m).length !== METRIC_KEYS.length ||
-        METRIC_KEYS.some(key => !Object.hasOwn(m, key)) ||
+        Object.keys(m).length !== LAB_METRIC_KEYS.length ||
+        LAB_METRIC_KEYS.some(key => !Object.hasOwn(m, key)) ||
         !metric(m.routeReadyMs) || !metric(m.lcpMs, true) || !metric(m.cls, true) ||
         m.inpMs !== null || !Number.isSafeInteger(m.resourceCount) || m.resourceCount < 0 ||
         !Number.isSafeInteger(m.transferBytes) || m.transferBytes < 0 ||
