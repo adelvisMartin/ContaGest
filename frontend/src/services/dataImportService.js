@@ -1,4 +1,5 @@
 import { BackendApi } from './backendApi.js';
+import { assertXlsxZipBudget } from './xlsxZipBudget.mjs';
 
 export const IMPORT_TEMPLATE_VERSION='v1';
 export const IMPORT_TEMPLATES = {
@@ -36,24 +37,43 @@ function parseDelimited(text, delimiter=',') {
 function u16(view,offset){return view.getUint16(offset,true);}
 function u32(view,offset){return view.getUint32(offset,true);}
 
-async function inflateRaw(bytes){
+async function inflateRaw(bytes,maxBytes){
   if(typeof DecompressionStream==='undefined')throw new Error('Este navegador no soporta descompresión XLSX segura. Usa CSV/TSV/JSON o un navegador Chromium actualizado.');
-  const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  const reader=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const chunks=[];let total=0;
+  try{
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      total+=value.byteLength;
+      if(total>maxBytes)throw new Error('XLSX excede los límites seguros de descompresión.');
+      chunks.push(value);
+    }
+  }catch(error){await reader.cancel().catch(()=>{});throw error;}
+  const output=new Uint8Array(total);let offset=0;
+  for(const chunk of chunks){output.set(chunk,offset);offset+=chunk.byteLength;}
+  return output;
 }
 
 async function unzipEntries(arrayBuffer){
   const bytes=new Uint8Array(arrayBuffer);const view=new DataView(arrayBuffer);let eocd=-1;
   for(let i=Math.max(0,bytes.length-65557);i<=bytes.length-22;i++)if(u32(view,i)===0x06054b50)eocd=i;
   if(eocd<0)throw new Error('XLSX inválido: no se encontró el directorio ZIP.');
-  const entries=new Map();const count=u16(view,eocd+10);let offset=u32(view,eocd+16);
+  const entries=new Map();const count=u16(view,eocd+10);let offset=u32(view,eocd+16);let expanded=0;
+  if(count>1024)throw new Error('XLSX contiene demasiadas entradas ZIP.');
   for(let n=0;n<count;n++){
-    if(u32(view,offset)!==0x02014b50)throw new Error('XLSX inválido: directorio ZIP corrupto.');
-    const method=u16(view,offset+10);const compressed=u32(view,offset+20);const nameLength=u16(view,offset+28);const extraLength=u16(view,offset+30);const commentLength=u16(view,offset+32);const localOffset=u32(view,offset+42);
+    if(offset+46>bytes.length||u32(view,offset)!==0x02014b50)throw new Error('XLSX inválido: directorio ZIP corrupto.');
+    const method=u16(view,offset+10);const compressed=u32(view,offset+20);const uncompressed=u32(view,offset+24);
+    const nameLength=u16(view,offset+28);const extraLength=u16(view,offset+30);const commentLength=u16(view,offset+32);const localOffset=u32(view,offset+42);
     const name=decoder.decode(bytes.slice(offset+46,offset+46+nameLength));
-    if(u32(view,localOffset)!==0x04034b50)throw new Error('XLSX inválido: entrada ZIP corrupta.');
-    const localNameLength=u16(view,localOffset+26);const localExtraLength=u16(view,localOffset+28);const start=localOffset+30+localNameLength+localExtraLength;const compressedBytes=bytes.slice(start,start+compressed);
-    let content;if(method===0)content=compressedBytes;else if(method===8)content=await inflateRaw(compressedBytes);else throw new Error(`XLSX usa compresión ZIP no soportada (${method}).`);
+    expanded=assertXlsxZipBudget({count,compressed,uncompressed,total:expanded});
+    if(entries.has(name))throw new Error('XLSX contiene rutas ZIP duplicadas.');
+    if(localOffset+30>bytes.length||u32(view,localOffset)!==0x04034b50)throw new Error('XLSX inválido: entrada ZIP corrupta.');
+    const localNameLength=u16(view,localOffset+26);const localExtraLength=u16(view,localOffset+28);const start=localOffset+30+localNameLength+localExtraLength;
+    if(start+compressed>bytes.length)throw new Error('XLSX inválido: datos ZIP incompletos.');
+    const compressedBytes=bytes.slice(start,start+compressed);
+    let content;if(method===0)content=compressedBytes;else if(method===8)content=await inflateRaw(compressedBytes,uncompressed);else throw new Error(`XLSX usa compresión ZIP no soportada (${method}).`);
+    if(content.byteLength!==uncompressed)throw new Error('XLSX inválido: longitud descomprimida inconsistente.');
     entries.set(name,decoder.decode(content));offset+=46+nameLength+extraLength+commentLength;
   }
   return entries;
