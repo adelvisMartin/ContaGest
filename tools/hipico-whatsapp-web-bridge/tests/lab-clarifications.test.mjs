@@ -115,5 +115,6 @@ test('the Bridge filters only after stable sender and scope retrieval; journal s
   const remember = body.indexOf('labConversationContext.remember(', ack);
   assert.ok(sender >= 0 && prior > sender && eligible > prior &&
     plan > eligible && prepare > plan && send > prepare && ack > send && remember > ack);
-  assert.match(code, /SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active/);
+  assert.match(code, /^import '\\.\\/source-read-startup-denial\\.mjs';/);
+  assert.match(code, /SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED\\s*&& !SOURCE_REPLY_KILL_SWITCH\\.active\\s*&& evaluateSourceAutoReplyPolicy\\(config\\)\\.eligible/);
 });
