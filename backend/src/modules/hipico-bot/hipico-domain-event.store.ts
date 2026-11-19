@@ -358,7 +358,8 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     if(reduction.disposition==='applied'){
       const affected=await tx.$executeRaw`
         UPDATE public.hipico_domain_aggregates
-        SET status=${reduction.nextState}, state_version=state_version+1, updated_at=now()
+        SET status=${reduction.nextState}, state_version=state_version+1,
+            updated_at=clock_timestamp()
         WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
           AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
           AND state_version=${current.stateVersion}
