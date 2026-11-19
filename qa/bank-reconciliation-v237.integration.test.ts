@@ -37,6 +37,22 @@ test('v237 PostgreSQL: duplicate import, tenant isolation, explainable exact/ref
   const first=await importBankStatement({tenantId:a.tenant.id,userId:a.user.id,accountId:a.account.id,fileName:'exact.csv',mimeType:'text/csv',bytes});
   const replay=await importBankStatement({tenantId:a.tenant.id,userId:a.user.id,accountId:a.account.id,fileName:'same.csv',mimeType:'text/csv',bytes});
   assert.equal(first.duplicate,false); assert.equal(first.inserted,1); assert.equal(replay.duplicate,true); assert.equal(replay.importId,first.importId);
+  assert.equal(first.parserVersion,'contagest-bank-statement/1.3.0');
+  assert.equal(replay.parserVersion,first.parserVersion);
+  // BankStatementImport parserVersion is immutable: replay must read persisted
+  // provenance, and a change of the existing evidence must be rejected by DB.
+  const persisted=await prisma.$queryRaw<Array<{parserVersion:string}>>`
+    SELECT "parserVersion" FROM "BankStatementImport"
+    WHERE "tenantId"=${a.tenant.id} AND "id"=${first.importId} LIMIT 1
+  `;
+  assert.equal(replay.parserVersion,persisted[0]?.parserVersion);
+  await assert.rejects(
+    () => prisma.$executeRaw`
+      UPDATE "BankStatementImport" SET "parserVersion"='contagest-bank-statement/1.2.0'
+      WHERE "tenantId"=${a.tenant.id} AND "id"=${first.importId}
+    `,
+    /BankStatementImport evidence is immutable/
+  );
   const [line]=await listStatementLines(a.tenant.id,{accountId:a.account.id,status:'all'}); assert.ok(line);
   await assert.rejects(()=>getMatchingCandidates(b.tenant.id,line.id),(error:any)=>error?.status===404,'tenant B must not inspect tenant A line');
 

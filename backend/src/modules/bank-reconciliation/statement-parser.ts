@@ -4,7 +4,7 @@ import { parseStatementCsvRows, StatementCsvStructureError } from './statement-c
 import { resolveStatementCsvHeaders, StatementCsvHeadersError } from './statement-csv-headers.js';
 import { money, serializeDecimal } from '../../shared/financial/decimal.js';
 
-export const BANK_STATEMENT_PARSER_VERSION = 'contagest-bank-statement/1.2.0';
+export const BANK_STATEMENT_PARSER_VERSION = 'contagest-bank-statement/1.3.0';
 export const MAX_STATEMENT_BYTES = 5 * 1024 * 1024;
 export type StatementFormat = 'csv' | 'ofx' | 'qfx' | 'camt';
 export type NormalizedStatementLine = {
@@ -48,9 +48,22 @@ const amount = (value: unknown) => {
 };
 const date = (value: unknown, field = 'date') => {
   const raw = clean(value, 80);
-  let parsed: Date;
-  if (/^\d{8}/.test(raw)) parsed = new Date(`${raw.slice(0,4)}-${raw.slice(4,6)}-${raw.slice(6,8)}T00:00:00.000Z`);
-  else parsed = new Date(raw);
+  // JavaScript Date silently normalizes impossible days (e.g. 2026-02-30).
+  // Validate the calendar portion before parsing. Keep OFX compact dates and
+  // existing timestamp/timezone behavior for valid statements.
+  const compact = /^(\d{4})(\d{2})(\d{2})/.exec(raw);
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/.exec(raw);
+  const components = compact || iso;
+  if (components) {
+    const [year, month, day] = components.slice(1).map(Number);
+    const reference = new Date(Date.UTC(year, month - 1, day));
+    if (reference.getUTCFullYear() !== year || reference.getUTCMonth() + 1 !== month || reference.getUTCDate() !== day) {
+      throw new HttpError(422, `Fecha inválida en ${field}.`, { code: 'BANK_STATEMENT_DATE_INVALID', value: raw });
+    }
+  }
+  const parsed = compact
+    ? new Date(`${raw.slice(0,4)}-${raw.slice(4,6)}-${raw.slice(6,8)}T00:00:00.000Z`)
+    : new Date(raw);
   if (Number.isNaN(parsed.getTime())) throw new HttpError(422, `Fecha inválida en ${field}.`, { code: 'BANK_STATEMENT_DATE_INVALID', value: raw });
   return parsed;
 };
@@ -75,6 +88,9 @@ function parseCsv(text: string, defaultCurrency: string): ParsedStatement {
   try { rows = parseStatementCsvRows(text); }
   catch (error) {
     if (error instanceof StatementCsvStructureError) {
+      if (error.code === 'BANK_STATEMENT_CSV_LIMIT_EXCEEDED') {
+        throw new HttpError(413, 'El CSV excede los límites seguros de filas, columnas o campos.', {code:error.code});
+      }
       throw new HttpError(422, 'CSV malformado: comillas o estructura incorrectas.', {code:'BANK_STATEMENT_CSV_MALFORMED'});
     }
     throw error;

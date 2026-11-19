@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseStatementCsvRows as parse, StatementCsvStructureError} from '../backend/src/modules/bank-reconciliation/statement-csv-structure.ts';
+import { readFileSync } from 'node:fs';
+import {parseStatementCsvRows as parse, StatementCsvStructureError, MAX_STATEMENT_CSV_COLUMNS, MAX_STATEMENT_CSV_ROWS, MAX_STATEMENT_CSV_FIELDS, MAX_STATEMENT_CSV_FIELD_CHARS} from '../backend/src/modules/bank-reconciliation/statement-csv-structure.ts';
 
 test('unquoted bank statement rows preserve all columns',()=>{
   assert.deepEqual(parse('date,amount,reference\n2026-10-16,12.00,ABC\n'),[
@@ -31,4 +32,34 @@ test('empty quoted cell and final comma remain distinguishable',()=>{
 });
 test('empty input does not imply transactions',()=>{
   assert.deepEqual(parse(''),[]);
+});
+
+test('bank CSV bounds quoted/unquoted fields without silently truncating money',()=>{
+  assert.equal(parse('"'+'x'.repeat(MAX_STATEMENT_CSV_FIELD_CHARS)+'"')[0][0].length,MAX_STATEMENT_CSV_FIELD_CHARS);
+  for(const data of [
+    'x'.repeat(MAX_STATEMENT_CSV_FIELD_CHARS+1),
+    '"'+'x'.repeat(MAX_STATEMENT_CSV_FIELD_CHARS+1)+'"',
+    '"'+'""'.repeat(MAX_STATEMENT_CSV_FIELD_CHARS+1)+'"'
+  ]){
+    assert.throws(()=>parse(data),(error)=>error instanceof StatementCsvStructureError && error.code==='BANK_STATEMENT_CSV_LIMIT_EXCEEDED');
+  }
+});
+test('bank CSV rejects excessive columns and rows before building unbounded arrays',()=>{
+  assert.equal(parse('x,'.repeat(MAX_STATEMENT_CSV_COLUMNS-1)+'x')[0].length,MAX_STATEMENT_CSV_COLUMNS);
+  assert.throws(()=>parse('x,'.repeat(MAX_STATEMENT_CSV_COLUMNS)+'x'),(error)=>error instanceof StatementCsvStructureError && error.code==='BANK_STATEMENT_CSV_LIMIT_EXCEEDED');
+  assert.throws(()=>parse('a\n'.repeat(MAX_STATEMENT_CSV_ROWS+1)),(error)=>error instanceof StatementCsvStructureError && error.code==='BANK_STATEMENT_CSV_LIMIT_EXCEEDED');
+});
+test('bank CSV global field budget limits delimiter amplification',()=>{
+  const fieldsPerLine=21;
+  const row='x,'.repeat(fieldsPerLine-1)+'x\n';
+  assert.throws(()=>parse(row.repeat(Math.floor(MAX_STATEMENT_CSV_FIELDS/fieldsPerLine)+1)),
+    (error)=>error instanceof StatementCsvStructureError && error.code==='BANK_STATEMENT_CSV_LIMIT_EXCEEDED');
+});
+
+test('bank reconciliation CI records and names evidence with the exact candidate SHA',()=>{
+  const workflow=readFileSync(new URL('../.github/workflows/bank-reconciliation-v237.yml',import.meta.url),'utf8');
+  assert.ok(workflow.includes('ref: ${{ env.CANDIDATE_SHA }}'));
+  assert.ok(workflow.includes('test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"'));
+  assert.ok(workflow.includes('"$CANDIDATE_SHA" "$GITHUB_WORKFLOW" "$GITHUB_RUN_ID"'));
+  assert.ok(workflow.includes('name: bank-reconciliation-v237-${{ env.CANDIDATE_SHA }}'));
 });
