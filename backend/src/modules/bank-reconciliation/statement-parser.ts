@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { HttpError } from '../../shared/http.js';
 import { parseStatementCsvRows, StatementCsvStructureError } from './statement-csv-structure.js';
+import { resolveStatementCsvHeaders, StatementCsvHeadersError } from './statement-csv-headers.js';
 import { money, serializeDecimal } from '../../shared/financial/decimal.js';
 
 export const BANK_STATEMENT_PARSER_VERSION = 'contagest-bank-statement/1.2.0';
@@ -66,8 +67,6 @@ const aliases = {
   id: ['id','bankid','bank_line_id','fitid'],
   counterparty: ['counterparty','beneficiary','beneficiario','partner','contraparte']
 };
-const key = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/_/g, '');
-const findHeader = (headers: string[], names: string[]) => headers.findIndex((header) => names.includes(key(header)));
 function parseCsv(text: string, defaultCurrency: string): ParsedStatement {
   let rows: string[][];
   try { rows = parseStatementCsvRows(text); }
@@ -80,7 +79,13 @@ function parseCsv(text: string, defaultCurrency: string): ParsedStatement {
   if (rows.length < 2) throw new HttpError(422, 'CSV sin líneas de movimiento.', { code: 'BANK_STATEMENT_EMPTY' });
   const headers = rows[0];
   if (headers.some((header, index) => !safeText(header, `header:${index}`, 120))) throw new HttpError(422, 'CSV contiene cabeceras vacías.', { code: 'BANK_STATEMENT_CSV_HEADERS' });
-  const indexes = Object.fromEntries(Object.entries(aliases).map(([name,names]) => [name, findHeader(headers, names)]));
+  let indexes: Record<string, number>;
+  try {
+    indexes = resolveStatementCsvHeaders(headers, aliases);
+  } catch (error) {
+    if (!(error instanceof StatementCsvHeadersError)) throw error;
+    throw new HttpError(422, 'CSV con cabeceras duplicadas o ambiguas.', { code: 'BANK_STATEMENT_CSV_HEADERS' });
+  }
   if (indexes.date < 0 || indexes.amount < 0) throw new HttpError(422, 'CSV requiere columnas de fecha y monto.', { code: 'BANK_STATEMENT_CSV_HEADERS' });
   const lines = rows.slice(1).map((columns, rowIndex) => {
     if (columns.length !== headers.length) {
