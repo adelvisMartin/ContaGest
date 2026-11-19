@@ -8,7 +8,7 @@ import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
 import { PAGE_ROUTES } from '../frontend/src/data/pageRegistry.js';
 import { waitForRouteReady } from './support/playwright-determinism.mjs';
 import { fixtureForRequest } from './support/erp-system-fixtures-v155.mjs';
-import { assertLocalLabOrigin, isAllowedLabRequest, isAllowedLabRedirect } from './support/performance-lab-isolation-v1293.mjs';
+import { assertLocalLabOrigin, isAllowedLabRequest, isAllowedLabRedirect, isAllowedLabSocket } from './support/performance-lab-isolation-v1293.mjs';
 
 const targetBase = String(process.env.QA_BASE_URL || '').trim();
 if (targetBase) assertLocalLabOrigin(targetBase);
@@ -70,11 +70,19 @@ for (const item of MODULE_VISUAL_CATALOG) {
     page.on('pageerror', error => errors.push(error.message));
     const allowedOrigin = assertLocalLabOrigin(testInfo.project.use.baseURL);
     let blockedExternalRequests = 0;
+    let blockedExternalSockets = 0;
     let observedExternalRequests = 0;
+    let observedExternalSockets = 0;
     let unsafeRedirectResponses = 0;
     page.on('request', request => {
-      // Playwright may not re-route a redirected URL, but emits a request event.
-      if (!isAllowedLabRequest(request.url(), allowedOrigin)) observedExternalRequests += 1;
+      // Redirects might bypass page.route; WebSocket upgrades have their own URL scheme.
+      const permitted = request.resourceType() === 'websocket' ?
+        isAllowedLabSocket(request.url(), allowedOrigin) :
+        isAllowedLabRequest(request.url(), allowedOrigin);
+      if (!permitted) observedExternalRequests += 1;
+    });
+    page.on('websocket', socket => {
+      if (!isAllowedLabSocket(socket.url(), allowedOrigin)) observedExternalSockets += 1;
     });
     page.on('response', response => {
       const status = response.status();
@@ -83,16 +91,27 @@ for (const item of MODULE_VISUAL_CATALOG) {
         unsafeRedirectResponses += 1;
       }
     });
+    await page.routeWebSocket('**/*', socket => {
+      if (!isAllowedLabSocket(socket.url(), allowedOrigin)) {
+        blockedExternalSockets += 1;
+        return socket.close({ code: 1008, reason: 'LAB_NETWORK_ISOLATION' });
+      }
+      socket.connectToServer();
+    });
     let mockedApiRequests = 0;
     await page.route('**/*', async (route) => {
       const request = route.request();
-      if (!isAllowedLabRequest(request.url(), allowedOrigin)) {
+      const permitted = request.resourceType() === 'websocket' ?
+        isAllowedLabSocket(request.url(), allowedOrigin) :
+        isAllowedLabRequest(request.url(), allowedOrigin);
+      if (!permitted) {
         blockedExternalRequests += 1;
         await route.abort('blockedbyclient');
         return;
       }
       const pathname = new URL(request.url()).pathname;
-      if (pathname !== '/api' && !pathname.startsWith('/api/')) {
+      if (request.resourceType() === 'websocket' ||
+          (pathname !== '/api' && !pathname.startsWith('/api/'))) {
         await route.continue();
         return;
       }
@@ -135,8 +154,10 @@ for (const item of MODULE_VISUAL_CATALOG) {
       }));
     }));
     const routeReadyMs = performance.now() - started;
-    assert.equal(blockedExternalRequests, 0, 'Lab attempted direct external HTTP requests');
+    assert.equal(blockedExternalRequests, 0, 'Lab attempted direct foreign network requests');
+    assert.equal(blockedExternalSockets, 0, 'Lab attempted foreign WebSocket connections');
     assert.equal(observedExternalRequests, 0, 'Lab observed foreign requests, including redirect chains');
+    assert.equal(observedExternalSockets, 0, 'Lab observed foreign WebSocket connections');
     assert.equal(unsafeRedirectResponses, 0, 'Lab observed unsafe HTTP redirect targets');
     assert.deepEqual(errors, [], 'Route emitted JavaScript errors during lab capture');
     const cpus = os.cpus();
