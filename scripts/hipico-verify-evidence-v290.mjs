@@ -8,6 +8,7 @@ import { consistentEvidenceSha, evidenceMentionsSha } from './hipico-evidence-sh
 import { validHipicoPhysicalMaterial } from './hipico-physical-material-integrity-v119.mjs';
 import { validSoakMetricEvidence } from './hipico-soak-metric-integrity-v120.mjs';
 import { validSoakSamplesProof } from './hipico-soak-samples-proof-v120.mjs';
+import { validHipicoPngEvidence } from './hipico-png-evidence-v839.mjs';
 
 const SHA40 = /^[0-9a-f]{40}$/i;
 const STATUSES = Object.freeze(['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
@@ -367,25 +368,28 @@ const screenshots = files.filter((file) => file.endsWith('.png') && file.include
 // placeholder files before reporting any screenshot count.
 async function looksLikeBrowserScreenshot(file) {
   try {
-    if (!fs.constants.O_NOFOLLOW) return false;
-    const fd = await fs.open(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    if (!fs.constants.O_NOFOLLOW || !fs.constants.O_NONBLOCK) return false;
+    const fd = await fs.open(file,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
     try {
-      const stat = await fd.stat();
-      if (!stat.isFile() || stat.size < 64 || stat.size > 30 * 1024 * 1024) return false;
-      const header = Buffer.alloc(24);
-      const { bytesRead } = await fd.read(header, 0, header.length, 0);
-      return bytesRead === header.length
-        && header.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-        && header.readUInt32BE(8) === 13
-        && header.toString('ascii', 12, 16) === 'IHDR'
-        && header.readUInt32BE(16) >= 320 && header.readUInt32BE(20) >= 240;
+      const before = await fd.stat();
+      if (!before.isFile() || before.size < 57 || before.size > 30 * 1024 * 1024) return false;
+      const bytes = await fd.readFile();
+      const after = await fd.stat();
+      if (bytes.length !== before.size || after.size !== before.size ||
+          after.mtimeMs !== before.mtimeMs) return false;
+      return validHipicoPngEvidence(bytes);
     } finally {
       await fd.close();
     }
   } catch { return false; }
 }
-const validScreenshots = (await Promise.all(screenshots.map(looksLikeBrowserScreenshot)))
-  .filter(Boolean).length;
+// Bound peak memory by verifying files sequentially, not allocating every
+// possible screenshot in the QA evidence tree simultaneously.
+let validScreenshots = 0;
+for (const screenshot of screenshots) {
+  if (await looksLikeBrowserScreenshot(screenshot)) validScreenshots++;
+}
 const chromiumVerified = required.find((item) => item.id === 'chromiumGate')?.status === 'PASS';
 const browserStatus = validScreenshots > 0 && chromiumVerified ? 'PASS' : 'NOT_EXECUTED';
 const browser = {
