@@ -11,6 +11,8 @@ const migration = read(migrationPath);
 const query = read('backend/src/modules/hipico-bot/hipico-domain-query.store.ts');
 const writer = read('backend/src/modules/hipico-bot/hipico-domain-event.store.ts');
 const integration = read('backend/src/modules/hipico-bot/hipico-domain-query.pg17.integration.ts');
+const canonicalRoutes = read('backend/src/modules/hipico-bot/hipico-canonical.routes.ts');
+const canonicalRouteTests = read('backend/src/modules/hipico-bot/hipico-canonical.routes.test.ts');
 
 test('PG17 auth.uid test fixture uses complete dollar quoting; malformed $ cannot ship', () => {
   const validBody = /CREATE OR REPLACE FUNCTION auth\.uid\(\) RETURNS uuid\s+LANGUAGE sql STABLE AS \$\$[\s\S]+?\$\$;/;
@@ -68,6 +70,15 @@ test('Windows QA refuses stale or unverified PR SHA instead of certifying old co
   assert.match(localRunner, /\$remoteShaAfter -ne \$expectedSha/);
   assert.match(localRunner, /Wrong branch for #837 QA/);
   assert.match(read('docs/hipico/QA_CANONICAL_SNAPSHOT_PG17_837.md'), /-CandidateSha \$prHead/);
+});
+
+test('canonical API reports permanent version failures without unsafe retries', () => {
+  assert.match(canonicalRoutes, /HIPICO_DOMAIN_STATE_VERSION_EXHAUSTED/);
+  assert.match(canonicalRoutes, /HIPICO_DOMAIN_STATE_VERSION_UNSAFE/);
+  const calls = canonicalRoutes.match(/canonicalPermanentVersionResponse\(error\)/g) || [];
+  assert.equal(calls.length, 2, 'Both read and write must classify permanent version errors');
+  assert.match(canonicalRoutes, /status:409,body:\{ok:false,retryable:false,error:message\}/);
+  assert.match(canonicalRouteTests, /unsafe or exhausted domain versions are nonretryable conflicts/);
 });
 
 test('canonical writer takes aggregate lock then timestamps committed evidence', () => {
