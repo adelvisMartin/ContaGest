@@ -8,7 +8,7 @@ import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
 import { PAGE_ROUTES } from '../frontend/src/data/pageRegistry.js';
 import { waitForRouteReady } from './support/playwright-determinism.mjs';
 import { fixtureForRequest } from './support/erp-system-fixtures-v155.mjs';
-import { assertLocalLabOrigin, isAllowedLabRequest } from './support/performance-lab-isolation-v1293.mjs';
+import { assertLocalLabOrigin, isAllowedLabRequest, isAllowedLabRedirect } from './support/performance-lab-isolation-v1293.mjs';
 
 const targetBase = String(process.env.QA_BASE_URL || '').trim();
 if (targetBase) assertLocalLabOrigin(targetBase);
@@ -70,6 +70,19 @@ for (const item of MODULE_VISUAL_CATALOG) {
     page.on('pageerror', error => errors.push(error.message));
     const allowedOrigin = assertLocalLabOrigin(testInfo.project.use.baseURL);
     let blockedExternalRequests = 0;
+    let observedExternalRequests = 0;
+    let unsafeRedirectResponses = 0;
+    page.on('request', request => {
+      // Playwright may not re-route a redirected URL, but emits a request event.
+      if (!isAllowedLabRequest(request.url(), allowedOrigin)) observedExternalRequests += 1;
+    });
+    page.on('response', response => {
+      const status = response.status();
+      const location = status >= 300 && status < 400 ? response.headers().location : null;
+      if (location && !isAllowedLabRedirect(location, response.url(), allowedOrigin)) {
+        unsafeRedirectResponses += 1;
+      }
+    });
     let mockedApiRequests = 0;
     await page.route('**/*', async (route) => {
       const request = route.request();
@@ -122,7 +135,9 @@ for (const item of MODULE_VISUAL_CATALOG) {
       }));
     }));
     const routeReadyMs = performance.now() - started;
-    assert.equal(blockedExternalRequests, 0, 'Lab attempted external HTTP requests; evidence is not isolated');
+    assert.equal(blockedExternalRequests, 0, 'Lab attempted direct external HTTP requests');
+    assert.equal(observedExternalRequests, 0, 'Lab observed foreign requests, including redirect chains');
+    assert.equal(unsafeRedirectResponses, 0, 'Lab observed unsafe HTTP redirect targets');
     assert.deepEqual(errors, [], 'Route emitted JavaScript errors during lab capture');
     const cpus = os.cpus();
     const labEnvironment = {
