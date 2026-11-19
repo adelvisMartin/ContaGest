@@ -159,7 +159,9 @@ export const DataImportService = {
       catch(error){throwPreviewError(error);}
     }
     else{
-      const text=await file.text();
+      let text;
+      try{text=decoder.decode(await file.arrayBuffer());}
+      catch{throw new Error('El archivo no es UTF-8 válido. Exporta CSV, TSV o JSON en UTF-8.');}
       if(name.endsWith('.json'))rows=JSON.parse(text);
       else{
         try{rows=parseDelimitedImport(text,name.endsWith('.tsv')||name.endsWith('.txt')?'\t':',');}
