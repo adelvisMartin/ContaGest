@@ -15,6 +15,7 @@ The real integration probe `backend/src/modules/hipico-bot/hipico-domain-query.p
 
 7. The PostgreSQL index for the new `created_at DESC, id DESC` ordering is present, valid and ready before the synthetic 100-read p50/p95 baseline runs. This is not a production SLA.
 8. On applied canonical transitions, `hipico_domain_aggregates.updated_at` is stamped with `clock_timestamp()` *after* the event insert instead of transaction-start `now()`. The PG17 test requires aggregate `updated_at` not to predate the result event `created_at`. Corrections are append-only evidence and do not advance the aggregate's state timestamp.
+9. Both canonical API read and write routes distinguish permanent state-version errors (`HIPICO_DOMAIN_STATE_VERSION_UNSAFE` / `HIPICO_DOMAIN_STATE_VERSION_EXHAUSTED`) from temporary backend outages: HTTP `409` with `retryable:false`, not `503` / infinite retry. Domain events remain unchanged on the rejected write. The route unit contract checks this classification; an HTTP/browser run is still required.
 
 These are synthetic QA fixtures, not official external racing results, financial balances or remates. RLS is owner-based in the existing SQL policy; group-level separation is guaranteed by the server's query scope, not by pretending a group RLS policy exists.
 
