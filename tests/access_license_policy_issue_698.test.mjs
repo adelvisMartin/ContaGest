@@ -83,6 +83,8 @@ test('#1362 one-time licence secrets never enter scoped browser persistence or e
     profile:{id:'staff-test'},
     healthVertical:{secretClinicalData:'must-not-persist'},
     licenseCredentials:{licenseKey:'CG-RAW-SECRET',temporaryPassword:'TEMP-SECRET'},
+    licenseKey:'CG-RAW-SECRET',
+    temporaryPassword:'TEMP-SECRET',
     licenses:[
       {id:'new-license',licenseKey:'CG-RAW-SECRET',temporaryPassword:'TEMP-SECRET',
        credentials:{licenseKey:'CG-RAW-SECRET'},keyPreview:'CG-••••'},
@@ -92,6 +94,8 @@ test('#1362 one-time licence secrets never enter scoped browser persistence or e
   const durable=stripSensitivePersistedState(snapshot);
   assert.equal('healthVertical' in durable,false);
   assert.equal('licenseCredentials' in durable,false);
+  assert.equal('licenseKey' in durable,false);
+  assert.equal('temporaryPassword' in durable,false);
   assert.deepEqual(durable.licenses,[
     {id:'new-license',keyPreview:'CG-••••'},
     {id:'previous',keyPreview:'PREVIEW'}
