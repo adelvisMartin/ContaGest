@@ -66,8 +66,24 @@ function hydrate(session) {
   const base = createDefaultState();
   try {
     // Legacy unscoped state is intentionally not migrated: its tenant provenance is unknown.
-    const saved = JSON.parse(localStorage.getItem(storageKey(session)) || 'null');
-    return normalize(saved ? deepMerge(base, withoutClinicalCache(saved)) : base);
+    const key = storageKey(session);
+    const saved = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!saved) return normalize(base);
+    const sanitized = withoutClinicalCache(saved);
+    // Previous releases may already have stored one-time secrets and PHI.
+    // Purge those original bytes at hydration; filtering the in-memory copy
+    // alone leaves recoverable secrets behind in localStorage.
+    const current = JSON.stringify(saved);
+    const safe = JSON.stringify(sanitized);
+    if (current !== safe) {
+      try { localStorage.setItem(key, safe); }
+      catch {
+        // If storage cannot be overwritten (quota/security), remove the unsafe
+        // snapshot. The sanitized in-memory state remains usable.
+        try { localStorage.removeItem(key); } catch { /* storage denied */ }
+      }
+    }
+    return normalize(deepMerge(base, sanitized));
   } catch { return normalize(base); }
 }
 
