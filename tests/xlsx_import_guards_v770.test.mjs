@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import { xlsxColumnIndex, assertXlsxHeaders, assertXlsxImportRowCount, assertXlsxCellValue, assertXlsxWorksheetTarget, isXlsxPreviewXmlPart, xlsxSharedString } from '../frontend/src/services/xlsxImportGuards.mjs';
 
 test('#770 XLSX row and column references have bounded exact syntax', () => {
@@ -49,4 +50,15 @@ test('#770 10k deterministic cell references never map outside allowed preview w
     if (col <= 128) assert.equal(xlsxColumnIndex(reference), col - 1);
     else assert.throws(() => xlsxColumnIndex(reference), /XLSX_COLUMN_LIMIT/);
   }
+});
+
+test('#770 XLSX import service is wired to fail-closed preview guards', () => {
+  const service=readFileSync(new URL('../frontend/src/services/dataImportService.js',import.meta.url),'utf8');
+  assert.match(service,/xlsxColumnIndex\(cell\.getAttribute\('r'\)\)/);
+  assert.match(service,/assertXlsxHeaders\(matrix\.shift\(\)\|\|\[\]\)/);
+  assert.match(service,/assertXlsxImportRowCount\(sheetRows\.length\)/);
+  assert.match(service,/isXlsxPreviewXmlPart\(name\)/);
+  assert.match(service,/xlsxSharedString\(raw,shared\)/);
+  assert.match(service,/assertXlsxWorksheetTarget\(relation\.getAttribute\('Target'\)\)/);
+  assert.match(service,/if\(cell\.querySelector\('f'\)\)/);
 });
