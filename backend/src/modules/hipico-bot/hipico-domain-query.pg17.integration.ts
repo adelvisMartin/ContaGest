@@ -380,6 +380,39 @@ test('read and write reject unsafe BIGINT optimistic versions without additional
   assert.equal(count[0].count, 1n, 'An unsafe version cannot append new evidence');
 });
 
+test('PG17 cannot apply a transition beyond MAX_SAFE_INTEGER or append evidence', async () => {
+  assertIsolatedPg17();
+  const ownerId = randomUUID();
+  const groupKey = 'synthetic-version-boundary';
+  const aggregateKey = `synthetic-boundary-${randomUUID()}`;
+  await seedOpenedRace(ownerId, groupKey, aggregateKey);
+  const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+  await prisma.$executeRaw`
+    UPDATE public.hipico_domain_aggregates
+    SET state_version = ${maxSafe}
+    WHERE owner_id = ${ownerId}::uuid
+      AND group_key = ${groupKey}
+      AND aggregate_kind = 'race' AND aggregate_key = ${aggregateKey}
+  `;
+  await assert.rejects(persistHipicoDomainEvent({
+    ownerId, groupKey, aggregateKind: 'race', aggregateKey,
+    event: {
+      type: 'RACE_CLOSED', sourceMessageKey: 'synthetic-boundary-transition',
+      timestamp: '2026-11-19T12:00:00.000Z',
+      operatorConfirmed: true,
+      confirmationReason: 'Synthetic boundary transition must fail'
+    }
+  }), /HIPICO_DOMAIN_STATE_VERSION_EXHAUSTED/);
+
+  const finalState = await readHipicoDomainAggregate({
+    ownerId, groupKey, aggregateKind: 'race', aggregateKey
+  });
+  assert.equal(finalState?.aggregate.status, 'OPEN');
+  assert.equal(finalState?.aggregate.stateVersion, Number.MAX_SAFE_INTEGER);
+  assert.deepEqual(finalState?.events.map(event => event.eventType), ['RACE_OPENED'],
+    'A rejected transition must not leave append-only evidence behind');
+});
+
 test.after(async () => {
   await prisma.$disconnect();
 });
