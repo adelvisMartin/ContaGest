@@ -24,9 +24,15 @@
 
 Casos sintéticos 1000×: grupos A/B/C, default A, sin grupo legado, selección grupo, grupo desconocido, sin registros; filtrado por `scopeItems` debe ser determinista. Los 1000 escenarios modelados/ejecutados en prueba Node no son 1000 ciclos de refactor ni pruebas de backend/PostgreSQL/Android.
 
+**Microbenchmark focalizado Node 22 (copia aislada, 2026-11-19):** 1.000 participantes, 2.200 filas de historial, 2 etiquetas por fila. El algoritmo anterior construía 4.400 mapas de participantes por renderizado; el nuevo construye **1** y reutiliza sus búsquedas en las vistas móvil/escritorio. Salida textual de códigos idéntica en ambos algoritmos. En **una sola ejecución sintética** de `node bench-history.mjs` se observaron **218,02 ms vs 0,25 ms**. Es un resultado del *modelo focalizado*, no del navegador, UI real, PWA, ni benchmark regulatorio de cargas: el benchmark local no forma parte del repositorio y el delta de latencia del producto continúa **NOT_EXECUTED**.
+
+**Seguridad de la optimización:** el índice se crea de nuevo en cada `renderHistory()`, nunca se almacena en caché global, en `localStorage` ni entre identidades; el índice utiliza `groupItems(workspace.participants)` canónico con grupo activo. Prueba negativa de ID compartido A/B y cambio de grupo evita alias de etiquetas. Los dos bucles de historial reutilizan una instantánea de participantes durante la misma renderización y conservan escapes y saldo/formato originales.
+
+**QA adicional:** test 1.000 configuraciones multi-grupo variables (2–8 grupos, `groups` y `whatsappGroups`, filas sin `groupId`/null/empty, grupos desconocidos y selección activa), más los 1.000 casos iniciales. Se valida no mutación de registros y comportamiento al cambiar de grupo. El test de integración estática exige explícitamente **una construcción del índice** por render y referencias de móvil/escritorio al mismo índice. Estos 2.000 escenarios no son pruebas browser/E2E ni 100 refactors.
+
 **Performance:** ambos filtros son O(n); no hay mejora demostrada en LCP/INP/API p95. Medir antes/después en device PWA antes de cualquier claim de velocidad. La prioridad es evitar un resultado incorrecto o privacidad accidental.
 
-**FODA:** Fortaleza: helper canónico y tests ya integrados; Oportunidad: reusar la convención existente y reducir duplicación; Debilidad: selección UI histórica permisiva (SOURCE_VERIFIED); Amenaza: visibilidad cross-group de datos locales, estados obsoletos o una segunda autoridad de liquidez. Mitigación NOW: filtro canónico + negativos automatizados; FOLLOW_UP: investigar archivo `race-finalization.js` huérfano y sus posibles consumidores antes de cualquier eliminación, bajo #1294; REJECT: activar flujo de liquidación alternativo o copiar remates externos.
+**FODA:** Fortaleza: helper canónico y tests ya integrados; Oportunidad: reusar la convención existente, reducir duplicación y evitar reconstruir índices por fila; Debilidad: selección UI histórica permisiva (SOURCE_VERIFIED) y coste O(historial×participantes) en render de histórico (SOURCE_VERIFIED); Amenaza: visibilidad cross-group de datos locales, etiquetas obsoletas, estados obsoletos o una segunda autoridad de liquidez. Mitigación NOW: filtro canónico + negativos automatizados; FOLLOW_UP: investigar archivo `race-finalization.js` huérfano y sus posibles consumidores antes de cualquier eliminación, bajo #1294; REJECT: activar flujo de liquidación alternativo o copiar remates externos.
 
 ## Investigación competitiva de remates (advisory, sin scraping privado)
 
@@ -42,9 +48,10 @@ Casos sintéticos 1000×: grupos A/B/C, default A, sin grupo legado, selección 
 | Gate | Estado en este anexo |
 | --- | --- |
 | Código fuente y rutas | SOURCE_REVIEW |
-| Filtro canónico en prueba Node aislada sobre helper transcrito | PASS aislado, **NO** repositorio completo |
+| 2 suites de scope × 1.000 en Node aislado con helper transcrito | PASS aislado, **NO** repositorio completo |
 | Test del nuevo archivo contra checkout real | NOT_EXECUTED hasta CI/checkout |
 | PG17 tenant/owner A/B | NOT_EXECUTED; sin cambios API/DB |
+| Microbenchmark sintético de render de códigos (Node22, 1 ejecución) | OBSERVED aislado; NO producción ni browser |
 | Browser/mobile/Playwright, claro/oscuro | NOT_EXECUTED |
 | Hípico Physical QA/soak/restore | NOT_EXECUTED; owner #839 |
 | CI GitHub candidate SHA | PENDING al crear PR |
