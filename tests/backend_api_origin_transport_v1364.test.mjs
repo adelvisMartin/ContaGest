@@ -71,6 +71,11 @@ test('BackendApi keeps credentialed requests on approved origins and blocks redi
     assert.equal(calls.length, countBeforeAbort + 1, 'cancelled reads must not retry');
 
     globalThis.window.Capacitor = { isNativePlatform:()=>true };
+    // Native bridge may initialize after the JS module: an already imported API
+    // must stop using relative WebView origins without requiring a reload.
+    assert.equal(BackendApi.baseUrl, '', 'late native bridge must revoke relative API access');
+    await assert.rejects(BackendApi.get('/health'), (error) => error.status === 503);
+    assert.equal(calls.length, countBeforeAbort + 1, 'late native bridge must not send a request');
     entries.clear();
     const { BackendApi: NativeApi } = await import('../frontend/src/services/backendApi.js?security1364-native');
     assert.equal(NativeApi.baseUrl, '', 'Android release requires an explicitly configured HTTPS API');
