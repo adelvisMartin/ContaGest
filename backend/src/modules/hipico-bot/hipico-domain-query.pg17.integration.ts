@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
 import { readCanonicalLabRace } from './hipico-lab-canonical-read.js';
+import { persistHipicoDomainEvent } from './hipico-domain-event.store.js';
 import { operationalRaceContextKey } from './hipico-race-context-key.js';
 
 // This file intentionally has no test skip: its runner must provide a disposable
@@ -243,17 +244,22 @@ test('backdated correction recorded after a result cannot be hidden from LAB', a
     `;
   });
 
-  // The correction is inserted later, but carries an older, source-supplied time.
-  await prisma.$executeRaw`
-    INSERT INTO public.hipico_domain_events
-      (id, owner_id, group_key, aggregate_kind, aggregate_key, source_message_key,
-       event_type, disposition, previous_state, next_state, reason, original_event_id,
-       event_timestamp, operator_confirmed, confirmation_reason)
-    VALUES (${correctionId}, ${ownerId}::uuid, ${groupKey}, 'race', ${aggregateKey},
-            'synthetic-backdate', 'CORRECTION', 'evidence_only',
-            'RESULT_RECEIVED', 'RESULT_RECEIVED', 'APPEND_ONLY_EVIDENCE', ${resultId},
-            '2026-11-19T08:00:00Z'::timestamptz, true, 'Synthetic backdated correction')
-  `;
+  // Use the production append-only writer. The correction is inserted after
+  // the result but carries an older, source-supplied event timestamp.
+  const correction = await persistHipicoDomainEvent({
+    ownerId, groupKey, aggregateKind: 'race', aggregateKey,
+    event: {
+      type: 'CORRECTION',
+      eventId: correctionId,
+      sourceMessageKey: 'synthetic-backdate',
+      originalEventId: resultId,
+      timestamp: '2026-11-19T08:00:00.000Z',
+      operatorConfirmed: true,
+      confirmationReason: 'Synthetic backdated correction',
+      source: 'canonical_operator_api'
+    }
+  });
+  assert.equal(correction.disposition, 'evidence_only');
 
   const domain = await readHipicoDomainAggregate({
     ownerId, groupKey, aggregateKind: 'race', aggregateKey, limit: 30
