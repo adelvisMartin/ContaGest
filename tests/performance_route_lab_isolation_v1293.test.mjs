@@ -40,3 +40,15 @@ test('#1293 detects redirect targets which page.route may not intercept', async 
     assert.equal(isAllowedLabRedirect(location, `${approved}/nested/path`, approved), false, location);
   }
 });
+
+test('#1293 allows only WebSocket upgrades to the exact local HTTP origin', async () => {
+  const { isAllowedLabSocket } = await import('../qa/support/performance-lab-isolation-v1293.mjs');
+  assert.equal(isAllowedLabSocket('ws://127.0.0.1:8080/@vite/client', approved), true);
+  assert.equal(isAllowedLabSocket('wss://[::1]:8080/ws', 'https://[::1]:8080'), true);
+  for (const url of ['ws://127.0.0.1:9090/socket', 'wss://127.0.0.1:8080/ws',
+    'ws://localhost:8080/socket', 'ws://127.0.0.1.evil.com:8080',
+    'ws://user:pw@127.0.0.1:8080', 'wss://example.com/socket',
+    'javascript:alert(1)', 'not-a-url']) {
+    assert.equal(isAllowedLabSocket(url, approved), false, url);
+  }
+});
