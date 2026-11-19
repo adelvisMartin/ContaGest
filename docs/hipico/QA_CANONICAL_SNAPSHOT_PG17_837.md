@@ -10,10 +10,11 @@ The real integration probe `backend/src/modules/hipico-bot/hipico-domain-query.p
 2. The next read sees `CLOSED/v2` and its events. The query remains bounded and scoped by owner, group, kind and key; missing scope fails closed.
 3. Service-level `ownerId/groupKey` filtering is tested with overlapping keys. Independently, **PostgreSQL RLS** is tested after `SET LOCAL ROLE authenticated`, with per-owner test claims and no-claim denial. Additional PostgreSQL permission tests require actual SQLSTATE `42501`: `anon` cannot SELECT, and `authenticated` cannot UPDATE domain state. A superuser SQL filter alone would not establish RLS.
 4. The test refuses `DATABASE_RUNTIME_URL` overrides, non-local hosts, mismatched allocator host/port and names outside `hipico_e2e_*`; PostgreSQL major must equal 17.
-5. BIGINT state versions outside JavaScript's safe integer range fail closed in both read and write, without appending new evidence.
+5. BIGINT state versions outside JavaScript's safe integer range fail closed in both read and write, without appending new evidence. Additionally, an applied transition when `state_version` equals `Number.MAX_SAFE_INTEGER` rejects with `HIPICO_DOMAIN_STATE_VERSION_EXHAUSTED` **before** inserting the event or incrementing the version; the PG17 probe checks the aggregate and event count remain unchanged.
 6. A correction added *after* a result but carrying a backdated `event_timestamp` must not be hidden from LAB. Canonical event ordering uses database `created_at`; newly recorded events receive `clock_timestamp()` only after acquiring the aggregate lock. The PG17 integration calls the real `persistHipicoDomainEvent` writer and requires LAB result disclosure to remain unavailable.
 
 7. The PostgreSQL index for the new `created_at DESC, id DESC` ordering is present, valid and ready before the synthetic 100-read p50/p95 baseline runs. This is not a production SLA.
+8. On applied canonical transitions, `hipico_domain_aggregates.updated_at` is stamped with `clock_timestamp()` *after* the event insert instead of transaction-start `now()`. The PG17 test requires aggregate `updated_at` not to predate the result event `created_at`. Corrections are append-only evidence and do not advance the aggregate's state timestamp.
 
 These are synthetic QA fixtures, not official external racing results, financial balances or remates. RLS is owner-based in the existing SQL policy; group-level separation is guaranteed by the server's query scope, not by pretending a group RLS policy exists.
 
