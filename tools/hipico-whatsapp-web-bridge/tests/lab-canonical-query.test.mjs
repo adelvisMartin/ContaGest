@@ -638,10 +638,15 @@ test('canonical LAB success status must match the immutable requested purpose',a
         status+' cannot authorize unrelated '+wrongPurpose);
     }
   }
-  for(const purpose of ['participants','unknown']){
+  // 'participants' is a known read-only purpose, but recovery receipts
+  // cannot authorize it. Unknown purposes are denied before HTTP transport.
+  for(const [purpose,reason] of [
+    ['participants','LAB_CANONICAL_INVALID_RESPONSE'],
+    ['unknown','LAB_CANONICAL_DISABLED']
+  ]){
     for(const status of ['LAB_CANONICAL_RECOVERED','LAB_CANONICAL_REVISION_CHANGED']){
       assert.deepEqual(await simulated(purpose,status),
-        {available:false,reason:'LAB_CANONICAL_INVALID_RESPONSE'},status);
+        {available:false,reason},status+' for '+purpose);
     }
   }
   for(const purpose of ['status','result','summary','next','active','schedule']){
