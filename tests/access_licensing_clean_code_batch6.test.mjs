@@ -89,6 +89,9 @@ test('#1361 concurrent activation takes a tenant-scoped license row lock before 
     'The slot count and activation INSERT must follow the same locked license transaction');
   assert.match(activation,/AND "tenantId"=\$\{params\.tenantId\}/);
   assert.match(activation,/existing\.status !== 'active'/);
+  assert.match(activation,/if \(params\.isTrial\)/);
+  assert.match(activation,/AND "status" IN \('revoked','blocked'\)/);
+  assert.match(guard,/isTrial:record\.plan === 'trial'/);
   assert.match(activation,/if \(upgraded !== 1\)/);
 });
 
