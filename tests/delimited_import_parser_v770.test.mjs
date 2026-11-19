@@ -18,3 +18,18 @@ test('#770 bounds cells and rows before mapping untrusted data',()=>{
  assert.throws(()=>parseDelimitedImport('sku,name\nA,'+'x'.repeat(8193)),/CELL_TOO_LONG/);
  assert.throws(()=>parseDelimitedImport('sku,name\n'+'A,B\n'.repeat(5001)),/TOO_MANY_ROWS/);
 });
+
+
+test('#770 deterministic 10k quoted CSV samples preserve data without column drift',()=>{
+ let seed=0x7702026;
+ const next=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
+ const chars=['a','B','0',' ', ',', '"','\n','\r','\t'];
+ for(let i=0;i<10000;i++){
+  let value='';
+  const count=1+next()%28;
+  for(let j=0;j<count;j++)value+=chars[next()%chars.length];
+  const csv='sku,description\\nSKU-'+i+',"'+value.replaceAll('"','""')+'"\\n';
+  const rows=parseDelimitedImport(csv);
+  assert.deepEqual(rows,[{sku:'SKU-'+i,description:value.trim()}], 'case '+i);
+ }
+});
