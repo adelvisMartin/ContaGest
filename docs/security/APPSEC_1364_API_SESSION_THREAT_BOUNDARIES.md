@@ -156,3 +156,31 @@ Exact current regression blob SHAs at evidence time:
 **Still unverified:** approval of configured cross-origin sync destinations by owner; Android HTTPS/cookie/CSRF integration; A/B PostgreSQL17 tenant isolation and data authorization; deployed 429/Retry-After under synthetic abuse and replica scaling; encrypted backups/rotation; CSP enforcing vs Report-Only; Play AAB physical checks; full lint/typecheck/build/E2E; second AppSec reviewer and exact-HEAD CI. WebView and browser UI accessibility were inspected in source only, **not physically verified**. No automated scraping against third-party sites, production, Control Hípico SOURCE, or real personal data was used.
 
 **Decision:** PARTIAL, draft PR / NOT READY FOR MERGE.
+
+## Eighth review — atomic local sync and tenant/user race (2026-11-19)
+
+**Scope of this incremental cut:** `DataSyncService.pullAll()` and the Settings download UI. This is local state integrity, **not** an atomic multi-endpoint database snapshot or backend authorization proof.
+
+### Root cause and corrections
+
+- **Local partial import (P1 risk in client):** previously, each successful `/api/<resource>` GET immediately wrote into a draft. A subsequent 503 could leave clients, accounting and taxes partly replaced; `SettingsPage` ignored `results[].ok`, then `Store.import(draft)` persisted the partial draft and displayed a success toast. Source flow confirmed: `SettingsPage.mount` → `DataSyncService.pullAll` → `apiClient.apiGet` → `Store.import` (which normalizes, persists and emits). The local RED test asserted the draft should remain unchanged but observed several overwritten resources.
+- **Implementation:** stage all 14 results separately. Only write them into the caller's draft after all GETs succeed. Return the existing 14-element result contract, including per-resource `ok`/error status; no fake transaction or global financial logic changes.
+- **UI:** the download handler refuses `Store.import` if any resource failed, displays a specific incomplete-download error, and controls `disabled` + `aria-busy` on the button during the request, releasing it in `finally`. No success toast is shown after a partial failure. Full browser, screen-reader and theme verification remains **NOT_EXECUTED**.
+- **Session switch in-flight:** the request can span a tenant/user switch. The service now captures `AuthSession` identity (tenant+user) before downloading and rejects with status 409 before writing a draft when either changes. This avoids applying a mixed A/B response set. It deliberately permits a routine refresh of the same tenant+user; server auth/RLS remains authoritative.
+- **Remaining risk:** same-identity ABA changes (A→B→A) and concurrent changes of business state during a long pull are not proven safe under full integration; a monotonic session/revision guard and real browser E2E could be added only with repository-wide validation. Also, 14 separate API GETs cannot guarantee a consistent backend snapshot during concurrent writes; a transactional snapshot contract would require a separate backend-authorized change.
+
+### Exact local RED → GREEN evidence
+
+- **RED first:** `node --test tests/data_sync_atomic_import_v1364.test.mjs` against source blob `4e8aa3c18d272a256ff76792db0a506462d7fcd7` failed because a 503 after earlier successful reads changed the local draft. The separate user/tenant switch negative test failed before the identity guard (`Missing expected rejection`).
+- **GREEN:** `node --test tests/data_sync_atomic_import_v1364.test.mjs tests/data_sync_service_guard_v1364.test.mjs` on Node v22.16.0 → **9 PASS / 0 FAIL / 0 SKIPPED**, including 14 distinct failed-resource positions, tenant A→B, user A→B and same-identity refresh. `node --check` of touched service and regression test passed.
+- **Source provenance:** `git hash-object` confirms exact published blobs for `frontend/src/services/dataSyncService.js` (`efe324aee28cc19f0d38ff4925284513de50fdd6`), `frontend/src/services/authSession.js` (`29f51ffc8b80dba1c1513fb07f3bbb4210f9e80d`), `frontend/src/services/apiClient.js` (`5f5e74d4fb7140b878a29524d50237ba42d1fa97`), `frontend/src/services/apiBaseOriginPolicy.mjs` (`70d60bb2f97fb752b7e79a1bb5c22ac229eac3fc`), `tests/data_sync_atomic_import_v1364.test.mjs` (`764eb0e1c8a0ad376de97fa9f5b76702e5d0e652`), and `tests/data_sync_service_guard_v1364.test.mjs` (`68e8739b2cc0aa89a711f5567a566dcf99d4282b`). An isolated `uiEnhancementService.js` no-op side-effect stub was used in Node to avoid unrelated DOM; that module itself was **not** runtime tested here.
+- **Evidence artifact:** `qa-session-guard-9tests.log`; SHA256 `aecf00d4364eec58343c1a80526efb4004e44979078a15dd1c4e3facb16ca824`.
+- `package.json` adds the new regression to `npm run test:security:api-base`, which itself remains part of `npm test`.
+
+### Staff+/AppSec verdict
+
+- **Strength:** data is not imported on partial download, no naive retries or extra persistence added, cross-tenant change guarded.
+- **Opportunity:** true browser E2E for button busy/error/success, keyboard and focus plus A/B cookies/RLS verification.
+- **Weakness:** no full checkout or CI passing gates; a Node mock is not physical Android or a production response.
+- **Threat:** unresolved stale-identity races and absence of server-side multi-resource snapshot guarantee. Classify as follow-up or blocker according to owner/security review.
+- **Decision:** **PARTIAL / NOT READY FOR MERGE**; independent reviewer and all #1364 P0 gates remain mandatory. No Control Hípico, betting, scraping third parties or production DB operations.
