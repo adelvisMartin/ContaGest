@@ -1,0 +1,138 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import test from 'node:test';
+import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../database/prisma.js';
+import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
+
+// This file intentionally has no test skip: its runner must provide a disposable
+// PostgreSQL 17 database. It is invoked explicitly, not by the unit-test glob.
+function assertIsolatedPg17() {
+  const connection = new URL(String(process.env.DATABASE_URL || ''));
+  const database = decodeURIComponent(connection.pathname.slice(1));
+  assert.ok(['127.0.0.1', 'localhost', '::1'].includes(connection.hostname),
+    'Canonical snapshot integration must not connect to a remote database');
+  assert.match(database, /^hipico_e2e_[a-z0-9_]{8,63}$/,
+    'Canonical snapshot integration requires a disposable QA database');
+  assert.equal(database, process.env.HIPICO_E2E_DATABASE_NAME,
+    'The current database must match the ephemeral test allocator');
+}
+
+async function seedOpenedRace(ownerId: string, groupKey: string, aggregateKey: string) {
+  const eventId = randomUUID();
+  await prisma.$transaction(async tx => {
+    await tx.$executeRaw`
+      INSERT INTO public.hipico_domain_aggregates
+        (owner_id, group_key, aggregate_kind, aggregate_key, status, state_version)
+      VALUES (${ownerId}::uuid, ${groupKey}, 'race', ${aggregateKey}, 'OPEN', 1)
+    `;
+    await tx.$executeRaw`
+      INSERT INTO public.hipico_domain_events
+        (id, owner_id, group_key, aggregate_kind, aggregate_key,
+         source_message_key, event_type, disposition, previous_state, next_state,
+         reason, event_timestamp, operator_confirmed, confirmation_reason)
+      VALUES
+        (${eventId}, ${ownerId}::uuid, ${groupKey}, 'race', ${aggregateKey},
+         'qa-open', 'RACE_OPENED', 'applied', 'PREPARING', 'OPEN',
+         'VALID_TRANSITION', '2026-11-19T10:00:00Z'::timestamptz,
+         true, 'Synthetic operator opening')
+    `;
+  });
+}
+
+test('PostgreSQL 17 canonical snapshot stays consistent under a concurrent writer and tenant A/B', async () => {
+  assertIsolatedPg17();
+  const version = await prisma.$queryRaw<Array<{ version: number; name: string }>>`
+    SELECT current_setting('server_version_num')::int AS version, current_database() AS name
+  `;
+  assert.ok(version[0].version >= 170000 && version[0].version < 180000,
+    'PostgreSQL 17 is required, not an older or newer unverified major version');
+  assert.equal(version[0].name, process.env.HIPICO_E2E_DATABASE_NAME);
+
+  const ownerA = randomUUID();
+  const ownerB = randomUUID();
+  const groupA = 'synthetic-lab-a';
+  const groupB = 'synthetic-lab-b';
+  const aggregateKey = `synthetic-snapshot-${randomUUID()}`;
+  const scope = { ownerId: ownerA, groupKey: groupA, aggregateKind: 'race' as const, aggregateKey, limit: 30 };
+
+  await seedOpenedRace(ownerA, groupA, aggregateKey);
+  await seedOpenedRace(ownerB, groupA, aggregateKey);
+  await seedOpenedRace(ownerA, groupB, aggregateKey);
+
+  let readQueries = 0;
+  let writerCommitted = false;
+  const writer = new PrismaClient();
+  try {
+    const intercepted = {
+      $transaction: (async (callback: (tx: any) => Promise<unknown>, options: { isolationLevel: string }) =>
+        prisma.$transaction(async tx => {
+          assert.equal(options.isolationLevel, 'RepeatableRead');
+          return callback({
+            $queryRaw: async (...args: any[]) => {
+              const rows = await (tx.$queryRaw as any)(...args);
+              readQueries++;
+              if (readQueries === 1) {
+                const closedEventId = randomUUID();
+                // A separate connection commits between the two SELECTs.
+                await writer.$transaction(async w => {
+                  await w.$executeRaw`
+                    UPDATE public.hipico_domain_aggregates
+                    SET status = 'CLOSED', state_version = 2, updated_at = now()
+                    WHERE owner_id = ${ownerA}::uuid AND group_key = ${groupA}
+                      AND aggregate_kind = 'race' AND aggregate_key = ${aggregateKey}
+                  `;
+                  await w.$executeRaw`
+                    INSERT INTO public.hipico_domain_events
+                      (id, owner_id, group_key, aggregate_kind, aggregate_key,
+                       source_message_key, event_type, disposition, previous_state,
+                       next_state, reason, event_timestamp, operator_confirmed, confirmation_reason)
+                    VALUES (${closedEventId}, ${ownerA}::uuid, ${groupA}, 'race', ${aggregateKey},
+                            'qa-close', 'RACE_CLOSED', 'applied', 'OPEN', 'CLOSED',
+                            'VALID_TRANSITION', '2026-11-19T11:00:00Z'::timestamptz,
+                            true, 'Synthetic operator closure')
+                  `;
+                });
+                writerCommitted = true;
+              }
+              return rows;
+            }
+          });
+        }, options)) as typeof prisma.$transaction
+    };
+    const snapshot = await readHipicoDomainAggregate(scope, intercepted);
+    assert.equal(writerCommitted, true);
+    assert.equal(readQueries, 2);
+    assert.equal(snapshot?.aggregate.status, 'OPEN');
+    assert.equal(snapshot?.aggregate.stateVersion, 1);
+    assert.deepEqual(snapshot?.events.map(event => event.eventType), ['RACE_OPENED']);
+  } finally {
+    await writer.$disconnect();
+  }
+
+  // The next transaction sees the committed revision and all its evidence.
+  const current = await readHipicoDomainAggregate(scope);
+  assert.equal(current?.aggregate.status, 'CLOSED');
+  assert.equal(current?.aggregate.stateVersion, 2);
+  assert.deepEqual(current?.events.map(event => event.eventType), ['RACE_CLOSED', 'RACE_OPENED']);
+
+  // Owner and group boundaries still constrain both the aggregate and events.
+  for (const otherScope of [
+    { ...scope, ownerId: ownerB },
+    { ...scope, groupKey: groupB }
+  ]) {
+    const other = await readHipicoDomainAggregate(otherScope);
+    assert.equal(other?.aggregate.status, 'OPEN');
+    assert.equal(other?.aggregate.stateVersion, 1);
+    assert.deepEqual(other?.events.map(event => event.eventType), ['RACE_OPENED']);
+  }
+  assert.equal(await readHipicoDomainAggregate({ ...scope, groupKey: 'absent-lab-group' }), null);
+  await assert.rejects(
+    readHipicoDomainAggregate({ ...scope, groupKey: '' }),
+    /HIPICO_DOMAIN_READ_SCOPE_REQUIRED/
+  );
+});
+
+test.after(async () => {
+  await prisma.$disconnect();
+});
