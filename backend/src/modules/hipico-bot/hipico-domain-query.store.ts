@@ -69,6 +69,13 @@ export async function readHipicoDomainAggregate(
     `;
     if(!aggregate[0])return null;
 
+    // BIGINT must not silently lose precision when surfaced as a JSON number.
+    // Fail closed before evidence is read if an unexpected projection is unsafe.
+    const stateVersion=Number(aggregate[0].stateVersion);
+    if(!Number.isSafeInteger(stateVersion)||stateVersion<0){
+      throw new Error('HIPICO_DOMAIN_STATE_VERSION_UNSAFE');
+    }
+
     const events=await tx.$queryRaw<DomainEventReadRow[]>`
       SELECT id,
              source_message_id AS "sourceMessageId",
@@ -102,7 +109,7 @@ export async function readHipicoDomainAggregate(
         key:aggregateKey,
         groupKey,
         status:aggregate[0].status,
-        stateVersion:Number(aggregate[0].stateVersion||0),
+        stateVersion,
         createdAt:aggregate[0].createdAt,
         updatedAt:aggregate[0].updatedAt
       },
