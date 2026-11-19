@@ -8,6 +8,8 @@ on:
       - 'qa/performance-route-v1293.spec.mjs'
       - 'tests/performance_route_evidence_v1293.test.mjs'
       - 'tests/performance_route_campaign_v1293.test.mjs'
+      - 'tests/performance_route_lab_isolation_v1293.test.mjs'
+      - 'qa/support/performance-lab-isolation-v1293.mjs'
       - 'scripts/run-authoritative-contracts.mjs'
       - 'package.json'
       - '.github/workflows/performance-route-v1293.yml'
