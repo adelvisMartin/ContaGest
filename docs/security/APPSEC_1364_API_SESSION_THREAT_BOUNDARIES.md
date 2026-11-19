@@ -184,3 +184,18 @@ Exact current regression blob SHAs at evidence time:
 - **Weakness:** no full checkout or CI passing gates; a Node mock is not physical Android or a production response.
 - **Threat:** unresolved stale-identity races and absence of server-side multi-resource snapshot guarantee. Classify as follow-up or blocker according to owner/security review.
 - **Decision:** **PARTIAL / NOT READY FOR MERGE**; independent reviewer and all #1364 P0 gates remain mandatory. No Control Hípico, betting, scraping third parties or production DB operations.
+
+
+## Ninth review — stop post-switch requests and divergence with main (2026-11-19)
+
+**Source finding and verified targeted fix:**
+
+- In `DataSyncService.pullAll`, the first tenant/user identity guard previously ran after all 14 API GET requests. It prevented local import but still sent the remaining requests after an in-flight session switch; those requests could belong to the new session and waste API capacity.
+- **RED** (exact source mirror): switching tenant/user during the fourth GET produced **14 requests**, while the new negative regression expected **4**. `expected: 4 / actual: 14`.
+- **GREEN:** run `ensureCurrentSession` before each GET and immediately before draft application. Reuse the same 409 error contract and identity comparison. This halts further reads after a switch, retains the previous local snapshot and does not break a refresh with the same tenant/user. The transfer already in flight at the exact moment of change cannot be cancelled by this guard; actual server authorization and Play/WebView transport still require separate tests.
+- **Targeted test execution:** `node --test tests/data_sync_atomic_import_v1364.test.mjs tests/data_sync_service_guard_v1364.test.mjs` → **9 PASS / 0 FAIL / 0 skipped**, Node v22.16.0. The tests exercise 14 independent failure positions, same-identity refresh and A/B tenant/user changes. Local TAP log: `qa-security-sync-final.log`, SHA256 `245eacb4b0d7df09e897f84292c21d1b75d09631ce0b319fa5660a3928077cc6`.
+- **Git object provenance:** patched `frontend/src/services/dataSyncService.js` blob `54aedb7ff8526788a35ce839539125147849bffd` and `tests/data_sync_atomic_import_v1364.test.mjs` blob `35a6df5a5d9ac6929ec7445ef6c9ce35d32f1629` are identical to the local files executed. Adjacent `apiClient.js`, `AuthSession.js`, policy and existing data-sync guard also matched their GitHub blob hashes. The isolated UI enhancement module was stubbed only for Node; no full UI or browser release test.
+
+**Main movement caveat:** during this review the GitHub `main` head advanced from `bb13003cb77efc1c4c37390a0c6d8414f6232aa9` to `9b643db4ea6aee958b2e67868ce550f36a45c613` (99 commits), mostly Hípico. The branch became behind; comparing old baseline→updated main showed no overlapping changed paths with PR #1372 at that moment, but GitHub mergeability was unresolved. **No forced merge/rebase**, no cross-product edits, no exact-main merge claim. Revalidate the latest `main` immediately before any future integration.
+
+**Remaining P0:** backend 2 tenant/2 client BOLA/BFLA/PG17 and encryption, Android AAB/Keystore/Play Integrity, real 429+Retry-After with multiple replicas and false positives, restore/KMS, network CSP, full-browser UX/a11y, router/CI, independent reviewer. These remain NOT_EXECUTED/BLOCKED. **Decision: PARTIAL / NOT READY.**
