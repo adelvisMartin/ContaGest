@@ -61,6 +61,20 @@ Casos sintéticos 1000×: grupos A/B/C, default A, sin grupo legado, selección 
 
 **FODA actualizado:** Fortaleza: UI con escaping y selector canónicos reutilizables; Oportunidad: reducir trabajo redundante de mapas en el historial; Debilidad: sumidero de moneda sin escaping y búsqueda O(participantes) por línea; Amenaza: XSS desde moneda importada o datos de otros grupos si se reintroduce wildcard. NOW: escape y mapa por render con test, ya incluidos. FOLLOW_UP: review de campos no escapados en otras vistas solamente si reproducibles y separados del ticket. REJECT: sanitizar con regex indiscriminada, alterar importes o introducir otra capa de estado.
 
+## Revisión pública adicional de remates — hallazgos para ADR, no implementación
+
+Fuentes contrastadas el **19-11-2026**, documentación publicada/visible (sin capturar compradores, remates privados, API interna, cookies ni sesiones):
+
+| Comportamiento documentado | Fuente pública | Implicación para un posible #1010, sujeto a autorización de alcance |
+| --- | --- | --- |
+| Registro/aprobación de comprador y catálogo por lote | [Tattersalls — How it works](https://www.tattersallsonline.com/help/how-it-works/) | El backend debe decidir elegibilidad por usuario/rol/organización; no confiar en botón o bandera UI |
+| Cierre con extensión por oferta tardía | [Tattersalls — FAQs](https://www.tattersallsonline.com/help/) (describe extensión móvil de 2 minutos) | La ventana, reloj servidor, reglas y máximo de extensiones serían **configuración aprobada**, no constante copiada; simular dos ofertas al borde |
+| Oferta máxima/proxy y precio de reserva | [Tattersalls — How to bid](https://secure.tattersalls.com/4DCGI/Online/buying/how-to-bid) y [Horsebid](https://www.horsebid.com/how-it-works) | No exponer máximos privados, guardar incremento/moneda exactos y serializar la puja concurrente |
+| Visualización del estado de otras pujas | [ARQANA — How to bid](https://www.arqanaonline.com/how_to_bid.html) | Distinguir cantidad pública de postores de identidades privadas; etiquetas accesibles, cambios con `aria-live`, estado `loading/offline/stale` |
+| Política de crawling | [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309.html) | Respetar `robots.txt` y términos, límites de solicitudes y licencias antes de usar crawler; no scraping activo en esta revisión |
+
+**Decisión formal:** `FOLLOW_UP / NO IMPLEMENTAR` hasta que el owner apruebe ADR del negocio, alcance y legalidad: rematar/vender ejemplares físicos, roles comprador/consignador/martillero/cajero, monedas/impuestos/comisiones, prórroga/subasta, idempotencia/tickets, libros y devoluciones, reservas y protección de PII. No presumir que las fórmulas de apuestas `settleBet` aplican a una subasta. Ninguna fuente autoriza probar contra datos de terceros o dinero real. El trabajo inmediato del PR #1373 permanece limitado a grupo, renderizado, XSS y PWA offline.
+
 ## Evidencia y riesgos pendientes
 
 | Gate | Estado en este anexo |
