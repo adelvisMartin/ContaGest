@@ -1,5 +1,5 @@
 import { BackendApi } from './backendApi.js';
-import { assertXlsxZipBudget } from './xlsxZipBudget.mjs';
+import { assertXlsxZipBudget, assertXlsxZipEntryName } from './xlsxZipBudget.mjs';
 import { parseDelimitedImport } from './delimitedImportParser.mjs';
 
 export const IMPORT_TEMPLATE_VERSION='v1';
@@ -15,7 +15,7 @@ export const IMPORT_REQUIRED = {
 };
 
 const MAX_FILE_BYTES=5*1024*1024;
-const decoder=new TextDecoder('utf-8');
+const decoder=new TextDecoder('utf-8',{fatal:true});
 
 function u16(view,offset){return view.getUint16(offset,true);}
 function u32(view,offset){return view.getUint32(offset,true);}
@@ -48,12 +48,18 @@ async function unzipEntries(arrayBuffer){
     if(offset+46>bytes.length||u32(view,offset)!==0x02014b50)throw new Error('XLSX inválido: directorio ZIP corrupto.');
     const method=u16(view,offset+10);const compressed=u32(view,offset+20);const uncompressed=u32(view,offset+24);
     const nameLength=u16(view,offset+28);const extraLength=u16(view,offset+30);const commentLength=u16(view,offset+32);const localOffset=u32(view,offset+42);
-    const name=decoder.decode(bytes.slice(offset+46,offset+46+nameLength));
+    if(offset+46+nameLength+extraLength+commentLength>eocd)throw new Error('XLSX inválido: directorio ZIP incompleto.');
+    const name=assertXlsxZipEntryName(decoder.decode(bytes.slice(offset+46,offset+46+nameLength)));
     expanded=assertXlsxZipBudget({count,compressed,uncompressed,total:expanded});
     if(entries.has(name))throw new Error('XLSX contiene rutas ZIP duplicadas.');
     if(localOffset+30>bytes.length||u32(view,localOffset)!==0x04034b50)throw new Error('XLSX inválido: entrada ZIP corrupta.');
+    const flags=u16(view,offset+8);
+    if((flags&1)!==0||u16(view,localOffset+6)!==flags||u16(view,localOffset+8)!==method)
+      throw new Error('XLSX inválido: ZIP cifrado o metadatos locales incoherentes.');
     const localNameLength=u16(view,localOffset+26);const localExtraLength=u16(view,localOffset+28);const start=localOffset+30+localNameLength+localExtraLength;
-    if(start+compressed>bytes.length)throw new Error('XLSX inválido: datos ZIP incompletos.');
+    if(start>eocd||start+compressed>eocd||
+       decoder.decode(bytes.slice(localOffset+30,localOffset+30+localNameLength))!==name)
+      throw new Error('XLSX inválido: ruta o datos ZIP incoherentes.');
     const compressedBytes=bytes.slice(start,start+compressed);
     let content;if(method===0)content=compressedBytes;else if(method===8)content=await inflateRaw(compressedBytes,uncompressed);else throw new Error(`XLSX usa compresión ZIP no soportada (${method}).`);
     if(content.byteLength!==uncompressed)throw new Error('XLSX inválido: longitud descomprimida inconsistente.');
