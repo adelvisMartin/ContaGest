@@ -296,10 +296,16 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     }
 
     const row=rows[0];
+    const stateVersion=Number(row.stateVersion);
+    // Preserve exact optimistic-concurrency semantics for the PostgreSQL BIGINT.
+    // A rounded version must never be used to authorize a state transition.
+    if(!Number.isSafeInteger(stateVersion)||stateVersion<0){
+      throw new Error('HIPICO_DOMAIN_STATE_VERSION_UNSAFE');
+    }
     const current={
       ...initialHipicoState(input.aggregateKind),
       status:row.status as HipicoState,
-      stateVersion:Number(row.stateVersion||0)
+      stateVersion
     };
 
     if(input.event.type==='CORRECTION'||input.event.type==='REVERSAL'){
