@@ -7,7 +7,8 @@ export function sanitizeSpreadsheetCell(value='') {
 }
 
 function csvCell(value) {
-  const safe=sanitizeSpreadsheetCell(value).replace(/"/g,'""');
+  // Preserve typed negative amounts as numbers; signed text remains guarded.
+  const safe=neutralizeSpreadsheetFormula(value).replace(/"/g,'""');
   return `"${safe}"`;
 }
 

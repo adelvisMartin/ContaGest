@@ -127,4 +127,10 @@ test('commercial and general CSV exports share cell and header protection', asyn
     '\uFEFF"Valor"\r\n"""quoted"",\nline"');
   assert.equal(commercialCsv([{value:42}],[{key:'value',label:'Número'}]),
     '\uFEFF"Número"\r\n"42"');
+  assert.equal(commercialCsv([{amount:-125.5}],[{key:'amount',label:'Saldo'}]),
+    '\uFEFF"Saldo"\r\n"-125.5"');
+  assert.equal(commercialCsv([{amount:'-125.5'}],[{key:'amount',label:'Saldo'}]),
+    '\uFEFF"Saldo"\r\n"\'-125.5"');
+  assert.equal(commercialCsv([{amount:-125n}],[{key:'amount',label:'Saldo'}]),
+    '\uFEFF"Saldo"\r\n"-125"');
 });
