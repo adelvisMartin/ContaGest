@@ -181,6 +181,18 @@ test('PostgreSQL 17 canonical snapshot stays consistent under a concurrent write
 
 test('PostgreSQL 17 synthetic canonical-read latency baseline is observable', async () => {
   assertIsolatedPg17();
+  const index = await prisma.$queryRaw<Array<{
+    valid: boolean; ready: boolean; definition: string
+  }>>`
+    SELECT i.indisvalid AS valid, i.indisready AS ready,
+           pg_get_indexdef(i.indexrelid) AS definition
+    FROM pg_index i
+    WHERE i.indexrelid = to_regclass('public.hipico_domain_events_recorded_order_v837')
+  `;
+  assert.equal(index.length, 1, 'QA migration must install the recorded-order index');
+  assert.equal(index[0].valid, true, 'A failed concurrent index build is not a valid release');
+  assert.equal(index[0].ready, true);
+  assert.match(index[0].definition, /created_at DESC, id DESC/);
   const ownerId = randomUUID();
   const groupKey = 'synthetic-perf-lab';
   const aggregateKey = `synthetic-perf-${randomUUID()}`;
@@ -285,6 +297,38 @@ test('backdated correction recorded after a result cannot be hidden from LAB', a
   });
   assert.equal(published.available, false);
   assert.equal(published.reason, 'CANONICAL_RESULT_EVIDENCE_MISSING');
+});
+
+test('read and write reject unsafe BIGINT optimistic versions without additional evidence', async () => {
+  assertIsolatedPg17();
+  const ownerId = randomUUID();
+  const groupKey = 'synthetic-unsafe-version';
+  const aggregateKey = `synthetic-bigint-${randomUUID()}`;
+  await seedOpenedRace(ownerId, groupKey, aggregateKey);
+  const unsafeVersion = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
+  await prisma.$executeRaw`
+    UPDATE public.hipico_domain_aggregates SET state_version = ${unsafeVersion}
+    WHERE owner_id = ${ownerId}::uuid AND group_key = ${groupKey}
+      AND aggregate_kind = 'race' AND aggregate_key = ${aggregateKey}
+  `;
+  await assert.rejects(readHipicoDomainAggregate({
+    ownerId, groupKey, aggregateKind: 'race', aggregateKey
+  }), /HIPICO_DOMAIN_STATE_VERSION_UNSAFE/);
+  await assert.rejects(persistHipicoDomainEvent({
+    ownerId, groupKey, aggregateKind: 'race', aggregateKey,
+    event: {
+      type: 'RACE_CLOSED', sourceMessageKey: 'synthetic-unsafe-write',
+      timestamp: '2026-11-19T12:00:00.000Z',
+      operatorConfirmed: true,
+      confirmationReason: 'Reject unsafe version'
+    }
+  }), /HIPICO_DOMAIN_STATE_VERSION_UNSAFE/);
+  const count = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT count(*) AS count FROM public.hipico_domain_events
+    WHERE owner_id = ${ownerId}::uuid AND group_key = ${groupKey}
+      AND aggregate_kind = 'race' AND aggregate_key = ${aggregateKey}
+  `;
+  assert.equal(count[0].count, 1n, 'An unsafe version cannot append new evidence');
 });
 
 test.after(async () => {
