@@ -53,6 +53,21 @@ async function seedOpenedRace(ownerId: string, groupKey: string, aggregateKey: s
   });
 }
 
+test('PG17 recorded-order index upgrade preserves existing append-only evidence', async () => {
+  assertIsolatedPg17();
+  const beforeIndex = await readHipicoDomainAggregate({
+    ownerId: '22222222-2222-4222-8222-222222222222',
+    groupKey: 'pg17-upgrade-fixture',
+    aggregateKind: 'race',
+    aggregateKey: 'qa_preindex_existing',
+    limit: 5
+  });
+  assert.equal(beforeIndex?.aggregate.status, 'OPEN');
+  assert.equal(beforeIndex?.aggregate.stateVersion, 1);
+  assert.deepEqual(beforeIndex?.events.map(row => row.eventType), ['RACE_OPENED']);
+  assert.equal(beforeIndex?.events[0].sourceMessageKey, 'qa-existing-message');
+});
+
 test('PostgreSQL 17 canonical snapshot stays consistent under a concurrent writer and tenant A/B', async () => {
   assertIsolatedPg17();
   const version = await prisma.$queryRaw<Array<{ version: number; name: string }>>`
