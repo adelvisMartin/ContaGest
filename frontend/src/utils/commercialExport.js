@@ -1,4 +1,4 @@
-import { neutralizeSpreadsheetFormula } from '../services/csv.js';
+import { neutralizeSpreadsheetFormula } from './csvFormulaGuard.js';
 
 // Preserve this public adapter's string behavior while sharing the canonical
 // formula guard with all client-side CSV exports (including invisible prefixes).

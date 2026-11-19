@@ -109,3 +109,22 @@ test('PDF export produces a self-contained PDF document without external librari
   assert.match(text,/\/Type \/Page/);
   assert.match(text,/startxref\n\d+\n%%EOF/);
 });
+
+test('commercial and general CSV exports share cell and header protection', async () => {
+  const { encodeCsvCell } = await import('../frontend/src/services/csv.js');
+  for (const value of [
+    '=1+1','+SUM(A1)','-2+3','@SUM(A1)',
+    '\u200b=HYPERLINK("https://invalid.example")','\u2060@SUM(A1)',
+    '\u00ad=HYPERLINK("https://invalid.example")','\ufeff-42',
+    'Cliente C.A.','  Comercial',' 0.00','-125.50'
+  ]) {
+    assert.equal(commercialCsv([{value}], [{key:'value',label:'Valor'}]).split('\r\n')[1],
+      encodeCsvCell(value), JSON.stringify(value));
+    assert.equal(commercialCsv([], [{key:'value',label:value}]),
+      '\uFEFF'+encodeCsvCell(value), JSON.stringify(value));
+  }
+  assert.equal(commercialCsv([{value:'"quoted",\nline'}],[{key:'value',label:'Valor'}]),
+    '\uFEFF"Valor"\r\n"""quoted"",\nline"');
+  assert.equal(commercialCsv([{value:42}],[{key:'value',label:'Número'}]),
+    '\uFEFF"Número"\r\n"42"');
+});
