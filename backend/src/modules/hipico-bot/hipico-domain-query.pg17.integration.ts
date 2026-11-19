@@ -221,28 +221,41 @@ test('backdated correction recorded after a result cannot be hidden from LAB', a
 
   const resultId = randomUUID();
   const correctionId = randomUUID();
-  const resultPayload = JSON.stringify({
+  const raceScope = {
     raceContextComplete: true, racetrack: race.racetrack,
-    raceNumber: race.raceNumber, raceDate: race.raceDate, board: ['5', '1']
+    raceNumber: race.raceNumber, raceDate: race.raceDate
+  };
+  const closed = await persistHipicoDomainEvent({
+    ownerId, groupKey, aggregateKind: 'race', aggregateKey,
+    event: {
+      type: 'RACE_CLOSED', sourceMessageKey: 'synthetic-close',
+      timestamp: '2026-11-19T11:00:00.000Z',
+      operatorConfirmed: true,
+      confirmationReason: 'Synthetic operator race closure',
+      normalizedPayload: raceScope,
+      source: 'canonical_operator_api'
+    }
   });
-  await prisma.$transaction(async tx => {
-    await tx.$executeRaw`
-      UPDATE public.hipico_domain_aggregates
-      SET status = 'RESULT_RECEIVED', state_version = 3, updated_at = now()
-      WHERE owner_id = ${ownerId}::uuid AND group_key = ${groupKey}
-        AND aggregate_kind = 'race' AND aggregate_key = ${aggregateKey}
-    `;
-    await tx.$executeRaw`
-      INSERT INTO public.hipico_domain_events
-        (id, owner_id, group_key, aggregate_kind, aggregate_key, source_message_key,
-         event_type, disposition, previous_state, next_state, reason,
-         normalized_payload, event_timestamp, operator_confirmed, confirmation_reason)
-      VALUES (${resultId}, ${ownerId}::uuid, ${groupKey}, 'race', ${aggregateKey},
-              'synthetic-result', 'RESULT_RECORDED', 'applied', 'CLOSED', 'RESULT_RECEIVED',
-              'VALID_TRANSITION', ${resultPayload}::jsonb,
-              '2026-11-19T11:00:00Z'::timestamptz, true, 'Synthetic operator confirmation')
-    `;
+  assert.equal(closed.nextState, 'CLOSED');
+  const result = await persistHipicoDomainEvent({
+    ownerId, groupKey, aggregateKind: 'race', aggregateKey,
+    event: {
+      type: 'RESULT_RECORDED', eventId: resultId,
+      sourceMessageKey: 'synthetic-result',
+      timestamp: '2026-11-19T12:00:00.000Z',
+      operatorConfirmed: true,
+      confirmationReason: 'Synthetic operator confirmed result',
+      normalizedPayload: { ...raceScope, board: ['5', '1'] },
+      source: 'canonical_operator_api'
+    }
   });
+  assert.equal(result.nextState, 'RESULT_RECEIVED');
+  const beforeCorrection = await readCanonicalLabRace({
+    ownerId, groupKey, race, purpose: 'result'
+  });
+  assert.equal(beforeCorrection.available, true);
+  assert.equal(beforeCorrection.reason, 'CANONICAL_RESULT_CONFIRMED_INTERNAL');
+
 
   // Use the production append-only writer. The correction is inserted after
   // the result but carries an older, source-supplied event timestamp.
