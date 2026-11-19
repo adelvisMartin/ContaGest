@@ -31,6 +31,11 @@ export function validateLabEnvironment(env) {
       env.colorScheme !== 'light' || env.reducedMotion !== 'reduce' ||
       env.networkProfile !== 'UNTHROTTLED_NOT_VERIFIED') reject('ENVIRONMENT_INVALID');
 }
+/** Stable SHA-bound runner identity, independent of source JSON key order. */
+export function labEnvironmentFingerprint(env) {
+  validateLabEnvironment(env);
+  return JSON.stringify(ENVIRONMENT_KEYS.map(key => env[key]));
+}
 function percentile(sorted, fraction) { return sorted[Math.ceil(sorted.length * fraction) - 1]; }
 function stats(values) {
   if (values.some(value => !isMetric(value))) reject('METRIC_INVALID');
@@ -69,8 +74,7 @@ export function summarizeLabCampaigns({ candidateSha, catalog, campaigns }) {
         summary.authenticatedApiAndPostgresStatus !== 'NOT_EXECUTED' ||
         !Array.isArray(summary.missingRoutes) || summary.missingRoutes.length !== 0 ||
         !Array.isArray(summary.routes) || summary.routes.length !== 60) reject('SUMMARY_AUTHORITY_INVALID');
-    validateLabEnvironment(summary.labEnvironment);
-    const fingerprint = JSON.stringify(ENVIRONMENT_KEYS.map(key => summary.labEnvironment[key]));
+    const fingerprint = labEnvironmentFingerprint(summary.labEnvironment);
     if (environmentFingerprint !== null && environmentFingerprint !== fingerprint) reject('ENVIRONMENT_MISMATCH');
     environmentFingerprint = fingerprint;
     runIds.add(summary.runId);
