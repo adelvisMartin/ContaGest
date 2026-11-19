@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import { escapeHtml } from '../frontend/public/hipico-control/assets/js/ui.js';
 import { scopeItems } from '../frontend/public/hipico-control/assets/js/operational-ledger.js';
 
 const app = readFileSync(new URL('../frontend/public/hipico-control/assets/js/app.js', import.meta.url), 'utf8');
@@ -101,4 +103,89 @@ test('PWA rotates its atomic offline cache when the scoped UI changes', () => {
   assert.match(sw, /await self\.skipWaiting\(\)/);
   assert.match(sw, /await self\.clients\.claim\(\)/);
   assert.doesNotMatch(sw, /indexedDB\.deleteDatabase|localStorage\.clear|sessionStorage\.clear/);
+});
+
+
+test('movement rendering uses one owner-scoped index and escapes untrusted currency HTML', () => {
+  const pCodeSource = app.split('\n').find(line => line.startsWith('function pCode('));
+  const renderSource = app.split('\n').find(line => line.startsWith('function renderMovements()'));
+  assert.ok(pCodeSource && renderSource, 'source functions must remain available in the live UI');
+  assert.match(renderSource, /const participantsById = pMap\(\)/);
+  assert.equal((renderSource.match(/pMap\(\)/g) || []).length, 1);
+  assert.equal((renderSource.match(/pCode\(m\.(?:participantId|counterpartyId), participantsById\)/g) || []).length, 2);
+  assert.match(renderSource, /escapeHtml\(m\.currency \|\| "VES"\)/);
+
+  const workspace = {
+    config: { groups: [{ id: 'group-A' }, { id: 'group-B' }], activeGroupId: 'group-B' },
+    participants: [
+      { id: 'shared', groupId: 'group-A', code: 'PRIVATE-A' },
+      { id: 'shared', groupId: 'group-B', code: 'VISIBLE-B' },
+      { id: 'other', groupId: 'group-B', code: 'COUNTERPART-B' }
+    ],
+    movements: [
+      { id: 'mA', groupId: 'group-A', type: 'transfer', participantId: 'shared', amount: 99, currency: 'VES', note: 'only A', createdAt: '2026-11-19T12:00:00.000Z' },
+      { id: 'legacy', type: 'transfer', participantId: 'shared', amount: 500, currency: 'VES', note: 'legacy A', createdAt: '2026-11-19T12:00:00.000Z' },
+      { id: 'mB', groupId: 'group-B', type: 'transfer', participantId: 'shared', counterpartyId: 'other', amount: 12,
+        currency: '<img src=x onerror=alert(1)>', note: 'sent to B', createdAt: '2026-11-19T12:01:00.000Z' }
+    ]
+  };
+  let mapBuilds = 0;
+  const context = {
+    workspace,
+    escapeHtml,
+    groupItems(items) { return scopeItems(context.workspace, items); },
+    pMap() {
+      mapBuilds += 1;
+      return new Map(scopeItems(context.workspace, context.workspace.participants).map(row => [row.id, row]));
+    },
+    number(value) { return String(value); },
+    empty() { return 'NO_MOVEMENTS'; },
+    Date
+  };
+  context.pCode = runInNewContext('(' + pCodeSource + ')', context);
+  const renderMovements = runInNewContext('(' + renderSource + ')', context);
+
+  const html = renderMovements();
+  assert.equal(mapBuilds, 1, 'not once per movement or counterparty');
+  assert.ok(html.includes('VISIBLE-B'));
+  assert.ok(html.includes('COUNTERPART-B'));
+  assert.ok(html.includes('sent to B'));
+  assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'), 'currency is text, not a node');
+  assert.ok(!html.includes('<img'), 'untrusted currency must not create elements');
+  assert.ok(!html.includes('PRIVATE-A') && !html.includes('only A') && !html.includes('legacy A'));
+  context.workspace.config.activeGroupId = 'group-A';
+  mapBuilds = 0;
+  const groupAHtml = renderMovements();
+  assert.equal(mapBuilds, 1, 'fresh index after group switch');
+  assert.ok(groupAHtml.includes('PRIVATE-A') && groupAHtml.includes('legacy A'));
+  assert.ok(!groupAHtml.includes('VISIBLE-B') && !groupAHtml.includes('COUNTERPART-B'));
+});
+
+test('1000 synthetic movements do not rebuild index for each rendered row', () => {
+  const pCodeSource = app.split('\n').find(line => line.startsWith('function pCode('));
+  const renderSource = app.split('\n').find(line => line.startsWith('function renderMovements()'));
+  const workspace = {
+    config: { groups: [{ id: 'A' }, { id: 'B' }], activeGroupId: 'B' },
+    participants: Array.from({ length: 1000 }, (_, i) => ({ id: 'p-' + i, code: 'B-' + i, groupId: 'B' })),
+    movements: Array.from({ length: 1000 }, (_, i) => ({
+      id: 'm-' + i, groupId: 'B', type: 'transfer',
+      participantId: 'p-' + i, amount: i + 1, currency: 'VES',
+      createdAt: '2026-11-19T12:00:00.000Z'
+    }))
+  };
+  let mapBuilds = 0;
+  const context = {
+    workspace, escapeHtml,
+    groupItems(items) { return scopeItems(workspace, items); },
+    pMap() { mapBuilds++; return new Map(scopeItems(workspace, workspace.participants).map(row => [row.id, row])); },
+    number(value) { return String(value); },
+    empty() { return 'NO_MOVEMENTS'; },
+    Date
+  };
+  context.pCode = runInNewContext('(' + pCodeSource + ')', context);
+  const renderMovements = runInNewContext('(' + renderSource + ')', context);
+  const html = renderMovements();
+  assert.equal(mapBuilds, 1, 'bounded one lookup index per render regardless of row count');
+  assert.equal((html.match(/class="audit-row"/g) || []).length, 1000);
+  assert.ok(html.includes('B-999') && html.includes('B-0'));
 });
