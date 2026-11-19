@@ -37,3 +37,18 @@ export function resolveApprovedApiBase(value, {
 
   return resolve(value) || resolve(fallback) || (native ? '' : API_PATH);
 }
+
+/** Legacy sync may use the API origin root, but cannot choose a new host from browser settings. */
+export function resolveApprovedSyncBase(value, options = {}) {
+  const raw = String(value || '').trim().replace(/\/$/, '');
+  if (raw === API_PATH) {
+    return resolveApprovedApiBase(raw, { ...options, fallback: '' }) === raw ? raw : '';
+  }
+  let url;
+  try { url = new URL(raw); } catch { return ''; }
+  if (url.username || url.password || url.search || url.hash ||
+      !['/', API_PATH].includes(url.pathname)) return '';
+  const canonicalApi = url.origin + API_PATH;
+  if (resolveApprovedApiBase(canonicalApi, { ...options, fallback: '' }) !== canonicalApi) return '';
+  return url.origin + (url.pathname === API_PATH ? API_PATH : '');
+}
