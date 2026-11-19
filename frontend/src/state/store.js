@@ -2,6 +2,7 @@ import { createDefaultState } from '../data/defaults.js';
 import { calculateQuote } from '../core/calculator.js';
 import { normalizeLanguage } from '../i18n/locales.js';
 import { normalizeThemePreference } from '../design-system/uxContract.v1.js';
+import { stripSensitivePersistedState } from './persistedStatePolicy.js';
 
 const STORAGE_KEY_PREFIX = 'contagest_ve_enterprise_v7_state';
 const AUTH_SESSION_KEY = 'contagest_auth_session';
@@ -25,11 +26,10 @@ function sessionScope(session = readAuthSession()) {
 }
 function storageKey(session) { return `${STORAGE_KEY_PREFIX}:${sessionScope(session)}`; }
 
-// Clinical records are server-owned PHI, never offline snapshots or user-export data.
-// This also strips legacy persisted Care payloads during the next hydration.
+// PHI and one-time licence credentials never enter localStorage or state export.
+// Hydration also removes legacy secrets and clinical snapshots saved by older builds.
 function withoutClinicalCache(snapshot) {
-  const { healthVertical: _clinicalRecords, ...durable } = snapshot || {};
-  return durable;
+  return stripSensitivePersistedState(snapshot);
 }
 
 function deepMerge(target, source) {
