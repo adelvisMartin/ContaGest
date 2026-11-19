@@ -67,3 +67,44 @@ test('timeline cursor is bounded, stable, and fails closed on invalid structure'
     assert.throws(() => decodeCareTimelineCursor(token));
   }
 });
+
+test('#712 timeline cursor rejects semantically equivalent but noncanonical encodings', () => {
+  const item = {
+    effectiveAt:'2026-10-19T10:00:00.000Z',
+    sourceType:'fact' as const,
+    sourceId:'fact-123'
+  };
+  const canonical = encodeCareTimelineCursor(item);
+  assert.deepEqual(decodeCareTimelineCursor(canonical), item);
+
+  // A different property order or duplicate JSON key must not be a second
+  // usable token for the same clinical cursor.
+  const reordered = Buffer.from(JSON.stringify({
+    sourceId:item.sourceId,sourceType:item.sourceType,effectiveAt:item.effectiveAt
+  })).toString('base64url');
+  assert.notEqual(reordered, canonical);
+  assert.throws(() => decodeCareTimelineCursor(reordered), /Cursor clínico inválido/);
+
+  const duplicate = Buffer.from(
+    JSON.stringify(item).replace('"sourceId":"fact-123"',
+      '"sourceId":"fact-123","sourceId":"fact-123"')
+  ).toString('base64url');
+  assert.throws(() => decodeCareTimelineCursor(duplicate), /Cursor clínico inválido/);
+});
+
+test('#712 timeline cursor rejects alternate base64url tail bits', () => {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const common = { effectiveAt:'2026-10-19T10:00:00.000Z', sourceType:'fact' as const };
+  const token = ['x-1','x-12','x-123','x-1234']
+    .map(sourceId => encodeCareTimelineCursor({...common,sourceId}))
+    .find(value => value.length % 4 !== 0);
+  assert.ok(token, 'Need a cursor whose last sextet has unused padding bits');
+  const last = token.at(-1)!;
+  const tailIndex = alphabet.indexOf(last);
+  const replacement = alphabet[tailIndex ^ 1];
+  const alias = token.slice(0,-1) + replacement;
+  assert.notEqual(alias, token);
+  assert.deepEqual(Buffer.from(alias,'base64url'),Buffer.from(token,'base64url'),
+    'Noncanonical final sextet can decode to the same bytes');
+  assert.throws(() => decodeCareTimelineCursor(alias), /Cursor clínico inválido/);
+});
