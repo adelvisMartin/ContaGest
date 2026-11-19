@@ -7,10 +7,17 @@ export const BUSINESS_SECTORS = [
 ] as const;
 export const COMMERCIAL_USES = ['evaluacion', 'demostracion', 'operacion', 'capacitacion', 'soporte'] as const;
 export const CANONICAL_LICENSE_MODULES = new Set(ACCESS_MANIFEST.modules.map((item) => item.route));
+const DEMO_DENIED_PERMISSIONS = new Set([
+  'admin.manage', 'audit.view', 'demos.manage', 'licenses.manage', 'modules.manage'
+]);
 export const PRIVILEGED_DEMO_ROUTES = new Set(
   ACCESS_MANIFEST.modules.filter((item) =>
-    item.permission === 'admin.manage' || item.permission.startsWith('platform.')
+    DEMO_DENIED_PERMISSIONS.has(item.permission) || item.permission.startsWith('platform.')
   ).map((item) => item.route)
+);
+export const SAFE_DEMO_MODULES = new Set(
+  ACCESS_MANIFEST.modules.map((item) => item.route)
+    .filter((route) => !PRIVILEGED_DEMO_ROUTES.has(route))
 );
 export const LICENSE_ROUTE_ALLOWLIST = new Set(['login', ...CANONICAL_LICENSE_MODULES]);
 export const licenseModuleSchema = z.string().min(1).max(80).refine(
