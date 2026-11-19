@@ -15,7 +15,7 @@ function parse(value) {
 }
 
 // Session storage is UI metadata only; credentials belong to HttpOnly cookies or native Keystore.
-const CREDENTIAL_FIELD = /(?:token$|password(?:hash)?$|passphrase$|secret$|(?:api|private|device|license|session|signing|secret)(?:private)?key$|^jwt$|^authorization$|^cookies?$|^credentials?$)/i;
+const CREDENTIAL_FIELD = /(?:token$|password(?:hash)?$|passphrase$|secret$|(?:api|private|device|license|session|signing|secret)(?:private)?key$|^(?:access|refresh|session|authorization)(?:private)?(?:key|cookie|header)$|^jwt$|^authorization$|^cookies?$|^credentials?$)/i;
 
 function stripCredentials(value, redaction) {
   if (Array.isArray(value)) return value.map((item) => stripCredentials(item, redaction));
