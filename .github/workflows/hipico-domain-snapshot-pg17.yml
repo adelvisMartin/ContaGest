@@ -84,7 +84,10 @@ jobs:
           $$;
           CREATE SCHEMA IF NOT EXISTS auth;
           CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
-          LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
+          LANGUAGE sql STABLE AS $
+            SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
+          $;
+          GRANT USAGE ON SCHEMA auth TO authenticated;
           SQL
       - name: Apply canonical domain migrations on isolated database only
         shell: bash
@@ -96,6 +99,13 @@ jobs:
             psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" \
               -v ON_ERROR_STOP=1 -f "$migration"
           done
+      - name: Grant fixture-only reader privileges for real RLS checks
+        shell: bash
+        run: |
+          psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" -v ON_ERROR_STOP=1 <<'SQL'
+          GRANT SELECT ON public.hipico_domain_aggregates,
+                          public.hipico_domain_events TO authenticated;
+          SQL
       - name: Real concurrent writer snapshot and owner/group isolation
         run: npm --workspace backend exec -- tsx --test src/modules/hipico-bot/hipico-domain-query.pg17.integration.ts
       - name: Drop ephemeral database even after failure
