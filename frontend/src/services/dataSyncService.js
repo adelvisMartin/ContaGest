@@ -29,5 +29,21 @@ function trustedSyncBase(baseUrl) {
 export const DataSyncService={
   health(baseUrl){return apiGet(trustedSyncBase(baseUrl),'/api/health');},
   async pushAll(baseUrl,state){const approved=trustedSyncBase(baseUrl);const results=[];for(const resource of SYNC_RESOURCES)results.push(await apiPost(approved,`/api/${resource}`,readResource(state,resource)));return results;},
-  async pullAll(baseUrl,draft){const approved=trustedSyncBase(baseUrl);const results=[];for(const resource of SYNC_RESOURCES){try{writeResource(draft,resource,await apiGet(approved,`/api/${resource}`));results.push({resource,ok:true});}catch(error){results.push({resource,ok:false,message:error.message});}}return results;}
+  async pullAll(baseUrl,draft){
+    const approved=trustedSyncBase(baseUrl);
+    const results=[];
+    const staged=[];
+    for(const resource of SYNC_RESOURCES){
+      try{
+        const data=await apiGet(approved,`/api/${resource}`);
+        staged.push([resource,data]);
+        results.push({resource,ok:true});
+      }catch(error){
+        results.push({resource,ok:false,message:error.message});
+      }
+    }
+    // A partial download must not replace a consistent local session snapshot.
+    if(results.every(({ok})=>ok)) for(const [resource,data] of staged) writeResource(draft,resource,data);
+    return results;
+  }
 };
