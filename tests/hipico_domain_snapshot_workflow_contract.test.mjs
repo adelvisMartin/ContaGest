@@ -32,6 +32,13 @@ test('recorded-at index matches exact canonical scope/order without write-blocki
   assert.doesNotMatch(migration, /^(?:BEGIN|COMMIT)\s*;/mi);
   assert.ok(workflow.includes(migrationPath));
   assert.ok(localRunner.includes(migrationPath));
+  // Both runners must exercise a real nonempty upgrade, not just indexing an empty table.
+  assert.ok(workflow.indexOf('Seed pre-index existing canonical row') <
+    workflow.indexOf('Upgrade schema with nonblocking recorded-order index'));
+  assert.ok(localRunner.indexOf('pre-index canonical upgrade fixture') <
+    localRunner.indexOf('apply nonblocking index to existing canonical events'));
+  assert.match(workflow, /pg17-upgrade-event-v837/);
+  assert.match(localRunner, /pg17-upgrade-event-v837/);
 });
 
 test('PG17 QA executes only with ephemeral database and cleans up even on failure', () => {
@@ -44,6 +51,8 @@ test('PG17 QA executes only with ephemeral database and cleans up even on failur
   assert.match(integration, /PG17 synthetic QA refuses DATABASE_RUNTIME_URL overrides/);
   assert.match(integration, /SET LOCAL ROLE authenticated/);
   assert.match(integration, /backdated correction recorded after a result cannot be hidden from LAB/);
+  assert.match(integration, /index upgrade preserves existing append-only evidence/);
+  assert.match(integration, /read and write reject unsafe BIGINT optimistic versions/);
 });
 
 test('canonical writer takes aggregate lock then timestamps committed evidence', () => {
