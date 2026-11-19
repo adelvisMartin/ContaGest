@@ -39,7 +39,7 @@ The **browser/Android JS is not trusted**. These client controls reduce accident
 | Gate | State | Evidence |
 | --- | --- | --- |
 | SOURCE_REVIEW | PASS (partial) | Read current `backendApi.js`, `authSession.js`, Express limiter, auth service, SW and project security rules using GitHub connector |
-| LOCAL_NODE_UNIT | PASS (bounded local mirror) | Node 22.16: 26/26 tests on policy + AuthSession, including 1,000 hostile synthetic URL combinations; 0 failures |
+| LOCAL_NODE_UNIT | PASS (bounded local mirror, new regression) | Node 22.16: 30/30 isolated tests on URL policy and AuthSession, including 1,000 synthetic hostile URLs; 0 failures. The GitHub transport integration test is still unexecuted. |
 | RED_TO_GREEN | PASS (bounded local mirror) | Credential retention test initially 2 fail / 1 pass; after redaction 3 pass / 0 fail; expanded cases green |
 | LOCAL_STATIC | PASS (bounded local mirror) | `node --check` on both modules and both isolated test files |
 | TRANSPORT_NODE_INTEGRATION | NOT_EXECUTED | Included in `npm run test:security:api-base` on PR, but repository checkout unavailable locally |
@@ -74,3 +74,13 @@ The local mirror is a **subset**, not the full Git checkout and not an exact-SHA
 - MDN redirect safety: https://developer.mozilla.org/en-US/docs/Web/API/Response/redirected
 - Express rate-limit headers: https://express-rate-limit.mintlify.app/reference/configuration
 - Android Security: https://developer.android.com/privacy-and-security/risks/
+
+## 2026-11-19 · Third-pass targeted regression (after draft PR creation)
+
+- **Verified RED→GREEN, local mirror only:** A production web origin `http://contagest.example` previously returned `/api/v1` from the API policy. Expected `''` (fail closed); actual `'/api/v1'` before fix. The added policy guard rejects non-HTTPS production documents while leaving HTTPS and explicit development loopback intact. OWASP MASVS-NETWORK and MASWE-0026 support enforcing secure transport.
+- **Verified RED→GREEN, local mirror only:** Nested `accessKey`, `sessionCookie` and `authorizationHeader` persisted in AuthSession snapshots despite credential redaction. The narrow alias filter now removes them without discarding `passwordChangeRequired`, `authorizationStatus` or non-secret `secretaryName`.
+- **Source-reviewed test correction:** HTTP fallback clears `contagest_api_base_url`. The original next test expected the prior absolute base URL without reapplying configuration. It now re-sets the approved origin before the POST and AbortError scenarios, preserving substantive assertions: no POST retry, no retry on cancel, and fail-closed native/insecure web paths.
+- **Observed isolated command:** `node --check` on policy and AuthSession plus `node --test` on the local minimal mirror (policy, session, hostile-origin test, insecure-web test, aliases) → 30 PASS / 0 FAIL / 0 skipped. Environment Node v22.16.0, no repository .git/lockfile/node_modules. These local tests are **not** exact-HEAD full repository certification.
+- **External guidance:** https://mas.owasp.org/MASVS/08-MASVS-NETWORK/ ; https://mas.owasp.org/MASWE/MASVS-NETWORK/MASWE-0026/ ; https://developer.mozilla.org/en-US/docs/Web/API/Response/redirected ; https://www.rfc-editor.org/rfc/rfc9110
+
+**Security scope:** Preventing frontend cleartext traffic and credential snapshot persistence does not prove API authorization, cryptographic key management, Play Integrity, Android store readiness, encrypted backup/restore, penetration testing, or tenant A/B isolation. The mandatory backend/postgres/native/external gates remain P0 acceptance blockers; no merge.
