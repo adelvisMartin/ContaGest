@@ -105,3 +105,30 @@ Exact current regression blob SHAs at evidence time:
 - `tests/api_base_origin_policy_v1364.test.mjs`: `22b298b67ed4269b0de4cef60d70c6eec604abd5`
 - `tests/auth_session_credential_sanitization_v1364.test.mjs`: `644cd9f700079fc03a583e67985cb6fb7bbd668e`
 - `tests/backend_api_origin_transport_v1364.test.mjs`: `73068a183d08ec166d038745b705b7dd19e405f1`
+
+## Fifth pass — abort-safe financial transport and anti-scraping source audit (2026-11-19)
+
+**Evidence classification:** targeted source and Node test verification, **not** a full AppSec/Android/API release sign-off.
+
+### Confirmed issue: AbortError retries financial writes
+
+- **Reproduction:** `BackendApi.request('/fiscal/close-period', {method:'POST', ...})` with a generated idempotency key and a fetch implementation rejecting with `AbortError`.
+- **RED before fix:** `tests/backend_api_abort_idempotency_regression_v1364.test.mjs` expected exactly one fetch and received **2**; an outer retry path in `frontend/src/services/backendApi.js` ignored aborted requests when an idempotency key existed.
+- **Minimum fix:** inside the request's catch, stop on `AbortError` or `fetchOptions.signal.aborted` before executing the idempotent retry. Keep the existing `status=0` error contract, adding `payload.cancelled: true` for callers; do not retry a cancelled operation.
+- **GREEN after fix:** three tests exercise (1) generated idempotency key + AbortError, (2) explicit key + already aborted AbortSignal while fetch throws TypeError, and (3) permitted transient failure that DOES retry once using the exact same key. The pre-existing 31 source-blob tests still pass. **34 PASS, 0 FAIL, 0 skipped** with Node v22.16.0, command `node --test tests/api_base_origin_policy_v1364.test.mjs tests/backend_api_origin_transport_v1364.test.mjs tests/auth_session_credential_sanitization_v1364.test.mjs tests/backend_api_abort_idempotency_regression_v1364.test.mjs`.
+- **Exact source evidence:** `git hash-object` of each of the seven tested files was checked against the corresponding GitHub blob SHA; `node --check` passed on seven files. Locally captured TAP log: `qa-abort-idempotency-v1364.log`, SHA256 `a664d59dff65513b5a706cafd6d6201e0ac66d8d9b2270d328ddc19c74feda18`. The targeted files were materialized into an isolated mirror; the full Git worktree remains unavailable.
+
+### Additional source-risk finding: rate limiter counter scope
+
+- **Verified source:** the five `express-rate-limit` declarations in `backend/src/shared/middleware/security.ts` (`globalRateLimit`, `mutationRateLimit`, `expensiveOperationRateLimit`, `authRateLimit`, `cspReportRateLimit`) set local limits without an explicit shared `store`.
+- **Documented library behavior:** without an external store, the library defaults to a process-local `MemoryStore`. Multiple processes/instances do **not** share enforcement counters, and aggregate permitted hits can multiply with instance count. Official source: https://github.com/express-rate-limit/express-rate-limit/blob/main/docs/overview.mdx and https://github.com/express-rate-limit/express-rate-limit/blob/main/docs/reference/stores.mdx. OWASP API4:2023: https://api-security.owasp.org/editions/2023/en/0xa4-unrestricted-resource-consumption/.
+- **Risk, not confirmed exploit:** multiple active backend instances and gateway policies have **not** been verified in this workspace; do not claim a production bypass. For multi-instance deployments, require measured aggregation via shared durable limiter (Redis or an approved platform/gateway quota) with an explicit outage policy, scope, key strategy, false positives and tenant/user fairness. Do **not** silently add a new provider, Redis secret, schema or dependency without owner approval and isolated production-like tests.
+- **Acceptance blocker:** synthetic normal pagination + authorised abuse campaign across 2+ ephemeral API instances and rate-limit 429/Retry-After log/metrics must be observed on the candidate SHA, with isolated test data. Current state **NOT_EXECUTED**. This remains a P0 anti-scraping gate.
+
+### Staff+ advisory after correction
+
+- **Strength:** retained original financial idempotency retry behavior for genuine temporary failures while honoring abort, with minimal code change.
+- **Opportunity:** verify user-facing UX for cancelled requests vs offline network failures and 429 Retry-After in an actual browser/device; never claim checked by Node mocks.
+- **Weakness:** source-scoped tests cannot certify actual PostgreSQL, native bridge, rate limiting, UX or app binary.
+- **Threat:** a shared limiter absent under horizontal scaling can weaken throttling; evidence required for deployment topology and response metrics.
+- **Decision:** PARTIAL / NOT_READY_FOR_MERGE. Preserve draft PR, keep #1364 open, no Control Hípico or production deployments.
