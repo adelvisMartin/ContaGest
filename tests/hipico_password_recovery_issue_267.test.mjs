@@ -49,7 +49,9 @@ test('#267 forces a fresh sign-in by clearing the cached cloud session before ch
   const passwordUpdateIndex = recovery.indexOf('/auth/v1/user');
   assert.ok(signOutIndex >= 0, 'recovery must clear the regular PWA session');
   assert.ok(passwordUpdateIndex > signOutIndex, 'regular session must be cleared before password update');
-  assert.match(supabase, /export async function signOut\(\)[\s\S]*?await persistSession\(null\);/);
+  // Current logout invalidates the bearer synchronously and serializes the
+  // IndexedDB purge with an epoch; the old one-argument call was obsolete.
+  assert.match(supabase, /export async function signOut\(\)[\s\S]*?cachedSession = null;[\s\S]*?await persistSession\(null, logoutEpoch\);/);
 });
 
 test('#267 validates password/confirmation and avoids account enumeration copy', async () => {

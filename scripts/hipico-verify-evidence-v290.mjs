@@ -3,11 +3,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { validHipicoDrRestoreEvidence } from './hipico-dr-restore-policy-v839.mjs';
-import { evidenceStatusesConflict } from './hipico-evidence-status-consistency-v839.mjs';
+import { evidenceStatusesConflict, firstInvalidEvidenceCopy } from './hipico-evidence-status-consistency-v839.mjs';
 import { consistentEvidenceSha, evidenceMentionsSha } from './hipico-evidence-sha-consistency-v839.mjs';
 import { validHipicoPhysicalMaterial } from './hipico-physical-material-integrity-v119.mjs';
 import { validSoakMetricEvidence } from './hipico-soak-metric-integrity-v120.mjs';
 import { validSoakSamplesProof } from './hipico-soak-samples-proof-v120.mjs';
+import { validHipicoPngEvidence } from './hipico-png-evidence-v839.mjs';
 
 const SHA40 = /^[0-9a-f]{40}$/i;
 const STATUSES = Object.freeze(['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
@@ -129,12 +130,16 @@ function validateSoakEvidence(data) {
 const files = await walk(evidenceRoot).catch(() => []);
 const jsonFiles = files.filter((file) => file.endsWith('.json'));
 const parsed = [];
+const malformedJson = [];
 for (const file of jsonFiles) {
   try {
     const data = JSON.parse(await fs.readFile(file, 'utf8'));
     parsed.push({ file, name: path.basename(file), data });
   } catch {
-    // Corrupt/non-JSON evidence cannot prove a gate and is ignored.
+    // We cannot infer a candidate SHA from corrupt JSON. If its filename
+    // matches a declared gate, fail closed rather than letting another PASS
+    // copy under the same evidence root mask this artifact.
+    malformedJson.push({ file, name: path.basename(file) });
   }
 }
 
@@ -183,6 +188,7 @@ const requiredDescriptors = [
     name: 'postgres-gate.json',
     schemas: ['hipico-postgres-gate.v290-current'],
     validate: (data) => data?.migrations === 'v12-v27'
+      && data?.database === 'isolated-ephemeral-postgresql-17'
       && data?.testChannelReplay === 'PASS'
       && data?.agentPolicyMetrics === 'PASS'
       && data?.restartRecovery === 'PASS'
@@ -281,6 +287,11 @@ const optionalDescriptors = [
 ];
 
 async function findDescriptor(descriptor) {
+  const corrupt = malformedJson.find((item) => item.name === descriptor.name);
+  if (corrupt) {
+    return { id: descriptor.id, status: 'FAIL',
+      file: path.relative(evidenceRoot, corrupt.file), reason: 'EVIDENCE_JSON_INVALID' };
+  }
   const candidates = parsed.filter((item) => item.name === descriptor.name);
   // Include every report claiming the candidate in ANY identity field. An
   // internally contradictory artifact must not disappear from the conflict
@@ -310,22 +321,32 @@ async function findDescriptor(descriptor) {
   if (descriptor.schemas.length && !descriptor.schemas.includes(String(selected.data?.schema || ''))) {
     return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'SCHEMA_MISMATCH' };
   }
-  if (descriptor.requireClean && selected.data?.dirty !== false) {
-    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'WORKTREE_DIRTY_OR_UNKNOWN' };
-  }
-  if (typeof descriptor.validate === 'function' && descriptor.validate(selected.data) !== true) {
-    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'EVIDENCE_CONTRACT_MISMATCH' };
-  }
-  if (descriptor.id === 'physicalQa' &&
-      !(await validHipicoPhysicalMaterial(selected.file, selected.data?.evidenceFiles))) {
-    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'PHYSICAL_MATERIAL_NOT_VERIFIED' };
-  }
-  // #120: a syntactically valid samplesSha256 does not prove that the actual
-  // producer's samples.jsonl exists, was preserved, or matches the summary.
-  // A missing/tampered/duplicated or discontinuous sample log is fail-closed.
-  if (descriptor.id === 'soak' &&
-      !validSoakSamplesProof(selected.file, selected.data, Number(soakPolicy?.sampleSeconds))) {
-    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'SOAK_SAMPLES_NOT_VERIFIED' };
+  // Verify every matching exact-SHA copy. Equal PASS statuses alone do not
+  // establish that every sibling has valid metadata and intact material.
+  const invalidCopy = await firstInvalidEvidenceCopy(sameSha, async (item) => {
+    if (descriptor.requireClean && item.data?.dirty !== false) {
+      return 'WORKTREE_DIRTY_OR_UNKNOWN';
+    }
+    if (typeof descriptor.validate === 'function' && descriptor.validate(item.data) !== true) {
+      return 'EVIDENCE_CONTRACT_MISMATCH';
+    }
+    if (descriptor.id === 'physicalQa' &&
+        !(await validHipicoPhysicalMaterial(item.file, item.data?.evidenceFiles))) {
+      return 'PHYSICAL_MATERIAL_NOT_VERIFIED';
+    }
+    if (descriptor.id === 'soak' &&
+        !validSoakSamplesProof(item.file, item.data, Number(soakPolicy?.sampleSeconds))) {
+      return 'SOAK_SAMPLES_NOT_VERIFIED';
+    }
+    return null;
+  });
+  if (invalidCopy) {
+    return {
+      id: descriptor.id,
+      status: 'FAIL',
+      file: invalidCopy.item ? path.relative(evidenceRoot, invalidCopy.item.file) : null,
+      reason: invalidCopy.reason
+    };
   }
   const status = evidenceStatus(selected.data);
   return {
@@ -342,12 +363,41 @@ const [required, optional] = await Promise.all([
   Promise.all(optionalDescriptors.map(findDescriptor))
 ]);
 const screenshots = files.filter((file) => file.endsWith('.png') && file.includes(`${path.sep}hipico-v105${path.sep}${sha}${path.sep}`));
-const browserStatus = screenshots.length ? 'PASS' : 'NOT_EXECUTED';
+// A screenshot's mere filename is not a browser execution result. Bind the
+// visual indicator to the same-SHA Chromium gate and reject empty/forged
+// placeholder files before reporting any screenshot count.
+async function looksLikeBrowserScreenshot(file) {
+  try {
+    if (!fs.constants.O_NOFOLLOW || !fs.constants.O_NONBLOCK) return false;
+    const fd = await fs.open(file,
+      fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    try {
+      const before = await fd.stat();
+      if (!before.isFile() || before.size < 57 || before.size > 30 * 1024 * 1024) return false;
+      const bytes = await fd.readFile();
+      const after = await fd.stat();
+      if (bytes.length !== before.size || after.size !== before.size ||
+          after.mtimeMs !== before.mtimeMs) return false;
+      return validHipicoPngEvidence(bytes);
+    } finally {
+      await fd.close();
+    }
+  } catch { return false; }
+}
+// Bound peak memory by verifying files sequentially, not allocating every
+// possible screenshot in the QA evidence tree simultaneously.
+let validScreenshots = 0;
+for (const screenshot of screenshots) {
+  if (await looksLikeBrowserScreenshot(screenshot)) validScreenshots++;
+}
+const chromiumVerified = required.find((item) => item.id === 'chromiumGate')?.status === 'PASS';
+const browserStatus = validScreenshots > 0 && chromiumVerified ? 'PASS' : 'NOT_EXECUTED';
 const browser = {
   id: 'browserVisualEvidence',
   status: browserStatus,
-  screenshotCount: screenshots.length,
-  reason: screenshots.length ? null : 'BROWSER_EVIDENCE_MISSING'
+  screenshotCount: validScreenshots,
+  reason: browserStatus === 'PASS' ? null
+    : chromiumVerified ? 'BROWSER_EVIDENCE_MISSING' : 'CHROMIUM_GATE_NOT_VERIFIED'
 };
 
 const requiredStatuses = required.map((item) => item.status);

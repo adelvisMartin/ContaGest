@@ -298,6 +298,23 @@ test('v24 must reject duplicate/invalid table inventory and malformed observatio
     const obs=validObservation();change(obs);
     const result=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
     assert.equal(result.status,'FAIL');
+    assert.ok(result.findings.length>0);
+  }
+});
+
+test('v24 malformed and duplicate observed rows produce explicit fail-closed findings',()=>{
+  for(const [value,reason] of [
+    [null,'TABLE_OBSERVATION_INVALID'],
+    [undefined,'TABLE_OBSERVATION_INVALID'],
+    [42,'TABLE_OBSERVATION_INVALID'],
+    [[], 'TABLE_OBSERVATION_INVALID'],
+    [{table:'hipico_table_01'},'OBSERVED_TABLE_DUPLICATE']
+  ]){
+    const obs=validObservation();
+    obs.observedTables[24]=value;
+    const report=classifyBackupRoleVerification({candidateSha:SHA,observation:obs,now:NOW});
+    assert.equal(report.status,'FAIL');
+    assert.ok(report.findings.includes(reason),JSON.stringify(report.findings));
   }
 });
 

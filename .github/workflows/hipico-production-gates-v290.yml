@@ -118,7 +118,7 @@ jobs:
     timeout-minutes: 50
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -180,7 +180,7 @@ jobs:
           import fs from 'node:fs';
           fs.writeFileSync('artifacts/qa/hipico-v290/postgres-gate.json', `${JSON.stringify({
             schema: 'hipico-postgres-gate.v290-current', sha: process.env.HIPICO_CANDIDATE_SHA,
-            status: 'PASS', database: 'isolated-ephemeral-postgresql-16', migrations: 'v12-v27',
+            status: 'PASS', database: 'isolated-ephemeral-postgresql-17', migrations: 'v12-v27',
             testChannelReplay: 'PASS', agentPolicyMetrics: 'PASS', restartRecovery: 'PASS', loadProfile: 'PASS', checkedAt: new Date().toISOString()
           }, null, 2)}\n`);
           NODE

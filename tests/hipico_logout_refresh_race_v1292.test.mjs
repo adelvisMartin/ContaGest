@@ -36,6 +36,7 @@ const newSession = { access_token: 'synthetic-new-access', refresh_token: 'synth
 function harness({ refreshResponse, signinResponse = null, signupResponse = null, oldDiskLoad = null, holdSave = null, holdClear = null, saveFailure = false, protectedResponse = null } = {}) {
   let stored = oldSession;
   const writes = [];
+  const protectedRequestStarted = deferred();
   const context = {
     initialSession: oldSession,
     // This harness tests the auth lifecycle; cross-tab message transport has
@@ -58,12 +59,15 @@ function harness({ refreshResponse, signinResponse = null, signupResponse = null
       if (url.includes('grant_type=password')) return signinResponse ? signinResponse.promise : newSession;
       if (url === '/auth/v1/signup') return signupResponse ? signupResponse.promise : newSession;
       if (url === '/auth/v1/logout') return {};
-      if (url.startsWith('/rest/v1/')) return protectedResponse ? protectedResponse.promise : { ok: true };
+      if (url.startsWith('/rest/v1/')) {
+        protectedRequestStarted.resolve();
+        return protectedResponse ? protectedResponse.promise : { ok: true };
+      }
       throw new Error('Unexpected synthetic request: ' + url);
     }
   };
   const api = vm.runInNewContext(program, context);
-  return { ...api, stored: () => stored, writes };
+  return { ...api, stored: () => stored, writes, protectedRequestStarted: protectedRequestStarted.promise };
 }
 
 test('#1292 logout prevents a late refresh response from resurrecting private tokens', async () => {
@@ -180,6 +184,8 @@ test('#1292 protected data received after logout must never reach the UI', async
   const protectedResponse = deferred();
   const h = harness({ refreshResponse, protectedResponse });
   const pending = h.authorizedRequest('/rest/v1/rpc/hipico_get_workspace');
+  // Prove that the old owner's request really reached the transport before logout.
+  await h.protectedRequestStarted;
   await h.signOut();
   protectedResponse.resolve({ state: { privateOwnerData: 'old-user' } });
   await assert.rejects(pending, (error) => error.code === 'HIPICO_SESSION_CHANGED');
@@ -192,6 +198,9 @@ test('#1292 a late 401 cannot refresh or retry under a different logged-in user'
   const protectedResponse = deferred();
   const h = harness({ refreshResponse, protectedResponse });
   const pending = h.authorizedRequest('/rest/v1/rpc/hipico_get_workspace');
+  // A late 401 is meaningful only when an old-user request was in-flight.
+  // Rejecting an unconsumed deferred would create an unrelated unhandledRejection.
+  await h.protectedRequestStarted;
   await h.signOut();
   await h.signIn('new@example.invalid', 'synthetic');
   protectedResponse.reject(Object.assign(new Error('Expired'), { status: 401 }));
@@ -205,6 +214,7 @@ test('#1292 a valid protected response remains readable without session transiti
   const protectedResponse = deferred();
   const h = harness({ refreshResponse, protectedResponse });
   const pending = h.authorizedRequest('/rest/v1/rpc/hipico_get_workspace');
+  await h.protectedRequestStarted;
   protectedResponse.resolve({ state: { synthetic: true } });
   const result = await pending;
   assert.equal(result.state.synthetic, true);
