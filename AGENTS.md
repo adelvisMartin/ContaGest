@@ -77,7 +77,8 @@ Global themes are only `light` and `dark`. Dark is a neutral near-black operatio
 - `contagest-impeccable` — advisory critique/polish only after functionality and geometry are stable; request with routing intent `ui-polish`.
 - `contagest-apple-design` — advisory Apple-design review adapted to ERP utility surfaces; request with routing intent `apple-design-review`. It may refine hierarchy, spacing, states, perceived performance and accessibility, but cannot introduce Apple branding, cinematic utility UX, global glass or another visual authority.
 - `react-doctor` after React/MUI changes and during full UI review
-- `contagest-motion` only after geometry/functionality are stable
+- `contagest-motion` only after geometry/functionality are stable; explicit `motion-review` uses pinned Emil Motion Markdown for advisory review.
+- `contagest-hallmark` is an opt-in existing-screen design audit (`hallmark-audit`) based on pinned Hallmark Markdown. It is subordinate to canonical CSS, real workflows, focus and accessibility. Neither external source can run upstream scripts, installers or hooks.
 
 ### Architecture/documentation
 - `contagest-archify` — advisory, source-grounded diagrams/maps only; request with routing intent `architecture-diagram`. Generated graphs never become architecture authority.
@@ -104,7 +105,7 @@ External UI/UX Pro Max, Impeccable, Apple Design, Archify, Copywriting and Emil 
 
 Five additional ACTIVE project skills are available: `contagest-simplicity-review` (Ponytail-inspired minimal complete changes), `contagest-code-review-quality` (five-axis Addy Osmani review), `contagest-api-contract-design` (interface/tenant safety), `contagest-ci-triage` (exact-SHA pipeline failures) and `contagest-hipico-lab-operations` (authorized LAB messaging). Three new specialized profiles are `integration-contracts`, `ci-triage` and `hipico-lab-operations`. All remain subordinate to original risk authorities and the 2–4 skill budget.
 
-The two external source repos are immutable pinned and **advisory-only** in `agent-skills.lock.json`; `npm run skills:sync` only downloads allowlisted Markdown and LICENSE to a git-ignored cache. Never auto-install upstream hooks, agents, server runtimes or MCP integrations. Explicit review intents: `simplicity-review`, `code-review`, `api-design`, `ci-triage`, `hipico-lab-review` (only in free skill slots). Hípico incident routing preserves debugging/security/release gates ahead of optional LAB review.
+The two external source repos are immutable pinned and **advisory-only** in `agent-skills.lock.json`; `npm run skills:sync` only downloads allowlisted Markdown and LICENSE to a git-ignored cache. Never auto-install upstream hooks, agents, server runtimes or MCP integrations. Explicit review intents: `simplicity-review`, `code-review`, `api-design`, `ci-triage`, `hipico-lab-review`, `hallmark-audit`, `motion-review` (only in free skill slots). Hípico incident routing preserves debugging/security/release gates ahead of optional LAB review.
 
 OmniRoute is a separate AI gateway and is not installed: the existing deterministic router already serves task/skill selection. REA was introduced separately in PR #997 and is not silently declared merged.
 
