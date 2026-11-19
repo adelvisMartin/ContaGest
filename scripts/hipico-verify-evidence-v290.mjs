@@ -362,12 +362,38 @@ const [required, optional] = await Promise.all([
   Promise.all(optionalDescriptors.map(findDescriptor))
 ]);
 const screenshots = files.filter((file) => file.endsWith('.png') && file.includes(`${path.sep}hipico-v105${path.sep}${sha}${path.sep}`));
-const browserStatus = screenshots.length ? 'PASS' : 'NOT_EXECUTED';
+// A screenshot's mere filename is not a browser execution result. Bind the
+// visual indicator to the same-SHA Chromium gate and reject empty/forged
+// placeholder files before reporting any screenshot count.
+async function looksLikeBrowserScreenshot(file) {
+  try {
+    if (!fs.constants.O_NOFOLLOW) return false;
+    const fd = await fs.open(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+      const stat = await fd.stat();
+      if (!stat.isFile() || stat.size < 64 || stat.size > 30 * 1024 * 1024) return false;
+      const header = Buffer.alloc(24);
+      const { bytesRead } = await fd.read(header, 0, header.length, 0);
+      return bytesRead === header.length
+        && header.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        && header.readUInt32BE(8) === 13
+        && header.toString('ascii', 12, 16) === 'IHDR'
+        && header.readUInt32BE(16) >= 320 && header.readUInt32BE(20) >= 240;
+    } finally {
+      await fd.close();
+    }
+  } catch { return false; }
+}
+const validScreenshots = (await Promise.all(screenshots.map(looksLikeBrowserScreenshot)))
+  .filter(Boolean).length;
+const chromiumVerified = required.find((item) => item.id === 'chromiumGate')?.status === 'PASS';
+const browserStatus = validScreenshots > 0 && chromiumVerified ? 'PASS' : 'NOT_EXECUTED';
 const browser = {
   id: 'browserVisualEvidence',
   status: browserStatus,
-  screenshotCount: screenshots.length,
-  reason: screenshots.length ? null : 'BROWSER_EVIDENCE_MISSING'
+  screenshotCount: validScreenshots,
+  reason: browserStatus === 'PASS' ? null
+    : chromiumVerified ? 'BROWSER_EVIDENCE_MISSING' : 'CHROMIUM_GATE_NOT_VERIFIED'
 };
 
 const requiredStatuses = required.map((item) => item.status);
