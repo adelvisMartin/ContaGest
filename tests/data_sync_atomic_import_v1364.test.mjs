@@ -69,11 +69,12 @@ test('tenant or user switch during pull cannot contaminate new local session',as
       await withSyncBackend(url=>{
         if(++index===4)AuthSession.set(target);
         return ok(resourceValue(url));
-      },async()=>{
+      },async calls=>{
         const draft={clients:[{id:'original'}],quote:{taxes:{IVA:16}}};
         const before=structuredClone(draft);
         await assert.rejects(DataSyncService.pullAll('/api/v1',draft), e=>e.status===409);
         assert.deepEqual(draft,before);
+        assert.equal(calls.length,4,'must not request the remaining resources under a changed session');
       });
     }
   }finally{if(previousStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=previousStorage;}
