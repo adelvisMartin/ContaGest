@@ -164,9 +164,11 @@ export async function importBankStatement(input:{tenantId:string;userId?:string;
       ON CONFLICT ("tenantId","accountId","sourceHash") DO NOTHING RETURNING "id"
     `);
     if(!insertedImport.length){
-      const existing=await tx.$queryRaw<Array<{id:string}>>(Prisma.sql`SELECT "id" FROM "BankStatementImport" WHERE "tenantId"=${input.tenantId} AND "accountId"=${input.accountId} AND "sourceHash"=${sourceHash} LIMIT 1`);
+      const existing=await tx.$queryRaw<Array<{id:string;parserVersion:string}>>(Prisma.sql`SELECT "id","parserVersion" FROM "BankStatementImport" WHERE "tenantId"=${input.tenantId} AND "accountId"=${input.accountId} AND "sourceHash"=${sourceHash} LIMIT 1`);
       if(!existing[0]) throw new HttpError(409,'No fue posible reconstruir el import idempotente.',{code:'BANK_STATEMENT_IMPORT_STATE_UNAVAILABLE'});
-      return {duplicate:true,importId:existing[0].id,inserted:0,deduplicated:parsed.lines.length,parserVersion:parsed.parserVersion};
+      // The replay reports the original persisted parser, never today's parser
+      // version. Reprocessing cannot rewrite historic provenance.
+      return {duplicate:true,importId:existing[0].id,inserted:0,deduplicated:parsed.lines.length,parserVersion:existing[0].parserVersion};
     }
     let inserted=0;
     for(const [rowIndex,line] of parsed.lines.entries()){

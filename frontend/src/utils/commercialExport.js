@@ -1,12 +1,14 @@
-const FORMULA_PREFIX=/^[=+\-@]/;
+import { neutralizeSpreadsheetFormula } from './csvFormulaGuard.js';
 
+// Preserve this public adapter's string behavior while sharing the canonical
+// formula guard with all client-side CSV exports (including invisible prefixes).
 export function sanitizeSpreadsheetCell(value='') {
-  const text=String(value??'');
-  return FORMULA_PREFIX.test(text.trimStart())?`'${text}`:text;
+  return neutralizeSpreadsheetFormula(String(value??''));
 }
 
 function csvCell(value) {
-  const safe=sanitizeSpreadsheetCell(value).replace(/"/g,'""');
+  // Preserve typed negative amounts as numbers; signed text remains guarded.
+  const safe=neutralizeSpreadsheetFormula(value).replace(/"/g,'""');
   return `"${safe}"`;
 }
 

@@ -33,3 +33,15 @@ test('rejects invisible or bidirectional text controls without rejecting legitim
  assert.equal(ok.validCount,1,'Unicode and emoji ZWJ remain valid');
  assert.equal(ok.errors.length,0);
 });
+
+test('rejects formula prefixes hidden by ignorable Unicode but keeps emoji joiners',()=>{
+ for(const prefix of ['\u200c','\u200d','\ufe0f','\u115f','\u3164','\u2800']){
+   const name=go(`sku,name\nA1,${prefix}=HYPERLINK(1)`);
+   assert.deepEqual(name.errors,[{row:2,code:'UNSAFE_TEXT'}],JSON.stringify(prefix));
+   const desc=go(`sku,name,description\nA1,Producto,${prefix}+SUM(1)`);
+   assert.deepEqual(desc.errors,[{row:2,code:'UNSAFE_TEXT'}],JSON.stringify(prefix));
+ }
+ const ok=go('sku,name,description\nA1,Producto 👩‍💻,Diseño 👩‍💻 válido\n');
+ assert.equal(ok.validCount,1);
+ assert.equal(ok.errorCount,0);
+});

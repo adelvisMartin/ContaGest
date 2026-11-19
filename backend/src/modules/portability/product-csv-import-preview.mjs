@@ -11,6 +11,8 @@ const ALLOWED=new Set(['sku','name','description']);
 // a dry-run must never approve a name that visually hides a spreadsheet formula
 // or impersonates a different SKU/product. Keep ZWJ for legitimate emoji text.
 const HIDDEN_TEXT_CONTROL=/[\u007f-\u009f\u00ad\u034f\u061c\u180e\u200b\u200e-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u;
+// Keep ZWJ inside valid product names, but not as an invisible formula prefix.
+const FORMULA_PREFIX=/^[\s\p{Default_Ignorable_Code_Point}\u2800]*[=+@-]/u;
 /** @param {string} code */
 function fail(code){throw new TypeError('PORTABILITY_CSV_'+code);}
 /** Parse RFC 4180-style quoted fields without evaluating CSV data. @param {string} csv */
@@ -69,8 +71,8 @@ export function previewProductCsvImport(input){
   if(!SKU.test(sku)){errors.push(Object.freeze({row:rowNo,code:'INVALID_SKU'}));continue;}
   if(name.length<2||name.length>160||description.length>1000
      ||/[\x00-\x1f]/.test(name+description)||HIDDEN_TEXT_CONTROL.test(name+description)
-     ||/^[\s]*[=+@-]/.test(name)
-     ||/^[\s]*[=+@-]/.test(description)){
+     ||FORMULA_PREFIX.test(name)
+     ||FORMULA_PREFIX.test(description)){
    errors.push(Object.freeze({row:rowNo,code:'UNSAFE_TEXT'}));continue;
   }
   const identity=sku.toUpperCase();
