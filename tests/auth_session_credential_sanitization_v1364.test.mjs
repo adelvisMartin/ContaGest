@@ -78,3 +78,20 @@ test('unusable credential-bearing snapshots are evicted', () => withStorage((map
   assert.equal(AuthSession.get(),null);
   assert.equal(map.has(AuthSession.key),false);
 }));
+
+test('credential aliases in nested session metadata are never persisted', () => withStorage((map) => {
+  const current = AuthSession.set({
+    tenantId:'tenant-e',
+    user:{id:'user-e',name:'Ana',accessKey:'SECRET-ACCESS',sessionCookie:'SECRET-COOKIE',
+      authorizationHeader:'SECRET-AUTH'},
+    refreshToken:'SECRET-REFRESH'
+  });
+  assert.equal(current.user.name, 'Ana');
+  for (const alias of ['accessKey', 'sessionCookie', 'authorizationHeader', 'refreshToken']) {
+    const raw = map.get(AuthSession.key);
+    assert.equal(raw.includes(alias), false, alias);
+  }
+  for (const marker of ['SECRET-ACCESS', 'SECRET-COOKIE', 'SECRET-AUTH', 'SECRET-REFRESH']) {
+    assert.equal(map.get(AuthSession.key).includes(marker), false, marker);
+  }
+}));
