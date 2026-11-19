@@ -85,7 +85,8 @@ test('Bridge uses planner only in interactive LAB and acknowledges deliveries be
   const ack = block.indexOf('await labTestReplyJournal.confirm(row.id,{visibleTag:true});',delivered);
   const persist = block.indexOf('labConversationContext.remember(');
   assert.ok(delivered>=0 && ack > delivered && persist > ack, 'context memory must follow confirmed delivery');
-  assert.match(code, /SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED && !SOURCE_REPLY_KILL_SWITCH.active/);
+  assert.match(code, /^import '\\.\\/source-read-startup-denial\\.mjs';/);
+  assert.match(code, /SOURCE_AUTO_REPLY_ACTIVE = SOURCE_AUTO_REPLY_ENABLED\\s*&& !SOURCE_REPLY_KILL_SWITCH\\.active\\s*&& evaluateSourceAutoReplyPolicy\\(config\\)\\.eligible/);
   assert.ok(block.indexOf('await labTestReplyJournal.prepare(row.id)')<block.indexOf('await sendTextInCurrentLab('));
   assert.ok(block.indexOf('await labTestReplyJournal.begin(row.id)')<block.indexOf('await sendTextInCurrentLab('));
   assert.match(block,/body\.includes\('\[LABTEST:'/);
