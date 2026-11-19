@@ -4,8 +4,10 @@ on:
     branches: [main]
     paths:
       - 'scripts/performance-route-evidence-v1293.mjs'
+      - 'scripts/performance-route-campaign-v1293.mjs'
       - 'qa/performance-route-v1293.spec.mjs'
       - 'tests/performance_route_evidence_v1293.test.mjs'
+      - 'tests/performance_route_campaign_v1293.test.mjs'
       - 'scripts/run-authoritative-contracts.mjs'
       - 'package.json'
       - '.github/workflows/performance-route-v1293.yml'
