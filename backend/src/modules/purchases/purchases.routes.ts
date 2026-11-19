@@ -4,6 +4,7 @@ import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission, requireTenant } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
+import { validateTenantMutationReferences } from '../../shared/middleware/tenant-reference-guard.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { allocateDocumentNumber, PURCHASE_INVOICE_SEQUENCE_KEY } from '../../shared/services/document-sequence.service.js';
@@ -87,6 +88,11 @@ router.post('/', validateBody(purchaseSchema), asyncHandler(async (req, res) => 
       return { ...purchase, ledgerEntryId: ledger?.id || null };
     }
   }, async (tx) => {
+    // Middleware rejects foreign references before entering the financial flow.
+    // Revalidate inside the SAME transaction as creation to prevent bypasses
+    // through internal callers or later route/middleware refactors. Do not
+    // create supplier/product data or a second tenant-reference authority.
+    await validateTenantMutationReferences(tx, ctx.tenantId, '/purchases', req.body);
     if (req.body.status !== 'draft') await assertPeriodOpen(ctx.tenantId, req.body.fiscalPeriod, tx);
     const policy = await getFxPolicy(ctx.tenantId, tx);
     const fx = resolveFxContext({
