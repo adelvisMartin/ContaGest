@@ -91,3 +91,32 @@ test('#1293 refuses undocumented metrics that could leak sensitive data into art
     /PERF1293_OBSERVATION_METRICS_INVALID/);
   }
 });
+
+test('#1293 checks 1000 deterministic runner permutations and rejects unapproved artifact fields', () => {
+  const originalKeys = Object.keys(labEnvironment);
+  const seenOrders = new Set();
+  let seed = 1293;
+  const next = () => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return seed >>> 0;
+  };
+  const valid = observation('route-0');
+  for (let index = 0; index < 1000; index += 1) {
+    const keys = [...originalKeys];
+    for (let i = keys.length - 1; i > 0; i -= 1) {
+      const j = next() % (i + 1);
+      [keys[i], keys[j]] = [keys[j], keys[i]];
+    }
+    seenOrders.add(keys.join(','));
+    const reordered = Object.fromEntries(keys.map(key => [key, labEnvironment[key]]));
+    const summary = summarizeRouteEvidence({ candidateSha: sha, runId, catalog,
+      observations: [observation('route-0'), observation('route-1', { labEnvironment: reordered })] });
+    assert.equal(summary.measuredRouteCount, 2);
+    const injected = { ...valid.metrics, [`unreviewed_${index}`]: index };
+    assert.throws(() => summarizeRouteEvidence({ candidateSha: sha, runId, catalog,
+      observations: [observation('route-0', { metrics: injected })] }), /PERF1293_OBSERVATION_METRICS_INVALID/);
+  }
+  assert.ok(seenOrders.size >= 900, `Expected diverse permutations; saw ${seenOrders.size}`);
+});
