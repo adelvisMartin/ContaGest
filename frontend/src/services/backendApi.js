@@ -127,10 +127,23 @@ function isPublicRequest(path) {
     || normalized.startsWith('/auth/password/');
 }
 
-function apiError(message, status, payload) {
+function parseRetryAfterSeconds(value) {
+  const header = String(value || '').trim();
+  if (!header) return undefined;
+  if (/^\d{1,9}$/.test(header)) return Math.min(Number(header), 86_400);
+  const date = Date.parse(header);
+  if (!Number.isFinite(date) || date <= Date.now()) return undefined;
+  return Math.min(Math.ceil((date - Date.now()) / 1000), 86_400);
+}
+
+function apiError(message, status, payload, headers) {
   const error = new Error(message);
   error.status = status;
   error.payload = payload;
+  if (status === 429) {
+    const seconds = parseRetryAfterSeconds(headers?.get?.('retry-after'));
+    if (seconds !== undefined) error.retryAfterSeconds = seconds;
+  }
   return error;
 }
 
@@ -311,7 +324,7 @@ export const BackendApi = {
           const payload = await parseResponse(response);
           if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
           if (response.status === 428 && !publicRequest) signalLegalAcceptanceRequired(path, payload);
-          throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
+          throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload, response.headers);
         }
         return response;
       }
@@ -320,7 +333,7 @@ export const BackendApi = {
       if (!response.ok || payload.ok === false) {
         if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
         if (response.status === 428 && !publicRequest) signalLegalAcceptanceRequired(path, payload);
-        throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
+        throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload, response.headers);
       }
       const data = payload.data ?? payload;
       if (String(path).startsWith('/auth/') && data?.tenantId && data?.sessionMode) {
