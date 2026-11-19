@@ -23,6 +23,20 @@ const base={
   confirmationReason:null
 };
 
+test('unsafe or exhausted domain versions are nonretryable conflicts at API boundary',()=>{
+  for(const code of ['HIPICO_DOMAIN_STATE_VERSION_UNSAFE','HIPICO_DOMAIN_STATE_VERSION_EXHAUSTED']){
+    assert.deepEqual(__test__.canonicalPermanentVersionResponse(new Error(code)),{
+      status:409,
+      body:{ok:false,retryable:false,error:code}
+    });
+  }
+  for(const unrelated of [
+    new Error('HIPICO_DOMAIN_STATE_CONFLICT'),
+    new Error('DATABASE_UNAVAILABLE'),
+    null
+  ])assert.equal(__test__.canonicalPermanentVersionResponse(unrelated),null);
+});
+
 test('canonical owner is server-side only and malformed owner config fails closed',()=>{
   assert.equal(configuredCanonicalOwnerId({HIPICO_OWNER_ID:OWNER} as NodeJS.ProcessEnv),OWNER);
   assert.equal(configuredCanonicalOwnerId({HIPICO_OWNER_ID:'not-a-uuid'} as NodeJS.ProcessEnv),null);

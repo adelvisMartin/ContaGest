@@ -60,3 +60,15 @@ test('domain reversal lookup cannot cross aggregate boundaries',()=>{
   assert.match(correction,/aggregate_kind=\$\{input\.aggregateKind\} AND aggregate_key=\$\{aggregateKey\}/);
   assert.match(correction,/original_event_id=\$\{originalId\}[\s\S]*owner_id=\$\{ownerId\}::uuid[\s\S]*aggregate_kind=\$\{input\.aggregateKind\}/);
 });
+
+test('backdated source times never reorder new append-only corrections before results',()=>{
+  const persist=domainStore.slice(domainStore.indexOf('export async function persistHipicoDomainEvent'));
+  const locked=persist.indexOf('FOR UPDATE');
+  const insert=persist.indexOf('INSERT INTO public.hipico_domain_events');
+  assert.ok(locked>=0&&insert>locked,'DB aggregate lock must precede event insertion');
+  assert.match(persist.slice(insert),/event_timestamp,operator_confirmed,confirmation_reason,created_at/);
+  assert.match(persist.slice(insert),/clock_timestamp\(\)/);
+  const query=readFileSync(new URL('./hipico-domain-query.store.ts',import.meta.url),'utf8');
+  assert.match(query,/ORDER BY created_at DESC,id DESC/);
+  assert.doesNotMatch(query,/ORDER BY event_timestamp DESC/);
+});

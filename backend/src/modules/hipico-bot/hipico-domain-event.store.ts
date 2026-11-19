@@ -296,10 +296,16 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     }
 
     const row=rows[0];
+    const stateVersion=Number(row.stateVersion);
+    // Preserve exact optimistic-concurrency semantics for the PostgreSQL BIGINT.
+    // A rounded version must never be used to authorize a state transition.
+    if(!Number.isSafeInteger(stateVersion)||stateVersion<0){
+      throw new Error('HIPICO_DOMAIN_STATE_VERSION_UNSAFE');
+    }
     const current={
       ...initialHipicoState(input.aggregateKind),
       status:row.status as HipicoState,
-      stateVersion:Number(row.stateVersion||0)
+      stateVersion
     };
 
     if(input.event.type==='CORRECTION'||input.event.type==='REVERSAL'){
@@ -325,6 +331,12 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     }
 
     const reduction=reduceHipicoDomainEvent(current,input.event);
+    // The next applied transition must remain JSON/JavaScript-safe. Otherwise
+    // this commit would strand the aggregate at an unreadable BIGINT version.
+    // Reject before inserting append-only evidence or updating state.
+    if(reduction.disposition==='applied'&&current.stateVersion>=Number.MAX_SAFE_INTEGER){
+      throw new Error('HIPICO_DOMAIN_STATE_VERSION_EXHAUSTED');
+    }
     const eventId=String(input.event.eventId||crypto.randomUUID());
     const timestamp=validTimestamp(input.event.timestamp);
     const normalized=input.event.normalizedPayload==null?null:JSON.stringify(input.event.normalizedPayload);
@@ -332,20 +344,22 @@ export async function persistHipicoDomainEvent(input:PersistInput){
       INSERT INTO public.hipico_domain_events(
         id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_id,source_message_key,event_type,
         disposition,previous_state,next_state,reason,original_event_id,raw_message,normalized_payload,
-        actor_ref,source,parser_version,schema_version,event_timestamp,operator_confirmed,confirmation_reason
+        actor_ref,source,parser_version,schema_version,event_timestamp,operator_confirmed,confirmation_reason,created_at
       ) VALUES (
         ${eventId},${ownerId}::uuid,${groupKey},${input.aggregateKind},${aggregateKey},${input.event.sourceMessageId||null},
         ${sourceMessageKey},${input.event.type},${reduction.disposition},${reduction.previousState},${reduction.nextState},
         ${reduction.reason},${input.event.originalEventId||null},${input.event.rawMessage||null},${normalized}::jsonb,
         ${input.event.actorRef||null},${input.event.source||'system'},${input.event.parserVersion||null},
-        ${Number(input.event.schemaVersion||1)},${timestamp},${confirmation.operatorConfirmed},${confirmation.confirmationReason}
+        ${Number(input.event.schemaVersion||1)},${timestamp},${confirmation.operatorConfirmed},${confirmation.confirmationReason},
+        clock_timestamp()
       )
     `;
 
     if(reduction.disposition==='applied'){
       const affected=await tx.$executeRaw`
         UPDATE public.hipico_domain_aggregates
-        SET status=${reduction.nextState}, state_version=state_version+1, updated_at=now()
+        SET status=${reduction.nextState}, state_version=state_version+1,
+            updated_at=clock_timestamp()
         WHERE owner_id=${ownerId}::uuid AND group_key=${groupKey}
           AND aggregate_kind=${input.aggregateKind} AND aggregate_key=${aggregateKey}
           AND state_version=${current.stateVersion}

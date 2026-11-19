@@ -1,0 +1,144 @@
+name: Hípico Canonical Snapshot PostgreSQL 17
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/src/modules/hipico-bot/hipico-domain-query.store.ts'
+      - 'backend/src/modules/hipico-bot/hipico-domain-event.store.ts'
+      - 'backend/src/modules/hipico-bot/hipico-concurrency-integrity.test.ts'
+      - 'backend/src/modules/hipico-bot/hipico-domain-query.store.test.ts'
+      - 'backend/src/modules/hipico-bot/hipico-domain-query.pg17.integration.ts'
+      - 'supabase/sql/hipico_v14_canonical_domain.sql'
+      - 'supabase/sql/hipico_v16_operator_confirmation_audit.sql'
+      - 'backend/prisma/migrations/20260911211500_hipico_domain_source_identity/**'
+      - 'backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/**'
+      - 'scripts/hipico-ephemeral-db-v290.mjs'
+      - 'scripts/hipico-domain-snapshot-pg17-local.ps1'
+      - 'ops/qa/hipico-domain-snapshot-pg17.compose.yml'
+      - 'tests/hipico_domain_snapshot_workflow_contract.test.mjs'
+      - '.github/workflows/hipico-domain-snapshot-pg17.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hipico-canonical-pg17-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  HIPICO_E2E_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+  PGPASSWORD: postgres
+
+jobs:
+  pg17-canonical-read:
+    name: PostgreSQL 17 · snapshot and tenant isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+          fetch-depth: 0
+      - name: Verify exact SHA
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - name: Set up Node 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Validate PostgreSQL QA wiring before installing dependencies
+        run: node --test tests/hipico_domain_snapshot_workflow_contract.test.mjs
+      - name: Route Agent System v3 for changed files
+        run: node scripts/agent-ticket-router.mjs gates --base origin/main --type bugfix
+      - name: Install locked backend workspace
+        run: npm ci --workspace backend --include-workspace-root --no-audit --no-fund
+      - name: Typecheck domain and integration
+        run: npm --workspace backend run typecheck
+      - name: Create isolated database on local PostgreSQL 17
+        run: node scripts/hipico-ephemeral-db-v290.mjs create
+      - name: Prepare test-only canonical read roles
+        shell: bash
+        run: |
+          psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+              CREATE ROLE authenticated NOLOGIN;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+              CREATE ROLE anon NOLOGIN;
+            END IF;
+          END
+          $$;
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
+          LANGUAGE sql STABLE AS $$
+            SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
+          $$;
+          GRANT USAGE ON SCHEMA auth TO authenticated;
+          SQL
+      - name: Apply pre-index canonical schema to isolated database
+        shell: bash
+        run: |
+          for migration in \
+            supabase/sql/hipico_v14_canonical_domain.sql \
+            supabase/sql/hipico_v16_operator_confirmation_audit.sql \
+            backend/prisma/migrations/20260911211500_hipico_domain_source_identity/migration.sql; do
+            psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" \
+              -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Seed pre-index existing canonical row for upgrade rehearsal
+        shell: bash
+        run: |
+          psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO public.hipico_domain_aggregates
+            (owner_id,group_key,aggregate_kind,aggregate_key,status,state_version)
+          VALUES
+            ('22222222-2222-4222-8222-222222222222','pg17-upgrade-fixture',
+             'race','qa_preindex_existing','OPEN',1);
+          INSERT INTO public.hipico_domain_events
+            (id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_key,
+             event_type,disposition,previous_state,next_state,reason,event_timestamp)
+          VALUES
+            ('pg17-upgrade-event-v837','22222222-2222-4222-8222-222222222222',
+             'pg17-upgrade-fixture','race','qa_preindex_existing','qa-existing-message',
+             'RACE_OPENED','applied','PREPARING','OPEN','VALID_TRANSITION',
+             '2026-11-19T09:00:00Z'::timestamptz);
+          SQL
+      - name: Upgrade schema with nonblocking recorded-order index
+        shell: bash
+        run: |
+          psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" -v ON_ERROR_STOP=1 \
+            -f backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/migration.sql
+      - name: Grant fixture-only reader privileges for real RLS checks
+        shell: bash
+        run: |
+          psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" -v ON_ERROR_STOP=1 <<'SQL'
+          GRANT SELECT ON public.hipico_domain_aggregates,
+                          public.hipico_domain_events TO authenticated;
+          SQL
+      - name: Real concurrent writer snapshot and owner/group isolation
+        run: npm --workspace backend exec -- tsx --test src/modules/hipico-bot/hipico-domain-query.pg17.integration.ts
+      - name: Drop ephemeral database even after failure
+        if: always()
+        run: node scripts/hipico-ephemeral-db-v290.mjs drop
