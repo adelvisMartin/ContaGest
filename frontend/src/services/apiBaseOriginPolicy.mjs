@@ -1,0 +1,37 @@
+const API_PATH = '/api/v1';
+
+function approvedHttpsOrigin(value) {
+  try {
+    const url = new URL(String(value || ''));
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return '';
+    return url.origin;
+  } catch {
+    return '';
+  }
+}
+
+/** An application setting cannot grant a new origin permission to receive API data. */
+export function resolveApprovedApiBase(value, {
+  fallback = API_PATH,
+  currentOrigin = '',
+  configuredOrigins = [],
+  development = false,
+  native = false
+} = {}) {
+  const allowed = new Set(configuredOrigins.map(approvedHttpsOrigin).filter(Boolean));
+
+  function resolve(candidate) {
+    const raw = String(candidate || '').trim().replace(/\/$/, '');
+    if (raw === API_PATH) return native && !development ? '' : API_PATH;
+    let url;
+    try { url = new URL(raw); } catch { return ''; }
+    if (url.username || url.password || url.search || url.hash || url.pathname !== API_PATH) return '';
+    if (development && ['localhost', '127.0.0.1'].includes(url.hostname)
+      && ['http:', 'https:'].includes(url.protocol)) return url.origin + API_PATH;
+    if (url.protocol !== 'https:') return '';
+    if (!allowed.has(url.origin) && !(url.origin === currentOrigin && !native)) return '';
+    return url.origin + API_PATH;
+  }
+
+  return resolve(value) || resolve(fallback) || (native ? '' : API_PATH);
+}
