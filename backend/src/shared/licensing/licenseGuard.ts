@@ -34,6 +34,7 @@ type LicenseExtension = {
 
 type ActivationRow = {
   id: string;
+  userId: string | null;
   deviceHash: string;
   status: string;
   credentialHash: string | null;
@@ -102,7 +103,7 @@ async function validateExistingCredential(params: {
 }) {
   const credentialHash = hashDeviceCredential(params.credential);
   const rows = await prisma.$queryRaw<ActivationRow[]>`
-    SELECT "id", "deviceHash", "status", "credentialHash", "credentialExpiresAt"
+    SELECT "id", "userId", "deviceHash", "status", "credentialHash", "credentialExpiresAt"
     FROM public."LicenseActivation"
     WHERE "licenseId" = ${params.licenseId}
       AND "tenantId" = ${params.tenantId}
@@ -122,20 +123,28 @@ async function validateExistingCredential(params: {
     `;
     throw new HttpError(403, 'La credencial del dispositivo venció. Solicita una reactivación.');
   }
+  if (activation.userId && activation.userId !== params.userId) {
+    throw new HttpError(403, 'La activación pertenece a otro usuario autorizado.');
+  }
   if (params.deviceId && !secureEqual(activation.deviceHash, hashLicenseDevice(params.deviceId))) {
     throw new HttpError(403, 'La credencial del dispositivo no coincide con el equipo registrado.');
   }
 
-  await prisma.$executeRaw`
+  const refreshed = await prisma.$executeRaw`
     UPDATE public."LicenseActivation"
-    SET "userId"=${params.userId || null},
+    SET "userId"=COALESCE("userId",${params.userId || null}),
         "deviceLabel"=COALESCE(${params.deviceLabel || null}, "deviceLabel"),
         "lastSeenAt"=now(),
         "lastIp"=${params.ip || null},
         "lastUserAgent"=${params.userAgent || null},
         "metadata"=${JSON.stringify(params.metadata || {})}::jsonb
     WHERE "id"=${activation.id}
+      AND "status"='active'
+      AND "credentialHash"=${credentialHash}
   `;
+  if (refreshed !== 1) {
+    throw new HttpError(403, 'La credencial fue revocada o cambió de estado.');
+  }
   return activation;
 }
 
@@ -164,7 +173,7 @@ async function activateOrUpgradeDevice(params: {
     }
     const deviceHash = hashLicenseDevice(params.deviceId);
     const rows = await tx.$queryRaw<ActivationRow[]>`
-      SELECT "id", "deviceHash", "status", "credentialHash", "credentialExpiresAt"
+      SELECT "id", "userId", "deviceHash", "status", "credentialHash", "credentialExpiresAt"
       FROM public."LicenseActivation"
       WHERE "licenseId"=${params.licenseId}
         AND "tenantId"=${params.tenantId}
