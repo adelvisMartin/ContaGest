@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DataSyncService, SYNC_RESOURCES } from '../frontend/src/services/dataSyncService.js';
+import { AuthSession } from '../frontend/src/services/authSession.js';
 
 async function withSyncBackend(handler, run) {
   const previous = {window:globalThis.window,fetch:globalThis.fetch};
@@ -55,4 +56,44 @@ test('all 14 failure positions preserve the complete previous snapshot', async (
       assert.equal(calls.length,SYNC_RESOURCES.length, rejectedResource);
     });
   }
+});
+
+test('tenant or user switch during pull cannot contaminate new local session',async()=>{
+  const previousStorage=globalThis.localStorage;
+  const storage=new Map();
+  globalThis.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)};
+  try{
+    for(const target of [{tenantId:'tenant-b',user:{id:'user-a'}},{tenantId:'tenant-a',user:{id:'user-b'}}]){
+      AuthSession.set({tenantId:'tenant-a',user:{id:'user-a'}});
+      let index=0;
+      await withSyncBackend(url=>{
+        if(++index===4)AuthSession.set(target);
+        return ok(resourceValue(url));
+      },async()=>{
+        const draft={clients:[{id:'original'}],quote:{taxes:{IVA:16}}};
+        const before=structuredClone(draft);
+        await assert.rejects(DataSyncService.pullAll('/api/v1',draft), e=>e.status===409);
+        assert.deepEqual(draft,before);
+      });
+    }
+  }finally{if(previousStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=previousStorage;}
+});
+
+test('same-session refresh during sync preserves successful import',async()=>{
+  const previousStorage=globalThis.localStorage;
+  const storage=new Map();
+  globalThis.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)};
+  try{
+    AuthSession.set({tenantId:'tenant-a',user:{id:'user-a'}});
+    let index=0;
+    await withSyncBackend(url=>{
+      if(++index===4)AuthSession.set({tenantId:'tenant-a',user:{id:'user-a'},sessionExpiresAt:'2030-01-01T00:00:00Z'});
+      return ok(resourceValue(url));
+    },async()=>{
+      const draft={clients:[{id:'original'}],quote:{taxes:{IVA:16}}};
+      const result=await DataSyncService.pullAll('/api/v1',draft);
+      assert.ok(result.every(x=>x.ok));
+      assert.deepEqual(draft.clients,[{id:'new-resource'}]);
+    });
+  }finally{if(previousStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=previousStorage;}
 });
