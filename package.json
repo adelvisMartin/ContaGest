@@ -108,6 +108,8 @@
     "test:backend:fiscal:authority:real": "npm --workspace backend exec -- tsx --test ../qa/fiscal-authority-v561.test.ts",
     "audit:erp-ui-ledger": "node scripts/erp-ui-ledger-audit-v851.mjs",
     "audit:erp-ui-taxes": "node scripts/erp-ui-taxes-audit-v951.mjs",
+    "test:perf:routes:1293": "node --test tests/performance_route_evidence_v1293.test.mjs",
+    "perf:routes:1293": "npx --no-install playwright test qa/performance-route-v1293.spec.mjs --project=chromium --workers=1 && node scripts/performance-route-evidence-v1293.mjs --strict",
     "test:browser:58:core": "node scripts/erp-browser-58x5-v251.mjs core",
     "test:browser:58:shard": "node scripts/erp-browser-58x5-v251.mjs shard",
     "test:browser:58": "node scripts/erp-browser-58x5-v251.mjs full",

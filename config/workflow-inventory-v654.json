@@ -529,6 +529,13 @@
       "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
     },
     {
+      "file": ".github/workflows/performance-route-v1293.yml",
+      "classification": "ADAPTER",
+      "owner": "release-ops",
+      "status": "ACTIVE",
+      "reason": "Exact-head Chromium 60-route performance lab, synthetic measurements and provenance artifacts"
+    },
+    {
       "file": ".github/workflows/postgres-tenant-rules-v28.yml",
       "classification": "ADAPTER",
       "owner": "backend-domain",
