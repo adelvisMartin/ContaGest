@@ -65,7 +65,7 @@ test('PostgreSQL 17 canonical snapshot stays consistent under a concurrent write
   const writer = new PrismaClient();
   try {
     const intercepted = {
-      $transaction: (async (callback: (tx: any) => Promise<unknown>, options: { isolationLevel: string }) =>
+      $transaction: (async (callback: (tx: any) => Promise<unknown>, options: { isolationLevel: 'RepeatableRead' }) =>
         prisma.$transaction(async tx => {
           assert.equal(options.isolationLevel, 'RepeatableRead');
           return callback({
