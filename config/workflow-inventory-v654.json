@@ -18,6 +18,13 @@
       "reason": "Scheduled or automated operator responsibility requires preserved trigger semantics"
     },
     {
+      "file": ".github/workflows/agent-closeout-v841.yml",
+      "classification": "ADAPTER",
+      "owner": "qa",
+      "status": "ACTIVE",
+      "reason": "Read-only exact-head backlog and skill closeout audit with deterministic fail-closed regressions"
+    },
+    {
       "file": ".github/workflows/agent-system-v2.yml",
       "classification": "ADAPTER",
       "owner": "agents",

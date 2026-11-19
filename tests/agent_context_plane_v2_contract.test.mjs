@@ -24,8 +24,14 @@ test('work queue is ordering metadata, not duplicated issue bodies', () => {
   const queue = JSON.parse(read('.agents/context/WORK_QUEUE.json'));
   assert.equal(queue.schemaVersion, 1);
   assert.equal(queue.source, 'github-live');
-  assert.equal(queue.metaIssue, 553);
+  assert.equal(queue.metaIssue, 841);
+  assert.equal(queue.snapshotOnly, true, 'Queue is a dated navigation snapshot, not an authority');
+  assert.match(queue.observedMainSha, /^[0-9a-f]{40}$/);
+  assert.equal(queue.targetOpenIssues.min, 17);
+  assert.equal(queue.targetOpenIssues.max, 20);
   assert.ok(Array.isArray(queue.queue));
+  assert.equal(queue.queue.length, 19, 'All current epic owners must remain represented');
+  assert.equal(new Set(queue.queue).size, queue.queue.length, 'No duplicate epic owners');
   assert.ok(queue.queue.every(Number.isInteger));
   assert.equal('issues' in queue, false);
   assert.equal('descriptions' in queue, false);
