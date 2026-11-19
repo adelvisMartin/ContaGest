@@ -85,3 +85,20 @@ test('fresh participant index after group switch prevents same-ID label leakage'
   assert.equal(index().get('same')?.code,'B');
   assert.equal(index().has('legacy'),false);
 });
+
+
+test('PWA rotates its atomic offline cache when the scoped UI changes', () => {
+  const sw = readFileSync(new URL('../frontend/public/hipico-control/sw.js', import.meta.url), 'utf8');
+  const index = readFileSync(new URL('../frontend/public/hipico-control/index.html', import.meta.url), 'utf8');
+  const cacheDeclaration = sw.split('\n').find(line => line.startsWith('const SHELL_CACHE = ')) || '';
+  const revision = /shell-r(\d+)-consolidator-v4-1-3/.exec(cacheDeclaration);
+  assert.ok(revision && Number(revision[1]) >= 40, 'this security fix must supersede cached r39 app.js');
+  assert.match(index, /src="\.\/assets\/js\/app\.js"/);
+  for (const file of ['app.js', 'operational-ledger.js', 'pwa-update.js']) {
+    assert.ok(sw.includes("'./assets/js/" + file + "'"), file + ' must be prefetched for offline launch');
+  }
+  assert.match(sw, /key !== SHELL_CACHE\)\.map\(\(key\) => caches\.delete\(key\)\)/);
+  assert.match(sw, /await self\.skipWaiting\(\)/);
+  assert.match(sw, /await self\.clients\.claim\(\)/);
+  assert.doesNotMatch(sw, /indexedDB\.deleteDatabase|localStorage\.clear|sessionStorage\.clear/);
+});
