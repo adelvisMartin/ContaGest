@@ -48,12 +48,12 @@ test('BackendApi keeps credentialed requests on approved origins and blocks redi
     await assert.rejects(BackendApi.get('/health'), (error) => error.status === 0);
     const safeReadAttempts = calls.filter((call) => call.redirectAttempt);
     assert.deepEqual(safeReadAttempts.map((call) => call.url), [
-      'https://contagest.example/api/v1/health', '/api/v1/health'
-    ], 'read-only fallback must remain on the same trusted origin');
+      'https://contagest.example/api/v1/health'
+    ], 'same-origin API failures must not trigger a redundant fallback');
+    assert.equal(BackendApi.baseUrl, 'https://contagest.example/api/v1', 'failed same-origin read preserves trusted API selection');
     assert.ok(safeReadAttempts.every((call) => call.options.redirect === 'error'));
 
-    // GET fallback resets the user-configured URL. Reapply the approved endpoint
-    // to exercise the intended POST failure path rather than testing the reset default.
+    // Re-apply the approved origin to exercise the POST transport failure path.
     BackendApi.setBaseUrl('https://contagest.example/api/v1');
     // A POST can have committed before the fetch fails: never replay it at the fallback.
     const countBeforePost = calls.length;
