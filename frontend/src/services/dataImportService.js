@@ -1,6 +1,7 @@
 import { BackendApi } from './backendApi.js';
 import { assertXlsxZipBudget, assertXlsxZipEntryName, assertSafeImportXml } from './xlsxZipBudget.mjs';
 import { parseDelimitedImport } from './delimitedImportParser.mjs';
+import { xlsxColumnIndex, assertXlsxHeaders, assertXlsxImportRowCount, assertXlsxCellValue, assertXlsxWorksheetTarget, isXlsxPreviewXmlPart, xlsxSharedString } from './xlsxImportGuards.mjs';
 
 export const IMPORT_TEMPLATE_VERSION='v1';
 export const IMPORT_TEMPLATES = {
@@ -72,28 +73,57 @@ async function unzipEntries(arrayBuffer){
     const compressedBytes=bytes.slice(start,start+compressed);
     let content;if(method===0)content=compressedBytes;else if(method===8)content=await inflateRaw(compressedBytes,uncompressed);else throw new Error(`XLSX usa compresión ZIP no soportada (${method}).`);
     if(content.byteLength!==uncompressed)throw new Error('XLSX inválido: longitud descomprimida inconsistente.');
-    entries.set(name,decoder.decode(content));offset+=46+nameLength+extraLength+commentLength;
+    // Binary media is valid in XLSX, but must never enter strict UTF-8/XML parsing.
+    if(isXlsxPreviewXmlPart(name))entries.set(name,decoder.decode(content));
+    offset+=46+nameLength+extraLength+commentLength;
   }
   return entries;
 }
 
 const xml=(text)=>{const doc=new DOMParser().parseFromString(assertSafeImportXml(text),'application/xml');if(doc.querySelector('parsererror'))throw new Error('XLSX contiene XML inválido.');return doc;};
-const lettersToIndex=(ref)=>{const letters=String(ref||'').match(/^[A-Z]+/i)?.[0]?.toUpperCase()||'A';let value=0;for(const char of letters)value=value*26+(char.charCodeAt(0)-64);return value-1;};
 
 async function parseXlsx(file){
   const entries=await unzipEntries(await file.arrayBuffer());
   const sharedDoc=entries.has('xl/sharedStrings.xml')?xml(entries.get('xl/sharedStrings.xml')):null;
   const shared=sharedDoc?[...sharedDoc.querySelectorAll('si')].map((node)=>[...node.querySelectorAll('t')].map((t)=>t.textContent||'').join('')):[];
   let sheetPath='xl/worksheets/sheet1.xml';
+  if(entries.has('xl/workbook.xml')!==entries.has('xl/_rels/workbook.xml.rels'))
+    throw new Error('XLSX sin relaciones completas del libro.');
   if(entries.has('xl/workbook.xml')&&entries.has('xl/_rels/workbook.xml.rels')){
     const workbook=xml(entries.get('xl/workbook.xml'));const rels=xml(entries.get('xl/_rels/workbook.xml.rels'));const first=workbook.querySelector('sheet');const relId=first?.getAttribute('r:id')||first?.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');
-    const relation=[...rels.querySelectorAll('Relationship')].find((node)=>node.getAttribute('Id')===relId);const target=relation?.getAttribute('Target');if(target)sheetPath=target.startsWith('/')?target.slice(1):`xl/${target.replace(/^\.\//,'')}`;
+    const relation=[...rels.querySelectorAll('Relationship')].find((node)=>node.getAttribute('Id')===relId);
+    if(!relation||relation.getAttribute('TargetMode')==='External')throw new Error('XLSX con hoja externa o sin relación válida.');
+    sheetPath=assertXlsxWorksheetTarget(relation.getAttribute('Target'));
   }
-  const sheetText=entries.get(sheetPath)||entries.get('xl/worksheets/sheet1.xml');if(!sheetText)throw new Error('XLSX no contiene una primera hoja legible.');
-  const sheet=xml(sheetText);const matrix=[...sheet.querySelectorAll('sheetData > row')].map((row)=>{
-    const values=[];for(const cell of row.querySelectorAll('c')){const index=lettersToIndex(cell.getAttribute('r'));const type=cell.getAttribute('t');let value='';if(type==='inlineStr')value=[...cell.querySelectorAll('is t')].map((t)=>t.textContent||'').join('');else{const raw=cell.querySelector('v')?.textContent||'';value=type==='s'?shared[Number(raw)]??'':type==='b'?(raw==='1'?'true':'false'):raw;}values[index]=value;}return values;
-  }).filter((row)=>row.some((value)=>String(value??'').trim()!==''));
-  const headers=(matrix.shift()||[]).map((value)=>String(value??'').trim());return matrix.map((row)=>Object.fromEntries(headers.map((header,index)=>[header,String(row[index]??'').trim()])));
+  const sheetText=entries.get(sheetPath);if(!sheetText)throw new Error('XLSX no contiene la primera hoja referenciada por el libro.');
+  const sheet=xml(sheetText);
+  const sheetRows=[...sheet.querySelectorAll('sheetData > row')];
+  assertXlsxImportRowCount(sheetRows.length);
+  const matrix=sheetRows.map((row)=>{
+    const cells=row.querySelectorAll('c');
+    if(cells.length>128)throw new Error('XLSX supera el máximo de 128 columnas por fila.');
+    const values=[];const seen=new Set();
+    for(const cell of cells){
+      const index=xlsxColumnIndex(cell.getAttribute('r'));
+      if(seen.has(index))throw new Error('XLSX contiene referencias de celda duplicadas.');
+      seen.add(index);
+      if(cell.querySelector('f'))throw new Error('XLSX contiene fórmulas; convierte las celdas a valores antes de importar.');
+      const type=cell.getAttribute('t');let value='';
+      if(type==='inlineStr')value=[...cell.querySelectorAll('is t')].map(t=>t.textContent||'').join('');
+      else{
+        const raw=cell.querySelector('v')?.textContent||'';
+        value=type==='s'?xlsxSharedString(raw,shared):type==='b'?(raw==='1'?'true':'false'):raw;
+      }
+      values[index]=assertXlsxCellValue(value);
+    }
+    return values;
+  }).filter(row=>row.some(value=>String(value??'').trim()!==''));
+  const headers=assertXlsxHeaders(matrix.shift()||[]);
+  return matrix.map(row=>{
+    if(row.some((value,index)=>index>=headers.length&&String(value??'').trim()!==''))
+      throw new Error('XLSX contiene datos fuera de las columnas declaradas.');
+    return Object.fromEntries(headers.map((header,index)=>[header,String(row[index]??'').trim()]));
+  });
 }
 
 function normalizeRecord(record, type) {
