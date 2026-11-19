@@ -46,7 +46,16 @@ function normalized(value) {
 function parseSections(body) {
   const sections = new Map();
   let active = null;
+  let fence = null;
   for (const line of String(body).split(/\r?\n/)) {
+    const delimiter = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (delimiter) {
+      const symbol = delimiter[1][0];
+      if (!fence) fence = { symbol, size: delimiter[1].length };
+      else if (symbol === fence.symbol && delimiter[1].length >= fence.size) fence = null;
+      continue;
+    }
+    if (fence) continue; // Markdown examples are not real ticket headings or AC.
     const heading = /^##\s+(.+?)\s*$/.exec(line);
     if (heading) {
       active = normalized(heading[1]);

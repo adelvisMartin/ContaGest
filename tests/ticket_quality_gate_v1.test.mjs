@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { analyzeTicket, parseArgs, REQUIRED_SECTIONS, DOMAIN_PROFILES } from '../scripts/ticket-quality-gate.mjs';
 
 const specimen = () => [
@@ -88,4 +88,12 @@ test('argument parser requires file and rejects unknown flags', () => {
   assert.deepEqual(parseArgs(['--file','x.md','--domains','gym,erp','--strict']),{file:'x.md',strict:true,json:false,domains:['gym','erp']});
   assert.throws(() => parseArgs(['--unknown']),/INVALID_ARGUMENT/);
   assert.throws(() => parseArgs([]),/USAGE/);
+});
+
+test('fenced documentation examples cannot satisfy ticket headings or AC', () => {
+  const example = '```md\n' + specimen() + '\n```';
+  const result = analyzeTicket(example);
+  assert.equal(result.status, 'SPEC_INCOMPLETE');
+  assert.equal(result.acceptanceCriteria, 0);
+  assert.ok(result.errors.includes('MISSING_SECTION: Objetivo'));
 });
