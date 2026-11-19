@@ -11,6 +11,15 @@ import type { HipicoDomainEventType } from './hipico-domain-state.js';
 
 export const HIPICO_CANONICAL_API_VERSION = 'v1';
 
+// State-version exhaustion is a deterministic operator/data conflict, not a
+// transient PostgreSQL outage. A retry loop must not repeat this write.
+function canonicalPermanentVersionResponse(error:unknown){
+  const message=String((error as {message?:unknown}|null)?.message||'');
+  if(message!=='HIPICO_DOMAIN_STATE_VERSION_UNSAFE'
+    &&message!=='HIPICO_DOMAIN_STATE_VERSION_EXHAUSTED')return null;
+  return{status:409,body:{ok:false,retryable:false,error:message}};
+}
+
 const STATE_ADVANCING_EVENTS = new Set<HipicoDomainEventType>([
   'PLAN_RECORDED', 'RACE_OPENED', 'RACE_CLOSED', 'RESULT_RECORDED', 'SETTLEMENT_READY',
   'SETTLEMENT_RECORDED', 'BALANCE_CONFIRMED', 'RACE_PUBLISHED', 'RACE_ARCHIVED',
@@ -364,6 +373,10 @@ router.post('/domain/events', async (req, res) => {
     if (['HIPICO_DOMAIN_STATE_CONFLICT', 'HIPICO_EVENT_ALREADY_REVERSED'].includes(String(error?.message || ''))) {
       return res.status(409).json({ ok: false, retryable: true, error: String(error.message) });
     }
+    const permanentVersionError=canonicalPermanentVersionResponse(error);
+    if(permanentVersionError){
+      return res.status(permanentVersionError.status).json(permanentVersionError.body);
+    }
     console.error('[hipico-canonical] domain event failed', {
       error: error?.message || String(error),
       groupKey: input.groupKey,
@@ -387,5 +400,6 @@ export const __test__ = {
   domainReadSchema,
   domainEventSchema,
   hasUniqueTextValues,
-  hasUniqueParticipants
+  hasUniqueParticipants,
+  canonicalPermanentVersionResponse
 };
