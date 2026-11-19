@@ -14,7 +14,22 @@ function parse(value) {
   catch { return null; }
 }
 
-function normalize(session) {
+// Session storage is UI metadata only; credentials belong to HttpOnly cookies or native Keystore.
+const CREDENTIAL_FIELD = /(?:token$|password(?:hash)?$|passphrase$|secret$|(?:api|private|device|license|session|signing|secret)(?:private)?key$|^(?:access|refresh|session|authorization)(?:private)?(?:key|cookie|header)$|^jwt$|^authorization$|^cookies?$|^credentials?$)/i;
+
+function stripCredentials(value, redaction) {
+  if (Array.isArray(value)) return value.map((item) => stripCredentials(item, redaction));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).flatMap(([key, item]) => {
+    if (CREDENTIAL_FIELD.test(key.replace(/[_-]/g, ''))) {
+      redaction.removed = true;
+      return [];
+    }
+    return [[key, stripCredentials(item, redaction)]];
+  }));
+}
+
+function normalize(session, redaction = { removed: false }) {
   if (!session || typeof session !== 'object') return null;
   const tenantId = session.tenantId || session.tenant?.id || null;
   if (!tenantId) return null;
@@ -23,8 +38,7 @@ function normalize(session) {
   const sessionExpiry = session.sessionExpiresAt ? Date.parse(session.sessionExpiresAt) : 0;
   const expiresAt = Number(sessionMode === 'cookie' && sessionExpiry ? sessionExpiry : accessExpiresAt) || null;
 
-  // Never persist a production bearer/access token. HttpOnly cookies are the browser credential.
-  const { token: _discardedToken, ...safe } = session;
+  const safe = stripCredentials(session, redaction);
   return {
     ...safe,
     sessionMode,
@@ -60,11 +74,16 @@ export const AuthSession = {
 
   get() {
     if (!storageAvailable()) return null;
-    const raw = parse(localStorage.getItem(AUTH_SESSION_KEY));
-    const session = normalize(raw) || migrateLegacySession();
-    if (!session) return null;
-    // Rewrite any legacy object that still contained a bearer token.
-    if (raw?.token) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+    const stored = localStorage.getItem(AUTH_SESSION_KEY);
+    const raw = parse(stored);
+    const redaction = { removed: false };
+    const session = normalize(raw, redaction) || migrateLegacySession();
+    if (!session) {
+      if (stored) localStorage.removeItem(AUTH_SESSION_KEY);
+      return null;
+    }
+    // Evict credential-bearing legacy snapshots, including nested token fields.
+    if (redaction.removed) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
     if (session.expiresAt && session.expiresAt <= Date.now()) {
       this.clear();
       return null;

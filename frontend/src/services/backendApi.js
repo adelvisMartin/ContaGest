@@ -1,9 +1,17 @@
 import { AuthSession } from './authSession.js';
+import { resolveApprovedApiBase } from './apiBaseOriginPolicy.mjs';
 
 const API_BASE_KEY = 'contagest_api_base_url';
 const isBrowser = typeof window !== 'undefined';
-const isDevelopmentHost = isBrowser && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const isNativePlatform = () => isBrowser && window.Capacitor?.isNativePlatform?.() === true;
+const isDevelopment = Boolean(import.meta?.env?.DEV);
+const isDevelopmentHost = isBrowser && isDevelopment && !isNativePlatform()
+  && ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const ENV_API_BASE = import.meta?.env?.VITE_API_BASE_URL || '';
+const CONFIGURED_API_ORIGINS = [
+  ENV_API_BASE,
+  ...String(import.meta?.env?.VITE_API_ALLOWED_ORIGINS || '').split(',')
+];
 const SAME_ORIGIN_API_BASE = '/api/v1';
 const DEFAULT_API_BASE = (ENV_API_BASE || (isDevelopmentHost ? 'http://localhost:3030/api/v1' : SAME_ORIGIN_API_BASE)).replace(/\/$/, '');
 let refreshInFlight = null;
@@ -11,17 +19,20 @@ let authExpiredSignalled = false;
 const financialInFlightKeys = new Map();
 
 function normalizeBaseUrl(value) {
-  const candidate = String(value || DEFAULT_API_BASE).trim().replace(/\/$/, '');
-  if (!isBrowser) return candidate;
-  if (!isDevelopmentHost && /localhost|127\.0\.0\.1/i.test(candidate)) return DEFAULT_API_BASE;
-  return candidate || DEFAULT_API_BASE;
+  return resolveApprovedApiBase(value, {
+    fallback: DEFAULT_API_BASE,
+    currentOrigin: isBrowser ? window.location.origin : '',
+    configuredOrigins: CONFIGURED_API_ORIGINS,
+    development: isDevelopment,
+    native: isNativePlatform()
+  });
 }
 
 function storedBaseUrl() {
-  if (typeof localStorage === 'undefined') return DEFAULT_API_BASE;
+  if (typeof localStorage === 'undefined') return normalizeBaseUrl(DEFAULT_API_BASE);
   const stored = localStorage.getItem(API_BASE_KEY);
   const normalized = normalizeBaseUrl(stored || DEFAULT_API_BASE);
-  if (normalized === DEFAULT_API_BASE && stored && /localhost|127\.0\.0\.1/i.test(stored)) {
+  if (stored && normalized !== stored.trim().replace(/\/$/, '')) {
     localStorage.removeItem(API_BASE_KEY);
   }
   return normalized;
@@ -116,10 +127,23 @@ function isPublicRequest(path) {
     || normalized.startsWith('/auth/password/');
 }
 
-function apiError(message, status, payload) {
+function parseRetryAfterSeconds(value) {
+  const header = String(value || '').trim();
+  if (!header) return undefined;
+  if (/^\d{1,9}$/.test(header)) return Math.min(Number(header), 86_400);
+  const date = Date.parse(header);
+  if (!Number.isFinite(date) || date <= Date.now()) return undefined;
+  return Math.min(Math.ceil((date - Date.now()) / 1000), 86_400);
+}
+
+function apiError(message, status, payload, headers) {
   const error = new Error(message);
   error.status = status;
   error.payload = payload;
+  if (status === 429) {
+    const seconds = parseRetryAfterSeconds(headers?.get?.('retry-after'));
+    if (seconds !== undefined) error.retryAfterSeconds = seconds;
+  }
   return error;
 }
 
@@ -146,7 +170,7 @@ function isUnsafeMethod(method = 'GET') {
 }
 
 function sameOriginFallback(baseUrl) {
-  if (!isBrowser || isDevelopmentHost) return '';
+  if (!isBrowser || isDevelopmentHost || isNativePlatform() || window.location.protocol !== 'https:') return '';
   const normalized = String(baseUrl || '');
   if (normalized === SAME_ORIGIN_API_BASE || normalized.endsWith(SAME_ORIGIN_API_BASE) && normalized.startsWith(window.location.origin)) return '';
   return SAME_ORIGIN_API_BASE;
@@ -175,13 +199,17 @@ function signalLegalAcceptanceRequired(path, payload = {}) {
 }
 
 async function fetchApi(baseUrl, path, options) {
+  if (!baseUrl) throw apiError('La API segura no está configurada para esta instalación.', 503, {});
   try {
-    return await fetch(`${baseUrl}${path}`, options);
+    return await fetch(`${baseUrl}${path}`, { ...options, redirect:'error' });
   } catch (error) {
+    // A failed mutation may already be committed remotely. Never replay it
+    // against a second origin; financial retries use the existing idempotency key.
+    if (isUnsafeMethod(options.method) || error?.name === 'AbortError') throw error;
     const fallback = sameOriginFallback(baseUrl);
     if (!fallback) throw error;
     localStorage.removeItem(API_BASE_KEY);
-    return fetch(`${fallback}${path}`, options);
+    return fetch(`${fallback}${path}`, { ...options, redirect:'error' });
   }
 }
 
@@ -214,7 +242,8 @@ export const BackendApi = {
   setBaseUrl(url) {
     if (typeof localStorage === 'undefined') return;
     const normalized = normalizeBaseUrl(url);
-    if (!url || normalized === DEFAULT_API_BASE) localStorage.removeItem(API_BASE_KEY);
+    if (!url || !normalized || normalized === normalizeBaseUrl(DEFAULT_API_BASE)
+      || normalized !== String(url).trim().replace(/\/$/, '')) localStorage.removeItem(API_BASE_KEY);
     else localStorage.setItem(API_BASE_KEY, normalized);
   },
   resetBaseUrl() {
@@ -227,6 +256,8 @@ export const BackendApi = {
 
   async request(path, options = {}) {
     const { noAuth = false, raw = false, skipRefresh = false, headers: customHeaders = {}, ...fetchOptions } = options;
+    const baseUrl = this.baseUrl;
+    if (!baseUrl) throw apiError('La API segura no está configurada para esta instalación.', 503, {});
     const publicRequest = noAuth || isPublicRequest(path);
     const method = String(fetchOptions.method || 'GET').toUpperCase();
     const rawBody = fetchOptions.body;
@@ -262,11 +293,18 @@ export const BackendApi = {
     try {
       let response;
       try {
-        response = await fetchApi(this.baseUrl, path, requestOptions);
+        response = await fetchApi(baseUrl, path, requestOptions);
       } catch (error) {
+        // Cancellation is final even for idempotent financial mutations.
+        // Retrying an aborted request violates the caller's cancellation intent.
+        if (error?.name === 'AbortError' || fetchOptions.signal?.aborted) {
+          throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, {
+            cause:String(error?.message || error), cancelled:true
+          });
+        }
         if (idempotencyKey) {
           try {
-            response = await fetchApi(this.baseUrl, path, requestOptions);
+            response = await fetchApi(baseUrl, path, requestOptions);
           } catch (retryError) {
             throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, { cause:String(retryError?.message || retryError), idempotent:true });
           }
@@ -279,7 +317,7 @@ export const BackendApi = {
         try {
           await refreshCookieSessionSingleFlight(this);
           const nextCsrf = isUnsafeMethod(method) ? csrfToken() : '';
-          response = await fetchApi(this.baseUrl, path, {
+          response = await fetchApi(baseUrl, path, {
             ...requestOptions,
             headers:{ ...headers, ...(nextCsrf ? { 'x-csrf-token':nextCsrf } : {}) }
           });
@@ -293,7 +331,7 @@ export const BackendApi = {
           const payload = await parseResponse(response);
           if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
           if (response.status === 428 && !publicRequest) signalLegalAcceptanceRequired(path, payload);
-          throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
+          throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload, response.headers);
         }
         return response;
       }
@@ -302,7 +340,7 @@ export const BackendApi = {
       if (!response.ok || payload.ok === false) {
         if (response.status === 401 && !publicRequest) expireBrowserSession(payload.message || payload.error || 'unauthorized');
         if (response.status === 428 && !publicRequest) signalLegalAcceptanceRequired(path, payload);
-        throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload);
+        throw apiError(payload.message || payload.error || `HTTP ${response.status}`, response.status, payload, response.headers);
       }
       const data = payload.data ?? payload;
       if (String(path).startsWith('/auth/') && data?.tenantId && data?.sessionMode) {
