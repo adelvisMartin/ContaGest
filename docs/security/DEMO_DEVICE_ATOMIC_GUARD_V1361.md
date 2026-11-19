@@ -4,7 +4,7 @@ Baseline: `main@5cbd858803275f3033019a8977b38fb772333c71` (2026-11-19). Scope is
 
 ## Behaviors implemented
 
-- The server takes `SELECT ... FOR UPDATE` on the exact tenant-scoped `LicenseKey` inside a Prisma transaction **before** reading an activation and counting occupied device seats. Concurrent activations for the same license serialize; a second new device cannot pass `maxDevices` from a stale count.
+- The server takes `SELECT ... FOR UPDATE` on the exact tenant-scoped `LicenseKey` inside a Prisma transaction **before** reading an activation and counting occupied device seats. It rechecks the **current** license `status`, `revokedAt`, `expiresAt`, `plan`, and `maxDevices` under that lock, rather than using a possibly stale caller snapshot. Concurrent activations serialize; a second new device cannot pass the current limit after expiry, downgrade or revocation.
 - A revoked/blocked device cannot be upgraded by reusing its `deviceId` and license key. An existing **trial** with a revoked/blocked activation cannot enroll a *different* client-provided device ID; an owner-authorized new trial grant is required.
 - Credential refresh never changes an existing non-null `userId` binding. Its conditional UPDATE requires status `active` and the same credential hash; zero affected rows fail closed after concurrent revocation. Existing active legacy activations without a credential may upgrade once.
 - No MAC/IMEI/Android ID, hardware fingerprint, network metadata or Play Integrity claims are introduced as the source of authorization. `deviceId` is **not** proof of physical device possession; this guard does not falsely promote it into one.
