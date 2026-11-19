@@ -41,16 +41,37 @@ test('BackendApi keeps credentialed requests on approved origins and blocks redi
     assert.equal(calls[2].url, '/api/v1/health');
 
     BackendApi.setBaseUrl('https://contagest.example/api/v1');
-    globalThis.fetch = async () => { calls.push({redirectAttempt:true}); throw new TypeError('Blocked redirect'); };
+    globalThis.fetch = async (url, options) => {
+      calls.push({ redirectAttempt:true, url, options });
+      throw new TypeError('Blocked redirect');
+    };
     await assert.rejects(BackendApi.get('/health'), (error) => error.status === 0);
-    assert.equal(calls.filter((call) => call.redirectAttempt).length, 1, 'no credentialed follow-up to redirected destination');
+    const safeReadAttempts = calls.filter((call) => call.redirectAttempt);
+    assert.deepEqual(safeReadAttempts.map((call) => call.url), [
+      'https://contagest.example/api/v1/health', '/api/v1/health'
+    ], 'read-only fallback must remain on the same trusted origin');
+    assert.ok(safeReadAttempts.every((call) => call.options.redirect === 'error'));
+
+    // A POST can have committed before the fetch fails: never replay it at the fallback.
+    const countBeforePost = calls.length;
+    await assert.rejects(BackendApi.post('/api/v1/session-test', {}), (error) => error.status === 0);
+    assert.equal(calls.length, countBeforePost + 1);
+    assert.equal(calls.at(-1).url, 'https://contagest.example/api/v1/session-test');
+
+    const countBeforeAbort = calls.length;
+    globalThis.fetch = async (url, options) => {
+      calls.push({ url, options });
+      throw Object.assign(new Error('cancelled'), {name:'AbortError'});
+    };
+    await assert.rejects(BackendApi.get('/health'), (error) => error.status === 0);
+    assert.equal(calls.length, countBeforeAbort + 1, 'cancelled reads must not retry');
 
     globalThis.window.Capacitor = { isNativePlatform:()=>true };
     entries.clear();
     const { BackendApi: NativeApi } = await import('../frontend/src/services/backendApi.js?security1364-native');
     assert.equal(NativeApi.baseUrl, '', 'Android release requires an explicitly configured HTTPS API');
     await assert.rejects(NativeApi.get('/health'), (error) => error.status === 503);
-    assert.equal(calls.filter((call) => call.redirectAttempt).length, 1, 'native misconfiguration must not issue a fetch');
+    assert.equal(calls.length, countBeforeAbort + 1, 'native misconfiguration must not issue a fetch');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete globalThis[key];
