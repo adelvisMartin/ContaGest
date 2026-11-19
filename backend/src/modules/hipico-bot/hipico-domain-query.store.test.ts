@@ -49,7 +49,7 @@ test('canonical aggregate and events use one repeatable-read, owner/group-scoped
     ]);
   }
   assert.equal(reads[1].values[4],scope.limit);
-  assert.match(reads[1].sql,/ORDER BY event_timestamp DESC,id DESC/);
+  assert.match(reads[1].sql,/ORDER BY created_at DESC,id DESC/);
 });
 
 test('unknown aggregate does not read unrelated event history',async()=>{
