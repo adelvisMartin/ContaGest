@@ -119,8 +119,12 @@ cualquier captura que detecte destinos externos. Esta comprobación a posteriori
 **no es una barrera de salida de red**; un redirect podría iniciar la solicitud
 antes de detectarse. Usar red/runner aislado cuando se necesite contención fuerte.
 Se deshabilitan los Service Workers **solo en este test de medición**
-para que no eludan la interceptación. Este control no cubre tráfico WebSocket
-ni prueba que la PWA funcione offline; ambos requieren su suite independiente.
+para que no eludan la interceptación. Los WebSockets ahora usan una validación
+separada (`ws` ↔ `http`, `wss` ↔ `https`) de origen y puerto, y se
+interceptan con `page.routeWebSocket()`: los locales conservan comunicación,
+los externos se cierran y hacen fallar la campaña. Su ejecución real aún está
+**NOT_EXECUTED**; esto no prueba operación offline ni detiene redirecciones
+HTTP a nivel de firewall.
 
 El helper `qa/support/performance-lab-isolation-v1293.mjs` incluye tests
 positivos/negativos de mismo origen, puertos distintos, dominios homógrafos
@@ -166,3 +170,21 @@ para superar el gate.
 `LOCAL_POSTGRES=NOT_EXECUTED`, `REMOTE_CI=BLOCKED` mientras estén en cola
 los checks del HEAD exacto. El epic #1293 continúa OPEN/PARTIAL, sin afirmar
 que el producto se haya acelerado ni ratificar presupuestos de rendimiento.
+
+### Cuarta revisión QA: transporte WebSocket de laboratorio
+
+La documentación de Playwright admite `websocket` como `resourceType`
+de una petición y ofrece `page.routeWebSocket()` para este transporte
+(https://playwright.dev/docs/api/class-request ,
+https://playwright.dev/docs/api/class-websocketroute ).
+El interceptor HTTP no debe tratar `ws://127.0.0.1:8080` del servidor de
+desarrollo como dominio externo ni permitir `wss://otro-dominio`.
+
+Se añadió `isAllowedLabSocket()`, con regla explícita de esquema, host y
+puerto; cierre de conexiones WebSocket externas mediante `routeWebSocket()`;
+telemetría de `page.on('websocket')` y tratamiento de peticiones con
+`resourceType=websocket`. La quinta regresión del aislamiento se reprodujo
+primero como FAIL y después pasó. Resultado local actualizado en Node 22.16.0:
+**22/22 tests PASS**, sintaxis y hashes de los seis archivos JS de validación
+verificados. **Aún no hay ejecución de Playwright Chromium real**, por lo que
+esta instrumentación de red sigue siendo hipótesis de integración pendiente.
