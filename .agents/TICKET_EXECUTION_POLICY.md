@@ -91,3 +91,10 @@ Before merge:
 - preserve unrelated work and concurrent ticket gates;
 - use expected-head SHA when the merge tool supports it;
 - after merge, record the merge SHA and refresh `main` before starting the next ticket.
+
+
+## New-ticket specification readiness and specialist review (2026-11-19)
+
+Before changing code for a **new** ticket or a materially revised specification, follow `docs/engineering/TICKET_ENGINEERING_PROTOCOL.md`. Run `node scripts/ticket-quality-gate.mjs --file <ticket.md> --domains <area1,area2> --strict --json` on its concrete local spec. Resolve missing objective, in/out-of-scope, ownership, AC negative/regression and test maps **before treating it as implementation-ready**. The CLI is a structural contract, not a semantic security, performance or functionality proof: `SPEC_STRUCTURE_READY` never equals a QA PASS. For legacy epic issues, apply the equivalent review to the actual existing sections without changing old AC IDs or failing only on heading format.
+
+At DISCOVER, choose advisory profiles for relevant professions from the gate's `advisoryProfiles`, alongside mandatory domain experts, `foda-senior` and `auditoria-independiente`. They provide written checks and evidence mapping, not self-running agents or certifications. Research comparable products only using licensed public data/authorized access, recording URL, date, ToS and rights. Never implement scraping that evades authentication, CAPTCHAs or provider rate limits. Before merging, validate performance before/after and finish every acceptance criterion with exact-head evidence, distinguishing external CI blocks. The 2–4 ACTIVE skill limit remains unchanged.
