@@ -76,6 +76,12 @@ test('canonical writer takes aggregate lock then timestamps committed evidence',
   assert.ok(locked >= 0 && insert > locked);
   assert.match(writer.slice(insert), /event_timestamp,operator_confirmed,confirmation_reason,created_at/);
   assert.match(writer.slice(insert), /clock_timestamp\(\)/);
+  const safeVersionGuard = writer.indexOf('HIPICO_DOMAIN_STATE_VERSION_EXHAUSTED');
+  assert.ok(safeVersionGuard > locked && safeVersionGuard < insert,
+    'Version exhaustion must fail before an event is appended');
+  assert.match(writer.slice(locked, insert), /current\.stateVersion>=Number\.MAX_SAFE_INTEGER/);
+  assert.match(integration, /cannot apply a transition beyond MAX_SAFE_INTEGER or append evidence/);
+  assert.match(integration, /A rejected transition must not leave append-only evidence behind/);
   assert.match(integration, /persistHipicoDomainEvent\(\{/);
   assert.match(integration, /assert\.equal\(beforeCorrection\.available, true\)/);
   assert.match(integration, /assert\.equal\(published\.available, false\)/);
