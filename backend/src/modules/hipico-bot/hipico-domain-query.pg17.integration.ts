@@ -192,6 +192,40 @@ test('PostgreSQL 17 canonical snapshot stays consistent under a concurrent write
   assert.deepEqual(ownerBView.aggregates, [{ ownerId: ownerB, groupKey: groupA }]);
   assert.deepEqual(ownerBView.events, [{ ownerId: ownerB, groupKey: groupA }]);
   assert.deepEqual(await visibleAs(null), { aggregates: [], events: [] });
+
+  // SELECT-only RLS access does not grant mutation authority. Verify the
+  // actual SQLSTATE 42501, not just an arbitrary database rejection.
+  const denied = async (role: 'anon' | 'authenticated', action: 'read' | 'write') => {
+    await assert.rejects(
+      prisma.$transaction(async tx => {
+        await tx.$executeRawUnsafe(`SET LOCAL ROLE ${role}`);
+        if (action === 'read') {
+          await tx.$queryRaw`
+            SELECT id FROM public.hipico_domain_events
+            WHERE aggregate_key = ${aggregateKey} LIMIT 1
+          `;
+        } else {
+          await tx.$executeRaw`
+            UPDATE public.hipico_domain_aggregates
+            SET status = 'CLOSED'
+            WHERE owner_id = ${ownerA}::uuid
+              AND group_key = ${groupB}
+              AND aggregate_key = ${aggregateKey}
+          `;
+        }
+      }),
+      (error: unknown) => {
+        const dbError = error as { code?: string; meta?: { code?: string } };
+        assert.equal(dbError.code, 'P2010',
+          `${role}/${action} must be rejected by PostgreSQL, not by a test setup error`);
+        assert.equal(dbError.meta?.code, '42501',
+          `${role}/${action} must fail for insufficient privileges`);
+        return true;
+      }
+    );
+  };
+  await denied('anon', 'read');
+  await denied('authenticated', 'write');
 });
 
 test('PostgreSQL 17 synthetic canonical-read latency baseline is observable', async () => {
