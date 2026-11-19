@@ -19,3 +19,15 @@ Se incorporaron modelos `ServiceCatalogCategory, ServiceDefinition, ServiceStep,
 **Advertencia:** `GET /public` es por ahora una proyección de lectura autenticada que requiere `admin.manage`, no exposición pública por URL arbitraria, hasta #850 tenant resolution. La tarifa/impuesto son referenciados mediante Product, nunca se duplican. No hay booking clínico ni actividad de Gym asociada todavía; #852 es owner de derechos.
 
 **PG17 test diseñado**: `CG_SERVICE_CATALOG_QA_ISOLATED=true npm run test:backend:service-catalog:real`, usando PostgreSQL17 con nombre terminado `_v849` y permisos RLS, no producción. Incluye API categoría→servicio→pasos→profesional/sede→publicación, igualdad de historiales/versiones, repetición, tenant A/B, mass assignment, rechazo RBAC sin token y exclusión PII. No se ha ejecutado en este entorno: `NOT_EXECUTED` hasta levantar PG17 desechable con migra+seed+sidecar.
+
+## #849 incremento 2026-11-18 · Archivado/activación de categorías
+
+Se añadió `PATCH /api/v1/service-catalog/categories/:id/status` con cuerpo estrictamente limitado a `{"status":"active"|"archived"}`. El router existente exige sesión, tenant y `admin.manage`; no ofrece una mutación anónima ni permite `tenantId` controlado por el cliente.
+
+`setServiceCategoryStatus` mantiene una única autoridad transaccional de categoría. El archivado se rechaza con `SERVICE_CATEGORY_IN_USE` mientras existan servicios `draft` o `active` vinculados. Los servicios `archived` y sus revisiones permanecen referenciables e inmutables; reactivar la categoría no reactiva servicios. La repetición de un estado ya vigente no añade auditoría, mientras que una transición efectiva escribe `AuditLog` dentro de la misma transacción.
+
+La creación de nuevos servicios y el cambio a `active` validan la categoría bajo `SELECT ... FOR UPDATE` con tenant incorporado. El archivado toma el mismo bloqueo antes de comprobar las referencias. De este modo, una carrera create↔archive no puede confirmar simultáneamente un servicio operativo vinculado a una categoría archivada. No se crea otro precio, cálculo fiscal, ledger o catálogo por vertical, ni se altera ningún archivo SQL de migración ya revisado.
+
+**Validación requerida para merge:** `node --test tests/service_catalog_api_contract_v849.test.mjs tests/service_catalog_schema_v849.test.mjs`; `npm run typecheck`; `npm run test:backend:service-catalog:real` contra PostgreSQL 17 efímero `contagest_catalog_v849_e2e` con migraciones y sidecar RLS, incluido el caso de carrera concurrente y cross-tenant. El workflow `.github/workflows/catalog-category-v849.yml` captura el SHA exacto; si queda en cola o falla, el estado sigue siendo BLOCKED/NOT_EXECUTED, no PASS. Quedan pendientes UI, capacidades bidireccionales adicionales, pricing/Scheduling/Entitlements y E2E de navegador para el DoD de #849.
+
+**Rollback:** revertir ruta, servicio, pruebas y workflow. Los registros históricos siguen intactos; no hay migración DDL nueva.

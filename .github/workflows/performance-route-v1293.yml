@@ -1,0 +1,58 @@
+name: "Route performance #1293 · 60-route synthetic baseline"
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/performance-route-evidence-v1293.mjs'
+      - 'qa/performance-route-v1293.spec.mjs'
+      - 'tests/performance_route_evidence_v1293.test.mjs'
+      - 'scripts/run-authoritative-contracts.mjs'
+      - 'package.json'
+      - '.github/workflows/performance-route-v1293.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  NODE_ENV: test
+
+jobs:
+  route-lab-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Contract and truthfulness tests
+        run: npm run test:perf:routes:1293
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Capture 60-route Chromium render baseline
+        run: npm run perf:routes:1293
+      - name: Record exact-SHA workflow identity
+        if: always()
+        run: |
+          mkdir -p artifacts/performance/v1293
+          printf 'candidate_sha=%s\nrun_id=%s\nattempt=%s\n' \
+            "$CANDIDATE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" \
+            > artifacts/performance/v1293/workflow-identity.txt
+      - name: Upload sanitized baseline and browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: perf-route-v1293-${{ env.CANDIDATE_SHA }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/performance/v1293
+            playwright-report
+            test-results
+          if-no-files-found: warn

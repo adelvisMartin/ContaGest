@@ -7,7 +7,7 @@ import { requireTenant, requirePermission } from '../../shared/middleware/contex
 import { validateBody } from '../../shared/middleware/validate.js';
 import { projectPublicServiceCatalog } from './service-public-projection.mjs';
 import {
-  createServiceCategory,createCatalogService,replaceServiceSteps,
+  createServiceCategory,setServiceCategoryStatus,createCatalogService,replaceServiceSteps,
   assignServiceStaff,assignServiceLocation,setServiceStatus
 } from './service-catalog.service.js';
 
@@ -23,6 +23,9 @@ const category=z.object({
   slug:z.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/),
   name:z.string().trim().min(1).max(160),
   displayOrder:z.number().int().min(-10000).max(10000).default(0)
+}).strict();
+const categoryStatus=z.object({
+  status:z.enum(['active','archived'])
 }).strict();
 const service=z.object({
   name:z.string().trim().min(1).max(160),
@@ -90,6 +93,11 @@ router.get('/categories',asyncHandler(async(req,res)=>{
 }));
 router.post('/categories',validateBody(category),asyncHandler(async(req,res)=>{
   ok(res,await createServiceCategory(ctx(req),req.body),201);
+}));
+router.patch('/categories/:id/status',validateBody(categoryStatus),asyncHandler(async(req,res)=>{
+  const id=uuid.safeParse(req.params.id);
+  if(!id.success)throw new HttpError(422,'Identificador de categoría inválido.');
+  ok(res,await setServiceCategoryStatus(ctx(req),id.data,req.body.status));
 }));
 router.get('/public',asyncHandler(async(req,res)=>{
   const pagination=listQuery.parse(req.query);
