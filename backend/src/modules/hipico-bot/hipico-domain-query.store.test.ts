@@ -87,3 +87,27 @@ test('canonical read limit remains bounded to 1..200',()=>{
   assert.equal(normalizeDomainReadLimit(900),200);
   assert.equal(normalizeDomainReadLimit(30.7),30);
 });
+
+test('unsafe BIGINT state versions fail closed without returning rounded evidence',async()=>{
+  for(const stateVersion of [BigInt(Number.MAX_SAFE_INTEGER)+1n,-1n]){
+    let reads=0;
+    const db={
+      $transaction:async(run:(tx:any)=>Promise<any>)=>run({
+        $queryRaw:async()=>{
+          reads++;
+          if(reads!==1)throw new Error('UNSAFE_VERSION_MUST_NOT_QUERY_EVENTS');
+          return [{
+            status:'OPEN',stateVersion,
+            createdAt:new Date('2026-11-19T10:00:00Z'),
+            updatedAt:new Date('2026-11-19T11:00:00Z')
+          }];
+        }
+      })
+    } as any;
+    await assert.rejects(
+      readHipicoDomainAggregate(scope,db),
+      /HIPICO_DOMAIN_STATE_VERSION_UNSAFE/
+    );
+    assert.equal(reads,1);
+  }
+});
