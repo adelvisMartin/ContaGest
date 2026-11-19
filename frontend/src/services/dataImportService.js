@@ -1,5 +1,5 @@
 import { BackendApi } from './backendApi.js';
-import { assertXlsxZipBudget, assertXlsxZipEntryName, assertSafeImportXml } from './xlsxZipBudget.mjs';
+import { assertXlsxZipBudget, assertXlsxZipEntryName, assertSafeImportXml, assertZipCrc32 } from './xlsxZipBudget.mjs';
 import { parseDelimitedImport } from './delimitedImportParser.mjs';
 import { xlsxColumnIndex, assertXlsxHeaders, assertXlsxImportRowCount, assertXlsxCellValue, assertXlsxWorksheetTarget, isXlsxPreviewXmlPart, xlsxSharedString } from './xlsxImportGuards.mjs';
 
@@ -56,7 +56,7 @@ async function unzipEntries(arrayBuffer){
   if(count>1024)throw new Error('XLSX contiene demasiadas entradas ZIP.');
   for(let n=0;n<count;n++){
     if(offset+46>bytes.length||u32(view,offset)!==0x02014b50)throw new Error('XLSX inválido: directorio ZIP corrupto.');
-    const method=u16(view,offset+10);const compressed=u32(view,offset+20);const uncompressed=u32(view,offset+24);
+    const method=u16(view,offset+10);const crc=u32(view,offset+16);const compressed=u32(view,offset+20);const uncompressed=u32(view,offset+24);
     const nameLength=u16(view,offset+28);const extraLength=u16(view,offset+30);const commentLength=u16(view,offset+32);const localOffset=u32(view,offset+42);
     if(offset+46+nameLength+extraLength+commentLength>eocd)throw new Error('XLSX inválido: directorio ZIP incompleto.');
     const name=assertXlsxZipEntryName(decoder.decode(bytes.slice(offset+46,offset+46+nameLength)));
@@ -76,6 +76,7 @@ async function unzipEntries(arrayBuffer){
     const compressedBytes=bytes.slice(start,start+compressed);
     let content;if(method===0)content=compressedBytes;else if(method===8)content=await inflateRaw(compressedBytes,uncompressed);else throw new Error(`XLSX usa compresión ZIP no soportada (${method}).`);
     if(content.byteLength!==uncompressed)throw new Error('XLSX inválido: longitud descomprimida inconsistente.');
+    assertZipCrc32(content,crc);
     entries.set(name,decoder.decode(content));
     offset+=46+nameLength+extraLength+commentLength;
   }
