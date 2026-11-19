@@ -52,6 +52,9 @@ test('PG17 QA executes only with ephemeral database and cleans up even on failur
   assert.match(read('ops/qa/hipico-domain-snapshot-pg17.compose.yml'), /host_ip: 127\.0\.0\.1/);
   assert.match(integration, /PG17 synthetic QA refuses DATABASE_RUNTIME_URL overrides/);
   assert.match(integration, /SET LOCAL ROLE authenticated/);
+  assert.match(integration, /await denied\('anon', 'read'\)/);
+  assert.match(integration, /await denied\('authenticated', 'write'\)/);
+  assert.match(integration, /dbError\.meta\?\.code, '42501'/);
   assert.match(integration, /backdated correction recorded after a result cannot be hidden from LAB/);
   assert.match(integration, /index upgrade preserves existing append-only evidence/);
   assert.match(integration, /read and write reject unsafe BIGINT optimistic versions/);
