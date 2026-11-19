@@ -76,3 +76,39 @@ test('#1362: reused account receives a clear license-only UX, never a fake tempo
   assert.match(page,/Contraseña sin cambios/);
   assert.match(page,/La cuenta existente conserva su contraseña/);
 });
+
+test('#1362 one-time licence secrets never enter scoped browser persistence or exported state',async()=>{
+  const {stripSensitivePersistedState}=await import('../frontend/src/state/persistedStatePolicy.js');
+  const snapshot={
+    profile:{id:'staff-test'},
+    healthVertical:{secretClinicalData:'must-not-persist'},
+    licenseCredentials:{licenseKey:'CG-RAW-SECRET',temporaryPassword:'TEMP-SECRET'},
+    licenses:[
+      {id:'new-license',licenseKey:'CG-RAW-SECRET',temporaryPassword:'TEMP-SECRET',
+       credentials:{licenseKey:'CG-RAW-SECRET'},keyPreview:'CG-••••'},
+      {id:'previous',keyPreview:'PREVIEW'}
+    ]
+  };
+  const durable=stripSensitivePersistedState(snapshot);
+  assert.equal('healthVertical' in durable,false);
+  assert.equal('licenseCredentials' in durable,false);
+  assert.deepEqual(durable.licenses,[
+    {id:'new-license',keyPreview:'CG-••••'},
+    {id:'previous',keyPreview:'PREVIEW'}
+  ]);
+  assert.equal(snapshot.licenses[0].licenseKey,'CG-RAW-SECRET',
+    'Sanitizing persistence cannot destroy the one-time in-memory UI state');
+  const stored=JSON.stringify(durable);
+  assert.doesNotMatch(stored,/CG-RAW-SECRET|TEMP-SECRET|secretClinicalData/);
+});
+
+test('#1362 every Store persistence/export boundary uses the secret-free projection',()=>{
+  const store=fs.readFileSync('frontend/src/state/store.js','utf8');
+  const page=fs.readFileSync('frontend/src/pages/LicensesPage.js','utf8');
+  assert.match(store,/import \{ stripSensitivePersistedState \} from '\.\/persistedStatePolicy\.js'/);
+  assert.match(store,/return stripSensitivePersistedState\(snapshot\)/);
+  assert.match(store,/JSON\.stringify\(withoutClinicalCache\(state\)\)/);
+  assert.match(store,/JSON\.stringify\(withoutClinicalCache\(state\), null, 2\)/);
+  assert.match(page,/credentials:_oneTime, \.\.\.licenseSummary/);
+  assert.match(page,/draft\.licenses=\[licenseSummary,/);
+});
