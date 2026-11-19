@@ -7,6 +7,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 const SHA = 'a'.repeat(40);
 const verifier = fileURLToPath(new URL('../scripts/hipico-verify-evidence-v290.mjs', import.meta.url));
@@ -51,7 +52,7 @@ function verify(root, id = 'authRecovery', section = 'optional') {
     join(root, 'artifacts/qa/hipico-v290/evidence-verification.json'), 'utf8'));
   assert.equal(report.sha, SHA);
   assert.notEqual(report.status, 'PASS');
-  return report[section].find((item) => item.id === id);
+  return section === 'browser' ? report.browser : report[section].find((item) => item.id === id);
 }
 
 test('#839 a malformed PASS sibling cannot be hidden by a valid PASS artifact', (t) => {
@@ -109,4 +110,64 @@ test('#839 PostgreSQL gate rejects old PG16 evidence on a PG17 release', (t) => 
 
   writeFileSync(proofPath, JSON.stringify(artifact('isolated-ephemeral-postgresql-17')));
   assert.equal(verify(root, 'postgresGate', 'required').status, 'PASS');
+});
+
+function syntheticPng() {
+  // Real, valid PNG bytes produced without a browser: never authoritative
+  // without an independent exact-SHA Chromium execution artifact.
+  const crc32 = (bytes) => {
+    let crc = 0xffffffff;
+    for (const value of bytes) {
+      crc ^= value;
+      for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data = Buffer.alloc(0)) => {
+    const label = Buffer.from(type, 'ascii');
+    const body = Buffer.concat([label, data]);
+    const header = Buffer.alloc(4);
+    header.writeUInt32BE(data.length);
+    const trailer = Buffer.alloc(4);
+    trailer.writeUInt32BE(crc32(body));
+    return Buffer.concat([header, body, trailer]);
+  };
+  const width = 400, height = 250;
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // RGBA, 8 bits/channel
+  ihdr[9] = 6;
+  const pixels = Buffer.alloc(height * (width * 4 + 1));
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr), chunk('IDAT', deflateSync(pixels)), chunk('IEND')
+  ]);
+}
+
+test('#839 a PNG alone never fabricates browser PASS without exact-SHA Chromium', (t) => {
+  const root = fixture(t);
+  const dir = join(root, 'artifacts/qa/hipico-v105', SHA);
+  mkdirSync(dir, { recursive: true });
+  const imagePath = join(dir, 'browser-400.png');
+  writeFileSync(imagePath, syntheticPng());
+
+  let result = verify(root, 'browserVisualEvidence', 'browser');
+  assert.equal(result.status, 'NOT_EXECUTED');
+  assert.equal(result.reason, 'CHROMIUM_GATE_NOT_VERIFIED');
+  assert.equal(result.screenshotCount, 1);
+
+  writeFileSync(join(root, 'artifacts/qa/first/chromium-gate.json'), JSON.stringify({
+    schema: 'hipico-browser-gate.v290-current',
+    sha: SHA, status: 'PASS'
+  }));
+  result = verify(root, 'browserVisualEvidence', 'browser');
+  assert.equal(result.status, 'PASS');
+  assert.equal(result.screenshotCount, 1);
+
+  writeFileSync(imagePath, 'invalid empty screenshot placeholder');
+  result = verify(root, 'browserVisualEvidence', 'browser');
+  assert.equal(result.status, 'NOT_EXECUTED');
+  assert.equal(result.screenshotCount, 0);
+  assert.equal(result.reason, 'BROWSER_EVIDENCE_MISSING');
 });
