@@ -1,0 +1,76 @@
+# ContaGest #1364 — threat-boundary review and incremental evidence
+
+**Date:** 2026-11-19 · **BASE_SHA:** `bb13003cb77efc1c4c37390a0c6d8414f6232aa9`  
+**State:** PARTIAL; source review and bounded unit tests only. **No AppSec sign-off, AAB certification, runtime PG17 evidence, or release authorization.**
+
+## Ownership / exclusion
+
+- #1364 owns incremental app/API abuse hardening, confidentiality matrix and adversarial evidence.
+- #1360 owns signing, reproducible AAB and Google Play release; #1361 owns Keystore, attestation and device-binding authority.
+- #1362 owns licencing/RBAC and client portals; #635/#720 own PostgreSQL role/RLS convergence; #1312/#851 own canonical server sessions.
+- **Control Hípico remains outside this Play ticket** (#837/#839); no Hípico behavior, WhatsApp, payouts or race logic changed.
+
+The **browser/Android JS is not trusted**. These client controls reduce accidental leakage and repacking usefulness but **do not replace backend auth, tenant, license, RBAC, RLS or Play Integrity**.
+
+## Threat model snapshot (STRIDE, source-grounded)
+
+| Threat / boundary | Asset and path | Existing owner / source | New control in this PR | Residual risk and required QA |
+| --- | --- | --- | --- | --- |
+| Spoofed API host or poisoned localStorage (S/I) | Browser or WebView → `BackendApi` → auth/ledger/API | `frontend/src/services/backendApi.js` | Resolve a canonical HTTPS `/api/v1` only on same-origin web or build-approved hosts; native release fails closed without configured HTTPS | Test signed release with configured Play API; browser CSP and provider HTTP headers still unverified |
+| HTTP redirect across trust boundary (I) | Credentialed HTTP request → 3xx location | `fetchApi`, WHATWG Fetch `redirect` | `redirect: 'error'` on both primary and web same-origin fallback | Test real 302, cookies/CSRF with an isolated HTTP fixture |
+| Lost response / duplicate write (T) | POST to external API → network failure → origin fallback | Existing `financialRequestSignature` and idempotency keys | Only GET/HEAD/OPTIONS may use same-origin fallback; unsafe methods never fall back to a second origin | Dedicated integration test covers write; complete finance replay and DB transaction tests pending |
+| Browser credential persistence (I) | Auth response → `AuthSession.set/get` → localStorage | `authSession.js`; server cookies from #851 | Redact credential-looking keys recursively; rewrite credential-bearing stored legacy snapshots; evict invalid sessions | Test IndexedDB, browser profiles, logout/revocation, tenant switch, backup/restore and physical Android |
+| Object enumeration, BOLA/BFLA (E/I) | Auth/tenant/user → media, reports, list/export → PostgreSQL | `backend/src/shared/middleware/context.ts`, media and tenant policies | **No backend authorization change in this PR** | PG17 2 tenants × 2 clients × roles; deny direct IDs, search/export, signed media |
+| High-volume scraping/resource abuse (D) | Lists/exports/CPU/storage | `backend/src/shared/middleware/security.ts` rate-limit 8.7.3 + metrics | Source review only. Existing `standardHeaders: true` provides Retry-After on blocked requests according to upstream library documentation | Run synthetic scraping and normal user traversal on isolated API; compare 429 thresholds, NAT false positives and p95 |
+| Mobile tamper/replay (S/T) | Repacked APK, device keys, Play Integrity | #1360/#1361 | No parallel attestation mechanism | Binary/AAB and physical-device test evidence required |
+| Confidential database/storage backup (I/T) | PostgreSQL → Supabase media → backup → recovery | RLS/security/DR owners | No new unverified field encryption or KMS claims | Classify/review real provider storage+keys, restore on ephemeral PG17, rotate/revoke KMS, measure recovery |
+
+**Severity:** These are *risk paths*, not claims of confirmed exploitable production vulnerabilities. A proven cross-tenant or secret-leak path would block promotion as P0/P1.
+
+## Changes and alternative considered
+
+1. **Chosen:** small project-owned `resolveApprovedApiBase` policy used by the existing `BackendApi`, safe fetch semantics and session-storage redaction; no new auth or cryptographic system.
+2. **Rejected:** global rewrite of the client transport, catch-all native plugin, opaque JS obfuscator or blanket encryption of code/assets; high migration cost and no increase in server-side authorization.
+
+**Compatibility:** Web deployments on HTTPS with relative `/api/v1` continue to work; loopback in local development remains permitted; remote production API destinations must be provisioned at build time with `VITE_API_BASE_URL` / `VITE_API_ALLOWED_ORIGINS`. Android release must provide a real approved HTTPS origin. Rejected `setBaseUrl` values are removed rather than used to send cookies. The upstream origin is not editable by user storage alone.
+
+## Regression evidence
+
+| Gate | State | Evidence |
+| --- | --- | --- |
+| SOURCE_REVIEW | PASS (partial) | Read current `backendApi.js`, `authSession.js`, Express limiter, auth service, SW and project security rules using GitHub connector |
+| LOCAL_NODE_UNIT | PASS (bounded local mirror) | Node 22.16: 26/26 tests on policy + AuthSession, including 1,000 hostile synthetic URL combinations; 0 failures |
+| RED_TO_GREEN | PASS (bounded local mirror) | Credential retention test initially 2 fail / 1 pass; after redaction 3 pass / 0 fail; expanded cases green |
+| LOCAL_STATIC | PASS (bounded local mirror) | `node --check` on both modules and both isolated test files |
+| TRANSPORT_NODE_INTEGRATION | NOT_EXECUTED | Included in `npm run test:security:api-base` on PR, but repository checkout unavailable locally |
+| ROUTER / ORCHESTRATOR | BLOCKED | Repository-local `node scripts/agent-ticket-router.mjs gates --base main --type feature` needs full checkout |
+| TYPECHECK / LINT / BUILD / POSTGRES / DOCKER / E2E / SAST | NOT_EXECUTED / BLOCKED | No complete repository or Docker in this container |
+| REMOTE_CI exact HEAD | QUEUED or SKIPPED (not PASS) | Inspect current SHA workflow results before declaring status |
+| Android signed artifact / Play / provider encryption / KMS / PG17 restore / pentest | NOT_EXECUTED | Separate evidence and owners required |
+
+The local mirror is a **subset**, not the full Git checkout and not an exact-SHA release certification.
+
+### Required next gates before merging
+
+- Full checkout at candidate SHA, `npm ci` (Node 22), router and release-evidence gates; `npm run test:security:api-base`, lint/typecheck/build, existing contracts, static/secret audit.
+- HTTP fixture verifies 302/CORS/CSRF/401/429 headers without exposing credentials. Verify approved/nonapproved hosts and no mutation retry.
+- Isolated PostgreSQL 17 tenant A/B, role and owner authorization; synthetic scraping with measured normal pagination and p95 overhead.
+- Full mobile-specific assessment: native initialization, release AAB/manifest, debuggable/cleartext, version/signature, Keystore/Play Integrity, session recovery, Android backup.
+- Operational encryption/data-safety matrix, KMS/secret rotation, encrypted restore drill and independent AppSec/owner sign-off.
+- Recheck exact-HEAD required CI. **Do not merge this draft while material P0 acceptance criteria remain unverified.**
+
+## Second-pass FODA and rollback
+
+- **Strength:** Reuses existing server auth and client transport; minimizes duplication.
+- **Opportunity:** A single URL policy and session redaction now have negative tests; a shared security error UX for 401/429 can follow after server contract evidence.
+- **Weakness:** No full checkout, actual Play binary or DB/backup provider evidence in this review; mark NOT_EXECUTED.
+- **Threat:** Repacking and authenticated scraping remain server-side problems even with a safe client origin. They are not “solved” by URL checks.
+- **Rollback:** revert this branch's changes; no migration, table/drop, user records or Hípico state modified.
+
+### Official references checked 2026-11-19
+
+- OWASP API1/API4: https://api-security.owasp.org/editions/2023/en/0x11-t10/
+- OWASP MASVS: https://mas.owasp.org/MASVS/
+- MDN redirect safety: https://developer.mozilla.org/en-US/docs/Web/API/Response/redirected
+- Express rate-limit headers: https://express-rate-limit.mintlify.app/reference/configuration
+- Android Security: https://developer.android.com/privacy-and-security/risks/
