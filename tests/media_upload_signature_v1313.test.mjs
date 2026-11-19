@@ -112,3 +112,35 @@ test('#1313 oversized malformed base64 rejects with HTTP 422 rather than regex s
   const bad = 'data:image/png;base64,' + 'A'.repeat(4_800_000) + '=ABC';
   assert.throws(() => parseDataUrl(bad), error => error.status === 422 && /base64/.test(error.message));
 });
+
+
+test('#1313 oversized canonical image rejects before allocating decoded bytes', () => {
+  const prefix = cases.find(item => item.mime === 'image/png').bytes;
+  const oversized = Buffer.alloc(3 * 1024 * 1024 + 1);
+  prefix.copy(oversized);
+  const encoded = oversized.toString('base64');
+  let decodedLarge = false;
+  const instrumentedBuffer = new Proxy(Buffer, {
+    get(target, property) {
+      if (property !== 'from') return Reflect.get(target, property);
+      return (value, encoding) => {
+        if (encoding === 'base64' && typeof value === 'string' && value.length > 4 * 1024 * 1024) {
+          decodedLarge = true;
+        }
+        return Buffer.from(value, encoding);
+      };
+    }
+  });
+  const { parseDataUrl: instrumentedParser } = runInNewContext(
+    functions + '\n({parseDataUrl})',
+    {
+      Buffer: instrumentedBuffer, HttpError, MAX_BYTES: 3 * 1024 * 1024,
+      allowedMime: new Map([['image/jpeg','jpg'], ['image/png','png'], ['image/webp','webp']]),
+      clinicalMime: new Map([['image/jpeg','jpg'], ['image/png','png'], ['image/webp','webp'], ['application/pdf','pdf']])
+    }
+  );
+  assert.throws(() => instrumentedParser('data:image/png;base64,' + encoded), error => error.status === 413);
+  assert.equal(decodedLarge, false, 'Do not decode data larger than MAX_BYTES into memory');
+  const maximum = oversized.subarray(0, -1);
+  assert.equal(instrumentedParser('data:image/png;base64,' + maximum.toString('base64')).bytes.length, 3 * 1024 * 1024, 'exact limit remains accepted');
+});
