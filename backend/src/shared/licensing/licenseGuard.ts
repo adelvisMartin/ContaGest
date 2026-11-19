@@ -141,6 +141,7 @@ async function validateExistingCredential(params: {
     WHERE "id"=${activation.id}
       AND "status"='active'
       AND "credentialHash"=${credentialHash}
+      AND ("userId" IS NULL OR "userId"=${params.userId || null})
   `;
   if (refreshed !== 1) {
     throw new HttpError(403, 'La credencial fue revocada o cambió de estado.');
@@ -190,6 +191,9 @@ async function activateOrUpgradeDevice(params: {
       LIMIT 1
     `;
     const existing = rows[0];
+    if (existing?.userId && existing.userId !== params.userId) {
+      throw new HttpError(403, 'La activación pertenece a otro usuario autorizado.');
+    }
 
     // Revocation must not turn into a silent reactivation just because a
     // caller still knows the license key and can repeat its device ID.
