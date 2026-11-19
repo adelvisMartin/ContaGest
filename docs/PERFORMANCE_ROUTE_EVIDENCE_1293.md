@@ -261,3 +261,34 @@ completo de unit tests del HEAD, lint, typecheck, build, navegador Chromium,
 60 recorridos, cinco campañas, field Web Vitals, latencias reales API o
 PostgreSQL 17. Esos gates conservan `NOT_EXECUTED` local hasta ejecutarse;
 CI solo será PASS al completarse para el SHA final.
+
+
+## Séptima revisión · Cobertura de cambios de renderizado
+
+**Defecto de cobertura confirmado:** el gate de 60 rutas observaba los
+scripts, el catálogo y `pageRegistry.js`, pero no los archivos de páginas,
+componentes y estilos que pueden cambiar el tiempo de renderizado sin modificar
+el catálogo. Por tanto, algunos PR de frontend podían quedar sin ejecución
+del workflow especializado.
+
+**RED / GREEN reproducibles:** se amplió
+`tests/performance_route_workflow_v1293.test.mjs` para exigir seis patrones:
+`frontend/src/pages/**`, `frontend/src/components/**`,
+`frontend/src/styles/**`, `frontend/src/app.js`,
+`frontend/index.html`, `frontend/vite.config.js`.
+Con el workflow anterior, `node --test` dio **2 PASS / 1 FAIL**
+(`Missing frontend performance owner: frontend/src/pages/**`).
+Tras añadir los seis patrones al filtro `on.pull_request.paths`, dio
+**3 PASS / 0 FAIL / 0 SKIP** en Node v22.16.0. `node --check` del test
+y parse de YAML pasaron. Los dos hashes `git hash-object` coinciden con
+los blobs del PR: test `cefcd929c89bfcbcfc77ab6b1a20ebf3aaf1c8eb`,
+workflow `757eee9d3e81ab825d62a358b11f783750cc1aa4`.
+
+**Consecuencia operativa:** se solicitará el gate en más PRs de frontend,
+con un costo potencial en minutos de GitHub Actions. No se ha aumentado la
+paralelización, desactivado navegadores ni relajado pruebas para ahorrar cuota.
+El workflow ejecuta una campaña **sintética Chromium**: un disparador
+correcto no certifica una ruta ni mide API/DB, INP de campo, dispositivos
+físicos o flujos monetarios. Si Actions no arranca por límite de cuota,
+el gate continúa **BLOCKED**, nunca PASS. Control Hípico conserva su matriz
+independiente y ninguna regla de apuestas/remates se modificó.
