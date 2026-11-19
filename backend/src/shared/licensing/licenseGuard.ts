@@ -154,6 +154,7 @@ async function activateOrUpgradeDevice(params: {
   userId?:string|null;
   deviceId:string;
   maxDevices:number;
+  isTrial:boolean;
   licenseExpiresAt:Date;
   deviceLabel?:string|null;
   ip?:string|null;
@@ -192,6 +193,20 @@ async function activateOrUpgradeDevice(params: {
     }
 
     if (!existing) {
+      // A revoked/blocked trial activation is not an invitation to enroll a
+      // different ID: replacement requires an authorized new trial grant.
+      if (params.isTrial) {
+        const priorRevocations = await tx.$queryRaw<Array<{ id:string }>>`
+          SELECT "id" FROM public."LicenseActivation"
+          WHERE "licenseId"=${params.licenseId}
+            AND "tenantId"=${params.tenantId}
+            AND "status" IN ('revoked','blocked')
+          LIMIT 1
+        `;
+        if (priorRevocations.length) {
+          throw new HttpError(403, 'La demostración requiere una nueva autorización del propietario para cambiar de dispositivo.');
+        }
+      }
       const count = await countActiveDevices(params.licenseId,tx);
       if (count >= params.maxDevices) {
         throw new HttpError(403, `La licencia alcanzó el máximo de ${params.maxDevices} dispositivo(s).`);
@@ -304,6 +319,7 @@ export async function validateUserLicense(input: LicenseValidationInput) {
       userId:input.userId,
       deviceId:input.deviceId,
       maxDevices:Number(extension.maxDevices || 1),
+      isTrial:record.plan === 'trial',
       licenseExpiresAt:record.expiresAt,
       deviceLabel:input.deviceLabel,
       ip:input.ip,
