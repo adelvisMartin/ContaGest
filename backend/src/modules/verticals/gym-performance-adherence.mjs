@@ -2,7 +2,7 @@
 // A legacy/invalid snapshot cannot be reconstructed from today's routine.
 export function gymHistoricalPlanCoverage(sessions) {
   // A missing/corrupt history must not create a falsely complete plan.
-  if (!Array.isArray(sessions)) return {plannedSets:0,unknownPlanSessions:1,planComplete:false};
+  if (!Array.isArray(sessions)) return {plannedSets:0,unknownPlanSessions:0,planComplete:false};
   let plannedSets = 0;
   let unknownPlanSessions = 0;
   for (const session of sessions) {
