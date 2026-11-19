@@ -61,3 +61,20 @@ test('metadata fields that resemble credential names remain available', () => wi
   assert.equal(s.user.authorizationStatus, 'approved');
   assert.equal(s.user.secretaryName, 'Marta');
 }));
+
+test('non-secret password state and authorization metadata are not discarded', () => withStorage(() => {
+  const result = AuthSession.set({
+    tenantId:'tenant-d',
+    user:{id:'user-d',passwordChangeRequired:true,authorizationStatus:'approved',secretaryName:'Marta',passwordHash:'HASH'}
+  });
+  assert.equal(result.user.passwordChangeRequired,true);
+  assert.equal(result.user.authorizationStatus,'approved');
+  assert.equal(result.user.secretaryName,'Marta');
+  assert.equal(result.user.passwordHash,undefined);
+}));
+
+test('unusable credential-bearing snapshots are evicted', () => withStorage((map) => {
+  map.set(AuthSession.key, '{"refreshToken":"SECRET"}');
+  assert.equal(AuthSession.get(),null);
+  assert.equal(map.has(AuthSession.key),false);
+}));
