@@ -144,3 +144,23 @@ test('#1313 oversized canonical image rejects before allocating decoded bytes', 
   const maximum = oversized.subarray(0, -1);
   assert.equal(instrumentedParser('data:image/png;base64,' + maximum.toString('base64')).bytes.length, 3 * 1024 * 1024, 'exact limit remains accepted');
 });
+
+
+test('#1313 app accepts 3 MiB image uploads without raising global JSON limit', () => {
+  // Source contract: backend/src/app.ts owns global parsing; route-manifest mounts /media.
+  // An actual HTTP/auth/tenant integration test must still execute against the full backend.
+  const app = readFileSync(new URL('../backend/src/app.ts', import.meta.url), 'utf8');
+  const env = readFileSync(new URL('../backend/src/config/env.ts', import.meta.url), 'utf8');
+  const manifest = readFileSync(new URL('../backend/src/modules/route-manifest.ts', import.meta.url), 'utf8');
+  assert.match(manifest, /id:\s*'media'[^\n]*path:\s*'\/media'/);
+  assert.match(source, /const MAX_BYTES = 3 \* 1024 \* 1024/);
+  assert.match(source, /dataUrl:\s*z\.string\(\)\.min\(30\)\.max\(5_000_000\)/);
+  assert.match(env, /JSON_BODY_LIMIT:\s*z\.string\(\)\.default\('1mb'\)/);
+
+  const scopedParserAt = app.indexOf("app.post('/api/v1/media/upload', express.json({ limit: '5mb' }));");
+  const globalParserAt = app.indexOf('app.use(express.json({');
+  assert.ok(scopedParserAt >= 0, 'Only /api/v1/media/upload should accept a 5 MiB JSON body');
+  assert.ok(globalParserAt > scopedParserAt, 'Route-specific parser must precede global parser');
+  assert.ok(app.indexOf('app.use(globalRateLimit)') < scopedParserAt, 'Global rate limit must still run first');
+  assert.ok(app.indexOf('app.use(enforceProductionSecrets)') < scopedParserAt, 'Production secrets gate must still run first');
+});
