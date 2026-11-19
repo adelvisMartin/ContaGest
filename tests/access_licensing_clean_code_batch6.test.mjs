@@ -112,5 +112,6 @@ test('#1361 revoked credential cannot silently rebind to another user or survive
   assert.match(validate,/AND "status"='active'/);
   assert.match(validate,/AND "credentialHash"=\$\{credentialHash\}/);
   assert.match(validate,/AND \("userId" IS NULL OR "userId"=\$\{params\.userId \|\| null\}\)/);
+  assert.match(validate,/AND \("credentialExpiresAt" IS NULL OR "credentialExpiresAt">now\(\)\)/);
   assert.match(validate,/if \(refreshed !== 1\)/);
 });
