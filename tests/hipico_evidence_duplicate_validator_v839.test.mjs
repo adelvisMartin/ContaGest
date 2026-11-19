@@ -175,6 +175,33 @@ test('#839 a PNG alone never fabricates browser PASS without exact-SHA Chromium'
   assert.equal(result.screenshotCount, 0);
   assert.equal(result.reason, 'BROWSER_EVIDENCE_MISSING');
 
+  // Recompute the IDAT checksum after corrupting zlib bytes. The PNG
+  // container is intact: the decoder must still reject invalid image data.
+  const brokenCompressed = Buffer.from(syntheticPng());
+  const idatStart = 33; // PNG signature (8) plus IHDR chunk (25)
+  const payloadOffset = idatStart + 8;
+  const payloadLength = brokenCompressed.readUInt32BE(idatStart);
+  brokenCompressed[payloadOffset] ^= 0xff;
+  const crcTable = Uint32Array.from({length: 256}, (_, index) => {
+    let value = index;
+    for (let i = 0; i < 8; i++) {
+      value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+    }
+    return value >>> 0;
+  });
+  let checksum = 0xffffffff;
+  for (const value of brokenCompressed.subarray(idatStart + 4,
+    payloadOffset + payloadLength)) {
+    checksum = crcTable[(checksum ^ value) & 0xff] ^ (checksum >>> 8);
+  }
+  brokenCompressed.writeUInt32BE((checksum ^ 0xffffffff) >>> 0,
+    payloadOffset + payloadLength);
+  writeFileSync(imagePath, brokenCompressed);
+  result = verify(root, 'browserVisualEvidence', 'browser');
+  assert.equal(result.status, 'NOT_EXECUTED');
+  assert.equal(result.screenshotCount, 0);
+  assert.equal(result.reason, 'BROWSER_EVIDENCE_MISSING');
+
   writeFileSync(imagePath, 'invalid empty screenshot placeholder');
   result = verify(root, 'browserVisualEvidence', 'browser');
   assert.equal(result.status, 'NOT_EXECUTED');
