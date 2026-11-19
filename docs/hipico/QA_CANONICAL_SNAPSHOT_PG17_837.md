@@ -69,7 +69,11 @@ The existing `docs/hipico/AUCTION_ADMISSION_V1010.md` marks auctions **BLOCKED**
 Public benchmarking (not a production data feed) may use publicly accessible official pages such as:
 - [Keeneland 2026 sales buyer guide](https://www.keeneland.com/sales/buyers-guide-sales/) for **examples** of buyer registration, eligibility and conditions to discuss with the owner—not to clone legal rules.
 - [Keeneland November 2026 sale information](https://www.keeneland.com/sales/2026/14/november-breeding-stock-sale/about/) for publicly posted catalog context.
+- [Keeneland Conditions of Sale](https://www.keeneland.com/sales/conditions-sale/) for the **auction-specific** rules a product owner must reconcile in ADR #1010 before any bidding/settlement implementation. These are not automatically Control Hípico rules.
 - [TwinSpires terms](https://www.twinspires.com/terms/) for restrictions on third-party Equibase racing data. Automated scraping or redistribution is **not authorized by mere public access**.
+- [WhatsApp Messenger Messaging Guidelines (updated 23 Sep 2026)](https://www.whatsapp.com/legal/messaging-guidelines?lang=en) and [WhatsApp Messenger Terms](https://www.whatsapp.com/legal/terms-of-service?lang=en) for the separate SOURCE platform authorization gate; recreational use does not grant automated sending or collection rights.
+
+**Source-admission checklist (reviewed 19 Nov 2026, non-executable):** official publisher/URL; explicit written ingestion and redistribution permission; exact data fields, provenance and update cadence; versioned terms, retention and permitted audience; robots/rate-limit requirements; privacy and consent; data-quality/error handling; operator approval for internal result confirmation. Until these are documented and approved, **fixtures sintéticos, documentos aportados con permiso y enlaces públicos de referencia** are permitted only as QA/reference—not as licensed production feeds or official racing outcomes.
 
 Do not create crawler selectors, harvest records, bypass access controls, import unlicensed race/horse data or generate official-looking outcomes until source permission, provenance, retention, consent, rate limits and product authority are documented. Distinguish externally verified result from internal operator result and synthetic simulation.
 
