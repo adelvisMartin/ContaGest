@@ -1,5 +1,6 @@
 import { BackendApi } from './backendApi.js';
 import { assertXlsxZipBudget } from './xlsxZipBudget.mjs';
+import { parseDelimitedImport } from './delimitedImportParser.mjs';
 
 export const IMPORT_TEMPLATE_VERSION='v1';
 export const IMPORT_TEMPLATES = {
@@ -15,24 +16,6 @@ export const IMPORT_REQUIRED = {
 
 const MAX_FILE_BYTES=5*1024*1024;
 const decoder=new TextDecoder('utf-8');
-
-function parseDelimited(text, delimiter=',') {
-  const records=[];let row=[];let cell='';let quoted=false;
-  for(let i=0;i<text.length;i++){
-    const ch=text[i];
-    if(ch==='"'){
-      if(quoted&&text[i+1]==='"'){cell+='"';i++;}
-      else quoted=!quoted;
-    }else if(ch===delimiter&&!quoted){row.push(cell);cell='';}
-    else if((ch==='\n'||ch==='\r')&&!quoted){
-      if(ch==='\r'&&text[i+1]==='\n')i++;
-      row.push(cell);cell='';if(row.some((value)=>String(value).trim()!==''))records.push(row);row=[];
-    }else cell+=ch;
-  }
-  if(cell||row.length){row.push(cell);if(row.some((value)=>String(value).trim()!==''))records.push(row);}
-  const headers=(records.shift()||[]).map((value)=>String(value).replace(/^\uFEFF/,'').trim());
-  return records.map((values)=>Object.fromEntries(headers.map((header,index)=>[header,String(values[index]??'').trim()])));
-}
 
 function u16(view,offset){return view.getUint16(offset,true);}
 function u32(view,offset){return view.getUint32(offset,true);}
@@ -112,7 +95,7 @@ export const DataImportService = {
     else{
       const text=await file.text();
       if(name.endsWith('.json'))rows=JSON.parse(text);
-      else rows=parseDelimited(text,name.endsWith('.tsv')||name.endsWith('.txt')?'\t':',');
+      else rows=parseDelimitedImport(text,name.endsWith('.tsv')||name.endsWith('.txt')?'\t':',');
     }
     if(!Array.isArray(rows))throw new Error('El archivo debe contener una lista de registros.');
     if(rows.length>5000)throw new Error('La importación admite un máximo de 5.000 filas por batch.');
