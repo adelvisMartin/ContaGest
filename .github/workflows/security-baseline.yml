@@ -34,6 +34,8 @@ jobs:
         run: node --test tests/iam_platform_isolation_runtime_contract.test.mjs
       - name: CSV spreadsheet injection and RFC4180 regression
         run: node --test tests/frontend_csv_formula_guard_v1313.test.mjs tests/master_export_v770.test.mjs
+      - name: Media upload MIME spoofing regression #720/#1313
+        run: node --test tests/media_upload_signature_v1313.test.mjs
       - name: Hípico logout, refresh, storage identity isolation
         run: node --test tests/hipico_logout_revocation_v1292.test.mjs tests/hipico_logout_refresh_race_v1292.test.mjs tests/hipico_private_storage_purge_v1292.test.mjs tests/hipico_cross_tab_revocation_v1292.test.mjs
       - name: Privileged user session revocation, step-up and UI contract
