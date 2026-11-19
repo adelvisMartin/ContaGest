@@ -37,6 +37,15 @@ test('v237 PostgreSQL: duplicate import, tenant isolation, explainable exact/ref
   const first=await importBankStatement({tenantId:a.tenant.id,userId:a.user.id,accountId:a.account.id,fileName:'exact.csv',mimeType:'text/csv',bytes});
   const replay=await importBankStatement({tenantId:a.tenant.id,userId:a.user.id,accountId:a.account.id,fileName:'same.csv',mimeType:'text/csv',bytes});
   assert.equal(first.duplicate,false); assert.equal(first.inserted,1); assert.equal(replay.duplicate,true); assert.equal(replay.importId,first.importId);
+  assert.equal(first.parserVersion,'contagest-bank-statement/1.3.0');
+  assert.equal(replay.parserVersion,first.parserVersion);
+  // Simulate an import persisted by a previous parser revision, then verify a
+  // duplicate never lies about its stored provenance or creates new lines.
+  await prisma.$executeRaw`UPDATE "BankStatementImport" SET "parserVersion"='contagest-bank-statement/1.2.0' WHERE "tenantId"=${a.tenant.id} AND "id"=${first.importId}`;
+  const historicalReplay=await importBankStatement({tenantId:a.tenant.id,userId:a.user.id,accountId:a.account.id,fileName:'historical.csv',bytes});
+  assert.equal(historicalReplay.duplicate,true);
+  assert.equal(historicalReplay.importId,first.importId);
+  assert.equal(historicalReplay.parserVersion,'contagest-bank-statement/1.2.0');
   const [line]=await listStatementLines(a.tenant.id,{accountId:a.account.id,status:'all'}); assert.ok(line);
   await assert.rejects(()=>getMatchingCandidates(b.tenant.id,line.id),(error:any)=>error?.status===404,'tenant B must not inspect tenant A line');
 

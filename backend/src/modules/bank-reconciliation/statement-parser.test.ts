@@ -86,3 +86,18 @@ test('CSV preserves Spanish fecha_valor and reuses one FITID for id/reference',(
   assert.equal(result.lines[0].bankLineId,'REF-A');
   assert.equal(result.lines[0].reference,'REF-A');
 });
+
+test('bank calendar rejects impossible dates without Date rollover',()=>{
+  for(const value of ['2026-02-29','2026-02-30','2026-13-01','2026-11-31','20261301']){
+    assert.throws(()=>parse('estado.csv',`date,amount\n${value},12.00\n`),
+      (error:any)=>error?.details?.code==='BANK_STATEMENT_DATE_INVALID'||/Fecha inválida/i.test(error?.message),value);
+  }
+  const leap=parse('estado.csv','date,valueDate,amount\n2028-02-29,2028-02-29,12.00\n');
+  assert.equal(leap.lines[0].bookedAt.toISOString(),'2028-02-29T00:00:00.000Z');
+  assert.equal(leap.lines[0].valueDate?.toISOString(),'2028-02-29T00:00:00.000Z');
+});
+test('bank CSV limits are surfaced as 413, not a generic malformed-file error',()=>{
+  const tooWide='date,amount,'+'extra,'.repeat(128)+'memo\n2026-09-01,12.00';
+  assert.throws(()=>parse('estado.csv',tooWide),
+    (error:any)=>error?.status===413&&error?.details?.code==='BANK_STATEMENT_CSV_LIMIT_EXCEEDED');
+});
