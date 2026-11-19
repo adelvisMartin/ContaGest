@@ -62,7 +62,9 @@ export function parseDelimitedImport(text, delimiter = ',') {
   if (cell.length || row.length || afterQuote) flushRow();
   if (!records.length) throw new TypeError('IMPORT_DELIMITED_HEADERS_INVALID');
   const headers = records.shift().map(value => value.trim());
-  if (headers.some(value => !value) || new Set(headers.map(h => h.toLowerCase())).size !== headers.length) {
+  if (headers.some(value => !value || /[\u0000-\u001f\u007f]/u.test(value) ||
+      ['__proto__', 'prototype', 'constructor'].includes(value.toLowerCase())) ||
+      new Set(headers.map(h => h.toLowerCase())).size !== headers.length) {
     throw new TypeError('IMPORT_DELIMITED_HEADERS_INVALID');
   }
   return records.map(values => {
