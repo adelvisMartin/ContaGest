@@ -25,3 +25,14 @@ export function isAllowedLabRequest(rawRequestUrl, allowedOrigin) {
   const base = parseLoopbackHttpUrl(allowedOrigin);
   return Boolean(request && base && request.origin === base.origin);
 }
+
+/** Redirects are not reliably re-routed by Playwright; detect any foreign Location. */
+export function isAllowedLabRedirect(locationHeader, sourceUrl, allowedOrigin) {
+  if (typeof locationHeader !== 'string' || !locationHeader.trim() ||
+      !isAllowedLabRequest(sourceUrl, allowedOrigin)) return false;
+  try {
+    return isAllowedLabRequest(new URL(locationHeader, sourceUrl).href, allowedOrigin);
+  } catch {
+    return false;
+  }
+}
