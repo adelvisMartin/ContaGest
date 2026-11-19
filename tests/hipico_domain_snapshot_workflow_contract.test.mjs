@@ -60,6 +60,16 @@ test('PG17 QA executes only with ephemeral database and cleans up even on failur
   assert.match(integration, /read and write reject unsafe BIGINT optimistic versions/);
 });
 
+test('Windows QA refuses stale or unverified PR SHA instead of certifying old commits', () => {
+  assert.match(localRunner, /\[Parameter\(Mandatory = \$true\)\]/);
+  assert.match(localRunner, /\[string\]\$CandidateSha/);
+  assert.match(localRunner, /git ls-remote --heads origin \$remoteRef/);
+  assert.match(localRunner, /\$headSha -ne \$expectedSha -or \$remoteSha -ne \$expectedSha/);
+  assert.match(localRunner, /\$remoteShaAfter -ne \$expectedSha/);
+  assert.match(localRunner, /Wrong branch for #837 QA/);
+  assert.match(read('docs/hipico/QA_CANONICAL_SNAPSHOT_PG17_837.md'), /-CandidateSha \$prHead/);
+});
+
 test('canonical writer takes aggregate lock then timestamps committed evidence', () => {
   const locked = writer.indexOf('FOR UPDATE');
   const insert = writer.indexOf('INSERT INTO public.hipico_domain_events');
