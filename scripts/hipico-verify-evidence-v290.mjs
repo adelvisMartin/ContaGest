@@ -129,12 +129,16 @@ function validateSoakEvidence(data) {
 const files = await walk(evidenceRoot).catch(() => []);
 const jsonFiles = files.filter((file) => file.endsWith('.json'));
 const parsed = [];
+const malformedJson = [];
 for (const file of jsonFiles) {
   try {
     const data = JSON.parse(await fs.readFile(file, 'utf8'));
     parsed.push({ file, name: path.basename(file), data });
   } catch {
-    // Corrupt/non-JSON evidence cannot prove a gate and is ignored.
+    // We cannot infer a candidate SHA from corrupt JSON. If its filename
+    // matches a declared gate, fail closed rather than letting another PASS
+    // copy under the same evidence root mask this artifact.
+    malformedJson.push({ file, name: path.basename(file) });
   }
 }
 
@@ -183,6 +187,7 @@ const requiredDescriptors = [
     name: 'postgres-gate.json',
     schemas: ['hipico-postgres-gate.v290-current'],
     validate: (data) => data?.migrations === 'v12-v27'
+      && data?.database === 'isolated-ephemeral-postgresql-17'
       && data?.testChannelReplay === 'PASS'
       && data?.agentPolicyMetrics === 'PASS'
       && data?.restartRecovery === 'PASS'
@@ -281,6 +286,11 @@ const optionalDescriptors = [
 ];
 
 async function findDescriptor(descriptor) {
+  const corrupt = malformedJson.find((item) => item.name === descriptor.name);
+  if (corrupt) {
+    return { id: descriptor.id, status: 'FAIL',
+      file: path.relative(evidenceRoot, corrupt.file), reason: 'EVIDENCE_JSON_INVALID' };
+  }
   const candidates = parsed.filter((item) => item.name === descriptor.name);
   // Include every report claiming the candidate in ANY identity field. An
   // internally contradictory artifact must not disappear from the conflict
