@@ -88,6 +88,7 @@ test('#1361 concurrent activation takes a tenant-scoped license row lock before 
   assert.ok(lock>=0 && count>lock && insertion>count,
     'The slot count and activation INSERT must follow the same locked license transaction');
   assert.match(activation,/AND "tenantId"=\$\{params\.tenantId\}/);
+  assert.match(activation,/existing\?\.userId && existing\.userId !== params\.userId/);
   assert.match(activation,/existing\.status !== 'active'/);
   assert.match(activation,/if \(license\.plan === 'trial'\)/);
   assert.match(activation,/AND "status" IN \('revoked','blocked'\)/);
@@ -110,5 +111,6 @@ test('#1361 revoked credential cannot silently rebind to another user or survive
   assert.match(validate,/SET "userId"=COALESCE\("userId",/);
   assert.match(validate,/AND "status"='active'/);
   assert.match(validate,/AND "credentialHash"=\$\{credentialHash\}/);
+  assert.match(validate,/AND \("userId" IS NULL OR "userId"=\$\{params\.userId \|\| null\}\)/);
   assert.match(validate,/if \(refreshed !== 1\)/);
 });
