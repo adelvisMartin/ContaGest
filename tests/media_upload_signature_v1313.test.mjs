@@ -164,3 +164,93 @@ test('#1313 app accepts 3 MiB image uploads without raising global JSON limit', 
   assert.ok(app.indexOf('app.use(globalRateLimit)') < scopedParserAt, 'Global rate limit must still run first');
   assert.ok(app.indexOf('app.use(enforceProductionSecrets)') < scopedParserAt, 'Production secrets gate must still run first');
 });
+
+
+// Exercise the actual Express upload handler with isolated provider/DB fakes.
+// Full HTTP, tenant/RLS and storage integrations are separate required gates.
+const uploadStart = source.indexOf("router.post('/upload', asyncHandler(");
+const uploadEnd = source.indexOf("router.get('/dental-attachments'", uploadStart);
+assert.ok(uploadStart >= 0 && uploadEnd > uploadStart, 'generic upload handler must be located');
+const uploadHandlerSource = stripTypeScriptTypes(source.slice(uploadStart, uploadEnd));
+
+function buildUploadScenario({ signFailure = false, emptySign = false, updateFailure = false, cleanupError = false, authFailure = false } = {}) {
+  const events = [];
+  let uploadHandler;
+  const provider = {
+    upload: async () => { events.push('upload'); return { error: null }; },
+    createSignedUrl: async () => {
+      events.push('sign');
+      if (signFailure) return { data: null, error: new Error('provider-private-path') };
+      if (emptySign) return { data: null, error: null };
+      return { data: { signedUrl: 'signed.local' }, error: null };
+    },
+    remove: async () => {
+      events.push('remove');
+      return { error: cleanupError ? new Error('provider cleanup failed') : null };
+    }
+  };
+  runInNewContext(uploadHandlerSource, {
+    router: { post: (_path, fn) => { uploadHandler = fn; } },
+    asyncHandler: fn => fn,
+    uploadSchema: { parse: value => value },
+    authorize: async () => {
+      events.push('authorize');
+      if (authFailure) throw new HttpError(403, 'No permitido');
+    },
+    parseDataUrl: () => ({
+      mime: 'image/png', extension: 'png',
+      bytes: Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])
+    }),
+    tenantPath: () => 'tenant-a/profile/profile-1/file.png',
+    client: () => ({ storage: { from: () => provider } }),
+    registerStorageObject: async () => { events.push('register'); },
+    updateEntityPhoto: async () => {
+      events.push('update');
+      if (updateFailure) throw new Error('database failed');
+    },
+    markStorageObjectDeleted: async () => { events.push('mark-deleted'); },
+    crypto: { createHash: () => ({ update: () => ({ digest: () => 'sha256-test' }) }) },
+    BUCKET: 'contagest-media', HttpError,
+    ok: (res, data, status) => { events.push('ok'); res.data = data; res.status = status; }
+  });
+  assert.equal(typeof uploadHandler, 'function');
+  const req = {
+    context: { tenantId: 'tenant-a', userId: 'profile-1' },
+    body: { entityType: 'profile', entityId: 'profile-1', dataUrl: 'fixture' }
+  };
+  const res = {};
+  return { events, res, execute: () => uploadHandler(req, res) };
+}
+
+test('#1313 media signing succeeds before the entity photo is committed', async () => {
+  const { events, res, execute } = buildUploadScenario();
+  await execute();
+  assert.deepEqual(events, ['authorize', 'upload', 'register', 'sign', 'update', 'ok']);
+  assert.equal(res.status, 201);
+  assert.equal(res.data.signedUrl, 'signed.local');
+});
+
+test('#1313 failed or empty signing cleans up without changing the photo', async () => {
+  for (const options of [{signFailure:true}, {emptySign:true}]) {
+    const { events, execute } = buildUploadScenario(options);
+    await assert.rejects(execute(), error =>
+      error.status === 502 && !error.message.includes('provider-private-path'));
+    assert.deepEqual(events, ['authorize', 'upload', 'register', 'sign', 'remove', 'mark-deleted']);
+  }
+});
+
+test('#1313 cleanup failure does not claim a failed removal was deleted', async () => {
+  const { events, execute } = buildUploadScenario({ signFailure:true, cleanupError:true });
+  await assert.rejects(execute(), error => error.status === 502);
+  assert.deepEqual(events, ['authorize', 'upload', 'register', 'sign', 'remove']);
+});
+
+test('#1313 DB update rollback and pre-upload authorization remain enforced', async () => {
+  const dbFailure = buildUploadScenario({ updateFailure:true });
+  await assert.rejects(dbFailure.execute(), /database failed/);
+  assert.deepEqual(dbFailure.events, ['authorize', 'upload', 'register', 'sign', 'update', 'remove', 'mark-deleted']);
+
+  const unauthorised = buildUploadScenario({ authFailure:true });
+  await assert.rejects(unauthorised.execute(), error => error.status === 403);
+  assert.deepEqual(unauthorised.events, ['authorize']);
+});
