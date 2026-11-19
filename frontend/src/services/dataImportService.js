@@ -70,11 +70,13 @@ async function unzipEntries(arrayBuffer){
     if(start>eocd||start+compressed>eocd||
        decoder.decode(bytes.slice(localOffset+30,localOffset+30+localNameLength))!==name)
       throw new Error('XLSX inválido: ruta o datos ZIP incoherentes.');
+    // XLSX frequently embeds binary images and thumbnails. Do not decode or
+    // inflate unrelated ZIP members while only the previewed worksheet is needed.
+    if(!isXlsxPreviewXmlPart(name)){offset+=46+nameLength+extraLength+commentLength;continue;}
     const compressedBytes=bytes.slice(start,start+compressed);
     let content;if(method===0)content=compressedBytes;else if(method===8)content=await inflateRaw(compressedBytes,uncompressed);else throw new Error(`XLSX usa compresión ZIP no soportada (${method}).`);
     if(content.byteLength!==uncompressed)throw new Error('XLSX inválido: longitud descomprimida inconsistente.');
-    // Binary media is valid in XLSX, but must never enter strict UTF-8/XML parsing.
-    if(isXlsxPreviewXmlPart(name))entries.set(name,decoder.decode(content));
+    entries.set(name,decoder.decode(content));
     offset+=46+nameLength+extraLength+commentLength;
   }
   return entries;
