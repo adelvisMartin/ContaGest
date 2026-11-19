@@ -104,3 +104,23 @@ de terceros. Debe mantenerse separado el producto Hípico del ERP 60 rutas.
 
 **Estado QA Hípico en este PR: NOT_EXECUTED para rendimiento.** No hay
 benchmark before/after ni perfil API/DB Hípico que permita afirmar mejoras.
+
+### Aislamiento de peticiones del navegador (endurecimiento QA)
+
+El test Chromium de las 60 rutas comprueba el `baseURL` que Playwright
+realmente utiliza y solo permite peticiones HTTP(S) al mismo **origen
+loopback**, incluido el puerto. Todos los `/api/**` se satisfacen con
+fixtures sintéticos; los demás recursos de ese origen proceden del servidor
+de pruebas. Peticiones a terceros, otras interfaces/puertos, URL con
+credenciales o protocolos ajenos se bloquean y hacen fallar la captura.
+Se deshabilitan los Service Workers **solo en este test de medición**
+para que no eludan la interceptación. Este control no cubre tráfico WebSocket
+ni prueba que la PWA funcione offline; ambos requieren su suite independiente.
+
+El helper `qa/support/performance-lab-isolation-v1293.mjs` incluye tests
+positivos/negativos de mismo origen, puertos distintos, dominios homógrafos
+simples, protocolos no HTTP y URL con usuario/contraseña. Esta protección
+no sustituye el gate de navegador: solo se han ejecutado los tests unitarios
+en el entorno aislado. Si la app requiere un recurso externo para renderizar,
+la campaña **debe fallar y diagnosticarse**; no se deben añadir allowlists
+de terceros arbitrarias para maquillar los resultados.
