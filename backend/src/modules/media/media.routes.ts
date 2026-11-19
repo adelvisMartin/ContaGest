@@ -142,6 +142,8 @@ function parseDataUrl(value: string) {
   if (!extension) throw new HttpError(422, 'Tipo de imagen no permitido.');
   const bytes = Buffer.from(match[2].replace(/\s/g, ''), 'base64');
   if (!bytes.length || bytes.length > MAX_BYTES) throw new HttpError(413, 'La imagen debe pesar entre 1 byte y 3 MB.');
+  // Reject MIME spoofing before a private object is stored or signed.
+  validateClinicalMagic(bytes, mime);
   return { mime, extension, bytes };
 }
 
