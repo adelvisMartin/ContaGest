@@ -67,6 +67,7 @@ const required59=[
   'tests/historical_cascade_policy_v685.test.mjs',
   'tests/api_contract_authority_v652.test.mjs',
   'tests/generated_api_contract_v850.test.mjs',
+  'tests/service_catalog_api_contract_v849.test.mjs',
   'tests/business_location_issue_857.test.mjs',
   'tests/price_book_authority_issue_856.test.mjs',
   'tests/composite_tenant_integrity_v634.test.mjs',
@@ -74,6 +75,7 @@ const required59=[
   'tests/db_security_hardening_v635.test.mjs',
   'tests/db_security_audit_v635.test.mjs',
   'tests/gym_wave_a_stage_boundaries_v709.test.mjs',
+  'tests/performance_route_evidence_v1293.test.mjs',
   'tests/accounting_draft_audit_atomicity_v637.test.mjs',
 ];
 const tests=[...new Set([...regressionPaths,...required59])];
