@@ -11,6 +11,7 @@ The real integration probe `backend/src/modules/hipico-bot/hipico-domain-query.p
 3. Service-level `ownerId/groupKey` filtering is tested with overlapping keys. Independently, **PostgreSQL RLS** is tested after `SET LOCAL ROLE authenticated`, with per-owner test claims and no-claim denial. A superuser SQL filter alone would not establish RLS.
 4. The test refuses `DATABASE_RUNTIME_URL` overrides, non-local hosts, mismatched allocator host/port and names outside `hipico_e2e_*`; PostgreSQL major must equal 17.
 5. BIGINT state versions outside JavaScript's safe integer range fail closed rather than silently rounding.
+6. A correction added *after* a result but carrying a backdated `event_timestamp` must not be hidden from LAB. Canonical event ordering uses database `created_at`; newly recorded events receive `clock_timestamp()` only after acquiring the aggregate lock. The PG17 integration calls the real `persistHipicoDomainEvent` writer and requires LAB result disclosure to remain unavailable.
 
 These are synthetic QA fixtures, not official external racing results, financial balances or remates. RLS is owner-based in the existing SQL policy; group-level separation is guaranteed by the server's query scope, not by pretending a group RLS policy exists.
 
