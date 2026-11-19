@@ -42,3 +42,10 @@ test('#770 browser import surfaces actionable errors and preserves diagnostic co
   assert.match(service,/displayError\.code=error\.message/);
   assert.match(service,/rows=parseDelimitedImport\(text/);
 });
+
+test('#770 prototype-like headers and invisible controls cannot enter import objects',()=>{
+  for(const header of ['__proto__','constructor','prototype','sku\u0000id']){
+    assert.throws(()=>parseDelimitedImport(header+',name\nA,Valid'),/IMPORT_DELIMITED_HEADERS_INVALID/);
+  }
+  assert.deepEqual(parseDelimitedImport('sku,name\nA,Valid'),[{sku:'A',name:'Valid'}]);
+});
