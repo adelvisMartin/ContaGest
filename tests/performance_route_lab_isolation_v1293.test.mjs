@@ -28,3 +28,15 @@ test('#1293 rejects remote or malformed harness base URLs', () => {
     assert.equal(isAllowedLabRequest(`${approved}/api/test`, url), false);
   }
 });
+
+test('#1293 detects redirect targets which page.route may not intercept', async () => {
+  const { isAllowedLabRedirect } = await import('../qa/support/performance-lab-isolation-v1293.mjs');
+  for (const location of ['/login', '../assets/app.js', `${approved}/api/auth/me`]) {
+    assert.equal(isAllowedLabRedirect(location, `${approved}/nested/path`, approved), true, location);
+  }
+  for (const location of ['//example.com/test', 'https://example.com',
+    'http://127.0.0.1:9090/test', 'http://localhost:8080/test', 'javascript:alert(1)',
+    'http://[bad-host', '']) {
+    assert.equal(isAllowedLabRedirect(location, `${approved}/nested/path`, approved), false, location);
+  }
+});
