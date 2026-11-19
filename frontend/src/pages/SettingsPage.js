@@ -68,7 +68,28 @@ export const SettingsPage={
     logoInput?.addEventListener('change',(event)=>{const file=event.target.files?.[0];if(!file)return;if(!file.type.startsWith('image/')||file.size>550*1024)return Toast.show('El logo debe ser una imagen menor de 550 KB.','warning');const reader=new FileReader();reader.onload=()=>{const dataUrl=String(reader.result||'');if(logoHidden)logoHidden.value=dataUrl;Store.update((draft)=>{draft.settings.companyLogoDataUrl=dataUrl;});Toast.show('Logo cargado.','success');};reader.readAsDataURL(file);});
     qs('#btnHealth')?.addEventListener('click',async()=>{try{const result=await DataSyncService.health(Store.get().settings.backendUrl);Toast.show(`Conexión operativa: ${result.service}`,'success');}catch(error){Toast.show(`Conexión no disponible: ${error.message}`,'error');}});
     qs('#btnPushBackend')?.addEventListener('click',async()=>{try{const result=await DataSyncService.pushAll(Store.get().settings.backendUrl,Store.get());Toast.show(`${result.length} recursos enviados.`,'success');}catch(error){Toast.show(error.message,'error');}});
-    qs('#btnPullBackend')?.addEventListener('click',async()=>{try{const draft=Store.get();await DataSyncService.pullAll(draft.settings.backendUrl,draft);Store.import(draft);Toast.show('Datos recuperados.','success');}catch(error){Toast.show(error.message,'error');}});
+    const pullButton=qs('#btnPullBackend');
+    pullButton?.addEventListener('click',async()=>{
+      if(pullButton.disabled) return;
+      pullButton.disabled=true;
+      pullButton.setAttribute('aria-busy','true');
+      try{
+        const draft=Store.get();
+        const results=await DataSyncService.pullAll(draft.settings.backendUrl,draft);
+        const failed=results.filter((item)=>!item.ok);
+        if(failed.length){
+          Toast.show(`Descarga incompleta (${failed.length} de ${results.length} recursos). No se importaron datos locales.`,'error');
+          return;
+        }
+        Store.import(draft);
+        Toast.show('Datos recuperados.','success');
+      }catch(error){
+        Toast.show(error.message,'error');
+      }finally{
+        pullButton.disabled=false;
+        pullButton.removeAttribute('aria-busy');
+      }
+    });
     qs('#btnExportState')?.addEventListener('click',()=>downloadText('contagest-ve-respaldo.json',Store.export(),'application/json'));
     qs('#btnResetState')?.addEventListener('click',()=>Modal.confirm({title:'Restaurar datos de ejemplo',body:'Se restaurarán los datos locales incluidos con la instalación.',confirmText:'Restaurar',onConfirm:()=>Store.reset()}));
   }
