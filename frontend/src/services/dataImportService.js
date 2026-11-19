@@ -16,15 +16,30 @@ export const IMPORT_REQUIRED = {
 };
 
 const MAX_FILE_BYTES=5*1024*1024;
-const DELIMITED_FILE_ERRORS = Object.freeze({
+const IMPORT_PREVIEW_ERRORS = Object.freeze({
   IMPORT_DELIMITED_INPUT_INVALID: 'Formato CSV/TSV no admitido.',
   IMPORT_DELIMITED_TOO_MANY_COLUMNS: 'El archivo supera el máximo de 128 columnas.',
   IMPORT_DELIMITED_TOO_MANY_ROWS: 'El archivo supera el máximo de 5.000 filas.',
   IMPORT_DELIMITED_CELL_TOO_LONG: 'Una celda supera el máximo de 8.192 caracteres.',
   IMPORT_DELIMITED_MALFORMED_QUOTES: 'El archivo tiene comillas incompletas o incorrectamente escapadas.',
   IMPORT_DELIMITED_HEADERS_INVALID: 'Los encabezados están vacíos, duplicados o son inválidos.',
-  IMPORT_DELIMITED_COLUMN_COUNT: 'Una fila tiene una cantidad de columnas diferente a los encabezados.'
+  IMPORT_DELIMITED_COLUMN_COUNT: 'Una fila tiene una cantidad de columnas diferente a los encabezados.',
+  XLSX_CELL_REFERENCE_INVALID: 'La hoja contiene una referencia de celda inválida.',
+  XLSX_COLUMN_LIMIT: 'La hoja supera el límite de 128 columnas admitidas.',
+  XLSX_HEADERS_INVALID: 'Los encabezados XLSX están vacíos, repetidos o no son seguros.',
+  XLSX_TOO_MANY_ROWS: 'La hoja supera el máximo de 5.000 filas de datos.',
+  XLSX_CELL_TOO_LONG: 'Una celda XLSX supera el límite de 8.192 caracteres.',
+  XLSX_SHEET_TARGET_INVALID: 'La primera hoja del XLSX tiene una referencia inválida.',
+  XLSX_SHARED_STRING_INVALID: 'El archivo XLSX tiene una referencia de texto corrupta.',
+  XLSX_ZIP_CRC_MISMATCH: 'El archivo XLSX parece estar dañado; vuelve a exportarlo desde Excel.'
 });
+function throwPreviewError(error){
+  const message=IMPORT_PREVIEW_ERRORS[error?.message];
+  if(!message)throw error;
+  const displayError=new Error(message);
+  displayError.code=error.message;
+  throw displayError;
+}
 const decoder=new TextDecoder('utf-8',{fatal:true});
 
 function u16(view,offset){return view.getUint16(offset,true);}
@@ -139,19 +154,16 @@ export const DataImportService = {
   async parseFile(file, type) {
     if(Number(file.size||0)>MAX_FILE_BYTES)throw new Error('El archivo supera el límite de 5 MB.');
     const name=file.name.toLowerCase();let rows=[];
-    if(name.endsWith('.xlsx'))rows=await parseXlsx(file);
+    if(name.endsWith('.xlsx')){
+      try{rows=await parseXlsx(file);}
+      catch(error){throwPreviewError(error);}
+    }
     else{
       const text=await file.text();
       if(name.endsWith('.json'))rows=JSON.parse(text);
       else{
         try{rows=parseDelimitedImport(text,name.endsWith('.tsv')||name.endsWith('.txt')?'\t':',');}
-        catch(error){
-          const message=DELIMITED_FILE_ERRORS[error?.message];
-          if(!message)throw error;
-          const displayError=new Error(message);
-          displayError.code=error.message;
-          throw displayError;
-        }
+        catch(error){throwPreviewError(error);}
       }
     }
     if(!Array.isArray(rows))throw new Error('El archivo debe contener una lista de registros.');
