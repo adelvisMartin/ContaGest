@@ -331,6 +331,12 @@ export async function persistHipicoDomainEvent(input:PersistInput){
     }
 
     const reduction=reduceHipicoDomainEvent(current,input.event);
+    // The next applied transition must remain JSON/JavaScript-safe. Otherwise
+    // this commit would strand the aggregate at an unreadable BIGINT version.
+    // Reject before inserting append-only evidence or updating state.
+    if(reduction.disposition==='applied'&&current.stateVersion>=Number.MAX_SAFE_INTEGER){
+      throw new Error('HIPICO_DOMAIN_STATE_VERSION_EXHAUSTED');
+    }
     const eventId=String(input.event.eventId||crypto.randomUUID());
     const timestamp=validTimestamp(input.event.timestamp);
     const normalized=input.event.normalizedPayload==null?null:JSON.stringify(input.event.normalizedPayload);
