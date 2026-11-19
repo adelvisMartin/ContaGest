@@ -141,14 +141,23 @@ function parseDataUrl(value: string) {
   const extension = allowedMime.get(mime);
   if (!extension) throw new HttpError(422, 'Tipo de imagen no permitido.');
   const encoded = match[2].replace(/[\r\n]/g, '');
-  // Buffer.from(..., 'base64') silently ignores non-canonical padding and trailing data.
-  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/.test(encoded)) {
+  // Validate padding and unused bits before decoding: Buffer.from silently truncates malformed Base64.
+  // Scan linearly; backtracking expressions over the 5 MB input can exhaust the JS stack.
+  const paddingAt = encoded.indexOf('=');
+  const payload = paddingAt < 0 ? encoded : encoded.slice(0, paddingAt);
+  const paddingLength = encoded.length - payload.length;
+  const remainder = payload.length % 4;
+  const invalidPadding = paddingLength > 0 && (
+    paddingLength > 2 || remainder + paddingLength !== 4 || /[^=]/.test(encoded.slice(paddingAt))
+  );
+  const lastSextet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    .indexOf(payload.charAt(payload.length - 1));
+  if (remainder === 1 || invalidPadding || /[^A-Za-z0-9+/]/.test(payload)
+    || (remainder === 2 && (lastSextet & 15) !== 0)
+    || (remainder === 3 && (lastSextet & 3) !== 0)) {
     throw new HttpError(422, 'La codificación base64 de la imagen no es válida.');
   }
   const bytes = Buffer.from(encoded, 'base64');
-  if (bytes.toString('base64').replace(/=+$/, '') !== encoded.replace(/=+$/, '')) {
-    throw new HttpError(422, 'La codificación base64 de la imagen no es válida.');
-  }
   if (!bytes.length || bytes.length > MAX_BYTES) throw new HttpError(413, 'La imagen debe pesar entre 1 byte y 3 MB.');
   // Reject MIME spoofing before a private object is stored or signed.
   validateClinicalMagic(bytes, mime);
