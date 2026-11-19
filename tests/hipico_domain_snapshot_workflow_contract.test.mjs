@@ -30,6 +30,8 @@ test('recorded-at index matches exact canonical scope/order without write-blocki
   assert.match(migration, /CREATE INDEX CONCURRENTLY IF NOT EXISTS hipico_domain_events_recorded_order_v837/);
   assert.match(migration, /\(owner_id, group_key, aggregate_kind, aggregate_key, created_at DESC, id DESC\)/);
   assert.doesNotMatch(migration, /^(?:BEGIN|COMMIT)\s*;/mi);
+  assert.match(migration, /HIPICO_DOMAIN_RECORDED_ORDER_INDEX_NOT_READY/);
+  assert.match(migration, /i\.indisvalid AND i\.indisready/);
   assert.ok(workflow.includes(migrationPath));
   assert.ok(localRunner.includes(migrationPath));
   // Both runners must exercise a real nonempty upgrade, not just indexing an empty table.
