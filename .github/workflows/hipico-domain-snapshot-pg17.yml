@@ -60,16 +60,16 @@ jobs:
       - name: Verify exact SHA
         shell: bash
         run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
-      - name: Validate PostgreSQL QA wiring before installing dependencies
-        run: node --test tests/hipico_domain_snapshot_workflow_contract.test.mjs
-      - name: Route Agent System v3 for changed files
-        run: node scripts/agent-ticket-router.mjs gates --base origin/main --type bugfix
       - name: Set up Node 22
         uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: package-lock.json
+      - name: Validate PostgreSQL QA wiring before installing dependencies
+        run: node --test tests/hipico_domain_snapshot_workflow_contract.test.mjs
+      - name: Route Agent System v3 for changed files
+        run: node scripts/agent-ticket-router.mjs gates --base origin/main --type bugfix
       - name: Install locked backend workspace
         run: npm ci --workspace backend --include-workspace-root --no-audit --no-fund
       - name: Typecheck domain and integration
@@ -97,17 +97,39 @@ jobs:
           $$;
           GRANT USAGE ON SCHEMA auth TO authenticated;
           SQL
-      - name: Apply canonical domain migrations on isolated database only
+      - name: Apply pre-index canonical schema to isolated database
         shell: bash
         run: |
           for migration in \
             supabase/sql/hipico_v14_canonical_domain.sql \
             supabase/sql/hipico_v16_operator_confirmation_audit.sql \
-            backend/prisma/migrations/20260911211500_hipico_domain_source_identity/migration.sql \
-            backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/migration.sql; do
+            backend/prisma/migrations/20260911211500_hipico_domain_source_identity/migration.sql; do
             psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" \
               -v ON_ERROR_STOP=1 -f "$migration"
           done
+      - name: Seed pre-index existing canonical row for upgrade rehearsal
+        shell: bash
+        run: |
+          psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO public.hipico_domain_aggregates
+            (owner_id,group_key,aggregate_kind,aggregate_key,status,state_version)
+          VALUES
+            ('22222222-2222-4222-8222-222222222222','pg17-upgrade-fixture',
+             'race','qa_preindex_existing','OPEN',1);
+          INSERT INTO public.hipico_domain_events
+            (id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_key,
+             event_type,disposition,previous_state,next_state,reason,event_timestamp)
+          VALUES
+            ('pg17-upgrade-event-v837','22222222-2222-4222-8222-222222222222',
+             'pg17-upgrade-fixture','race','qa_preindex_existing','qa-existing-message',
+             'RACE_OPENED','applied','PREPARING','OPEN','VALID_TRANSITION',
+             '2026-11-19T09:00:00Z'::timestamptz);
+          SQL
+      - name: Upgrade schema with nonblocking recorded-order index
+        shell: bash
+        run: |
+          psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" -v ON_ERROR_STOP=1 \
+            -f backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/migration.sql
       - name: Grant fixture-only reader privileges for real RLS checks
         shell: bash
         run: |
