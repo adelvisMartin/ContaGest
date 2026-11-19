@@ -1,6 +1,6 @@
 const CACHE_VERSION = 'hipico-control-v1.13.0-rc3';
 // Security cache migration (#1292): never reuse the previous shell namespace.
-const SHELL_CACHE = `${CACHE_VERSION}-shell-r39-consolidator-v4-1-3`;
+const SHELL_CACHE = `${CACHE_VERSION}-shell-r40-consolidator-v4-1-3`;
 const APP_SHELL = [
   './', './index.html', './recovery.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-192-maskable.png', './icons/icon-512-maskable.png',
