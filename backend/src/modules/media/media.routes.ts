@@ -157,6 +157,10 @@ function parseDataUrl(value: string) {
     || (remainder === 3 && (lastSextet & 3) !== 0)) {
     throw new HttpError(422, 'La codificación base64 de la imagen no es válida.');
   }
+  // Reject oversized content before allocating a decoded Buffer.
+  if (Math.floor(payload.length * 3 / 4) > MAX_BYTES) {
+    throw new HttpError(413, 'La imagen debe pesar entre 1 byte y 3 MB.');
+  }
   const bytes = Buffer.from(encoded, 'base64');
   if (!bytes.length || bytes.length > MAX_BYTES) throw new HttpError(413, 'La imagen debe pesar entre 1 byte y 3 MB.');
   // Reject MIME spoofing before a private object is stored or signed.
