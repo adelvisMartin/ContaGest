@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { HttpError } from '../../shared/http.js';
-import { normalizeCamtDirection } from './camt-direction.mjs';
+import { normalizeCamtDirection, signedCamtAmount } from './camt-direction.mjs';
 import { parseStatementCsvRows, StatementCsvStructureError } from './statement-csv-structure.js';
 import { resolveStatementCsvHeaders, StatementCsvHeadersError } from './statement-csv-headers.js';
 import { money, serializeDecimal } from '../../shared/financial/decimal.js';
@@ -164,7 +164,13 @@ function parseCamt(text:string,defaultCurrency:string): ParsedStatement {
         code:'BANK_STATEMENT_DIRECTION_INVALID',row:index+1
       });
     }
-    const signed=indicator==='DBIT'&&money(amountValue).gt(0)?serializeDecimal(money(amountValue).negated(),2):amountValue;
+    let signed: string;
+    try { signed=signedCamtAmount(amountValue, indicator); }
+    catch {
+      throw new HttpError(422,'Signo/monto incoherente en CAMT.',{
+        code:'BANK_STATEMENT_CAMT_AMOUNT_INVALID',row:index+1
+      });
+    }
     const currencyMatch=block.match(/<(?:\w+:)?Amt[^>]*\bCcy=["']([A-Za-z]{3,4})["']/i);
     const currency=normalizeCurrency(currencyMatch?.[1]||defaultCurrency,defaultCurrency);
     return {
