@@ -8,6 +8,7 @@ import {
 } from './hipico-release-readiness-v9.mjs';
 import { combineProductionSchemaGate } from './hipico-production-schema-gate-v20.mjs';
 import { combineAuthRecoveryGate } from './hipico-auth-recovery-gate-v29.mjs';
+import { validHipicoVerificationReport } from './hipico-release-verification-integrity-v839.mjs';
 
 const SHA40 = /^[0-9a-f]{40}$/i;
 const STATUSES = Object.freeze(['PASS', 'FAIL', 'BLOCKED', 'NOT_EXECUTED']);
@@ -44,9 +45,10 @@ const head = gitHead();
 if (head && head !== sha) throw new Error(`HIPICO_RELEASE_REPORT_SHA_MISMATCH:${head}:${sha}`);
 
 const verified = await readJson('evidence-verification.json');
-// Never display a physical/soak/DR PASS from another candidate as a current
-// per-gate result, even when the aggregate readiness would remain blocked.
-const verifiedMatchesCandidate = verified && String(verified.sha || '').toLowerCase() === sha;
+// Verify exact SHA, schema, the complete gate inventory and the aggregate
+// before projecting optional PASS values. A hand-written or truncated JSON
+// cannot impersonate the evidence verifier's successful result.
+const verifiedMatchesCandidate = validHipicoVerificationReport(verified, sha);
 const evidence = verifiedMatchesCandidate ? status(verified.status) : 'NOT_EXECUTED';
 const optionalEvidence = verifiedMatchesCandidate && Array.isArray(verified.optional)
   ? verified.optional : [];
