@@ -28,7 +28,7 @@ test('#770 deterministic 10k quoted CSV samples preserve data without column dri
   let value='';
   const count=1+next()%28;
   for(let j=0;j<count;j++)value+=chars[next()%chars.length];
-  const csv='sku,description\\nSKU-'+i+',"'+value.replaceAll('"','""')+'"\\n';
+  const csv='sku,description\nSKU-'+i+',"'+value.replaceAll('"','""')+'"\n';
   const rows=parseDelimitedImport(csv);
   assert.deepEqual(rows,[{sku:'SKU-'+i,description:value.trim()}], 'case '+i);
  }
