@@ -165,6 +165,16 @@ test('#839 a PNG alone never fabricates browser PASS without exact-SHA Chromium'
   assert.equal(result.status, 'PASS');
   assert.equal(result.screenshotCount, 1);
 
+  // A preserved PNG signature with a corrupted trailing CRC is not an
+  // image proof, even though a first-24-bytes header check would accept it.
+  const forged = Buffer.from(syntheticPng());
+  forged[forged.length - 1] ^= 1;
+  writeFileSync(imagePath, forged);
+  result = verify(root, 'browserVisualEvidence', 'browser');
+  assert.equal(result.status, 'NOT_EXECUTED');
+  assert.equal(result.screenshotCount, 0);
+  assert.equal(result.reason, 'BROWSER_EVIDENCE_MISSING');
+
   writeFileSync(imagePath, 'invalid empty screenshot placeholder');
   result = verify(root, 'browserVisualEvidence', 'browser');
   assert.equal(result.status, 'NOT_EXECUTED');
