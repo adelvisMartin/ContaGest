@@ -28,3 +28,20 @@ Selected work item, routed domains, stable agent IDs, minimum skills, gate IDs, 
 
 ## Escalation / stop conditions
 Stop on `DUPLICATE_WORK_CLAIM`, unresolved authority conflict, stale live state for a mutation, or a specialist gate that blocks main/release.
+
+## Closeout mode (read-only)
+
+`node scripts/agent-ticket-router.mjs closeout --repo adelvisMartin/ContaGest`
+queries the live GitHub main/issue/PR/check state and reports blockers, exact
+SHAs and owner-claim confidence. It is **not** another authority or a worker
+runtime. A title-based `#issue` association is merely an inference;
+only declared claims may establish work ownership, and neither implies DoD.
+
+The orchestrator must distinguish three independent outcomes:
+1. No textual merge conflict (`mergeable=true`) — source integration only.
+2. Exact-head required gates actually successful — CI evidence only.
+3. Full epic acceptance, runtime, migration, tenant security, production and
+   physical Hípico obligations satisfied — only then a candidate for closure.
+
+Never auto-close an epic to hit an issue-count target, parallelize destructive
+migrations or pretend that a queued run succeeded.

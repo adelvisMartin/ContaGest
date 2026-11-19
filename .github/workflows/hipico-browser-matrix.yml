@@ -1,12 +1,28 @@
 name: Hípico Browser Matrix
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/public/hipico-control/**'
+      - 'frontend/api/hipico/**'
+      - 'backend/src/modules/hipico-bot/**'
+      - 'products/hipico-control/**'
+      - 'qa/hipico-*.spec.mjs'
+      - 'qa/support/hipico-*.mjs'
+      - 'playwright.hipico-matrix.config.mjs'
+      - '.github/workflows/hipico-browser-matrix.yml'
+      - 'package.json'
+      - 'package-lock.json'
   schedule:
     - cron: '37 6 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  HIPICO_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 concurrency:
   group: hipico-browser-matrix-${{ github.ref }}
@@ -30,6 +46,12 @@ jobs:
     steps:
       - name: Checkout candidate SHA
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HIPICO_CANDIDATE_SHA }}
+
+      - name: Confirm exact candidate SHA
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
 
       - name: Node 22
         uses: actions/setup-node@v7
@@ -45,16 +67,16 @@ jobs:
 
       - name: Run Hípico visual-functional matrix
         env:
-          HIPICO_QA_SHA: ${{ github.sha }}
+          HIPICO_QA_SHA: ${{ env.HIPICO_CANDIDATE_SHA }}
         run: npx playwright test --config=playwright.hipico-matrix.config.mjs --project=${{ matrix.project }} --workers=1
 
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: hipico-${{ matrix.project }}-${{ github.sha }}
+          name: hipico-${{ matrix.project }}-${{ env.HIPICO_CANDIDATE_SHA }}
           path: |
-            artifacts/qa/hipico-v105/${{ github.sha }}
+            artifacts/qa/hipico-v105/${{ env.HIPICO_CANDIDATE_SHA }}
             test-results
             playwright-report
           if-no-files-found: warn

@@ -50,3 +50,31 @@ Task; current/base SHA; work claim; domains; agent IDs; skills; gates; evidence 
 
 ## References
 `AGENTS.md`, `.agents/context/BOOTSTRAP.md`, `.agents/context/CONTEXT_CONTRACT.md`, routed project-owned skills; external skills are advisory only.
+
+## Live backlog closeout (issue #841)
+
+For repository-wide triage, invoke the existing Agent System v3 entrypoint:
+
+```bash
+node scripts/agent-ticket-router.mjs closeout --repo adelvisMartin/ContaGest
+node scripts/agent-ticket-router.mjs closeout --repo adelvisMartin/ContaGest --strict
+```
+
+This routes to `scripts/agent-backlog-closeout.mjs`, a **read-only** GitHub
+snapshot of current main SHA, paginated open issues/PRs, exact PR-head checks
+and legacy branch-protection contexts. `--strict` returns non-zero while
+open epic acceptance work or blocked PRs remain. It never performs polling,
+background work, workflow re-runs, merges, close operations or deployment.
+
+The 17–20 issue range is an informational *organizational target*, **not**
+an authorization to discard open P0/P1 acceptance criteria. A PR being
+mergeable is not sufficient: dirty/unstable, draft, missing/failed/skipped/
+pending checks, stale SHA or unavailable required policy blocks approval.
+`HUMAN_REVIEW_REQUIRED` still needs the domain-gated verification, reviewer,
+current-main sync, release evidence and explicit owner authorization.
+The status does not replace `agent:gates`, `agent:system:verify`,
+`agent:claims`, the DB/finance security gate or the physical Hípico gates.
+
+For large batches, keep PR/DB operations serial and assign independent
+domains only through the approved project capability router; the live report
+does not instantiate real worker agents on its own.

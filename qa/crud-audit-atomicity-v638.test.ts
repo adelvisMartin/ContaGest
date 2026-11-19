@@ -36,7 +36,9 @@ test('#638/#1289 CRUD audit rollback: create/update/delete never commit without 
   t.after(async () => {
     try {
       if (clientId) {
-        await h.prisma.auditLog.deleteMany({ where: { tenantId, entity: 'client', entityId: clientId } });
+        // AuditLog is intentionally append-only (PG17 protected lifecycle).
+        // This disposable _e2e database is discarded after the suite; never
+        // delete forensic evidence to make synthetic fixture cleanup succeed.
         await h.prisma.client.deleteMany({ where: { tenantId, id: clientId } });
       }
       await h.prisma.client.deleteMany({ where: { tenantId, rif } });

@@ -44,6 +44,26 @@ Supported observable execution signals are:
 
 Re-evaluate these signals after ticket decomposition and whenever the execution state materially changes. `contagest-batch` is eligible only for at least 5 genuinely independent units and is capped at 30 isolated workers; ordered/destructive persistence work remains sequential. `contagest-loop` requires an already-authorized continuation plus a concrete stop condition. `contagest-run-skill-generator` may record commands and required environment variable names but never secret values. `contagest-fewer-permission-prompts` is recommendation-first and cannot auto-apply broader permissions. `contagest-skill-doctor` is read-only by default.
 
+## Live closeout orchestrator (issue #841)
+
+`node scripts/agent-ticket-router.mjs closeout --repo adelvisMartin/ContaGest`
+reuses this entrypoint, delegates to a pure deterministic evaluator and fetches
+live paginated GitHub issues/PRs, checked-out branch identity, current
+default-branch SHA, exact-head check runs and available required contexts.
+`--strict` reports unfinished open work through a non-zero exit code.
+
+This diagnostic is **read-only** and never auto-merges, closes issues,
+silences CI, deploys, starts workers or schedules monitoring. Unknown
+protection is a blocker, not an assumed green result; check-runs for another
+SHA and workflow skips do not count as PASS. The organizational 17–20
+open-issue range is advisory; #841 owner acceptance and Hípico physical
+evidence retain separate explicit gates.
+
+The existing 2–4 routed domain skills, 11 agent role profiles and five
+execution capabilities remain the only project authority. Run the skill doctor
+and `node scripts/verify-agent-system-v3.mjs` after agent metadata changes;
+no new external skills or permissions are installed.
+
 ## Evidence matrix
 
 The only dimensions are:

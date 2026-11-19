@@ -16,3 +16,20 @@ test('unbalanced quotes and quote outside cell boundaries fail closed',()=>{for(
 test('bounded payload and empty data cannot silently import',()=>{assert.throws(()=>go('sku,name\n'),/NO_ROWS/);assert.throws(()=>go('a'.repeat(262145)),/SIZE_INVALID/);});
 test('null bytes and control text never accepted',()=>{assert.throws(()=>go('sku,name\nA1,Pro\0ducto'),/NULL_BYTE/);assert.equal(go('sku,name\nA1,"Line\nbreak"').errors[0].code,'UNSAFE_TEXT');});
 test('CSV content remains read-only and never contains explicit price/stock mapping',()=>{const p=go('sku,name\nA1,Producto');assert.ok(!('price' in p.rows[0]));assert.ok(!('stock' in p.rows[0]));});
+
+test('rejects invisible or bidirectional text controls without rejecting legitimate Unicode',()=>{
+ const hidden=['\u0085','\u00ad','\u034f','\u061c','\u180e','\u200b',
+   '\u200e','\u200f','\u202a','\u202b','\u202c','\u202d','\u202e',
+   '\u2060','\u2066','\u2069','\ufeff'];
+ for(const prefix of hidden){
+   const name=go(`sku,name\nA1,${prefix}=HYPERLINK(1)`);
+   assert.equal(name.validCount,0,JSON.stringify(prefix));
+   assert.deepEqual(name.errors,[{row:2,code:'UNSAFE_TEXT'}]);
+   const description=go(`sku,name,description\nA1,Café Seguro,${prefix}@SUM(1)`);
+   assert.equal(description.validCount,0,JSON.stringify(prefix));
+   assert.equal(description.errors[0].code,'UNSAFE_TEXT');
+ }
+ const ok=go('sku,name,description\nA1,Café ☕,Diseño 👩‍💻 válido\n');
+ assert.equal(ok.validCount,1,'Unicode and emoji ZWJ remain valid');
+ assert.equal(ok.errors.length,0);
+});

@@ -12,7 +12,8 @@ test('#664 real client CRUD is persisted, tenant-bound and auditable', async (t)
     try {
       if (clientId) {
         await h.prisma.client.deleteMany({ where: { id: clientId, tenantId: h.tenant.id } });
-        await h.prisma.auditLog.deleteMany({ where: { entityId: clientId, tenantId: h.tenant.id } });
+        // Preserve append-only AuditLog evidence even in disposable QA. The
+        // isolated PostgreSQL database is removed after the test run.
       }
     } finally {
       try { await h.close(); }

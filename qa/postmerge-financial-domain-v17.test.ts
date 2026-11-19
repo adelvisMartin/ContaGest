@@ -18,6 +18,12 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
     await h.prisma.payrollReceipt.deleteMany({where:{id:{in:ids.payrollReceipts}}}).catch(()=>undefined);
     await h.prisma.payrollPeriod.deleteMany({where:{id:{in:ids.payrollPeriods}}}).catch(()=>undefined);
     await h.prisma.employee.deleteMany({where:{id:{in:ids.employees}}}).catch(()=>undefined);
+    // The canonical opening-balance service writes an append-only provenance
+    // link. Delete only this run's synthetic links inside the disposable QA DB
+    // before clearing its movements and account; never use generic API deletion.
+    for (const accountId of ids.bankAccounts) {
+      await h.prisma.$executeRaw`DELETE FROM "BankMovementAuditLink" WHERE "tenantId"=${h.tenant.id} AND "accountId"=${accountId}`;
+    }
     await h.prisma.bankMovement.deleteMany({where:{id:{in:ids.bankMovements}}}).catch(()=>undefined);
     await h.prisma.bankAccount.deleteMany({where:{id:{in:ids.bankAccounts}}}).catch(()=>undefined);
     await h.prisma.ledgerEntry.deleteMany({where:{OR:[{id:{in:ids.ledgers}},{sourceId:{startsWith:RUN}}]}}).catch(()=>undefined);
@@ -115,7 +121,11 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
   });
 
   await t.test('bancos: movement updates balance, reconcile protects deletion, cleanup restores balance',async()=>{
-    const account=await h.ok('/bank-accounts',{method:'POST',body:JSON.stringify({bankName:`${RUN} Banco`,accountNo:`${RUN}-ACCT`,currency:'USD',openingBalance:100})});ids.bankAccounts.push(account.id);
+    // Opening balances are financial movements, never generic CRUD fields.
+    const account=await h.ok('/banking/accounts',{method:'POST',body:JSON.stringify({bankName:`${RUN} Banco`,accountNo:`${RUN}-ACCT`,currency:'USD',openingBalance:100})});
+    ids.bankAccounts.push(account.id);
+    assert.ok(account.openingMovementId,'Canonical bank opening must leave a traceable movement');
+    ids.bankMovements.push(account.openingMovementId);
     const movement=await h.ok('/banking/movements',{method:'POST',body:JSON.stringify({accountId:account.id,description:`${RUN} ingreso`,reference:RUN,type:'income',currency:'USD',amount:35.5})});ids.bankMovements.push(movement.id);
     assert.equal(movement.type,'income');assert.equal(num(movement.amount),35.5);
     let storedAccount=await h.prisma.bankAccount.findUnique({where:{id:account.id}});assert.equal(num(storedAccount?.balance),135.5,'Bank balance did not increment');
@@ -124,7 +134,9 @@ test('post-merge financial workflows persist and enforce domain invariants',asyn
     await h.ok(`/banking/movements/${movement.id}/reconcile`,{method:'PATCH',body:JSON.stringify({matched:false})});
     await h.ok(`/banking/movements/${movement.id}`,{method:'DELETE'});ids.bankMovements=ids.bankMovements.filter((id)=>id!==movement.id);
     storedAccount=await h.prisma.bankAccount.findUnique({where:{id:account.id}});assert.equal(num(storedAccount?.balance),100,'Deleting unreconciled movement did not restore balance');
-    await h.ok(`/bank-accounts/${account.id}`,{method:'DELETE'});ids.bankAccounts=ids.bankAccounts.filter((id)=>id!==account.id);
+    await h.status(`/bank-accounts/${account.id}`,405,{method:'DELETE'});
+    const inactive=await h.ok(`/bank-accounts/${account.id}`,{method:'PUT',body:JSON.stringify({active:false})});
+    assert.equal(inactive.active,false,'Protected accounts must be deactivated, not deleted by CRUD');
   });
 
   await t.test('rrhh/nomina: employee persistence, receipt totals and forward-only terminal lifecycle',async()=>{
