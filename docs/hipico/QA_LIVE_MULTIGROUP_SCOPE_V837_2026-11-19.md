@@ -75,13 +75,29 @@ Fuentes contrastadas el **19-11-2026**, documentación publicada/visible (sin ca
 
 **Decisión formal:** `FOLLOW_UP / NO IMPLEMENTAR` hasta que el owner apruebe ADR del negocio, alcance y legalidad: rematar/vender ejemplares físicos, roles comprador/consignador/martillero/cajero, monedas/impuestos/comisiones, prórroga/subasta, idempotencia/tickets, libros y devoluciones, reservas y protección de PII. No presumir que las fórmulas de apuestas `settleBet` aplican a una subasta. Ninguna fuente autoriza probar contra datos de terceros o dinero real. El trabajo inmediato del PR #1373 permanece limitado a grupo, renderizado, XSS y PWA offline.
 
+## Iteración de integridad sobre anulación de apuestas y carga de tarjetas (19-11-2026)
+
+**Defecto SOURCE_VERIFIED:** el botón `data-action="cancel-bet"` se generaba para cualquier apuesta en una carrera abierta, incluso si el registro ya estaba liquidado (en estados parciales); el manejador no comprobaba `race.status` ni `bet.status` antes de `mutate("bet_cancelled", ...)`. Un control obsoleto, acción repetida o evento manual podía modificar una apuesta que ya no estaba pendiente, y dejar huella financiera/auditoría inconsistente.
+
+**Cambio integrado y delimitado al cliente local**:
+- `canCancelBet(race, bet)` centraliza la regla: `race.status === "open" && bet.status === "pending"`; sin alterar la máquina de estados del backend, ni liquidaciones. El botón solo existe en ese estado.
+- La acción comprueba nuevamente `canCancelBet(r, b)` **antes de mutate** y rechaza estados cerrados, nulos, liquidados o anulados. La presentación no es autoridad server-side: tests de backend/tenant reales siguen pendientes y este cambio no habilita dinero real.
+- `renderCapture` crea `participantsById` una sola vez cuando hay tarjetas; `betCard` consume el índice del grupo activo y evita `pMap()` por tarjeta. Se mantiene compatibilidad de la firma por argumento opcional, sin caché global.
+
+**Pruebas incorporadas al repositorio**: `hipico_live_multigroup_ui_scope_v837.test.mjs` tiene **11 definiciones**; las dos últimas verifican `canCancelBet` sobre estados `open/locked/settled/closed/result/cancelled` × `pending/settled/cancelled/loaded`, la presencia del botón correspondiente, la validación previa al `mutate` y render de 1.000 tarjetas usando un solo mapa. **Ejecución aislada real** en Node 22 con el código del par de funciones transcrito desde el SHA candidato: `node --check` y `node --test /mnt/data/hipico_scope_qa_round2/verify.test.mjs` → **3/3 PASS** (matriz de estados, 1.000 tarjetas, HTML hostil escapado). **No equivale** a haber ejecutado las 11 pruebas dentro de la raíz real de ContaGest, E2E ni motor de liquidaciones.
+
+**FODA ampliado:** Fortaleza: unificar decisión de botón y mutación mediante política pura; Oportunidad: ahorrar un mapa por cada apuesta mostrada; Debilidad anterior: handler sin transición negativa y mapa O(participantes) repetido; Amenaza: anulación de apuesta liquidada/repetida con auditores leyendo estados inconsistentes. NOW: política positiva/negativa + regresión y una sola instancia de mapa; FOLLOW_UP: auditar otras transiciones críticas (`reopen-settlement`, `close-race`, `lock-race`) con pruebas integradas y contratos de UI/DB antes de cambios más amplios.
+
+**Investigación pública de remates:** documentación oficial de [Tattersalls Online](https://www.tattersallsonline.com/help/) describe cierres con prórroga de 2 minutos para ofertas de último momento; [ARQANA Online](https://www.arqanaonline.com/how_to_bid.html) documenta indicadores de postores y estado del lote. **No trasplantar estas reglas a apuestas**, ni implementar subastas #1010 sin ADR aprobado. Las [condiciones de Tattersalls Live Bidding](https://bid.tattersalls.com/signup) prohíben automatizar herramientas para recopilar contenido de su sitio sin permiso: por tanto este análisis utilizó **documentación pública y búsqueda**, no un crawler ni scraping automatizado de Tattersalls. No se extrajeron historiales privados ni identidades de postores.
+
 ## Evidencia y riesgos pendientes
 
 | Gate | Estado en este anexo |
 | --- | --- |
 | Código fuente y rutas | SOURCE_REVIEW |
 | 2 suites de scope × 1.000 en Node aislado con helper transcrito | PASS aislado, **NO** repositorio completo |
-| 9 pruebas de contrato fuente registradas en GitHub | RUN IN FULL CHECKOUT = NOT_EXECUTED |
+| 11 pruebas de contrato fuente registradas en GitHub | RUN IN FULL CHECKOUT = NOT_EXECUTED |
+| 3 pruebas de anulación/tarjetas en Node22 aislado | PASS, ejecución real; no checkout íntegro |
 | 3 pruebas nuevas de smoke en Node22 con funciones transcritas | PASS aislado; no navegador ni checkout completo |
 | Test del nuevo archivo contra checkout real | NOT_EXECUTED hasta CI/checkout |
 | PG17 tenant/owner A/B | NOT_EXECUTED; sin cambios API/DB |
