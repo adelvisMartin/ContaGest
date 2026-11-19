@@ -59,3 +59,26 @@ test('#743 existing CSV structure remains an independent RFC4180 parser', () => 
   assert.doesNotMatch(code, /resolveStatementCsvHeaders/);
 });
 
+
+test('#743 fails closed on invisible Unicode used to disguise bank column aliases', () => {
+  const disguised = [
+    'am\u200bount', 'am\u200count', 'am\u200dount',
+    'am\u00adount', 'am\u034fount', 'am\u061count',
+    '\u202eamount', 'amount\u2066', 'amount\u2069',
+    'am\ufeffount', 'amount\ufeff', '\ufeffamount',
+    'memo\u2028', 'memo\u0085',
+  ];
+  for (const alias of disguised) {
+    assert.throws(() => resolve(['date', 'amount', alias], aliases), StatementCsvHeadersError, JSON.stringify(alias));
+  }
+});
+
+test('#743 preserves a true first-column UTF-8 BOM and visible metadata names', () => {
+  const normalized = resolve(['\ufeffFecha', 'Monto', 'Descripción adicional'], aliases);
+  assert.equal(normalized.date, 0);
+  assert.equal(normalized.amount, 1);
+  const visible = resolve(['fecha_valor', 'fecha', 'monto', 'campo-extra'], aliases);
+  assert.equal(visible.valueDate, 0);
+  assert.equal(visible.date, 1);
+  assert.equal(visible.amount, 2);
+});
