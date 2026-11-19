@@ -15,6 +15,15 @@ export const IMPORT_REQUIRED = {
 };
 
 const MAX_FILE_BYTES=5*1024*1024;
+const DELIMITED_FILE_ERRORS = Object.freeze({
+  IMPORT_DELIMITED_INPUT_INVALID: 'Formato CSV/TSV no admitido.',
+  IMPORT_DELIMITED_TOO_MANY_COLUMNS: 'El archivo supera el máximo de 128 columnas.',
+  IMPORT_DELIMITED_TOO_MANY_ROWS: 'El archivo supera el máximo de 5.000 filas.',
+  IMPORT_DELIMITED_CELL_TOO_LONG: 'Una celda supera el máximo de 8.192 caracteres.',
+  IMPORT_DELIMITED_MALFORMED_QUOTES: 'El archivo tiene comillas incompletas o incorrectamente escapadas.',
+  IMPORT_DELIMITED_HEADERS_INVALID: 'Los encabezados están vacíos, duplicados o son inválidos.',
+  IMPORT_DELIMITED_COLUMN_COUNT: 'Una fila tiene una cantidad de columnas diferente a los encabezados.'
+});
 const decoder=new TextDecoder('utf-8',{fatal:true});
 
 function u16(view,offset){return view.getUint16(offset,true);}
@@ -101,7 +110,16 @@ export const DataImportService = {
     else{
       const text=await file.text();
       if(name.endsWith('.json'))rows=JSON.parse(text);
-      else rows=parseDelimitedImport(text,name.endsWith('.tsv')||name.endsWith('.txt')?'\t':',');
+      else{
+        try{rows=parseDelimitedImport(text,name.endsWith('.tsv')||name.endsWith('.txt')?'\t':',');}
+        catch(error){
+          const message=DELIMITED_FILE_ERRORS[error?.message];
+          if(!message)throw error;
+          const displayError=new Error(message);
+          displayError.code=error.message;
+          throw displayError;
+        }
+      }
     }
     if(!Array.isArray(rows))throw new Error('El archivo debe contener una lista de registros.');
     if(rows.length>5000)throw new Error('La importación admite un máximo de 5.000 filas por batch.');
