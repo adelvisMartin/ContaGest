@@ -43,9 +43,17 @@ export const DataSyncService={
   async pullAll(baseUrl,draft){
     const approved=trustedSyncBase(baseUrl);
     const initialSession=AuthSession.get();
+    const ensureCurrentSession=()=>{
+      if(!sameSession(initialSession,AuthSession.get())){
+        const error=new Error('La sesión cambió durante la descarga. No se importaron datos locales.');
+        error.status=409;
+        throw error;
+      }
+    };
     const results=[];
     const staged=[];
     for(const resource of SYNC_RESOURCES){
+      ensureCurrentSession();
       try{
         const data=await apiGet(approved,`/api/${resource}`);
         staged.push([resource,data]);
@@ -55,11 +63,7 @@ export const DataSyncService={
       }
     }
     // A tenant/user change invalidates every response received during the transfer.
-    if(!sameSession(initialSession,AuthSession.get())){
-      const error=new Error('La sesión cambió durante la descarga. No se importaron datos locales.');
-      error.status=409;
-      throw error;
-    }
+    ensureCurrentSession();
     // A partial download must not replace a consistent local session snapshot.
     if(results.every(({ok})=>ok)) for(const [resource,data] of staged) writeResource(draft,resource,data);
     return results;
