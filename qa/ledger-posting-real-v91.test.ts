@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRealBackendHarness } from './support/real-backend-harness.ts';
+import { randomUUID } from 'node:crypto';
+import { runWithRuntimeTenant } from '../backend/src/database/runtime-tenant-context.ts';
+import { updateDraftLedgerEntry } from '../backend/src/modules/accounting/accounting.service.ts';
 import { prepareQaManualPostingAccounts, prepareQaSemanticPosting } from './support/semantic-posting-fixture.ts';
 
 const RUN = `QA91-${Date.now().toString(36).toUpperCase()}`;
@@ -72,6 +75,12 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
     assert.equal(draft.posted, false);
     assert.equal(draft.postedAt, null);
     assert.equal(draft.postedBy, null);
+    const createdAudits = await h.prisma.auditLog.findMany({
+      where: { tenantId: h.tenant.id, action: 'ledger.entry.created',
+        entity: 'LedgerEntry', entityId: draft.id }
+    });
+    assert.equal(createdAudits.length, 1, 'Draft creation must commit exactly one audit');
+    assert.equal(createdAudits[0]?.userId, h.admin.id);
 
     let trial = await h.ok('/accounting/trial-balance');
     assert.equal(trial.some((row: any) => row.accountCode === `${RUN}.D`), false, 'DRAFT leaked into trial balance');
@@ -90,6 +99,41 @@ test('issue #91 ledger lifecycle is immutable, reversible and tenant-scoped on r
     });
     assert.equal(edited.posted, false);
     assert.equal(edited.description, `${RUN} manual draft edited`);
+    const editedAudits = await h.prisma.auditLog.findMany({
+      where: { tenantId: h.tenant.id, action: 'ledger.entry.draft-updated',
+        entity: 'LedgerEntry', entityId: draft.id }
+    });
+    assert.equal(editedAudits.length, 1, 'Draft edit must commit exactly one audit');
+    assert.equal(editedAudits[0]?.userId, h.admin.id);
+    assert.equal((editedAudits[0]?.before as any)?.description, `${RUN} manual draft`);
+    assert.equal((editedAudits[0]?.after as any)?.entry?.description, `${RUN} manual draft edited`);
+
+    // A fabricated audit actor violates the real PostgreSQL AuditLog FK.
+    // The update and new audit must both roll back, leaving the good edit intact.
+    await assert.rejects(
+      () => runWithRuntimeTenant(h.tenant.id, () => updateDraftLedgerEntry({
+        tenantId: h.tenant.id,
+        entryId: draft.id,
+        fiscalPeriod: PERIOD_MANUAL,
+        description: `${RUN} must not persist without an audit`,
+        lines: [
+          { accountCode: `${RUN}.D`, accountName: 'QA debit', debit: '7.00', currency: 'USD', exchangeRate: '36.1234' },
+          { accountCode: `${RUN}.C`, accountName: 'QA credit', credit: '7.00', currency: 'USD', exchangeRate: '36.1234' }
+        ],
+        audit: { userId: randomUUID() }
+      })),
+      (error: any) => error?.code === 'P2003' || error?.code === '23503',
+      'Invalid audit actor must reject and roll back the manual draft edit'
+    );
+    const afterRejectedEdit = await h.prisma.ledgerEntry.findFirst({
+      where: { id: draft.id, tenantId: h.tenant.id }
+    });
+    assert.equal(afterRejectedEdit?.description, `${RUN} manual draft edited`,
+      'A failed audit must never leave an unaudited ledger edit');
+    assert.equal(await h.prisma.auditLog.count({
+      where: { tenantId: h.tenant.id, action: 'ledger.entry.draft-updated',
+        entity: 'LedgerEntry', entityId: draft.id }
+    }), 1, 'Rolled-back audit attempt must leave no extra evidence');
 
     const posted = await h.ok(`/accounting/entries/${draft.id}/post`, { method: 'POST' });
     manualPostedId = posted.id;
