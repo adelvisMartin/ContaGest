@@ -295,6 +295,13 @@ export const BackendApi = {
       try {
         response = await fetchApi(baseUrl, path, requestOptions);
       } catch (error) {
+        // Cancellation is final even for idempotent financial mutations.
+        // Retrying an aborted request violates the caller's cancellation intent.
+        if (error?.name === 'AbortError' || fetchOptions.signal?.aborted) {
+          throw apiError('No se pudo conectar con la API. Revisa la conexión y vuelve a intentar.', 0, {
+            cause:String(error?.message || error), cancelled:true
+          });
+        }
         if (idempotencyKey) {
           try {
             response = await fetchApi(baseUrl, path, requestOptions);
