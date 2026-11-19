@@ -19,6 +19,19 @@ test('#1293 route lab CI rechecks changes to canonical input owners', () => {
   }
 });
 
+test('#1293 route lab CI runs on affected frontend render owners', () => {
+  for (const owner of [
+    'frontend/src/pages/**',
+    'frontend/src/components/**',
+    'frontend/src/styles/**',
+    'frontend/src/app.js',
+    'frontend/index.html',
+    'frontend/vite.config.js',
+  ]) {
+    assert.ok(paths.includes(owner), `Missing frontend performance owner: ${owner}`);
+  }
+});
+
 test('#1293 route lab CI retains exact candidate checkout and Chromium gate', () => {
   assert.match(source, /CANDIDATE_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
   assert.match(source, /ref: \$\{\{ env\.CANDIDATE_SHA \}\}/);
