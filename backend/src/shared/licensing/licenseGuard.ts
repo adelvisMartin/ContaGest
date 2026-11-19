@@ -199,7 +199,7 @@ async function activateOrUpgradeDevice(params: {
 
     if (existing) {
       // Only a legacy active activation without a credential is upgraded.
-      await tx.$executeRaw`
+      const upgraded = await tx.$executeRaw`
         UPDATE public."LicenseActivation"
         SET "userId"=${params.userId || null},
             "deviceLabel"=COALESCE(${params.deviceLabel || null}, "deviceLabel"),
@@ -211,6 +211,9 @@ async function activateOrUpgradeDevice(params: {
             "credentialExpiresAt"=${credentialExpiresAt}
         WHERE "id"=${existing.id} AND "status"='active' AND "credentialHash" IS NULL
       `;
+      if (upgraded !== 1) {
+        throw new HttpError(409, 'La activación cambió de estado. Vuelve a solicitar autorización.');
+      }
     } else {
       await tx.$executeRaw`
         INSERT INTO public."LicenseActivation"
