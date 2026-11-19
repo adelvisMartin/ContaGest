@@ -54,3 +54,43 @@ test('#1313 clinical attachments retain PDF support and reject spoofing', () => 
   assert.equal(validateClinicalMagic(Buffer.from('%PDF-1.7'), 'application/pdf'), 'pdf');
   assert.throws(() => validateClinicalMagic(Buffer.from('<html>'), 'application/pdf'), error => error.status === 422);
 });
+
+
+test('#1313 1000 deterministic signature mutations fail closed', () => {
+  let seed = 0x7201313;
+  function random() {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return seed >>> 0;
+  }
+  for (let index = 0; index < 1000; index += 1) {
+    const { mime, bytes: original } = cases[index % cases.length];
+    const mutableIndices = mime === 'image/webp'
+      ? [0, 1, 2, 3, 8, 9, 10, 11]
+      : Array.from({ length: mime === 'image/jpeg' ? 3 : 8 }, (_, i) => i);
+    const corrupted = Buffer.concat([original, Buffer.alloc(random() % 257)]);
+    const position = mutableIndices[random() % mutableIndices.length];
+    corrupted[position] ^= 1 << (random() % 8);
+    assert.throws(
+      () => parseDataUrl(dataUrl(mime, corrupted)),
+      error => error.status === 422 && /firma binaria/.test(error.message),
+      'media=' + mime + ' case=' + index + ' changedByte=' + position
+    );
+  }
+});
+
+test('#1313 clinical PDF and generic WebP reject high-bit signature aliases', () => {
+  const spoofedPdf = Buffer.from('%PDF-1.7');
+  spoofedPdf[0] |= 0x80;
+  assert.throws(
+    () => validateClinicalMagic(spoofedPdf, 'application/pdf'),
+    error => error.status === 422 && /firma binaria/.test(error.message)
+  );
+  const spoofedWebp = Buffer.from('RIFF\u0000\u0000\u0000\u0000WEBP', 'binary');
+  spoofedWebp[1] |= 0x80;
+  assert.throws(
+    () => parseDataUrl(dataUrl('image/webp', spoofedWebp)),
+    error => error.status === 422 && /firma binaria/.test(error.message)
+  );
+});
