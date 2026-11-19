@@ -4,6 +4,8 @@ import test from 'node:test';
 import { PrismaClient } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { readHipicoDomainAggregate } from './hipico-domain-query.store.js';
+import { readCanonicalLabRace } from './hipico-lab-canonical-read.js';
+import { operationalRaceContextKey } from './hipico-race-context-key.js';
 
 // This file intentionally has no test skip: its runner must provide a disposable
 // PostgreSQL 17 database. It is invoked explicitly, not by the unit-test glob.
@@ -205,6 +207,65 @@ test('PostgreSQL 17 synthetic canonical-read latency baseline is observable', as
     p95Ms: Number(p95.toFixed(2)),
     pgMajor: 17
   }));
+});
+
+test('backdated correction recorded after a result cannot be hidden from LAB', async () => {
+  assertIsolatedPg17();
+  const ownerId = randomUUID();
+  const groupKey = 'synthetic-backdated-correction';
+  const race = { raceNumber: 5, racetrack: 'Churchill Downs', raceDate: '2026-11-19' };
+  const aggregateKey = operationalRaceContextKey(race);
+  assert.ok(aggregateKey);
+  await seedOpenedRace(ownerId, groupKey, aggregateKey);
+
+  const resultId = randomUUID();
+  const correctionId = randomUUID();
+  const resultPayload = JSON.stringify({
+    raceContextComplete: true, racetrack: race.racetrack,
+    raceNumber: race.raceNumber, raceDate: race.raceDate, board: ['5', '1']
+  });
+  await prisma.$transaction(async tx => {
+    await tx.$executeRaw`
+      UPDATE public.hipico_domain_aggregates
+      SET status = 'RESULT_RECEIVED', state_version = 3, updated_at = now()
+      WHERE owner_id = ${ownerId}::uuid AND group_key = ${groupKey}
+        AND aggregate_kind = 'race' AND aggregate_key = ${aggregateKey}
+    `;
+    await tx.$executeRaw`
+      INSERT INTO public.hipico_domain_events
+        (id, owner_id, group_key, aggregate_kind, aggregate_key, source_message_key,
+         event_type, disposition, previous_state, next_state, reason,
+         normalized_payload, event_timestamp, operator_confirmed, confirmation_reason)
+      VALUES (${resultId}, ${ownerId}::uuid, ${groupKey}, 'race', ${aggregateKey},
+              'synthetic-result', 'RESULT_RECORDED', 'applied', 'CLOSED', 'RESULT_RECEIVED',
+              'VALID_TRANSITION', ${resultPayload}::jsonb,
+              '2026-11-19T11:00:00Z'::timestamptz, true, 'Synthetic operator confirmation')
+    `;
+  });
+
+  // The correction is inserted later, but carries an older, source-supplied time.
+  await prisma.$executeRaw`
+    INSERT INTO public.hipico_domain_events
+      (id, owner_id, group_key, aggregate_kind, aggregate_key, source_message_key,
+       event_type, disposition, previous_state, next_state, reason, original_event_id,
+       event_timestamp, operator_confirmed, confirmation_reason)
+    VALUES (${correctionId}, ${ownerId}::uuid, ${groupKey}, 'race', ${aggregateKey},
+            'synthetic-backdate', 'CORRECTION', 'evidence_only',
+            'RESULT_RECEIVED', 'RESULT_RECEIVED', 'APPEND_ONLY_EVIDENCE', ${resultId},
+            '2026-11-19T08:00:00Z'::timestamptz, true, 'Synthetic backdated correction')
+  `;
+
+  const domain = await readHipicoDomainAggregate({
+    ownerId, groupKey, aggregateKind: 'race', aggregateKey, limit: 30
+  });
+  assert.equal(domain?.events[0].eventType, 'CORRECTION',
+    'Database append chronology must take priority over backdated source timestamp');
+  assert.equal(domain?.events[1].eventType, 'RESULT_RECORDED');
+  const published = await readCanonicalLabRace({
+    ownerId, groupKey, race, purpose: 'result'
+  });
+  assert.equal(published.available, false);
+  assert.equal(published.reason, 'CANONICAL_RESULT_EVIDENCE_MISSING');
 });
 
 test.after(async () => {
