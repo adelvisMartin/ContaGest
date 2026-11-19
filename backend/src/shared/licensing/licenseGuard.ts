@@ -69,8 +69,8 @@ async function loadExtension(licenseId: string, tenantId: string) {
   return rows[0] || {} as LicenseExtension;
 }
 
-async function countActiveDevices(licenseId: string) {
-  const rows = await prisma.$queryRaw<Array<{ count:number }>>`
+async function countActiveDevices(licenseId: string, db:Pick<typeof prisma,'$queryRaw'>=prisma) {
+  const rows = await db.$queryRaw<Array<{ count:number }>>`
     SELECT count(*)::int AS count
     FROM public."LicenseActivation"
     WHERE "licenseId" = ${licenseId} AND "status" = 'active'
@@ -151,57 +151,81 @@ async function activateOrUpgradeDevice(params: {
   userAgent?:string|null;
   metadata?:Record<string,unknown>;
 }) {
-  const deviceHash = hashLicenseDevice(params.deviceId);
-  const rows = await prisma.$queryRaw<ActivationRow[]>`
-    SELECT "id", "deviceHash", "status", "credentialHash", "credentialExpiresAt"
-    FROM public."LicenseActivation"
-    WHERE "licenseId"=${params.licenseId} AND "deviceHash"=${deviceHash}
-    LIMIT 1
-  `;
-  const existing = rows[0];
-
-  if (existing?.credentialHash && existing.status === 'active') {
-    throw new HttpError(403, 'Este dispositivo ya fue activado. Usa su credencial segura o solicita al administrador revocar/reactivar el equipo.');
-  }
-
-  if (!existing) {
-    const count = await countActiveDevices(params.licenseId);
-    if (count >= params.maxDevices) {
-      throw new HttpError(403, `La licencia alcanzó el máximo de ${params.maxDevices} dispositivo(s).`);
+  // Serialize enrollment per license. The old count-then-INSERT path could
+  // allocate more than maxDevices under two concurrent activations.
+  return prisma.$transaction(async tx => {
+    const license = await tx.$queryRaw<Array<{ id:string }>>`
+      SELECT "id" FROM public."LicenseKey"
+      WHERE "id"=${params.licenseId} AND "tenantId"=${params.tenantId}
+      FOR UPDATE
+    `;
+    if (!license[0]) {
+      throw new HttpError(403, 'La licencia no pertenece a la empresa activa.');
     }
-  }
-
-  const credential = createDeviceCredential();
-  const credentialHash = hashDeviceCredential(credential);
-  const credentialExpiresAt = new Date(Math.min(
-    params.licenseExpiresAt.getTime(),
-    Date.now() + DEVICE_CREDENTIAL_TTL_MS
-  ));
-  const preview = `${credential.slice(0, 10)}…${credential.slice(-6)}`;
-
-  if (existing) {
-    await prisma.$executeRaw`
-      UPDATE public."LicenseActivation"
-      SET "userId"=${params.userId || null}, "deviceLabel"=COALESCE(${params.deviceLabel || null}, "deviceLabel"),
-          "status"='active', "lastSeenAt"=now(), "lastIp"=${params.ip || null}, "lastUserAgent"=${params.userAgent || null},
-          "metadata"=${JSON.stringify(params.metadata || {})}::jsonb,
-          "credentialHash"=${credentialHash}, "credentialPreview"=${preview}, "credentialVersion"=1,
-          "credentialIssuedAt"=now(), "credentialExpiresAt"=${credentialExpiresAt}, "revokedAt"=NULL
-      WHERE "id"=${existing.id}
+    const deviceHash = hashLicenseDevice(params.deviceId);
+    const rows = await tx.$queryRaw<ActivationRow[]>`
+      SELECT "id", "deviceHash", "status", "credentialHash", "credentialExpiresAt"
+      FROM public."LicenseActivation"
+      WHERE "licenseId"=${params.licenseId}
+        AND "tenantId"=${params.tenantId}
+        AND "deviceHash"=${deviceHash}
+      LIMIT 1
     `;
-  } else {
-    await prisma.$executeRaw`
-      INSERT INTO public."LicenseActivation"
-        ("id", "tenantId", "licenseId", "userId", "deviceHash", "deviceLabel", "status", "firstSeenAt", "lastSeenAt",
-         "lastIp", "lastUserAgent", "metadata", "credentialHash", "credentialPreview", "credentialVersion", "credentialIssuedAt", "credentialExpiresAt")
-      VALUES
-        (${crypto.randomUUID()}, ${params.tenantId}, ${params.licenseId}, ${params.userId || null}, ${deviceHash}, ${params.deviceLabel || null},
-         'active', now(), now(), ${params.ip || null}, ${params.userAgent || null}, ${JSON.stringify(params.metadata || {})}::jsonb,
-         ${credentialHash}, ${preview}, 1, now(), ${credentialExpiresAt})
-    `;
-  }
+    const existing = rows[0];
 
-  return { credential, credentialExpiresAt };
+    // Revocation must not turn into a silent reactivation just because a
+    // caller still knows the license key and can repeat its device ID.
+    if (existing && existing.status !== 'active') {
+      throw new HttpError(403, 'Dispositivo revocado o bloqueado. Solicita autorización para reemplazarlo.');
+    }
+    if (existing?.credentialHash) {
+      throw new HttpError(403, 'Este dispositivo ya fue activado. Usa su credencial segura o solicita al administrador revocar/reactivar el equipo.');
+    }
+
+    if (!existing) {
+      const count = await countActiveDevices(params.licenseId,tx);
+      if (count >= params.maxDevices) {
+        throw new HttpError(403, `La licencia alcanzó el máximo de ${params.maxDevices} dispositivo(s).`);
+      }
+    }
+
+    const credential = createDeviceCredential();
+    const credentialHash = hashDeviceCredential(credential);
+    const credentialExpiresAt = new Date(Math.min(
+      params.licenseExpiresAt.getTime(),
+      Date.now() + DEVICE_CREDENTIAL_TTL_MS
+    ));
+    const preview = `${credential.slice(0, 10)}…${credential.slice(-6)}`;
+
+    if (existing) {
+      // Only a legacy active activation without a credential is upgraded.
+      await tx.$executeRaw`
+        UPDATE public."LicenseActivation"
+        SET "userId"=${params.userId || null},
+            "deviceLabel"=COALESCE(${params.deviceLabel || null}, "deviceLabel"),
+            "lastSeenAt"=now(), "lastIp"=${params.ip || null},
+            "lastUserAgent"=${params.userAgent || null},
+            "metadata"=${JSON.stringify(params.metadata || {})}::jsonb,
+            "credentialHash"=${credentialHash}, "credentialPreview"=${preview},
+            "credentialVersion"=1, "credentialIssuedAt"=now(),
+            "credentialExpiresAt"=${credentialExpiresAt}
+        WHERE "id"=${existing.id} AND "status"='active' AND "credentialHash" IS NULL
+      `;
+    } else {
+      await tx.$executeRaw`
+        INSERT INTO public."LicenseActivation"
+          ("id", "tenantId", "licenseId", "userId", "deviceHash", "deviceLabel", "status", "firstSeenAt", "lastSeenAt",
+           "lastIp", "lastUserAgent", "metadata", "credentialHash", "credentialPreview", "credentialVersion", "credentialIssuedAt", "credentialExpiresAt")
+        VALUES
+          (${crypto.randomUUID()}, ${params.tenantId}, ${params.licenseId},
+           ${params.userId || null}, ${deviceHash}, ${params.deviceLabel || null},
+           'active', now(), now(), ${params.ip || null}, ${params.userAgent || null},
+           ${JSON.stringify(params.metadata || {})}::jsonb,
+           ${credentialHash}, ${preview}, 1, now(), ${credentialExpiresAt})
+      `;
+    }
+    return { credential, credentialExpiresAt };
+  });
 }
 
 export async function validateUserLicense(input: LicenseValidationInput) {
