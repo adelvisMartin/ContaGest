@@ -25,3 +25,43 @@ La ejecución completa requiere las dependencias y el servidor frontend definido
 - Medir múltiples ejecuciones comparables sobre hardware/fixtures/red documentados antes de ratificar budgets. Después comparar mismo escenario/SHA antes y después de un cambio y ejecutar regresiones funcionales, seguridad A/B, accesibilidad y offline.
 
 Estado esperado del primer incremento: `LAB_BASELINE_ONLY`, nunca PASS de producción.
+
+## Incremento 2026-11-19 · Perfil de captura y comparación repetible de laboratorio
+
+La campaña de cada ruta incluye `labEnvironment` (Node, plataforma, arquitectura, modelo y
+número lógico de CPU, versión Chromium, viewport, tema y reduced-motion). La red se marca
+`UNTHROTTLED_NOT_VERIFIED`: **no existe garantía de que dos ejecuciones hayan tenido la misma
+latencia, presión de CPU o caché**. El comparador rechaza diferencias declaradas en el perfil,
+pero el operador aún debe registrar manualmente condiciones de red, caché y carga del runner.
+
+Cada ruta informa `jsTransferBytes` y `cssTransferBytes` según PerformanceResourceTiming
+sobre recursos observados al abrir la vista. Son **bytes transferidos por navegación** (pueden
+ser cero por caché), no el peso completo de bundles en disco ni JavaScript ejecutado.
+
+### Repetir antes de comparar
+
+Se requieren entre **5 y 30 campañas completas**, cada una con las 60 rutas, ejecutadas
+sobre **el mismo HEAD** y hardware/versiones/perfil declarados equivalentes. Ejemplo
+en bash, desde un checkout aislado con `npm ci` y Chromium instalado:
+
+```bash
+export CANDIDATE_SHA="$(git rev-parse HEAD)"
+for n in 1 2 3 4 5; do
+  CG_PERF1293_RUN_ID="lab-$n" npm run perf:routes:1293
+done
+CG_PERF1293_COMPARE_RUN_IDS=lab-1,lab-2,lab-3,lab-4,lab-5 npm run perf:routes:1293:compare
+```
+
+Salida: `artifacts/performance/v1293/<sha>/lab-campaign-comparison.json`. El
+comparador calcula p50/p75/p95 por rango más cercano, media, varianza poblacional
+y desviación estándar, **solo para métricas de laboratorio con todas las muestras
+válidas**; una observación faltante deja percentiles en `null`. Rechaza SHA, run ID,
+orden/catálogo de rutas, entorno, fuente, métricas inválidas o intentos de presentar
+INP, API real, PostgreSQL o Core Web Vitals de campo como medidos.
+
+**Estado de este incremento:** código de instrumentación/comparación, **no resultados de
+campañas**. Los artefactos del PR y los del workflow deben revisarse en el SHA final;
+sin cinco campañas comparables, el tablero de percentiles queda `NOT_EXECUTED`.
+Quedan pendientes roles, usuarios reales, móvil 360/390/430, Hípico, LCP/INP/CLS
+p75 de campo, API p95, EXPLAIN PostgreSQL 17 y antes/después de optimizaciones.
+No modificar presupuestos ni optimizar servicios financieros por estas medidas.
