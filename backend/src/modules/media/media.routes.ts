@@ -140,7 +140,15 @@ function parseDataUrl(value: string) {
   const mime = match[1];
   const extension = allowedMime.get(mime);
   if (!extension) throw new HttpError(422, 'Tipo de imagen no permitido.');
-  const bytes = Buffer.from(match[2].replace(/\s/g, ''), 'base64');
+  const encoded = match[2].replace(/[\r\n]/g, '');
+  // Buffer.from(..., 'base64') silently ignores non-canonical padding and trailing data.
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}(?:==)?|[A-Za-z0-9+/]{3}=?)?$/.test(encoded)) {
+    throw new HttpError(422, 'La codificación base64 de la imagen no es válida.');
+  }
+  const bytes = Buffer.from(encoded, 'base64');
+  if (bytes.toString('base64').replace(/=+$/, '') !== encoded.replace(/=+$/, '')) {
+    throw new HttpError(422, 'La codificación base64 de la imagen no es válida.');
+  }
   if (!bytes.length || bytes.length > MAX_BYTES) throw new HttpError(413, 'La imagen debe pesar entre 1 byte y 3 MB.');
   // Reject MIME spoofing before a private object is stored or signed.
   validateClinicalMagic(bytes, mime);
