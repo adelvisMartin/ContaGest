@@ -5,12 +5,18 @@ on:
     branches: [main]
     paths:
       - 'backend/src/modules/hipico-bot/hipico-domain-query.store.ts'
+      - 'backend/src/modules/hipico-bot/hipico-domain-event.store.ts'
+      - 'backend/src/modules/hipico-bot/hipico-concurrency-integrity.test.ts'
       - 'backend/src/modules/hipico-bot/hipico-domain-query.store.test.ts'
       - 'backend/src/modules/hipico-bot/hipico-domain-query.pg17.integration.ts'
       - 'supabase/sql/hipico_v14_canonical_domain.sql'
       - 'supabase/sql/hipico_v16_operator_confirmation_audit.sql'
       - 'backend/prisma/migrations/20260911211500_hipico_domain_source_identity/**'
+      - 'backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/**'
       - 'scripts/hipico-ephemeral-db-v290.mjs'
+      - 'scripts/hipico-domain-snapshot-pg17-local.ps1'
+      - 'ops/qa/hipico-domain-snapshot-pg17.compose.yml'
+      - 'tests/hipico_domain_snapshot_workflow_contract.test.mjs'
       - '.github/workflows/hipico-domain-snapshot-pg17.yml'
   workflow_dispatch:
 
@@ -54,6 +60,8 @@ jobs:
       - name: Verify exact SHA
         shell: bash
         run: test "$(git rev-parse HEAD)" = "$HIPICO_CANDIDATE_SHA"
+      - name: Validate PostgreSQL QA wiring before installing dependencies
+        run: node --test tests/hipico_domain_snapshot_workflow_contract.test.mjs
       - name: Route Agent System v3 for changed files
         run: node scripts/agent-ticket-router.mjs gates --base origin/main --type bugfix
       - name: Set up Node 22
@@ -84,9 +92,9 @@ jobs:
           $$;
           CREATE SCHEMA IF NOT EXISTS auth;
           CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
-          LANGUAGE sql STABLE AS $
+          LANGUAGE sql STABLE AS $$
             SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
-          $;
+          $$;
           GRANT USAGE ON SCHEMA auth TO authenticated;
           SQL
       - name: Apply canonical domain migrations on isolated database only
@@ -95,7 +103,8 @@ jobs:
           for migration in \
             supabase/sql/hipico_v14_canonical_domain.sql \
             supabase/sql/hipico_v16_operator_confirmation_audit.sql \
-            backend/prisma/migrations/20260911211500_hipico_domain_source_identity/migration.sql; do
+            backend/prisma/migrations/20260911211500_hipico_domain_source_identity/migration.sql \
+            backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/migration.sql; do
             psql -h 127.0.0.1 -U postgres -d "$HIPICO_E2E_DATABASE_NAME" \
               -v ON_ERROR_STOP=1 -f "$migration"
           done
