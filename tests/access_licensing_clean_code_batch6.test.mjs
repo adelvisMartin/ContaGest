@@ -76,3 +76,29 @@ test('implementation audit traces 52 through 57 as access/licensing reviewed',()
     .map((row)=>row.id);
   assert.deepEqual(reviewed,[52,53,54,55,56,57]);
 });
+
+test('#1361 concurrent activation takes a tenant-scoped license row lock before counting seats',()=>{
+  const guard=read('backend/src/shared/licensing/licenseGuard.ts');
+  const activation=guard.slice(guard.indexOf('async function activateOrUpgradeDevice('),
+    guard.indexOf('export async function validateUserLicense('));
+  assert.match(activation,/return prisma\.\$transaction\(async tx => \{/);
+  const lock=activation.indexOf('FOR UPDATE');
+  const count=activation.indexOf('countActiveDevices(params.licenseId,tx)');
+  const insertion=activation.indexOf('INSERT INTO public."LicenseActivation"');
+  assert.ok(lock>=0 && count>lock && insertion>count,
+    'The slot count and activation INSERT must follow the same locked license transaction');
+  assert.match(activation,/AND "tenantId"=\$\{params\.tenantId\}/);
+  assert.match(activation,/existing\.status !== 'active'/);
+  assert.match(activation,/if \(upgraded !== 1\)/);
+});
+
+test('#1361 revoked credential cannot silently rebind to another user or survive a concurrent revoke',()=>{
+  const guard=read('backend/src/shared/licensing/licenseGuard.ts');
+  const validate=guard.slice(guard.indexOf('async function validateExistingCredential('),
+    guard.indexOf('async function activateOrUpgradeDevice('));
+  assert.match(validate,/activation\.userId && activation\.userId !== params\.userId/);
+  assert.match(validate,/SET "userId"=COALESCE\("userId",/);
+  assert.match(validate,/AND "status"='active'/);
+  assert.match(validate,/AND "credentialHash"=\$\{credentialHash\}/);
+  assert.match(validate,/if \(refreshed !== 1\)/);
+});
