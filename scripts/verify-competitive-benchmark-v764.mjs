@@ -29,7 +29,9 @@ export function validateCompetitiveBenchmark(input) {
     if (s.sourceLevel === 'UNRESOLVED') {
       if (s.kind !== 'UNRESOLVED' || s.sourceUrl || s.license !== 'UNVERIFIED') errors.push('unresolved identity must remain restricted: ' + s.id);
     } else if (!isHttps(s.sourceUrl)) errors.push('source lacks HTTPS provenance: ' + s.id);
-    if (s.license !== 'UNVERIFIED' && s.license !== 'UNVERIFIED_RESTRICTED' && !isHttps(s.licenseEvidenceUrl)) errors.push('licensed source lacks evidence: ' + s.id);
+    if (s.license !== 'UNVERIFIED' && s.license !== 'UNVERIFIED_RESTRICTED' &&
+        !isPublisherLicenseEvidence(s.licenseEvidenceUrl, s))
+      errors.push('licensed source lacks evidence (publisher mismatch): ' + s.id);
     if (s.sourceLevel === 'SECONDARY' && s.licenseEvidenceUrl) errors.push('secondary license evidence unreviewed: ' + s.id);
   }
   const rows = new Set();
@@ -85,6 +87,33 @@ function isHttps(url) {
   }
 }
 
+
+/**
+ * License evidence must belong to the publisher, not an arbitrary HTTPS site.
+ * Source and license sometimes have different reviewed first-party hosts.
+ * These exceptions are exact URL records, not blanket allowlists for a domain.
+ * Structural provenance is not legal advice or a live content attestation.
+ */
+const OFFICIAL_LICENSE_EXCEPTIONS = Object.freeze({
+  erpnext:'https://erpnext.com/license-trademark',
+  akaunting:'https://akaunting.com/license',
+  tryton:'https://github.com/tryton/trytond/blob/develop/COPYRIGHT',
+  'invoice-ninja':'https://invoiceninja.github.io/docs/legal/license'
+});
+
+export function isPublisherLicenseEvidence(url,source) {
+  if(!source||source.sourceLevel!=='OFFICIAL'||
+      !isHttps(url)||!isHttps(source.sourceUrl))return false;
+  const sourceUrl=new URL(source.sourceUrl),evidence=new URL(url);
+  if(sourceUrl.origin===evidence.origin){
+    if(sourceUrl.hostname!=='github.com')return true;
+    const publisher=sourceUrl.pathname.split('/').filter(Boolean).slice(0,2);
+    const actual=evidence.pathname.split('/').filter(Boolean).slice(0,2);
+    return publisher.length===2&&publisher[0].toLowerCase()===actual[0]?.toLowerCase()&&
+      publisher[1].toLowerCase()===actual[1]?.toLowerCase();
+  }
+  return OFFICIAL_LICENSE_EXCEPTIONS[source.id]===url;
+}
 
 /**
  * A working HTTPS URL is insufficient evidence of a vendor's feature.
