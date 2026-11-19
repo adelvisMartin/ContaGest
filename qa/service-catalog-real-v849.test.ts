@@ -17,7 +17,8 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   const db = await prisma.$queryRaw<Array<{ name: string; version: number }>>`
     SELECT current_database() AS name, current_setting('server_version_num')::int/10000 AS version
   `;
-  assert.match(db[0]?.name || '', /_v849$/, 'BLOCKED: database must end in _v849');
+  assert.ok(/_v849$/.test(db[0]?.name||'') || db[0]?.name==='contagest_catalog_v849_e2e',
+    'BLOCKED: only disposable catalog-specific PostgreSQL 17 QA database permitted');
   assert.equal(db[0]?.version, 17, 'BLOCKED: PostgreSQL 17 required');
 
   const h=await createRealBackendHarness();
@@ -38,6 +39,38 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   });
   assert.equal(category.tenantId,h.tenant.id);
 
+  // Category lifecycle is admin-only, audited, and preserves product/price/history.
+  const categoryPath=`/service-catalog/categories/${category.id}/status`;
+  await h.status(categoryPath,422,{
+    method:'PATCH',body:JSON.stringify({status:'archived',tenantId:randomUUID()})
+  });
+  await h.status('/service-catalog/categories/not-a-uuid/status',422,{
+    method:'PATCH',body:JSON.stringify({status:'archived'})
+  });
+  const archivedCategory=await h.ok(categoryPath,{
+    method:'PATCH',body:JSON.stringify({status:'archived'})
+  });
+  assert.equal(archivedCategory.status,'archived');
+  const repeatedArchive=await h.ok(categoryPath,{
+    method:'PATCH',body:JSON.stringify({status:'archived'})
+  });
+  assert.equal(repeatedArchive.status,'archived');
+  await h.status('/service-catalog/services',422,{
+    method:'POST',body:JSON.stringify({
+      name:'Servicio en categoría archivada',categoryId:category.id,productId:ownProduct.id,
+      modality:'onsite',durationMinutes:30
+    })
+  });
+  const reactivated=await h.ok(categoryPath,{
+    method:'PATCH',body:JSON.stringify({status:'active'})
+  });
+  assert.equal(reactivated.status,'active');
+  const categoryAudits=await h.prisma.auditLog.findMany({
+    where:{tenantId:h.tenant.id,entity:'ServiceCatalogCategory',
+      entityId:category.id,action:'service-category.status'}
+  });
+  assert.equal(categoryAudits.length,2,'Idempotent retry must not create an extra audit row');
+
   const created=await h.ok('/service-catalog/services',{
     method:'POST',body:JSON.stringify({
       name:'Consulta QA '+suffix,categoryId:category.id,productId:ownProduct.id,
@@ -46,6 +79,12 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   });
   assert.equal(created.status,'draft');
   assert.equal(created.version,1);
+  await h.status(categoryPath,409,{
+    method:'PATCH',body:JSON.stringify({status:'archived'})
+  });
+  assert.equal((await h.prisma.serviceCatalogCategory.findFirst({
+    where:{tenantId:h.tenant.id,id:category.id},select:{status:true}
+  }))?.status,'active','Category must stay active while draft service references it');
   // Unpublished fixture also makes pagination observable without disturbing
   // the normal catalog's publication and version lifecycle.
   const extraCategory=await h.ok('/service-catalog/categories',{
@@ -202,12 +241,46 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   const foreignCategory=await h.prisma.serviceCatalogCategory.create({
     data:{tenantId:otherTenant.id,slug:'foreign-'+suffix,name:'Categoría ajena'}
   });
+  await h.status(`/service-catalog/categories/${foreignCategory.id}/status`,404,{
+    method:'PATCH',body:JSON.stringify({status:'archived'})
+  });
+  assert.equal((await h.prisma.serviceCatalogCategory.findFirst({
+    where:{tenantId:otherTenant.id,id:foreignCategory.id},select:{status:true}
+  }))?.status,'active','Cross-tenant category status must remain unchanged');
   await h.status('/service-catalog/services',422,{
     method:'POST',body:JSON.stringify({
       name:'Intento categoría cruzada',categoryId:foreignCategory.id,
       modality:'onsite',durationMinutes:20
     })
   });
+
+  // Whichever side wins the row lock, a category must never be archived
+  // while a new non-archived service is successfully created.
+  const raceCategory=await h.ok('/service-catalog/categories',{
+    method:'POST',body:JSON.stringify({slug:'race-'+suffix,name:'Categoría concurrente QA'})
+  });
+  const [raceArchive,raceCreate]=await Promise.all([
+    h.request(`/service-catalog/categories/${raceCategory.id}/status`,{
+      method:'PATCH',body:JSON.stringify({status:'archived'})
+    }),
+    h.request('/service-catalog/services',{
+      method:'POST',body:JSON.stringify({
+        name:'Servicio concurrente QA '+suffix,categoryId:raceCategory.id,
+        productId:ownProduct.id,modality:'onsite',durationMinutes:20
+      })
+    })
+  ]);
+  assert.ok((raceArchive.response.status===200&&raceCreate.response.status===422)||
+    (raceArchive.response.status===409&&raceCreate.response.status===201),
+    'Concurrent archive/create must serialize: no archived category with live service');
+  const raceState=await h.prisma.serviceCatalogCategory.findFirst({
+    where:{tenantId:h.tenant.id,id:raceCategory.id},select:{status:true}
+  });
+  const raceAttached=await h.prisma.serviceDefinition.count({
+    where:{tenantId:h.tenant.id,categoryId:raceCategory.id,status:{not:'archived'}}
+  });
+  assert.ok(raceState?.status==='active'||raceAttached===0,
+    'Category archived concurrently while live service was created');
 
   const noToken=await h.request('/service-catalog/services',{},'');
   assert.equal(noToken.response.status,401);
