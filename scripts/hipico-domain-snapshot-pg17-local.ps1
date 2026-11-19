@@ -70,6 +70,8 @@ try {
   Set-QAEnv 'HIPICO_E2E_STATE_FILE' $stateFile
 
   # Compose --wait watches the service health check instead of using fixed sleeps.
+  & docker @dockerArgs config --quiet
+  Assert-Exit 'isolated Compose configuration'
   $composeStarted = $true
   & docker @dockerArgs up -d --wait --wait-timeout 120
   Assert-Exit 'isolated PG17 startup'
@@ -139,6 +141,9 @@ GRANT USAGE ON SCHEMA auth TO authenticated;
 
   & npm --workspace backend exec -- tsx --test src/modules/hipico-bot/hipico-domain-query.pg17.integration.ts
   Assert-Exit 'real PG17 snapshot, concurrency and RLS'
+  $dirtyAfter = (& git status --porcelain --untracked-files=normal)
+  Assert-Exit 'post-test candidate worktree status'
+  if ($dirtyAfter) { throw 'Generated or test files modified the candidate worktree.' }
   $testPassed = $true
 }
 finally {
