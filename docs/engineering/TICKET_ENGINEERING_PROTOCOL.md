@@ -39,6 +39,8 @@ El perfil es un **documento consultivo**, no un proceso de agente autónomo ni u
 
 ## 4. Investigación comparativa permitida y verificable
 
+La [matriz de investigación por sector](DOMAIN_COMPETITIVE_RESEARCH_GUIDE.md) compara ERP, CRM, compras, ventas, inventario, KPI, estructura de costos, punto de equilibrio, conciliaciones, hoja de trabajo, Gym, Veterinaria, Odontología, Medicina, Control Hípico e infraestructura. Cada oportunidad se documenta con fuente oficial, fecha, licencia, owner, riesgo y test; **no** se incorpora automáticamente al backlog.
+
 Preferir manuales oficiales, changelogs, demos públicas, screenshots de marketing con derechos claros, APIs documentadas, GitHub OSS con licencia y documentación de organismos normativos. Antes de cualquier crawler: verificar términos, robots.txt, método autorizado, volumen/cadencia, identidad, datos accesibles y conservación de capturas; respetar límites y desistir si el proveedor prohíbe o bloquea. No evadir logins, CAPTCHA, paywalls, bans ni extraer registros privados de usuarios/pacientes. **Que una página sea públicamente visible no concede derechos para clonar su diseño o ejecutar scraping masivo.**
 
 Matriz de ejemplo para buscar *patrones*, no copiar código: ERPNext (transacciones, stock, conciliación); wger (rutinas y nutrición); Open Dental (odontograma/planes); OpenMRS (encuentros/observaciones); OpenVPMS (veterinaria clínica); PWA/operación Hípico a partir del dominio propio y fuentes públicas autorizadas. Para cada caso documentar URL, fecha, versión, licencia, patrón observable, alternativa original, gap `EXISTS|PARTIAL|MISSING`, costo/impacto, owner y prueba. Si no se autoriza automatización, usar revisión manual de información pública.
@@ -50,6 +52,8 @@ Fuentes primarias de contraste: https://docs.frappe.io/erpnext/accounting-introd
 Las metas de LCP ≤2.5s, INP ≤200ms y CLS ≤0.1 a p75 son **referencias Web Vitals**, no un SLA garantizado; medir campo o entorno sintético indicado y registrar muestra. Consultar https://web.dev/articles/vitals . El repo exige controles táctiles de ~44px, foco accesible y ausencia de scroll horizontal global, más fuerte que las excepciones de WCAG 2.2. DB: revisar con EXPLAIN (ANALYZE, BUFFERS) solo en entorno seguro; esta sentencia ejecuta la query (no usar DML peligrosamente).
 
 Verificar fuentes: https://www.postgresql.org/docs/17/using-explain.html ; https://www.w3.org/TR/WCAG22/ ; https://playwright.dev/docs/best-practices ; https://api-security.owasp.org/editions/2023/en/0xa1-broken-object-level-authorization/ .
+
+**Iteración verificable del validador:** la suite `node --test tests/ticket_quality_gate_v1.test.mjs` ejecuta **10.000 escenarios deterministas de especificación**, incluyendo documentos malformados y casos estructuralmente correctos. Son pruebas del analizador de tickets y no ejecuciones de funcionalidades del ERP, ni 10.000 revisiones profesionales independientes. Repetir diseño → caracterización → código → pruebas → FODA → auditoría hasta satisfacer criterios y riesgos reales; no reiterar texto por una cifra arbitraria.
 
 **Verificador estructural:** `node scripts/ticket-quality-gate.mjs --file ruta/ticket.md --domains erp,compras --strict --json`. Comprueba secciones y mapeo de AC a pruebas, propone perfiles consultivos. **`SPEC_STRUCTURE_READY` NO es `PASS` de código, QA, legalidad ni benchmark**; se requiere auditoría humana de sentido de negocio y pruebas reales. No se ejecuta automáticamente sobre todos los issues históricos: se usa para specs nuevas/revisiones materiales y se evitan falsos bloqueos por títulos antiguos.
 
@@ -78,13 +82,13 @@ Estados, teclado/foco, responsive, dark/light, reduced-motion.
 ## QA y regresión
 Tests de contrato, PG17, Playwright y físicos si aplica.
 ## Rendimiento y cargas
-Baseline, p50/p95, LCP/INP/CLS y presupuesto.
+Baseline: NOT_EXECUTED hasta medición con fixture reproducible; objetivo ejemplo p95 250 ms con entorno/volumen acordado, además de LCP/INP/CLS si aplica.
 ## Seguridad y datos
 Rol, tenant, PII, idempotencia, rollback.
 ## FODA y mitigaciones
-Fortalezas: ...; Oportunidades: ...; Debilidades: ...; Amenazas: ...; NOW/FOLLOW_UP/REJECT.
+Fortalezas: contrato reutilizable; Oportunidades: menor fricción; Debilidades: riesgo INFERRED; Amenazas: carrera simultánea; Mitigación: NOW: probar concurrencia.
 ## Investigación y licencias
-Fuente: https://...; fecha, versión, licencia y restricción de scraping.
+Fuente: https://www.postgresql.org/docs/17/; Fecha: 2026-11-19; versión, licencia y restricciones de scraping.
 ## Plan de implementación
 Pasos/archivos, dependencia, retrocompatibilidad.
 ## Evidencia y cierre
