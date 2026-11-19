@@ -40,3 +40,48 @@ test('legacy-only workspace remains readable in its original first group', () =>
   assert.deepEqual(scopeItems(workspace, [{ id: 'older' }, { id: 'newer', groupId: 'new' }], 'new').map(row => row.id), ['newer']);
   assert.deepEqual(scopeItems(workspace, null, 'new'), []);
 });
+
+
+test('1000 varied multigroup workspaces enforce canonical legacy scope without mutation', () => {
+  for (let i=0;i<1000;i++) {
+    const groupCount = 2 + (i % 7);
+    const groups = Array.from({length:groupCount},(_,j)=>({id:'g-'+i+'-'+j}));
+    const selectedIndex=(i*7+Math.floor(i/7))%groupCount;
+    const selectedId=groups[selectedIndex].id;
+    const config=i%3===0?{whatsappGroups:groups,activeWhatsappGroupId:selectedId}:i%3===1?{groups,activeGroupId:selectedId}:{groups,activeWhatsappGroupId:selectedId};
+    const workspace={config};
+    const rows=[{id:'legacy-'+i},{id:'null-'+i,groupId:null},{id:'blank-'+i,groupId:''},...groups.map((g,j)=>({id:'owned-'+i+'-'+j,groupId:g.id})),{id:'orphan-'+i,groupId:'not-known-'+i}];
+    const old=structuredClone(rows);
+    const byGroup=groups.map(g=>scopeItems(workspace,rows,g.id));
+    for(let j=0;j<groupCount;j++){
+      const ids=byGroup[j].map(x=>x.id);
+      assert.ok(ids.includes('owned-'+i+'-'+j));
+      assert.equal(ids.includes('orphan-'+i),false);
+      for(let k=0;k<groupCount;k++)if(k!==j)assert.equal(ids.includes('owned-'+i+'-'+k),false);
+      for(const prefix of ['legacy','null','blank'])assert.equal(ids.includes(prefix+'-'+i),j===0);
+    }
+    assert.deepEqual(scopeItems(workspace,rows).map(x=>x.id),byGroup[selectedIndex].map(x=>x.id));
+    assert.deepEqual(rows,old);
+  }
+});
+
+test('history mobile and desktop reuse one scoped participant index per render', () => {
+  const start = app.indexOf('function renderHistory()');
+  const end = app.indexOf('function renderReports()');
+  assert.ok(start >= 0 && end > start, 'live history function must exist');
+  const history = app.slice(start, end);
+  assert.match(history, /const participantsById = pMap\(\)/);
+  assert.equal((history.match(/pMap\(\)/g)||[]).length,1);
+  assert.equal((history.match(/pCode\(r\.participantId, participantsById\)/g)||[]).length,2);
+  assert.match(app, /function pCode\(id, participantsById = pMap\(\)\) \{ return participantsById\.get\(id\)\?\.code \|\| ""; \}/);
+});
+
+test('fresh participant index after group switch prevents same-ID label leakage',()=>{
+  const ws={config:{groups:[{id:'g-a'},{id:'g-b'}],activeGroupId:'g-a'},participants:[{id:'same',groupId:'g-a',code:'A'},{id:'same',groupId:'g-b',code:'B'},{id:'legacy',code:'OLD'}]};
+  const index=()=>new Map(scopeItems(ws,ws.participants).map(p=>[p.id,p]));
+  assert.equal(index().get('same')?.code,'A');
+  assert.equal(index().get('legacy')?.code,'OLD');
+  ws.config.activeGroupId='g-b';
+  assert.equal(index().get('same')?.code,'B');
+  assert.equal(index().has('legacy'),false);
+});
