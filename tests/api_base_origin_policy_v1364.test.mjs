@@ -58,3 +58,21 @@ test('untrusted entry cannot self-authorize using an http configured origin', ()
     currentOrigin:'https://contagest.example', configuredOrigins:['http://evil.test'], fallback:'/api/v1'
   }), '/api/v1');
 });
+
+test('1000 deterministic hostile API base combinations stay outside the trust boundary', () => {
+  const hosts = [
+    'evil.test', 'api.contagest.example.evil.test', 'contagest.example.evil.test',
+    'localhost', '127.0.0.1', 'api.contagest.example.test', 'another-tenant.test',
+    '10.0.0.10', 'xn--paypa-4ve.test', 'api.contagest.example.attacker.test'
+  ];
+  const schemes = ['http:', 'https:', 'ftp:', 'ws:', 'file:'];
+  const paths = ['/api/v1', '/api/v1/../admin', '/api/v1?key=1', '/api/v1#frag', '/not-api'];
+  const suffixes = ['', '?token=x', '#redirect', '/../../api/v1'];
+  let checked = 0;
+  for (const host of hosts) for (const scheme of schemes) for (const path of paths) for (const suffix of suffixes) {
+    const input = scheme + '//' + host + path + suffix;
+    assert.equal(resolveApprovedApiBase(input, prod), prod.fallback, input);
+    checked += 1;
+  }
+  assert.equal(checked, 1000);
+});
