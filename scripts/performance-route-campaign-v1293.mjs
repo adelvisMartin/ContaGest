@@ -10,7 +10,7 @@ const PROFILE = 'desktop-1440';
 const METRICS = ['routeReadyMs', 'lcpMs', 'cls', 'resourceCount', 'transferBytes',
   'jsTransferBytes', 'cssTransferBytes', 'mockedApiRequests'];
 const OPTIONAL = new Set(['lcpMs', 'cls']);
-const METRIC_KEYS = Object.freeze([...METRICS, 'inpMs']);
+export const LAB_METRIC_KEYS = Object.freeze([...METRICS, 'inpMs']);
 const INTEGER_METRICS = new Set(['resourceCount', 'transferBytes', 'jsTransferBytes',
   'cssTransferBytes', 'mockedApiRequests']);
 const ENVIRONMENT_KEYS = Object.freeze(['nodeVersion', 'osPlatform', 'osArch', 'cpuModel',
@@ -85,8 +85,8 @@ export function summarizeLabCampaigns({ candidateSha, catalog, campaigns }) {
           row.fieldLcpP75Ms !== null || row.fieldInpP75Ms !== null || row.fieldClsP75 !== null ||
           row.realApiP95Ms !== null || row.realDbP95Ms !== null || !row.lab) reject('ROUTE_AUTHORITY_INVALID');
       if (typeof row.lab !== 'object' || Array.isArray(row.lab) ||
-          Object.keys(row.lab).length !== METRIC_KEYS.length ||
-          METRIC_KEYS.some(key => !Object.hasOwn(row.lab, key))) reject('METRIC_PROVENANCE_INVALID');
+          Object.keys(row.lab).length !== LAB_METRIC_KEYS.length ||
+          LAB_METRIC_KEYS.some(key => !Object.hasOwn(row.lab, key))) reject('METRIC_PROVENANCE_INVALID');
       for (const key of METRICS) {
         const value = row.lab[key];
         if (!(OPTIONAL.has(key) && value === null) &&
