@@ -94,3 +94,15 @@ test('#1313 clinical PDF and generic WebP reject high-bit signature aliases', ()
     error => error.status === 422 && /firma binaria/.test(error.message)
   );
 });
+
+
+test('#1313 generic upload rejects non-canonical and truncated base64 without altering valid media', () => {
+  const png = cases.find(item => item.mime === 'image/png');
+  const encoded = png.bytes.toString('base64');
+  // Node Buffer.from quietly truncates text after padding and ignores excess padding.
+  for (const bad of [encoded + 'AAAA', encoded + '===', encoded.slice(0, -1) + '==', 'a' + encoded]) {
+    assert.throws(() => parseDataUrl('data:image/png;base64,' + bad), error => error.status === 422, bad);
+  }
+  assert.deepEqual(parseDataUrl('data:image/png;base64,' + encoded.slice(0, -1)).bytes, png.bytes, 'unpadded base64 remains compatible');
+  assert.deepEqual(parseDataUrl('data:image/png;base64,' + encoded.slice(0, 4) + '\r\n' + encoded.slice(4)).bytes, png.bytes, 'base64 line breaks remain compatible');
+});
