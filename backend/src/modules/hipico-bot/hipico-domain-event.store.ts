@@ -332,13 +332,14 @@ export async function persistHipicoDomainEvent(input:PersistInput){
       INSERT INTO public.hipico_domain_events(
         id,owner_id,group_key,aggregate_kind,aggregate_key,source_message_id,source_message_key,event_type,
         disposition,previous_state,next_state,reason,original_event_id,raw_message,normalized_payload,
-        actor_ref,source,parser_version,schema_version,event_timestamp,operator_confirmed,confirmation_reason
+        actor_ref,source,parser_version,schema_version,event_timestamp,operator_confirmed,confirmation_reason,created_at
       ) VALUES (
         ${eventId},${ownerId}::uuid,${groupKey},${input.aggregateKind},${aggregateKey},${input.event.sourceMessageId||null},
         ${sourceMessageKey},${input.event.type},${reduction.disposition},${reduction.previousState},${reduction.nextState},
         ${reduction.reason},${input.event.originalEventId||null},${input.event.rawMessage||null},${normalized}::jsonb,
         ${input.event.actorRef||null},${input.event.source||'system'},${input.event.parserVersion||null},
-        ${Number(input.event.schemaVersion||1)},${timestamp},${confirmation.operatorConfirmed},${confirmation.confirmationReason}
+        ${Number(input.event.schemaVersion||1)},${timestamp},${confirmation.operatorConfirmed},${confirmation.confirmationReason},
+        clock_timestamp()
       )
     `;
 
