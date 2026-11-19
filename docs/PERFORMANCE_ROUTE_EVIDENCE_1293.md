@@ -227,3 +227,37 @@ el backend/PG17 cumplen p95 o que Control Hípico es funcional en
 offline/móvil. `LOCAL_BROWSER_E2E=NOT_EXECUTED`,
 `LOCAL_POSTGRES=NOT_EXECUTED`, `LOCAL_BUILD=NOT_EXECUTED`,
 `REMOTE_CI=BLOCKED` mientras existan checks en cola.
+
+
+## Sexta revisión QA: disparadores reales del laboratorio · 2026-11-19
+
+**Defecto CI reproducido (RED):** el workflow
+`.github/workflows/performance-route-v1293.yml` solo reaccionaba a cambios
+en la instrumentación y los tests. Si cambiaban las autoridades del
+inventario (`module-visual-catalog.mjs`, `pageRegistry.js`), los fixtures
+(`erp-system-fixtures-v155.mjs`), el readiness helper o
+`playwright.config.mjs`, un PR podía modificar los insumos del laboratorio
+sin activar su gate especializado.
+
+**Corrección mínima:** incluir esas cinco rutas exactas en
+`on.pull_request.paths`. Se mantiene `workflow_dispatch` y la captura de
+HEAD exacto, Node 22, Chromium y artefactos; no se añaden sleeps, skips,
+retries ni se rebajan timeouts. El gate **no se extiende automáticamente a
+cualquier página, estilo, API o cambio de Control Hípico**: esos flujos
+requieren sus matrices y un plan de rendimiento específico. Esta ampliación
+intencionalmente acotada evita crear un gate universal redundante.
+
+**Nueva regresión:** `tests/performance_route_workflow_v1293.test.mjs`
+verifica los cinco disparadores y que persistan checkout por SHA y el
+comando de Chromium. Antes del cambio: **1 PASS / 1 FAIL**; después:
+**2 PASS / 0 FAIL** en Node 22.16.0. `node --check` del test PASS;
+PyYAML 6.0.3 pudo analizar el workflow. Los hashes Git de **ambos archivos
+probados** coinciden con los blobs publicados en la rama. El script
+`npm run test:perf:routes:1293` incluye la regresión.
+
+**Limitación de la evidencia:** esta verificación local usa únicamente el
+workflow y el archivo nuevo de test. No demuestra `npm ci`, el conjunto
+completo de unit tests del HEAD, lint, typecheck, build, navegador Chromium,
+60 recorridos, cinco campañas, field Web Vitals, latencias reales API o
+PostgreSQL 17. Esos gates conservan `NOT_EXECUTED` local hasta ejecutarse;
+CI solo será PASS al completarse para el SHA final.
