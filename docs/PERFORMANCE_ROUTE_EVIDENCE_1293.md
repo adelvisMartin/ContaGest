@@ -111,8 +111,13 @@ El test Chromium de las 60 rutas comprueba el `baseURL` que Playwright
 realmente utiliza y solo permite peticiones HTTP(S) al mismo **origen
 loopback**, incluido el puerto. Todos los `/api/**` se satisfacen con
 fixtures sintéticos; los demás recursos de ese origen proceden del servidor
-de pruebas. Peticiones a terceros, otras interfaces/puertos, URL con
-credenciales o protocolos ajenos se bloquean y hacen fallar la captura.
+de pruebas. Las peticiones **directas** a terceros, otras interfaces/puertos,
+URL con credenciales o protocolos ajenos se bloquean en el interceptor. Las
+**redirecciones HTTP** pueden escapar al interceptor `page.route()` de Playwright:
+se registran también eventos `request` y cabeceras `Location` para invalidar
+cualquier captura que detecte destinos externos. Esta comprobación a posteriori
+**no es una barrera de salida de red**; un redirect podría iniciar la solicitud
+antes de detectarse. Usar red/runner aislado cuando se necesite contención fuerte.
 Se deshabilitan los Service Workers **solo en este test de medición**
 para que no eludan la interceptación. Este control no cubre tráfico WebSocket
 ni prueba que la PWA funcione offline; ambos requieren su suite independiente.
@@ -124,3 +129,40 @@ no sustituye el gate de navegador: solo se han ejecutado los tests unitarios
 en el entorno aislado. Si la app requiere un recurso externo para renderizar,
 la campaña **debe fallar y diagnosticarse**; no se deben añadir allowlists
 de terceros arbitrarias para maquillar los resultados.
+
+## Tercera revisión QA: identidad canónica, esquema cerrado y redirecciones
+
+**Causa raíz reproducida:** el agregador de una ejecución comparaba el
+JSON del runner por orden de propiedades mientras el comparador multi-run ya
+usaba fingerprint canónico; también copiaba directamente todos los campos
+`metrics` a `summary.json`, incluidos metadatos no revisados.
+
+**Corrección:** `labEnvironmentFingerprint()` compartido entre ambas
+herramientas; exactamente nueve campos de `metrics` permitidos, sin
+`sessionToken`, `rawUrl` u otras propiedades inesperadas. Se conserva el
+primer entorno validado en el informe, y las condiciones realmente distintas
+siguen fallando.
+
+**RED → GREEN:** cuatro regresiones nuevas reprodujeron tres defectos:
+fingerprint nuevo inexistente (1), propiedades JSON equivalentes rechazadas y
+métricas con campos extra aceptadas (2), y redirecciones sin validador (1).
+Suite local aislada, Node 22.16.0: **21/21 tests PASS** tras corregir. Una
+regresión reproducible aplica **1.000 permutaciones deterministas de los
+campos del runner y 1.000 inyecciones de claves**; son casos sintéticos,
+**no 1.000 iteraciones manuales, rutas reales, refactors o pruebas E2E**.
+Se comprobó `git hash-object` de cada archivo JS ejecutado contra su blob
+publicado en GitHub. La instalación completa, navegador real, API, PostgreSQL,
+OS firewall, métricas field y ramas/rutas productivas siguen sin ejecutarse.
+
+**Fuente externa examinada (documentación oficial):**
+https://playwright.dev/docs/network y https://playwright.dev/docs/api/class-page .
+`page.route()` no necesariamente reintercepta un salto de redirección;
+el control actual detecta el intento y falla, pero no promete prevenir todos
+los paquetes salientes. Limitar cualquier ejecución a fixtures sintéticos
+aislados; no introducir credenciales de producción ni dependencias externas
+para superar el gate.
+
+**Estado:** `LOCAL_UNIT=PASS` para estos contratos, `LOCAL_BROWSER_E2E=NOT_EXECUTED`,
+`LOCAL_POSTGRES=NOT_EXECUTED`, `REMOTE_CI=BLOCKED` mientras estén en cola
+los checks del HEAD exacto. El epic #1293 continúa OPEN/PARTIAL, sin afirmar
+que el producto se haya acelerado ni ratificar presupuestos de rendimiento.
