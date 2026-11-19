@@ -104,7 +104,7 @@ test('#707 license proof stays on publisher repository or explicitly reviewed of
     assert.deepEqual(validateCompetitiveBenchmark(c),[],sourceId);
     s.licenseEvidenceUrl='https://unrelated.example.org/legitimate-looking-license';
     assert.match(validateCompetitiveBenchmark(c).join(';'),
-      new RegExp('licensed source lacks evidence \(publisher mismatch\): '+sourceId));
+      new RegExp('licensed source lacks evidence \\(publisher mismatch\\): '+sourceId));
   }
 });
 test('#707 GitHub license URL cannot impersonate another owner or repository',()=>{
