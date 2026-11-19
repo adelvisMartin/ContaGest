@@ -157,12 +157,14 @@ test('#1313 app accepts 3 MiB image uploads without raising global JSON limit', 
   assert.match(source, /dataUrl:\s*z\.string\(\)\.min\(30\)\.max\(5_000_000\)/);
   assert.match(env, /JSON_BODY_LIMIT:\s*z\.string\(\)\.default\('1mb'\)/);
 
-  const scopedParserAt = app.indexOf("app.post('/api/v1/media/upload', express.json({ limit: '5mb' }));");
+  const scopedParserAt = app.indexOf("app.post('/api/v1/media/upload', csrfProtection, express.json({ limit: '5mb' }));");
   const globalParserAt = app.indexOf('app.use(express.json({');
   assert.ok(scopedParserAt >= 0, 'Only /api/v1/media/upload should accept a 5 MiB JSON body');
   assert.ok(globalParserAt > scopedParserAt, 'Route-specific parser must precede global parser');
   assert.ok(app.indexOf('app.use(globalRateLimit)') < scopedParserAt, 'Global rate limit must still run first');
   assert.ok(app.indexOf('app.use(enforceProductionSecrets)') < scopedParserAt, 'Production secrets gate must still run first');
+  assert.ok(app.indexOf('app.use(csrfProtection)') > scopedParserAt, 'Global CSRF gate remains intact');
+  assert.match(app, /app\.post\('\/api\/v1\/media\/upload', csrfProtection, express\.json\(\{ limit: '5mb' \}\)\)/, 'Cookie CSRF must execute before 5 MiB parsing');
 });
 
 
