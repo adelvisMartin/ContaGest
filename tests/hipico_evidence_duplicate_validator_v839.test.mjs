@@ -33,7 +33,7 @@ function authArtifact(complete) {
   };
 }
 
-function verify(root) {
+function verify(root, id = 'authRecovery', section = 'optional') {
   const result = spawnSync(process.execPath, [verifier], {
     cwd: root,
     env: {
@@ -51,7 +51,7 @@ function verify(root) {
     join(root, 'artifacts/qa/hipico-v290/evidence-verification.json'), 'utf8'));
   assert.equal(report.sha, SHA);
   assert.notEqual(report.status, 'PASS');
-  return report.optional.find((item) => item.id === 'authRecovery');
+  return report[section].find((item) => item.id === id);
 }
 
 test('#839 a malformed PASS sibling cannot be hidden by a valid PASS artifact', (t) => {
@@ -69,4 +69,44 @@ test('#839 a malformed PASS sibling cannot be hidden by a valid PASS artifact', 
 
   writeFileSync(second, JSON.stringify(authArtifact(true)));
   assert.equal(verify(root).status, 'PASS');
+});
+
+test('#839 corrupt JSON sibling blocks a valid PASS instead of disappearing', (t) => {
+  const root = fixture(t);
+  const first = join(root, 'artifacts/qa/first/auth-recovery-evidence.json');
+  const second = join(root, 'artifacts/qa/second/auth-recovery-evidence.json');
+  writeFileSync(first, JSON.stringify(authArtifact(true)));
+  writeFileSync(second, '{"schema":"hipico-auth-recovery-e2e.v28","status":"PASS"');
+
+  assert.deepEqual(
+    (({ status, reason }) => ({ status, reason }))(verify(root)),
+    { status: 'FAIL', reason: 'EVIDENCE_JSON_INVALID' }
+  );
+
+  writeFileSync(second, JSON.stringify(authArtifact(true)));
+  assert.equal(verify(root).status, 'PASS');
+});
+
+test('#839 PostgreSQL gate rejects old PG16 evidence on a PG17 release', (t) => {
+  const root = fixture(t);
+  const proofPath = join(root, 'artifacts/qa/first/postgres-gate.json');
+  const artifact = (database) => ({
+    schema: 'hipico-postgres-gate.v290-current',
+    sha: SHA,
+    status: 'PASS',
+    database,
+    migrations: 'v12-v27',
+    testChannelReplay: 'PASS',
+    agentPolicyMetrics: 'PASS',
+    restartRecovery: 'PASS',
+    loadProfile: 'PASS'
+  });
+  writeFileSync(proofPath, JSON.stringify(artifact('isolated-ephemeral-postgresql-16')));
+  assert.deepEqual(
+    (({ status, reason }) => ({ status, reason }))(verify(root, 'postgresGate', 'required')),
+    { status: 'FAIL', reason: 'EVIDENCE_CONTRACT_MISMATCH' }
+  );
+
+  writeFileSync(proofPath, JSON.stringify(artifact('isolated-ephemeral-postgresql-17')));
+  assert.equal(verify(root, 'postgresGate', 'required').status, 'PASS');
 });
