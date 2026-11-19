@@ -85,6 +85,20 @@ test('CSV export neutralizes spreadsheet formula injection and quotes values',()
   const csv=commercialCsv([{customerName:'=2+2',amount:10}],[{key:'customerName',label:'Cliente'},{key:'amount',label:'Importe'}]);
   assert.ok(csv.startsWith('\uFEFF"Cliente","Importe"'));
   assert.ok(csv.includes('"\'=2+2"'));
+  // Invisible Unicode prefixes must not turn spreadsheet cells into formulas.
+  for(const value of [
+    '\u200b=HYPERLINK("https://invalid.example")',
+    '\u2060@SUM(A1)',
+    '\u034f+SUM(2)',
+    '\ufeff  -CMD',
+    '\u180e=1+1'
+  ]){
+    assert.equal(sanitizeSpreadsheetCell(value),`'${value}`);
+    const guarded=commercialCsv([{customerName:value}],[{key:'customerName',label:'Cliente'}]);
+    assert.ok(guarded.includes(`"'${value.replaceAll('"','""')}"`),JSON.stringify(value));
+  }
+  assert.equal(sanitizeSpreadsheetCell('  Cliente CA'),'  Cliente CA');
+  assert.equal(sanitizeSpreadsheetCell('-125.50'),"'-125.50");
 });
 
 test('PDF export produces a self-contained PDF document without external libraries',()=>{
@@ -94,4 +108,29 @@ test('PDF export produces a self-contained PDF document without external librari
   assert.match(text,/xref\n0 \d+/);
   assert.match(text,/\/Type \/Page/);
   assert.match(text,/startxref\n\d+\n%%EOF/);
+});
+
+test('commercial and general CSV exports share cell and header protection', async () => {
+  const { encodeCsvCell } = await import('../frontend/src/services/csv.js');
+  for (const value of [
+    '=1+1','+SUM(A1)','-2+3','@SUM(A1)',
+    '\u200b=HYPERLINK("https://invalid.example")','\u2060@SUM(A1)',
+    '\u00ad=HYPERLINK("https://invalid.example")','\ufeff-42',
+    'Cliente C.A.','  Comercial',' 0.00','-125.50'
+  ]) {
+    assert.equal(commercialCsv([{value}], [{key:'value',label:'Valor'}]).split('\r\n')[1],
+      encodeCsvCell(value), JSON.stringify(value));
+    assert.equal(commercialCsv([], [{key:'value',label:value}]),
+      '\uFEFF'+encodeCsvCell(value), JSON.stringify(value));
+  }
+  assert.equal(commercialCsv([{value:'"quoted",\nline'}],[{key:'value',label:'Valor'}]),
+    '\uFEFF"Valor"\r\n"""quoted"",\nline"');
+  assert.equal(commercialCsv([{value:42}],[{key:'value',label:'Número'}]),
+    '\uFEFF"Número"\r\n"42"');
+  assert.equal(commercialCsv([{amount:-125.5}],[{key:'amount',label:'Saldo'}]),
+    '\uFEFF"Saldo"\r\n"-125.5"');
+  assert.equal(commercialCsv([{amount:'-125.5'}],[{key:'amount',label:'Saldo'}]),
+    '\uFEFF"Saldo"\r\n"\'-125.5"');
+  assert.equal(commercialCsv([{amount:-125n}],[{key:'amount',label:'Saldo'}]),
+    '\uFEFF"Saldo"\r\n"-125"');
 });

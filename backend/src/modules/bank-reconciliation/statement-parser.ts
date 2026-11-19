@@ -4,7 +4,7 @@ import { parseStatementCsvRows, StatementCsvStructureError } from './statement-c
 import { resolveStatementCsvHeaders, StatementCsvHeadersError } from './statement-csv-headers.js';
 import { money, serializeDecimal } from '../../shared/financial/decimal.js';
 
-export const BANK_STATEMENT_PARSER_VERSION = 'contagest-bank-statement/1.2.0';
+export const BANK_STATEMENT_PARSER_VERSION = 'contagest-bank-statement/1.3.0';
 export const MAX_STATEMENT_BYTES = 5 * 1024 * 1024;
 export type StatementFormat = 'csv' | 'ofx' | 'qfx' | 'camt';
 export type NormalizedStatementLine = {
@@ -31,9 +31,12 @@ export type ParsedStatement = {
 const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const clean = (value: unknown, max = 1000) => String(value ?? '').replace(/\u0000/g, '').trim().slice(0, max);
 const isSafeNegativeNumber = (value:string) => /^-\d+(?:[.,]\d+)?$/.test(value);
+// Untrusted statement fields may be copied to spreadsheets or audit views.
+// Invisible Unicode prefixes must not conceal an executable formula marker.
+const SPREADSHEET_FORMULA_PREFIX = /^[\u0000-\u0020\u007f-\u009f\u00a0\u00ad\u034f\u061c\u115f\u1160\u1680\u180e\u2000-\u200f\u2028-\u202e\u202f\u205f\u2060-\u2069\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0]*[=+\-@]/u;
 const safeText = (value: unknown, field: string, max = 1000) => {
   const text = clean(value, max);
-  if (/^[=+@\t\r]/.test(text) || (text.startsWith('-') && !isSafeNegativeNumber(text))) {
+  if (SPREADSHEET_FORMULA_PREFIX.test(text) && !isSafeNegativeNumber(text)) {
     throw new HttpError(422, `Celda potencialmente ejecutable en ${field}.`, { code: 'BANK_STATEMENT_FORMULA_CELL', field });
   }
   return text || null;
@@ -45,9 +48,22 @@ const amount = (value: unknown) => {
 };
 const date = (value: unknown, field = 'date') => {
   const raw = clean(value, 80);
-  let parsed: Date;
-  if (/^\d{8}/.test(raw)) parsed = new Date(`${raw.slice(0,4)}-${raw.slice(4,6)}-${raw.slice(6,8)}T00:00:00.000Z`);
-  else parsed = new Date(raw);
+  // JavaScript Date silently normalizes impossible days (e.g. 2026-02-30).
+  // Validate the calendar portion before parsing. Keep OFX compact dates and
+  // existing timestamp/timezone behavior for valid statements.
+  const compact = /^(\d{4})(\d{2})(\d{2})/.exec(raw);
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/.exec(raw);
+  const components = compact || iso;
+  if (components) {
+    const [year, month, day] = components.slice(1).map(Number);
+    const reference = new Date(Date.UTC(year, month - 1, day));
+    if (reference.getUTCFullYear() !== year || reference.getUTCMonth() + 1 !== month || reference.getUTCDate() !== day) {
+      throw new HttpError(422, `Fecha inválida en ${field}.`, { code: 'BANK_STATEMENT_DATE_INVALID', value: raw });
+    }
+  }
+  const parsed = compact
+    ? new Date(`${raw.slice(0,4)}-${raw.slice(4,6)}-${raw.slice(6,8)}T00:00:00.000Z`)
+    : new Date(raw);
   if (Number.isNaN(parsed.getTime())) throw new HttpError(422, `Fecha inválida en ${field}.`, { code: 'BANK_STATEMENT_DATE_INVALID', value: raw });
   return parsed;
 };
@@ -72,6 +88,9 @@ function parseCsv(text: string, defaultCurrency: string): ParsedStatement {
   try { rows = parseStatementCsvRows(text); }
   catch (error) {
     if (error instanceof StatementCsvStructureError) {
+      if (error.code === 'BANK_STATEMENT_CSV_LIMIT_EXCEEDED') {
+        throw new HttpError(413, 'El CSV excede los límites seguros de filas, columnas o campos.', {code:error.code});
+      }
       throw new HttpError(422, 'CSV malformado: comillas o estructura incorrectas.', {code:'BANK_STATEMENT_CSV_MALFORMED'});
     }
     throw error;

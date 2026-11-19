@@ -97,12 +97,12 @@ jobs:
         if: always()
         run: |
           mkdir -p artifacts/qa
-          printf 'ticket=#237\nsha=%s\nworkflow=%s\nrun_id=%s\n' "$GITHUB_SHA" "$GITHUB_WORKFLOW" "$GITHUB_RUN_ID" > artifacts/qa/bank-reconciliation-v237-sha.txt
+          printf 'ticket=#237\nsha=%s\nworkflow=%s\nrun_id=%s\n' "$CANDIDATE_SHA" "$GITHUB_WORKFLOW" "$GITHUB_RUN_ID" > artifacts/qa/bank-reconciliation-v237-sha.txt
       - name: Upload v237 evidence
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: bank-reconciliation-v237-${{ github.sha }}
+          name: bank-reconciliation-v237-${{ env.CANDIDATE_SHA }}
           path: |
             artifacts/qa/bank-reconciliation-v237-sha.txt
             playwright-report

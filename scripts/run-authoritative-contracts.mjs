@@ -53,6 +53,7 @@ const required59=[
   'tests/crud_factory_hardening_issue_638.test.mjs',
   'tests/qa_disposable_database_guard_v1288.test.mjs',
   'tests/frontend_csv_formula_guard_v1313.test.mjs',
+  'tests/product_csv_import_preview_v770.test.mjs',
   'tests/qa_audit_rollback_trigger_contract_v1289_1313.test.mjs',
   'tests/hipico_private_storage_purge_v1292.test.mjs',
   'tests/hipico_cross_tab_revocation_v1292.test.mjs',

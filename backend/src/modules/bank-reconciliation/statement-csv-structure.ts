@@ -1,8 +1,18 @@
-/** RFC4180-compatible CSV row framing for untrusted bank extracts.
+/** RFC4180-compatible CSV framing for untrusted bank extracts.
  * This is STRUCTURE only: finance amounts/dates are parsed by statement-parser.
+ * Limits prevent a small CSV made of delimiters from allocating millions of cells.
  */
+export const MAX_STATEMENT_CSV_COLUMNS = 128;
+export const MAX_STATEMENT_CSV_ROWS = 100_000;
+export const MAX_STATEMENT_CSV_FIELDS = 1_000_000;
+export const MAX_STATEMENT_CSV_FIELD_CHARS = 16_384;
+
 export class StatementCsvStructureError extends Error {
-  constructor() { super('BANK_STATEMENT_CSV_MALFORMED'); }
+  readonly code: 'BANK_STATEMENT_CSV_MALFORMED' | 'BANK_STATEMENT_CSV_LIMIT_EXCEEDED';
+  constructor(code: 'BANK_STATEMENT_CSV_MALFORMED' | 'BANK_STATEMENT_CSV_LIMIT_EXCEEDED' = 'BANK_STATEMENT_CSV_MALFORMED') {
+    super(code);
+    this.code = code;
+  }
 }
 
 export function parseStatementCsvRows(text: string): string[][] {
@@ -10,16 +20,35 @@ export function parseStatementCsvRows(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = '';
+  let fields = 0;
   let state: 'start' | 'plain' | 'quoted' | 'after-quote' = 'start';
-  const field = () => { row.push(cell); cell = ''; state = 'start'; };
-  const line = () => { field(); if (row.some(v => v.trim().length > 0)) rows.push(row); row = []; };
+  const append = (char: string) => {
+    cell += char;
+    if (cell.length > MAX_STATEMENT_CSV_FIELD_CHARS) throw new StatementCsvStructureError('BANK_STATEMENT_CSV_LIMIT_EXCEEDED');
+  };
+  const field = () => {
+    row.push(cell);
+    if (row.length > MAX_STATEMENT_CSV_COLUMNS || ++fields > MAX_STATEMENT_CSV_FIELDS) {
+      throw new StatementCsvStructureError('BANK_STATEMENT_CSV_LIMIT_EXCEEDED');
+    }
+    cell = '';
+    state = 'start';
+  };
+  const line = () => {
+    field();
+    if (row.some(value => value.trim().length > 0)) {
+      rows.push(row);
+      if (rows.length > MAX_STATEMENT_CSV_ROWS) throw new StatementCsvStructureError('BANK_STATEMENT_CSV_LIMIT_EXCEEDED');
+    }
+    row = [];
+  };
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (state === 'quoted') {
       if (ch === '"') {
-        if (text[i + 1] === '"') { cell += '"'; i++; }
+        if (text[i + 1] === '"') { append('"'); i++; }
         else state = 'after-quote';
-      } else cell += ch;
+      } else append(ch);
       continue;
     }
     if (ch === '"') {
@@ -37,7 +66,7 @@ export function parseStatementCsvRows(text: string): string[][] {
       line(); continue;
     }
     if (state === 'after-quote') throw new StatementCsvStructureError();
-    cell += ch;
+    append(ch);
     state = 'plain';
   }
   if (state === 'quoted') throw new StatementCsvStructureError();
