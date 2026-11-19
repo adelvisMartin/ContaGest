@@ -26,7 +26,19 @@ export function parseDelimitedImport(text, delimiter = ',') {
     }
     row = [];
   };
-  for (let i = 0; i < source.length; i++) {
+  const special = delimiter === ',' ? /[",\r\n]/g : /["\t\r\n]/g;
+  for (let i = 0; i < source.length;) {
+    special.lastIndex = i;
+    const match = special.exec(source);
+    const stop = match ? match.index : source.length;
+    if (stop > i) {
+      if (afterQuote) throw new TypeError('IMPORT_DELIMITED_MALFORMED_QUOTES');
+      cell += source.slice(i, stop);
+      atStart = false;
+      if (cell.length > MAX_CELL_LENGTH) throw new TypeError('IMPORT_DELIMITED_CELL_TOO_LONG');
+      i = stop;
+      if (i >= source.length) break;
+    }
     const ch = source[i];
     if (inQuotes) {
       if (ch === '"') {
@@ -42,12 +54,9 @@ export function parseDelimitedImport(text, delimiter = ',') {
     } else if (ch === '\n' || ch === '\r') {
       if (ch === '\r' && source[i + 1] === '\n') i++;
       flushRow();
-    } else {
-      if (afterQuote) throw new TypeError('IMPORT_DELIMITED_MALFORMED_QUOTES');
-      cell += ch;
-      atStart = false;
     }
     if (cell.length > MAX_CELL_LENGTH) throw new TypeError('IMPORT_DELIMITED_CELL_TOO_LONG');
+    i++;
   }
   if (inQuotes) throw new TypeError('IMPORT_DELIMITED_MALFORMED_QUOTES');
   if (cell.length || row.length || afterQuote) flushRow();
