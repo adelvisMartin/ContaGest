@@ -189,3 +189,62 @@ test('1000 synthetic movements do not rebuild index for each rendered row', () =
   assert.equal((html.match(/class="audit-row"/g) || []).length, 1000);
   assert.ok(html.includes('B-999') && html.includes('B-0'));
 });
+
+
+test('cancellation policy rejects settled, cancelled, missing and closed-race bets', () => {
+  const source = app.split('\n').find(line => line.startsWith('function canCancelBet('));
+  const cardSource = app.split('\n').find(line => line.startsWith('function betCard('));
+  assert.ok(source && cardSource, 'shared state policy and UI card must exist in the active client');
+  const canCancelBet = runInNewContext('(' + source + ')');
+  const context = {
+    canCancelBet,
+    escapeHtml,
+    number: value => String(value),
+    money: value => String(value),
+    activeCurrency: () => 'VES',
+    pMap: () => { throw new Error('card should receive a scoped index'); }
+  };
+  const betCard = runInNewContext('(' + cardSource + ')', context);
+  const index = new Map([['p', {code:'PLAYER'}]]);
+  const statuses = ['open', 'locked', 'settled', 'closed', 'result', 'cancelled'];
+  const betStatuses = ['pending', 'settled', 'cancelled', 'loaded'];
+  for (const raceStatus of statuses) for (const betStatus of betStatuses) {
+    const race = {status:raceStatus};
+    const bet = {id:'bet-1',status:betStatus,play:'1P',horse:'3',amount:100,playerId:'p'};
+    const expected = raceStatus === 'open' && betStatus === 'pending';
+    assert.equal(canCancelBet(race, bet), expected, raceStatus + '/' + betStatus);
+    const card = betCard(bet, race, index);
+    assert.equal(card.includes('data-action="cancel-bet"'), expected, raceStatus + '/' + betStatus);
+  }
+  assert.equal(canCancelBet({status:'open'}, null), false);
+  assert.equal(canCancelBet(null, {status:'pending'}), false);
+  const handler = app.slice(app.indexOf('if (action === "cancel-bet")'), app.indexOf('if (action === "use-available")'));
+  assert.match(handler, /if \(!canCancelBet\(r, b\)\) throw new Error\(/, 'handler validates state again, not only its rendered button');
+  assert.ok(handler.indexOf('if (!canCancelBet(r, b))') < handler.indexOf('mutate("bet_cancelled"'), 'reject before recording an irreversible audit mutation');
+});
+
+test('1000 capture cards reuse one participant index without a per-card full scan', () => {
+  const source = app.split('\n').find(line => line.startsWith('function canCancelBet('));
+  const cardSource = app.split('\n').find(line => line.startsWith('function betCard('));
+  const canCancelBet = runInNewContext('(' + source + ')');
+  let individualMapRebuilds = 0;
+  const context = {
+    canCancelBet, escapeHtml,
+    number: value => String(value),
+    money: value => String(value),
+    activeCurrency: () => 'VES',
+    pMap: () => { individualMapRebuilds++; return new Map(); }
+  };
+  const betCard = runInNewContext('(' + cardSource + ')', context);
+  const index = new Map(Array.from({length:1000},(_,i)=>['p'+i,{code:'CODE-'+i}]));
+  const race = {status:'open'};
+  const html = Array.from({length:1000},(_,i)=>betCard({
+    id:'bet-'+i,play:'1P',horse:'3',amount:i+1,status:'pending',playerId:'p'+i
+  },race,index)).join('');
+  assert.equal(individualMapRebuilds,0);
+  assert.equal((html.match(/data-action="cancel-bet"/g)||[]).length,1000);
+  assert.ok(html.includes('CODE-0') && html.includes('CODE-999'));
+  const capture = app.slice(app.indexOf('function renderCapture('),app.indexOf('function canCancelBet('));
+  assert.match(capture, /const participantsById = active\.length \? pMap\(\) : null/);
+  assert.match(capture, /\.map\(\(b\) => betCard\(b, race, participantsById\)\)/);
+});
