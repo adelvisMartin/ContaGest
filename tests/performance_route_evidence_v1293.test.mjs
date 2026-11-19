@@ -120,3 +120,9 @@ test('#1293 checks 1000 deterministic runner permutations and rejects unapproved
   }
   assert.ok(seenOrders.size >= 900, `Expected diverse permutations; saw ${seenOrders.size}`);
 });
+
+test('#1293 aggregator uses the same lab metric schema authority as the campaign comparator', async () => {
+  const { LAB_METRIC_KEYS } = await import('../scripts/performance-route-campaign-v1293.mjs');
+  assert.equal(Object.isFrozen(LAB_METRIC_KEYS), true);
+  assert.deepEqual([...LAB_METRIC_KEYS].sort(), Object.keys(observation('route-0').metrics).sort());
+});
