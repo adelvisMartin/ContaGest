@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { validHipicoDrRestoreEvidence } from './hipico-dr-restore-policy-v839.mjs';
-import { evidenceStatusesConflict } from './hipico-evidence-status-consistency-v839.mjs';
+import { evidenceStatusesConflict, firstInvalidEvidenceCopy } from './hipico-evidence-status-consistency-v839.mjs';
 import { consistentEvidenceSha, evidenceMentionsSha } from './hipico-evidence-sha-consistency-v839.mjs';
 import { validHipicoPhysicalMaterial } from './hipico-physical-material-integrity-v119.mjs';
 import { validSoakMetricEvidence } from './hipico-soak-metric-integrity-v120.mjs';
@@ -310,22 +310,32 @@ async function findDescriptor(descriptor) {
   if (descriptor.schemas.length && !descriptor.schemas.includes(String(selected.data?.schema || ''))) {
     return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'SCHEMA_MISMATCH' };
   }
-  if (descriptor.requireClean && selected.data?.dirty !== false) {
-    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'WORKTREE_DIRTY_OR_UNKNOWN' };
-  }
-  if (typeof descriptor.validate === 'function' && descriptor.validate(selected.data) !== true) {
-    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'EVIDENCE_CONTRACT_MISMATCH' };
-  }
-  if (descriptor.id === 'physicalQa' &&
-      !(await validHipicoPhysicalMaterial(selected.file, selected.data?.evidenceFiles))) {
-    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'PHYSICAL_MATERIAL_NOT_VERIFIED' };
-  }
-  // #120: a syntactically valid samplesSha256 does not prove that the actual
-  // producer's samples.jsonl exists, was preserved, or matches the summary.
-  // A missing/tampered/duplicated or discontinuous sample log is fail-closed.
-  if (descriptor.id === 'soak' &&
-      !validSoakSamplesProof(selected.file, selected.data, Number(soakPolicy?.sampleSeconds))) {
-    return { id: descriptor.id, status: 'FAIL', file: path.relative(evidenceRoot, selected.file), reason: 'SOAK_SAMPLES_NOT_VERIFIED' };
+  // Verify every matching exact-SHA copy. Equal PASS statuses alone do not
+  // establish that every sibling has valid metadata and intact material.
+  const invalidCopy = await firstInvalidEvidenceCopy(sameSha, async (item) => {
+    if (descriptor.requireClean && item.data?.dirty !== false) {
+      return 'WORKTREE_DIRTY_OR_UNKNOWN';
+    }
+    if (typeof descriptor.validate === 'function' && descriptor.validate(item.data) !== true) {
+      return 'EVIDENCE_CONTRACT_MISMATCH';
+    }
+    if (descriptor.id === 'physicalQa' &&
+        !(await validHipicoPhysicalMaterial(item.file, item.data?.evidenceFiles))) {
+      return 'PHYSICAL_MATERIAL_NOT_VERIFIED';
+    }
+    if (descriptor.id === 'soak' &&
+        !validSoakSamplesProof(item.file, item.data, Number(soakPolicy?.sampleSeconds))) {
+      return 'SOAK_SAMPLES_NOT_VERIFIED';
+    }
+    return null;
+  });
+  if (invalidCopy) {
+    return {
+      id: descriptor.id,
+      status: 'FAIL',
+      file: invalidCopy.item ? path.relative(evidenceRoot, invalidCopy.item.file) : null,
+      reason: invalidCopy.reason
+    };
   }
   const status = evidenceStatus(selected.data);
   return {
