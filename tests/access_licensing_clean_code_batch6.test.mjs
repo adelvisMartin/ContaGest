@@ -93,7 +93,10 @@ test('#1361 concurrent activation takes a tenant-scoped license row lock before 
   assert.match(activation,/AND "status" IN \('revoked','blocked'\)/);
   assert.match(activation,/SELECT "id", "status", "plan", "expiresAt", "revokedAt", "maxDevices"/);
   assert.match(activation,/license\.status !== 'active' \|\| license\.revokedAt/);
-  assert.match(activation,/new Date\(license\.expiresAt\)\.getTime\(\) <= Date\.now\(\)/);
+  assert.match(activation,/const expiryMs = license \? new Date\(license\.expiresAt\)\.getTime\(\) : Number\.NaN/);
+  assert.match(activation,/!Number\.isFinite\(expiryMs\) \|\| expiryMs <= Date\.now\(\)/);
+  assert.match(activation,/const credentialExpiresAt = new Date\(Math\.min\(/);
+  assert.match(activation,/expiryMs,/);
   assert.match(activation,/count >= maxDevices/);
   assert.doesNotMatch(activation,/params\.(?:maxDevices|licenseExpiresAt|isTrial)/);
   assert.match(activation,/if \(upgraded !== 1\)/);
