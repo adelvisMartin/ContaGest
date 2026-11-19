@@ -32,6 +32,8 @@ function baseEvidence(overrides={}){
     backupId:'hipico-backup-pre-001',
     restoreTestId:'hipico-restore-pre-001',
     targetDatabase:'postgres',
+    restoreDatabase:'isolated_drill',
+    restoreHost:'127.0.0.1',
     scope:'hipico-canonical-v12-v27',
     migrationChain:'v12-v27',
     tableManifestSha256:TABLE_SHA,
@@ -57,6 +59,20 @@ test('v25 PRE_ROLLOUT evidence passes with exact present/deferred partition and 
   assert.deepEqual(evidence.presentTables,PRESENT);
   assert.deepEqual(evidence.deferredTables,DEFERRED);
   assert.equal(evidence.restoreVerified,true);
+});
+
+test('v25 PRE_ROLLOUT fixture rejects missing or remote restore identity',()=>{
+  for(const overrides of [
+    {restoreDatabase:undefined},
+    {restoreDatabase:'production'},
+    {restoreDatabase:'postgres'},
+    {restoreHost:undefined},
+    {restoreHost:'external.example'}
+  ]){
+    const evidence=buildBackupEvidence(baseEvidence(overrides));
+    assert.equal(evidence.status,'FAIL',JSON.stringify(overrides));
+    assert.equal(evidence.restoreVerified,false);
+  }
 });
 
 test('v25 STEADY_STATE rejects the same 11/25 source subset',()=>{
