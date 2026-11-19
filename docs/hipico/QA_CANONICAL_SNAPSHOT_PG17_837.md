@@ -10,8 +10,10 @@ The real integration probe `backend/src/modules/hipico-bot/hipico-domain-query.p
 2. The next read sees `CLOSED/v2` and its events. The query remains bounded and scoped by owner, group, kind and key; missing scope fails closed.
 3. Service-level `ownerId/groupKey` filtering is tested with overlapping keys. Independently, **PostgreSQL RLS** is tested after `SET LOCAL ROLE authenticated`, with per-owner test claims and no-claim denial. A superuser SQL filter alone would not establish RLS.
 4. The test refuses `DATABASE_RUNTIME_URL` overrides, non-local hosts, mismatched allocator host/port and names outside `hipico_e2e_*`; PostgreSQL major must equal 17.
-5. BIGINT state versions outside JavaScript's safe integer range fail closed rather than silently rounding.
+5. BIGINT state versions outside JavaScript's safe integer range fail closed in both read and write, without appending new evidence.
 6. A correction added *after* a result but carrying a backdated `event_timestamp` must not be hidden from LAB. Canonical event ordering uses database `created_at`; newly recorded events receive `clock_timestamp()` only after acquiring the aggregate lock. The PG17 integration calls the real `persistHipicoDomainEvent` writer and requires LAB result disclosure to remain unavailable.
+
+7. The PostgreSQL index for the new `created_at DESC, id DESC` ordering is present, valid and ready before the synthetic 100-read p50/p95 baseline runs. This is not a production SLA.
 
 These are synthetic QA fixtures, not official external racing results, financial balances or remates. RLS is owner-based in the existing SQL policy; group-level separation is guaranteed by the server's query scope, not by pretending a group RLS policy exists.
 
@@ -31,9 +33,9 @@ git status --short
 The script `scripts/hipico-domain-snapshot-pg17-local.ps1` performs and reports:
 
 - Dirty-worktree and Git SHA verification, environment fail-closed checks, Node22 + Docker Compose availability.
-- Reproducible backend npm-lock install, Agent System v3 router, backend lint/typecheck, Hípico test suite and build.
+- Dependency-free workflow/SQL static regression, reproducible backend npm-lock install, Agent System v3 router, backend lint/typecheck, Hípico test suite and build.
 - An isolated `postgres:17-alpine` Compose project with ephemeral host port bound only to `127.0.0.1`, **tmpfs only**, a random synthetic QA password and health-gated startup using `docker compose up --wait` (no fixed sleeps).
-- Creation of a unique `hipico_e2e_*` database, then the canonical v14/v16/source-identity migrations on **only that database**.
+- Creation of a unique `hipico_e2e_*` database, then the canonical v14/v16/source-identity SQL and the NEW `20261119144500_hipico_domain_recorded_order_index` migration on **only that database**.
 - The exact same real-write/snapshot/RLS integration test used by GitHub Actions.
 - A PowerShell `finally` that drops the database, shuts down only the unique QA project and restores previous environment variables—even when tests fail.
 
@@ -43,9 +45,19 @@ If PowerShell policy blocks execution, use your organization's approved local-sc
 
 ## GitHub CI equivalent
 
-`.github/workflows/hipico-domain-snapshot-pg17.yml` uses `postgres:17-alpine`, isolates the QA database with `scripts/hipico-ephemeral-db-v290.mjs`, routes the ticket via Agent System v3, runs typecheck and the real integration test, and drops the database in an `if: always()` step. The temporary `authenticated` role `GRANT SELECT` exists **only inside this synthetic test database**; production permissions and RLS migrations are not modified.
+`.github/workflows/hipico-domain-snapshot-pg17.yml` uses `postgres:17-alpine`, isolates the QA database with `scripts/hipico-ephemeral-db-v290.mjs`, routes the ticket via Agent System v3, runs the workflow-SQL contract check, typecheck and the real integration test, and drops the database in an `if: always()` step. The temporary `authenticated` role `GRANT SELECT` exists **only inside this synthetic test database**; production permissions and RLS migrations are not modified.
 
 Evidence for approval must name **full SHA, job URL, PASS/FAIL output, PG17 version, schema migration result, and cleanup status**. A queued job, skipped job, check from an older SHA, or a local mock is not PASS.
+
+## Additive index migration: operational gate and rollback
+
+The canonical reader now uses database `created_at` instead of user-supplied `event_timestamp`. The existing v14 B-tree index only covers the latter. The new **immutable** Prisma ORM 6 migration `backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/migration.sql` creates `hipico_domain_events_recorded_order_v837` on `(owner_id, group_key, aggregate_kind, aggregate_key, created_at DESC, id DESC)` with `CREATE INDEX CONCURRENTLY`, without updating historical rows or blocking ordinary writes. PostgreSQL prohibits this operation inside an explicit transaction block.
+
+**Release prerequisites (NOT EXECUTED):** test migration from zero in isolated PG17; independently rehearse the upgrade of an isolated schema carrying pre-existing canonical events; query `pg_index.indisvalid` and `indisready`, compare representative `EXPLAIN (ANALYZE, BUFFERS)` before/after with sanitized synthetic volumes, measure p50/p95, and check replica/lock/space budgets. A failed concurrent build can leave an invalid index, so `IF NOT EXISTS` does not by itself prove a healthy index. The integration probe explicitly rejects a missing/invalid index. Do **not** deploy or merge until these gates pass on the exact SHA.
+
+**Safe recovery plan:** keep the pre-deploy backup/restore point and deployment SHA. If an index build is invalid or undesirable, DBA-reviewed `DROP INDEX CONCURRENTLY IF EXISTS public.hipico_domain_events_recorded_order_v837;` runs **outside a transaction** during an authorized maintenance operation. Do not rewrite or delete append-only domain events. Reverting application code alone does not reverse an applied migration.
+
+**Historical limitation:** older rows recorded with `now()` use transaction-start timestamps, not necessarily exact commit order. This patch never silently backfills them; chronology guarantees and tie cases require a separately authorized reconciliation if they affect real historical records.
 
 ## Domain boundary: remates, apuestas and source provenance
 
