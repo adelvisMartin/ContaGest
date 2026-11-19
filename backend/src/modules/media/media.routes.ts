@@ -261,6 +261,7 @@ router.post('/upload', asyncHandler(async (req, res) => {
   });
   if (error) throw new HttpError(502, `No se pudo almacenar la imagen: ${error.message}`);
 
+  let signedUrl = '';
   try {
     await registerStorageObject({
       tenantId: context.tenantId,
@@ -271,16 +272,21 @@ router.post('/upload', asyncHandler(async (req, res) => {
       subjectId: body.entityId,
       checksum: crypto.createHash('sha256').update(image.bytes).digest('hex')
     });
+    const { data: signed, error: signError } = await storage.storage.from(BUCKET).createSignedUrl(path, 3600);
+    if (signError || !signed?.signedUrl) throw new HttpError(502, 'No se pudo firmar la URL temporal de la imagen.');
+    signedUrl = signed.signedUrl;
     await updateEntityPhoto(context.tenantId, body.entityType, body.entityId, path);
   } catch (registrationError) {
-    await storage.storage.from(BUCKET).remove([path]).catch(() => undefined);
-    await markStorageObjectDeleted({ tenantId: context.tenantId, bucket: BUCKET, objectKey: path }).catch(() => undefined);
+    const { error: cleanupError } = await storage.storage.from(BUCKET).remove([path])
+      .catch(() => ({ error: true }));
+    // Failed removals must stay active in the lifecycle registry for orphan reconciliation.
+    if (!cleanupError) {
+      await markStorageObjectDeleted({ tenantId: context.tenantId, bucket: BUCKET, objectKey: path }).catch(() => undefined);
+    }
     throw registrationError;
   }
 
-  const { data: signed, error: signError } = await storage.storage.from(BUCKET).createSignedUrl(path, 3600);
-  if (signError) throw new HttpError(502, `Imagen guardada, pero no se pudo firmar la URL: ${signError.message}`);
-  ok(res, { path, signedUrl: signed.signedUrl, expiresIn: 3600, alt: body.alt || '' }, 201);
+  ok(res, { path, signedUrl, expiresIn: 3600, alt: body.alt || '' }, 201);
 }));
 
 router.get('/dental-attachments', asyncHandler(async (req,res)=>{
