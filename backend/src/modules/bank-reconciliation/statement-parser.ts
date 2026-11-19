@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { HttpError } from '../../shared/http.js';
+import { normalizeCamtDirection } from './camt-direction.mjs';
 import { parseStatementCsvRows, StatementCsvStructureError } from './statement-csv-structure.js';
 import { resolveStatementCsvHeaders, StatementCsvHeadersError } from './statement-csv-headers.js';
 import { money, serializeDecimal } from '../../shared/financial/decimal.js';
@@ -156,10 +157,9 @@ function parseCamt(text:string,defaultCurrency:string): ParsedStatement {
   if(!entries.length) throw new HttpError(422,'CAMT sin Ntry.',{code:'BANK_STATEMENT_CAMT_EMPTY'});
   const lines=entries.map((block,index)=>{
     const amountValue=amount(xmlText(block,'Amt'));
-    const indicator=xmlText(block,'CdtDbtInd').toUpperCase();
-    // CAMT requires an explicit credit/debit direction. An absent/invalid code
-    // must never be silently interpreted as a credit on a financial import.
-    if(indicator!=='CRDT'&&indicator!=='DBIT'){
+    let indicator: string;
+    try { indicator=normalizeCamtDirection(xmlText(block,'CdtDbtInd')); }
+    catch {
       throw new HttpError(422,'Dirección crédito/débito inválida en CAMT.',{
         code:'BANK_STATEMENT_DIRECTION_INVALID',row:index+1
       });
