@@ -100,9 +100,15 @@ test('#1313 generic upload rejects non-canonical and truncated base64 without al
   const png = cases.find(item => item.mime === 'image/png');
   const encoded = png.bytes.toString('base64');
   // Node Buffer.from quietly truncates text after padding and ignores excess padding.
-  for (const bad of [encoded + 'AAAA', encoded + '===', encoded.slice(0, -1) + '==', 'a' + encoded]) {
+  for (const bad of [encoded + 'AAAA', encoded + '===', encoded.slice(0, -1) + '==', encoded.slice(0, -2) + 'p=', 'a' + encoded]) {
     assert.throws(() => parseDataUrl('data:image/png;base64,' + bad), error => error.status === 422, bad);
   }
   assert.deepEqual(parseDataUrl('data:image/png;base64,' + encoded.slice(0, -1)).bytes, png.bytes, 'unpadded base64 remains compatible');
   assert.deepEqual(parseDataUrl('data:image/png;base64,' + encoded.slice(0, 4) + '\r\n' + encoded.slice(4)).bytes, png.bytes, 'base64 line breaks remain compatible');
+});
+
+
+test('#1313 oversized malformed base64 rejects with HTTP 422 rather than regex stack failure', () => {
+  const bad = 'data:image/png;base64,' + 'A'.repeat(4_800_000) + '=ABC';
+  assert.throws(() => parseDataUrl(bad), error => error.status === 422 && /base64/.test(error.message));
 });
