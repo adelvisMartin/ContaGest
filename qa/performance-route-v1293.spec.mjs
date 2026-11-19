@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { test, expect } from '@playwright/test';
 import { MODULE_VISUAL_CATALOG } from './support/module-visual-catalog.mjs';
 import { PAGE_ROUTES } from '../frontend/src/data/pageRegistry.js';
@@ -66,7 +67,7 @@ function autoInstallObservers() {
 }
 
 for (const item of MODULE_VISUAL_CATALOG) {
-  test(`#1293 route performance lab ${item.route}`, async ({ page, browserName }) => {
+  test(`#1293 route performance lab ${item.route}`, async ({ page, browserName, browser }) => {
     assert.equal(browserName, 'chromium', 'This first campaign is Chromium only');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -100,16 +101,29 @@ for (const item of MODULE_VISUAL_CATALOG) {
       requestAnimationFrame(() => requestAnimationFrame(() => {
         const resources = performance.getEntriesByType('resource');
         const m = globalThis.__cgPerf1293;
+        const bytes = r => r.transferSize || 0;
+        const jsTransferBytes = resources.filter(r => /\.(?:m?js|jsx|tsx?)$/i.test(new URL(r.name, location.href).pathname))
+          .reduce((sum, r) => sum + bytes(r), 0);
+        const cssTransferBytes = resources.filter(r => /\.css$/i.test(new URL(r.name, location.href).pathname))
+          .reduce((sum, r) => sum + bytes(r), 0);
         resolve({ lcpMs: m.lcpSupported ? m.lcpMs : null,
           cls: m.clsSupported ? m.cls : null,
           resourceCount: resources.length,
-          transferBytes: resources.reduce((sum, r) => sum + (r.transferSize || 0), 0) });
+          transferBytes: resources.reduce((sum, r) => sum + bytes(r), 0),
+          jsTransferBytes, cssTransferBytes });
       }));
     }));
     const routeReadyMs = performance.now() - started;
     assert.deepEqual(errors, [], 'Route emitted JavaScript errors during lab capture');
+    const cpus = os.cpus();
+    const labEnvironment = {
+      nodeVersion: process.version, osPlatform: process.platform, osArch: process.arch,
+      cpuModel: cpus[0]?.model || 'unknown', cpuLogicalCores: cpus.length,
+      browserVersion: browser.version(), networkProfile: 'UNTHROTTLED_NOT_VERIFIED',
+      viewportWidth: 1440, viewportHeight: 900, colorScheme: 'light', reducedMotion: 'reduce',
+    };
     const sample = {
-      schemaVersion: 1293, candidateSha, runId, route: item.route, profile,
+      schemaVersion: 1293, candidateSha, runId, route: item.route, profile, labEnvironment,
       browser: 'chromium', fixtureProvenance: 'SYNTHETIC_TEST_ONLY',
       captureMode: 'LAB_RENDER_ONLY',
       metrics: { routeReadyMs, ...browserMetrics,
