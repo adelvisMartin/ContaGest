@@ -9,3 +9,14 @@ export function assertXlsxZipBudget({count,compressed,uncompressed,total}) {
     throw new Error('XLSX excede los límites seguros de descompresión.');
   return total+uncompressed;
 }
+
+/** Reject ambiguous ZIP member paths; XLSX members are read-only but must be canonical. */
+export function assertXlsxZipEntryName(name) {
+  if (typeof name !== 'string' || !name || name.length > 240 ||
+      name.startsWith('/') || name.includes('\\') || name.includes('\0') ||
+      name.split('/').some(segment=>segment==='.' || segment==='..') ||
+      /[\u0000-\u001f\u007f]/u.test(name)) {
+    throw new TypeError('XLSX_ZIP_ENTRY_NAME_INVALID');
+  }
+  return name;
+}
