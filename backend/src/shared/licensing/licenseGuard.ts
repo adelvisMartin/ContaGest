@@ -153,9 +153,6 @@ async function activateOrUpgradeDevice(params: {
   tenantId:string;
   userId?:string|null;
   deviceId:string;
-  maxDevices:number;
-  isTrial:boolean;
-  licenseExpiresAt:Date;
   deviceLabel?:string|null;
   ip?:string|null;
   userAgent?:string|null;
@@ -164,13 +161,23 @@ async function activateOrUpgradeDevice(params: {
   // Serialize enrollment per license. The old count-then-INSERT path could
   // allocate more than maxDevices under two concurrent activations.
   return prisma.$transaction(async tx => {
-    const license = await tx.$queryRaw<Array<{ id:string }>>`
-      SELECT "id" FROM public."LicenseKey"
+    const licenses = await tx.$queryRaw<Array<{
+      id:string; status:string; plan:string; expiresAt:Date;
+      revokedAt:Date|null; maxDevices:number|null;
+    }>>`
+      SELECT "id", "status", "plan", "expiresAt", "revokedAt", "maxDevices"
+      FROM public."LicenseKey"
       WHERE "id"=${params.licenseId} AND "tenantId"=${params.tenantId}
       FOR UPDATE
     `;
-    if (!license[0]) {
-      throw new HttpError(403, 'La licencia no pertenece a la empresa activa.');
+    const license = licenses[0];
+    if (!license || license.status !== 'active' || license.revokedAt
+        || new Date(license.expiresAt).getTime() <= Date.now()) {
+      throw new HttpError(403, 'La licencia no está activa o ya venció.');
+    }
+    const maxDevices = Number(license.maxDevices ?? 1);
+    if (!Number.isSafeInteger(maxDevices) || maxDevices < 1) {
+      throw new HttpError(403, 'La licencia no tiene un cupo de dispositivos válido.');
     }
     const deviceHash = hashLicenseDevice(params.deviceId);
     const rows = await tx.$queryRaw<ActivationRow[]>`
@@ -195,7 +202,7 @@ async function activateOrUpgradeDevice(params: {
     if (!existing) {
       // A revoked/blocked trial activation is not an invitation to enroll a
       // different ID: replacement requires an authorized new trial grant.
-      if (params.isTrial) {
+      if (license.plan === 'trial') {
         const priorRevocations = await tx.$queryRaw<Array<{ id:string }>>`
           SELECT "id" FROM public."LicenseActivation"
           WHERE "licenseId"=${params.licenseId}
@@ -208,15 +215,15 @@ async function activateOrUpgradeDevice(params: {
         }
       }
       const count = await countActiveDevices(params.licenseId,tx);
-      if (count >= params.maxDevices) {
-        throw new HttpError(403, `La licencia alcanzó el máximo de ${params.maxDevices} dispositivo(s).`);
+      if (count >= maxDevices) {
+        throw new HttpError(403, `La licencia alcanzó el máximo de ${maxDevices} dispositivo(s).`);
       }
     }
 
     const credential = createDeviceCredential();
     const credentialHash = hashDeviceCredential(credential);
     const credentialExpiresAt = new Date(Math.min(
-      params.licenseExpiresAt.getTime(),
+      new Date(license.expiresAt).getTime(),
       Date.now() + DEVICE_CREDENTIAL_TTL_MS
     ));
     const preview = `${credential.slice(0, 10)}…${credential.slice(-6)}`;
@@ -318,9 +325,6 @@ export async function validateUserLicense(input: LicenseValidationInput) {
       tenantId:input.tenantId,
       userId:input.userId,
       deviceId:input.deviceId,
-      maxDevices:Number(extension.maxDevices || 1),
-      isTrial:record.plan === 'trial',
-      licenseExpiresAt:record.expiresAt,
       deviceLabel:input.deviceLabel,
       ip:input.ip,
       userAgent:input.userAgent,
