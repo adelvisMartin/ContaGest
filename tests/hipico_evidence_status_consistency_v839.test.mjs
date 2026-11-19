@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { evidenceStatusesConflict } from '../scripts/hipico-evidence-status-consistency-v839.mjs';
+import { evidenceStatusesConflict, firstInvalidEvidenceCopy } from '../scripts/hipico-evidence-status-consistency-v839.mjs';
 
 const of = (status) => ({data:{status}});
 const normalize = (data) => ['PASS','FAIL','BLOCKED','NOT_EXECUTED'].includes(data?.status) ? data.status : 'NOT_EXECUTED';
@@ -33,4 +33,27 @@ test('#839 same SHA invalid schema cannot be masked by a recognized PASS report'
   assert.equal(evidenceStatusesConflict([valid], normalize, ['hipico-secret-scan.v290']),false);
   assert.equal(evidenceStatusesConflict([valid,forged], normalize, []),false);
   assert.equal(evidenceStatusesConflict([valid], normalize, null),true);
+});
+
+test('#839 every same-status PASS copy must pass material and metadata validation', async () => {
+  const copies = [
+    { file: 'run-a/auth-recovery-evidence.json', data: { status: 'PASS', verified: true } },
+    { file: 'run-b/auth-recovery-evidence.json', data: { status: 'PASS', verified: false } }
+  ];
+  assert.equal(evidenceStatusesConflict(copies, normalize), false);
+  const invalid = await firstInvalidEvidenceCopy(copies, async (item) =>
+    item.data.verified ? null : 'EVIDENCE_CONTRACT_MISMATCH');
+  assert.deepEqual(invalid, { item: copies[1], reason: 'EVIDENCE_CONTRACT_MISMATCH' });
+  assert.equal(await firstInvalidEvidenceCopy([copies[0]], async () => null), null);
+  assert.deepEqual(await firstInvalidEvidenceCopy(copies, async () => {
+    throw new Error('sanitized validator failure');
+  }), { item: copies[0], reason: 'EVIDENCE_CONTRACT_MISMATCH' });
+});
+
+test('#839 verifier checks every matching copy before reporting PASS', () => {
+  const source = fs.readFileSync(new URL('../scripts/hipico-verify-evidence-v290.mjs', import.meta.url), 'utf8');
+  const validation = source.indexOf('firstInvalidEvidenceCopy(sameSha, async');
+  const success = source.indexOf('const status = evidenceStatus(selected.data)', validation);
+  assert.ok(validation > 0 && success > validation);
+  assert.match(source, /invalidCopy\.reason/);
 });
