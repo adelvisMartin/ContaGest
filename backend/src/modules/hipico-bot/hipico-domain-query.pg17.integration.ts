@@ -311,6 +311,25 @@ test('backdated correction recorded after a result cannot be hidden from LAB', a
     }
   });
   assert.equal(result.nextState, 'RESULT_RECEIVED');
+  const recordedTimes = await prisma.$queryRaw<Array<{
+    eventCreatedAt: Date; aggregateUpdatedAt: Date
+  }>>`
+    SELECT e.created_at AS "eventCreatedAt",
+           a.updated_at AS "aggregateUpdatedAt"
+    FROM public.hipico_domain_events e
+    JOIN public.hipico_domain_aggregates a
+      ON a.owner_id = e.owner_id
+     AND a.group_key = e.group_key
+     AND a.aggregate_kind = e.aggregate_kind
+     AND a.aggregate_key = e.aggregate_key
+    WHERE e.id = ${resultId}
+      AND e.owner_id = ${ownerId}::uuid
+      AND e.group_key = ${groupKey}
+      AND e.aggregate_kind = 'race' AND e.aggregate_key = ${aggregateKey}
+  `;
+  assert.equal(recordedTimes.length, 1);
+  assert.ok(recordedTimes[0].aggregateUpdatedAt.getTime() >= recordedTimes[0].eventCreatedAt.getTime(),
+    'Aggregate updatedAt must not predate the applied result event');
   const beforeCorrection = await readCanonicalLabRace({
     ownerId, groupKey, race, purpose: 'result'
   });
