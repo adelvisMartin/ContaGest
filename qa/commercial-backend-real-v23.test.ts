@@ -1,14 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { AddressInfo } from 'node:net';
-import { createApp } from '../backend/src/app.ts';
-import { prisma } from '../backend/src/database/prisma.ts';
-import { signAccessToken } from '../backend/src/shared/auth/jwt.ts';
-
-const QA_TENANT_RIF='00000000';
-const ADMIN_EMAIL='admin@erp.local';
+import { createRealBackendHarness } from './support/real-backend-harness.ts';
 const RUN=`CG23-${Date.now().toString(36).toUpperCase()}`;
-const STARTED_AT=new Date();
 
 function unwrap(payload:any){return payload?.data ?? payload;}
 async function request(base:string,token:string,path:string,options:RequestInit={}){
@@ -35,14 +28,10 @@ async function expectStatus(base:string,token:string,path:string,status:number,o
 }
 
 test('issue #23/#30 real DB: customer → subscription → governed restriction case → payment → commission → audit',async(t)=>{
-  assert.notEqual(String(process.env.NODE_ENV||'').toLowerCase(),'production','Real commercial QA must never run with NODE_ENV=production');
-  const tenant=await prisma.tenant.findUnique({where:{rif:QA_TENANT_RIF}});
-  assert.ok(tenant,`QA tenant ${QA_TENANT_RIF} not found; run the normal QA database seed first`);
-  const admin=await prisma.userProfile.findFirst({where:{tenantId:tenant.id,email:ADMIN_EMAIL,status:'active'}});
-  assert.ok(admin,`QA admin ${ADMIN_EMAIL} not found`);
-  const platformPermission=await prisma.userRole.count({where:{userId:admin.id,role:{tenantId:tenant.id,permissions:{some:{permission:{key:'platform.manage'}}}}}});
-  assert.ok(platformPermission>0,'QA admin must already have platform.manage; this test does not escalate its own privileges');
-  const token=signAccessToken({id:admin.id,email:admin.email},tenant.id);
+  // Harness checks the connected ephemeral database, seeded platform role and
+  // the session-bound JWT contract before starting the real HTTP app.
+  const h=await createRealBackendHarness();
+  const {tenant, token, base, prisma}=h;
 
   let customerId='';
   let agentId='';
@@ -54,16 +43,10 @@ test('issue #23/#30 real DB: customer → subscription → governed restriction 
   let tempTenantId='';
   let restrictedUserId='';
 
-  const app=createApp();
-  const server=app.listen(0,'127.0.0.1');
-  await new Promise<void>((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});
-  const address=server.address() as AddressInfo;
-  const base=`http://127.0.0.1:${address.port}`;
-
   t.after(async()=>{
-    await new Promise<void>((resolve)=>server.close(()=>resolve()));
-    const entityIds=[customerId,agentId,subscriptionId,restrictionCaseId,terminationCaseId,paymentId,commissionId].filter(Boolean);
-    if(entityIds.length)await prisma.auditLog.deleteMany({where:{entityId:{in:entityIds},createdAt:{gte:STARTED_AT}}}).catch(()=>undefined);
+    // Close active sessions before deleting their synthetic owners. AuditLog is
+    // append-only forensic evidence and must NOT be removed to make QA green.
+    await h.close();
     if(subscriptionId){
       await prisma.$executeRaw`DELETE FROM public."ServiceRestrictionCase" WHERE "subscriptionId"=${subscriptionId}`.catch(()=>undefined);
       await prisma.$executeRaw`DELETE FROM public."Commission" WHERE "subscriptionId"=${subscriptionId}`.catch(()=>undefined);
@@ -81,7 +64,7 @@ test('issue #23/#30 real DB: customer → subscription → governed restriction 
   await t.test('authorization rejects an authenticated user without platform.manage',async()=>{
     const restricted=await prisma.userProfile.create({data:{tenantId:tenant.id,email:`${RUN.toLowerCase()}@qa.local`,fullName:'QA Commercial Restricted',passwordHash:'qa-only-not-a-login-secret',status:'active'}});
     restrictedUserId=restricted.id;
-    const restrictedToken=signAccessToken({id:restricted.id,email:restricted.email},tenant.id);
+    const restrictedToken=await h.issueSessionTokenFor(restricted);
     await expectStatus(base,restrictedToken,'/commercial/summary',403);
   });
 

@@ -17,6 +17,7 @@ on:
       - 'frontend/src/services/csv.js'
       - 'tests/frontend_csv_formula_guard_v1313.test.mjs'
       - 'qa/commercial-backend-real-v23.test.ts'
+      - 'tests/commercial_real_session_contract_v720.test.mjs'
       - 'qa/purchase-draft-atomic-v757.test.ts'
       - 'qa/erp-operational-crud-v664.test.ts'
       - 'tests/qa_append_only_audit_cleanup_v638_v664.test.mjs'
@@ -115,7 +116,7 @@ jobs:
         run: npm run typecheck
 
       - name: Ejecutar contratos comerciales y de gobernanza
-        run: node --test tests/frontend_csv_formula_guard_v1313.test.mjs tests/commercial_console_issue_23.test.mjs tests/v11_15_service_restriction_governance.test.mjs
+        run: node --test tests/commercial_real_session_contract_v720.test.mjs tests/frontend_csv_formula_guard_v1313.test.mjs tests/commercial_console_issue_23.test.mjs tests/v11_15_service_restriction_governance.test.mjs
 
       - name: Purchase draft tenant references and atomic audit contracts
         run: node --test tests/purchase_draft_atomicity_v757.test.mjs
