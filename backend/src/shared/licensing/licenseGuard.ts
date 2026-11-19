@@ -171,8 +171,9 @@ async function activateOrUpgradeDevice(params: {
       FOR UPDATE
     `;
     const license = licenses[0];
+    const expiryMs = license ? new Date(license.expiresAt).getTime() : Number.NaN;
     if (!license || license.status !== 'active' || license.revokedAt
-        || new Date(license.expiresAt).getTime() <= Date.now()) {
+        || !Number.isFinite(expiryMs) || expiryMs <= Date.now()) {
       throw new HttpError(403, 'La licencia no está activa o ya venció.');
     }
     const maxDevices = Number(license.maxDevices ?? 1);
@@ -223,7 +224,7 @@ async function activateOrUpgradeDevice(params: {
     const credential = createDeviceCredential();
     const credentialHash = hashDeviceCredential(credential);
     const credentialExpiresAt = new Date(Math.min(
-      new Date(license.expiresAt).getTime(),
+      expiryMs,
       Date.now() + DEVICE_CREDENTIAL_TTL_MS
     ));
     const preview = `${credential.slice(0, 10)}…${credential.slice(-6)}`;
