@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {parseDelimitedImport} from '../frontend/src/services/delimitedImportParser.mjs';
 
 test('#770 parses quotes, escaped quotes, CRLF and multiline CSV',()=>{
@@ -32,4 +33,12 @@ test('#770 deterministic 10k quoted CSV samples preserve data without column dri
   const rows=parseDelimitedImport(csv);
   assert.deepEqual(rows,[{sku:'SKU-'+i,description:value.trim()}], 'case '+i);
  }
+});
+
+test('#770 browser import surfaces actionable errors and preserves diagnostic codes',()=>{
+  const service=readFileSync(new URL('../frontend/src/services/dataImportService.js',import.meta.url),'utf8');
+  assert.match(service,/DELIMITED_FILE_ERRORS/);
+  assert.match(service,/IMPORT_DELIMITED_MALFORMED_QUOTES: 'El archivo tiene comillas/);
+  assert.match(service,/displayError\.code=error\.message/);
+  assert.match(service,/rows=parseDelimitedImport\(text/);
 });
