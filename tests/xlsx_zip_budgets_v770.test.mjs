@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { assertXlsxZipBudget, assertXlsxZipEntryName } from '../frontend/src/services/xlsxZipBudget.mjs';
+import { assertXlsxZipBudget, assertXlsxZipEntryName, assertSafeImportXml } from '../frontend/src/services/xlsxZipBudget.mjs';
 
 test('#770 accepts bounded XLSX entries',()=>{
   assert.equal(assertXlsxZipBudget({count:6,compressed:100,uncompressed:1000,total:2000}),3000);
@@ -33,4 +33,12 @@ test('#770 ZIP central and local headers must agree before decompression',()=>{
   assert.match(source,/assertXlsxZipEntryName\(decoder\.decode/);
   assert.match(source,/u16\(view,localOffset\+6\)!==flags/);
   assert.match(source,/start\+compressed>eocd/);
+});
+
+test('#770 untrusted XLSX XML cannot declare DTD or entities',()=>{
+  assert.equal(assertSafeImportXml('<worksheet><sheetData/></worksheet>'),'<worksheet><sheetData/></worksheet>');
+  for(const malicious of ['<!DOCTYPE x><worksheet/>','<!ENTITY exfil SYSTEM "file:///etc/passwd">','<!doctype x [ <!entity test "x"> ]>'])
+    assert.throws(()=>assertSafeImportXml(malicious),{message:'XLSX_XML_DTD_FORBIDDEN'});
+  const source=readFileSync(new URL('../frontend/src/services/dataImportService.js',import.meta.url),'utf8');
+  assert.match(source,/parseFromString\(assertSafeImportXml\(text\)/);
 });
