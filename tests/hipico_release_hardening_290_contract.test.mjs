@@ -13,7 +13,7 @@ test('v290 production gate is exact-SHA, current v12-v27, real-PostgreSQL, OCR c
 
   for (const marker of [
     'github.event.pull_request.head.sha || github.sha',
-    'postgres:16',
+    'postgres:17',
     'poppler-utils',
     'tesseract-ocr-eng',
     'production-e2e-v290.ts',
