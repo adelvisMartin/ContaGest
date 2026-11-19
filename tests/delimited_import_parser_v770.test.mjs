@@ -49,3 +49,11 @@ test('#770 prototype-like headers and invisible controls cannot enter import obj
   }
   assert.deepEqual(parseDelimitedImport('sku,name\nA,Valid'),[{sku:'A',name:'Valid'}]);
 });
+
+test('#770 malformed UTF-8 cannot be silently substituted before CSV validation',()=>{
+  const bad=new Uint8Array([0x73,0x6b,0x75,0x2c,0xc3,0x28]);
+  assert.throws(()=>new TextDecoder('utf-8',{fatal:true}).decode(bad),TypeError);
+  const service=readFileSync(new URL('../frontend/src/services/dataImportService.js',import.meta.url),'utf8');
+  assert.match(service,/decoder\.decode\(await file\.arrayBuffer\(\)\)/);
+  assert.doesNotMatch(service,/const text=await file\.text\(\)/);
+});
