@@ -1,0 +1,21 @@
+# QA-only PostgreSQL 17. No persistent volumes; no host-wide port exposure.
+# The invoking script generates a unique Compose project and synthetic password.
+services:
+  postgres17:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${HIPICO_QA_PG_PASSWORD:?Set a synthetic QA-only password}
+      POSTGRES_DB: postgres
+    ports:
+      - target: 5432
+        host_ip: 127.0.0.1
+        protocol: tcp
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    restart: "no"
