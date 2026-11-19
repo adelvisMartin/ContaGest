@@ -20,3 +20,10 @@ export function assertXlsxZipEntryName(name) {
   }
   return name;
 }
+
+/** XLSX XML must not process entities or DTDs from untrusted uploads. */
+export function assertSafeImportXml(source) {
+  if (typeof source !== 'string' || /<!DOCTYPE|<!ENTITY/iu.test(source))
+    throw new TypeError('XLSX_XML_DTD_FORBIDDEN');
+  return source;
+}
