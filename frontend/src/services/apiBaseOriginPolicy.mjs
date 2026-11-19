@@ -18,6 +18,8 @@ export function resolveApprovedApiBase(value, {
   development = false,
   native = false
 } = {}) {
+  // HTTP production documents cannot safely issue credentialed API requests.
+  if (!development && !native && currentOrigin && !approvedHttpsOrigin(currentOrigin)) return '';
   const allowed = new Set(configuredOrigins.map(approvedHttpsOrigin).filter(Boolean));
 
   function resolve(candidate) {
