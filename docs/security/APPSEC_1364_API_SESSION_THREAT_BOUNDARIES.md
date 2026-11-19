@@ -84,3 +84,24 @@ The local mirror is a **subset**, not the full Git checkout and not an exact-SHA
 - **External guidance:** https://mas.owasp.org/MASVS/08-MASVS-NETWORK/ ; https://mas.owasp.org/MASWE/MASVS-NETWORK/MASWE-0026/ ; https://developer.mozilla.org/en-US/docs/Web/API/Response/redirected ; https://www.rfc-editor.org/rfc/rfc9110
 
 **Security scope:** Preventing frontend cleartext traffic and credential snapshot persistence does not prove API authorization, cryptographic key management, Play Integrity, Android store readiness, encrypted backup/restore, penetration testing, or tenant A/B isolation. The mandatory backend/postgres/native/external gates remain P0 acceptance blockers; no merge.
+
+## Fourth pass — exact source-blob transport regression (2026-11-19)
+
+**Supersedes earlier `TRANSPORT_NODE_INTEGRATION: NOT_EXECUTED` for the targeted Node test only.** The whole monorepo, browser, Android, database and remote CI remain unverified.
+
+- **Production behavior and backend contract:** `BackendApi` queries Capacitor status on each request; prevents a late-installed native bridge from continuing relative `/api/v1` traffic. Retains no cross-origin POST/PUT/PATCH/DELETE fallback; throws before fetch on an unapproved origin or insecure production document.
+- **Transport test initial FAIL:** exact published `tests/backend_api_origin_transport_v1364.test.mjs` expected a same-origin read to retry against relative `/api/v1`. Actual one request was correct because the current origin was already HTTPS same-origin. Changed assertion to require exactly one request and preserve selected approved API host; executed RED→GREEN without disabling assertions.
+- **429 handling:** `BackendApi` preserves bounded `retryAfterSeconds` for status 429 from numerical and HTTP-date `Retry-After`, including raw responses. The test proves 429 is not automatically retried and ignores malformed retry values. This is client contract validation, **not** proof that deployed rate-limiting produces 429 under scraper load or that UI displays a countdown.
+- **Executed on exact source blobs:** GitHub `fetch_file` for six touched frontend/tests files, materialized as partial checkout and each checked using `git hash-object` against GitHub blob SHA. Command:
+  `node --test tests/api_base_origin_policy_v1364.test.mjs tests/auth_session_credential_sanitization_v1364.test.mjs tests/backend_api_origin_transport_v1364.test.mjs`
+  ⇒ **31 PASS, 0 FAIL, 0 SKIPPED** on Node 22.16.0. `node --check` on transport and integration test also passed.
+- **Scope of evidence:** The six source blobs exactly match the HEAD-specific GitHub paths, but the test was run in an isolated directory rather than cloned `git` worktree. No `npm ci`, router, lint, typecheck, build, Playwright, physical Android, P0 tenant/role penetration testing, PostgreSQL 17, encryption/KMS or backup restore was executed. CI of the candidate remains queued/pending/skipped/cancelled, not PASS.
+- **Follow-up requirements:** run `npm run test:security:api-base` under the full repo with frozen dependencies and all relevant gates; verify 429/Retry-After via isolated real Express HTTP test including normal paginated usage and false positive/p95 metrics; no merge until #1364 P0 security/Android/DB evidence and independent AppSec reviewer.
+
+Exact current regression blob SHAs at evidence time:
+- `frontend/src/services/backendApi.js`: `296de74630038e449e8f1ab7ee6a68c343cd062d`
+- `frontend/src/services/apiBaseOriginPolicy.mjs`: `954d3c4b7418d0636e4f3f2472cb8a4fcacfa9fe`
+- `frontend/src/services/authSession.js`: `29f51ffc8b80dba1c1513fb07f3bbb4210f9e80d`
+- `tests/api_base_origin_policy_v1364.test.mjs`: `22b298b67ed4269b0de4cef60d70c6eec604abd5`
+- `tests/auth_session_credential_sanitization_v1364.test.mjs`: `644cd9f700079fc03a583e67985cb6fb7bbd668e`
+- `tests/backend_api_origin_transport_v1364.test.mjs`: `73068a183d08ec166d038745b705b7dd19e405f1`
