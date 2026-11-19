@@ -70,17 +70,42 @@ test('BackendApi keeps credentialed requests on approved origins and blocks redi
     await assert.rejects(BackendApi.get('/health'), (error) => error.status === 0);
     assert.equal(calls.length, countBeforeAbort + 1, 'cancelled reads must not retry');
 
+    // Preserve 429 Retry-After metadata for UX without hidden client retries.
+    BackendApi.setBaseUrl('https://contagest.example/api/v1');
+    let retryHeader = '15';
+    const countBeforeLimit = calls.length;
+    globalThis.fetch = async (url, options) => {
+      calls.push({ url, options });
+      return {
+        ok:false, status:429,
+        headers:{ get(name) {
+          return name === 'content-type' ? 'application/json' : name === 'retry-after' ? retryHeader : null;
+        } },
+        json:async()=>({ ok:false, error:'Demasiadas solicitudes.' })
+      };
+    };
+    await assert.rejects(BackendApi.get('/reports'), (error) =>
+      error.status === 429 && error.retryAfterSeconds === 15);
+    assert.equal(calls.length, countBeforeLimit + 1, '429 is not automatically retried');
+    retryHeader = new Date(Date.now() + 30_000).toUTCString();
+    await assert.rejects(BackendApi.request('/reports', { raw:true }), (error) =>
+      error.status === 429 && error.retryAfterSeconds >= 25 && error.retryAfterSeconds <= 31);
+    retryHeader = 'not-a-date';
+    await assert.rejects(BackendApi.get('/reports'), (error) =>
+      error.status === 429 && error.retryAfterSeconds === undefined);
+    const countBeforeNative = calls.length;
+
     globalThis.window.Capacitor = { isNativePlatform:()=>true };
     // Native bridge may initialize after the JS module: an already imported API
     // must stop using relative WebView origins without requiring a reload.
     assert.equal(BackendApi.baseUrl, '', 'late native bridge must revoke relative API access');
     await assert.rejects(BackendApi.get('/health'), (error) => error.status === 503);
-    assert.equal(calls.length, countBeforeAbort + 1, 'late native bridge must not send a request');
+    assert.equal(calls.length, countBeforeNative, 'late native bridge must not send a request');
     entries.clear();
     const { BackendApi: NativeApi } = await import('../frontend/src/services/backendApi.js?security1364-native');
     assert.equal(NativeApi.baseUrl, '', 'Android release requires an explicitly configured HTTPS API');
     await assert.rejects(NativeApi.get('/health'), (error) => error.status === 503);
-    assert.equal(calls.length, countBeforeAbort + 1, 'native misconfiguration must not issue a fetch');
+    assert.equal(calls.length, countBeforeNative, 'native misconfiguration must not issue a fetch');
 
     // The JS transport must refuse any production site accidentally served over cleartext HTTP.
     delete globalThis.window.Capacitor;
@@ -90,7 +115,7 @@ test('BackendApi keeps credentialed requests on approved origins and blocks redi
     const { BackendApi: InsecureWebApi } = await import('../frontend/src/services/backendApi.js?security1364-insecure');
     assert.equal(InsecureWebApi.baseUrl, '');
     await assert.rejects(InsecureWebApi.get('/health'), (error) => error.status === 503);
-    assert.equal(calls.length, countBeforeAbort + 1, 'insecure production shell must not issue a fetch');
+    assert.equal(calls.length, countBeforeNative, 'insecure production shell must not issue a fetch');
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete globalThis[key];
