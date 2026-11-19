@@ -5,7 +5,7 @@ import {
   copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SHA = 'a'.repeat(40);
@@ -61,8 +61,9 @@ test('#839 a malformed PASS sibling cannot be hidden by a valid PASS artifact', 
   writeFileSync(first, JSON.stringify(authArtifact(true)));
   writeFileSync(second, JSON.stringify(authArtifact(false)));
 
+  const invalid = verify(root);
   assert.deepEqual(
-    { status: verify(root).status, reason: verify(root).reason },
+    { status: invalid.status, reason: invalid.reason },
     { status: 'FAIL', reason: 'EVIDENCE_CONTRACT_MISMATCH' }
   );
 
