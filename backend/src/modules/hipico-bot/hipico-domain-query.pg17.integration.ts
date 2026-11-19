@@ -176,6 +176,37 @@ test('PostgreSQL 17 canonical snapshot stays consistent under a concurrent write
   assert.deepEqual(await visibleAs(null), { aggregates: [], events: [] });
 });
 
+test('PostgreSQL 17 synthetic canonical-read latency baseline is observable', async () => {
+  assertIsolatedPg17();
+  const ownerId = randomUUID();
+  const groupKey = 'synthetic-perf-lab';
+  const aggregateKey = `synthetic-perf-${randomUUID()}`;
+  await seedOpenedRace(ownerId, groupKey, aggregateKey);
+  const latencies: number[] = [];
+  for (let index = 0; index < 100; index++) {
+    const started = performance.now();
+    const result = await readHipicoDomainAggregate({
+      ownerId, groupKey, aggregateKey, aggregateKind: 'race', limit: 30
+    });
+    latencies.push(performance.now() - started);
+    assert.equal(result?.aggregate.stateVersion, 1);
+    assert.equal(result?.events.length, 1);
+  }
+  const sorted = latencies.slice().sort((a, b) => a - b);
+  const p50 = sorted[Math.ceil(sorted.length * 0.50) - 1];
+  const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1];
+  assert.ok(Number.isFinite(p50) && Number.isFinite(p95) && p95 >= p50);
+  // Numeric evidence only. No PII, source messages or non-synthetic IDs.
+  // This is a baseline, not a release performance SLA.
+  console.log(JSON.stringify({
+    suite: 'hipico-canonical-read-pg17',
+    readCount: sorted.length,
+    p50Ms: Number(p50.toFixed(2)),
+    p95Ms: Number(p95.toFixed(2)),
+    pgMajor: 17
+  }));
+});
+
 test.after(async () => {
   await prisma.$disconnect();
 });
