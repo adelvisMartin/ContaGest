@@ -6,6 +6,10 @@ export class StatementCsvHeadersError extends Error {
   constructor() { super('BANK_STATEMENT_CSV_HEADERS_AMBIGUOUS'); }
 }
 
+// Hidden format controls can disguise a second monetary/date column.
+// Only a file-wide UTF-8 BOM at the very start of the first header is valid.
+const INVISIBLE_HEADER = /[\u007f-\u009f\u00ad\u034f\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u;
+
 const normalizeHeader = (value: string): string =>
   value.trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/_/g, '');
 
@@ -17,7 +21,11 @@ const normalizeHeader = (value: string): string =>
 export function resolveStatementCsvHeaders(
   headers: readonly string[], aliases: Readonly<Record<string, readonly string[]>>
 ): Record<string, number> {
-  const normalized = headers.map(normalizeHeader);
+  const normalized = headers.map((header, index) => {
+    const value = index === 0 && header.startsWith('\ufeff') ? header.slice(1) : header;
+    if (INVISIBLE_HEADER.test(value)) throw new StatementCsvHeadersError();
+    return normalizeHeader(value);
+  });
   if (normalized.some((name) => name.length === 0) || new Set(normalized).size !== normalized.length) {
     throw new StatementCsvHeadersError();
   }
