@@ -105,3 +105,11 @@ test('#1293 prevents unreviewed runner metadata in output', () => {
   runs[1].labEnvironment = { ...env, accessToken: 'never-record-this' };
   assert.throws(() => measure(runs), /PERF1293_CAMPAIGN_ENVIRONMENT_INVALID/);
 });
+
+test('#1293 canonical fingerprint handles the same environment regardless of JSON key ordering', async () => {
+  const { labEnvironmentFingerprint } = await import('../scripts/performance-route-campaign-v1293.mjs');
+  assert.equal(labEnvironmentFingerprint(env),
+    labEnvironmentFingerprint(Object.fromEntries(Object.entries(env).reverse())));
+  assert.notEqual(labEnvironmentFingerprint(env),
+    labEnvironmentFingerprint({ ...env, browserVersion: 'different' }));
+});
