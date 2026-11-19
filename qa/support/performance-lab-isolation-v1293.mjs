@@ -36,3 +36,15 @@ export function isAllowedLabRedirect(locationHeader, sourceUrl, allowedOrigin) {
     return false;
   }
 }
+
+/** Only ws(s) upgrades matching the trusted HTTP(S) loopback origin are allowed. */
+export function isAllowedLabSocket(rawSocketUrl, allowedOrigin) {
+  try {
+    const socket = new URL(rawSocketUrl);
+    if (socket.protocol !== 'ws:' && socket.protocol !== 'wss:') return false;
+    socket.protocol = socket.protocol === 'ws:' ? 'http:' : 'https:';
+    return isAllowedLabRequest(socket.href, allowedOrigin);
+  } catch {
+    return false;
+  }
+}
