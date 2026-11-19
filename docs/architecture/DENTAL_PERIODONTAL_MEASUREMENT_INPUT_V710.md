@@ -19,3 +19,9 @@ La consulta histórica `health-dental-chart-history.routes.ts` conserva `CareEnc
 - **Riesgo**: los datos legacy vacíos anteriormente aceptados ya no proyectan estado actual. No hay migración ni modificación histórica; rollback por revert de esta rama, no por mutación SQL.
 
 **Fuera de alcance**: sustituir historia clínica, generar diagnósticos, cambiar aceptación de consentimientos, billing o portal. El resto de #710 sigue OPEN hasta verificar la épica completa.
+
+## Revisión independiente de test y comportamiento (2026-11-19)
+
+Se detectó un fallo real en la suite histórica `tests/dental_chart_consistency_v747.test.mjs`: importaba `fs` pero usaba `readFileSync(...)` sin prefijo/import dentro de la prueba de accesibilidad periodontal. Esto produciría `ReferenceError: readFileSync is not defined` al ejecutar esa prueba, independientemente del cambio clínico. Se corrigió a `fs.readFileSync` sin eliminar ni relajar ninguna aserción. **No se ejecutó la suite completa** porque el checkout y sus dependencias no están disponibles en este entorno.
+
+Referencia de contraste público, consultada el 19-11-2026: [ADA — Documentation/Patient Records](https://www.ada.org/resources/practice/practice-management/documentation-patient-records) y [ADA — D4346 clinical record](https://www.ada.org/-/media/project/ada-organization/ada/ada-org/files/publications/cdt/v6_adaguidetoreportingd4346_2023jan.pdf). Sirve para justificar preservar hechos clínicos efectivamente medidos, no para inventar diagnósticos ni certificar regulación local. La validación del producto debe ser revisada por profesional autorizado.
