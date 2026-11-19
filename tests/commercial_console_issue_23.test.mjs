@@ -85,6 +85,20 @@ test('CSV export neutralizes spreadsheet formula injection and quotes values',()
   const csv=commercialCsv([{customerName:'=2+2',amount:10}],[{key:'customerName',label:'Cliente'},{key:'amount',label:'Importe'}]);
   assert.ok(csv.startsWith('\uFEFF"Cliente","Importe"'));
   assert.ok(csv.includes('"\'=2+2"'));
+  // Invisible Unicode prefixes must not turn spreadsheet cells into formulas.
+  for(const value of [
+    '\u200b=HYPERLINK("https://invalid.example")',
+    '\u2060@SUM(A1)',
+    '\u034f+SUM(2)',
+    '\ufeff  -CMD',
+    '\u180e=1+1'
+  ]){
+    assert.equal(sanitizeSpreadsheetCell(value),`'${value}`);
+    const guarded=commercialCsv([{customerName:value}],[{key:'customerName',label:'Cliente'}]);
+    assert.ok(guarded.includes(`"'${value.replaceAll('"','""')}"`),JSON.stringify(value));
+  }
+  assert.equal(sanitizeSpreadsheetCell('  Cliente CA'),'  Cliente CA');
+  assert.equal(sanitizeSpreadsheetCell('-125.50'),"'-125.50");
 });
 
 test('PDF export produces a self-contained PDF document without external libraries',()=>{

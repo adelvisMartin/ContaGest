@@ -1,8 +1,9 @@
-const FORMULA_PREFIX=/^[=+\-@]/;
+import { neutralizeSpreadsheetFormula } from '../services/csv.js';
 
+// Preserve this public adapter's string behavior while sharing the canonical
+// formula guard with all client-side CSV exports (including invisible prefixes).
 export function sanitizeSpreadsheetCell(value='') {
-  const text=String(value??'');
-  return FORMULA_PREFIX.test(text.trimStart())?`'${text}`:text;
+  return neutralizeSpreadsheetFormula(String(value??''));
 }
 
 function csvCell(value) {
