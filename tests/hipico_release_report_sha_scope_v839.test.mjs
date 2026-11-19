@@ -107,7 +107,7 @@ test('#839 verifier/reporter required and optional gate inventories do not silen
     source.indexOf('// #119'));
   const optionalSection = source.slice(source.indexOf('const optionalDescriptors = ['),
     source.indexOf('async function findDescriptor('));
-  const ids = section => [...section.matchAll(/\\bid: '([^']+)'/g)].map(match => match[1]);
+  const ids = section => [...section.matchAll(/\bid: '([^']+)'/g)].map(match => match[1]);
   assert.deepEqual(ids(requiredSection), [...REQUIRED_HIPICO_EVIDENCE_IDS]);
   assert.deepEqual(ids(optionalSection), [...OPTIONAL_HIPICO_EVIDENCE_IDS]);
 });
