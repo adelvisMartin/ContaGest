@@ -7,6 +7,10 @@ const MAX_BYTES=262144,MAX_ROWS=1000,MAX_CELLS=3;
 const KEY=/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const SKU=/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const ALLOWED=new Set(['sku','name','description']);
+// Reject invisible formatting and bidirectional overrides in catalog labels:
+// a dry-run must never approve a name that visually hides a spreadsheet formula
+// or impersonates a different SKU/product. Keep ZWJ for legitimate emoji text.
+const HIDDEN_TEXT_CONTROL=/[\u007f-\u009f\u00ad\u034f\u061c\u180e\u200b\u200e-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u;
 /** @param {string} code */
 function fail(code){throw new TypeError('PORTABILITY_CSV_'+code);}
 /** Parse RFC 4180-style quoted fields without evaluating CSV data. @param {string} csv */
@@ -64,7 +68,8 @@ export function previewProductCsvImport(input){
   const sku=values.sku||'',name=values.name||'',description=values.description||'';
   if(!SKU.test(sku)){errors.push(Object.freeze({row:rowNo,code:'INVALID_SKU'}));continue;}
   if(name.length<2||name.length>160||description.length>1000
-     ||/[\x00-\x1f\x7f]/.test(name+description)||/^[\s]*[=+@-]/.test(name)
+     ||/[\x00-\x1f]/.test(name+description)||HIDDEN_TEXT_CONTROL.test(name+description)
+     ||/^[\s]*[=+@-]/.test(name)
      ||/^[\s]*[=+@-]/.test(description)){
    errors.push(Object.freeze({row:rowNo,code:'UNSAFE_TEXT'}));continue;
   }
