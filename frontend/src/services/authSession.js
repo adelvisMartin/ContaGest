@@ -15,7 +15,7 @@ function parse(value) {
 }
 
 // Session storage is UI metadata only; credentials belong to HttpOnly cookies or native Keystore.
-const CREDENTIAL_FIELD = /(?:token|password|passphrase|secret$|(?:api|private|device|license|session|signing|secret)key$|^jwt$|^authorization$|^cookies?$|^credentials?$)/i;
+const CREDENTIAL_FIELD = /(?:token$|password(?:hash)?$|passphrase$|secret$|(?:api|private|device|license|session|signing|secret)(?:private)?key$|^jwt$|^authorization$|^cookies?$|^credentials?$)/i;
 
 function stripCredentials(value, redaction) {
   if (Array.isArray(value)) return value.map((item) => stripCredentials(item, redaction));
@@ -74,10 +74,14 @@ export const AuthSession = {
 
   get() {
     if (!storageAvailable()) return null;
-    const raw = parse(localStorage.getItem(AUTH_SESSION_KEY));
+    const stored = localStorage.getItem(AUTH_SESSION_KEY);
+    const raw = parse(stored);
     const redaction = { removed: false };
     const session = normalize(raw, redaction) || migrateLegacySession();
-    if (!session) return null;
+    if (!session) {
+      if (stored) localStorage.removeItem(AUTH_SESSION_KEY);
+      return null;
+    }
     // Evict credential-bearing legacy snapshots, including nested token fields.
     if (redaction.removed) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
     if (session.expiresAt && session.expiresAt <= Date.now()) {
