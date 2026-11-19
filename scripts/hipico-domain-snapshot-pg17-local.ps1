@@ -59,6 +59,8 @@ try {
   Assert-Exit 'candidate worktree status'
   if ($dirty) { throw 'Refusing to certify a dirty worktree; commit or stash changes first.' }
 
+  & node --test tests/hipico_domain_snapshot_workflow_contract.test.mjs
+  Assert-Exit 'static PG17 QA workflow contracts'
   & npm ci --workspace backend --include-workspace-root --no-audit --no-fund
   Assert-Exit 'locked dependency install'
   & node scripts/agent-ticket-router.mjs gates --base origin/main --type bugfix
@@ -131,7 +133,8 @@ GRANT USAGE ON SCHEMA auth TO authenticated;
   $migrations = @(
     'supabase/sql/hipico_v14_canonical_domain.sql',
     'supabase/sql/hipico_v16_operator_confirmation_audit.sql',
-    'backend/prisma/migrations/20260911211500_hipico_domain_source_identity/migration.sql'
+    'backend/prisma/migrations/20260911211500_hipico_domain_source_identity/migration.sql',
+    'backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/migration.sql'
   )
   for ($index = 0; $index -lt $migrations.Count; $index++) {
     $from = Join-Path $repoRoot $migrations[$index]
