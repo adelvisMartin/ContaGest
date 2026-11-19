@@ -62,3 +62,11 @@ test('#770 XLSX import service is wired to fail-closed preview guards', () => {
   assert.match(service,/assertXlsxWorksheetTarget\(relation\.getAttribute\('Target'\)\)/);
   assert.match(service,/if\(cell\.querySelector\('f'\)\)/);
 });
+
+test('#770 XLSX error messages preserve machine codes and show meaningful Spanish feedback', () => {
+  const service=readFileSync(new URL('../frontend/src/services/dataImportService.js',import.meta.url),'utf8');
+  assert.match(service,/XLSX_ZIP_CRC_MISMATCH: 'El archivo XLSX parece estar dañado/);
+  assert.match(service,/XLSX_HEADERS_INVALID: 'Los encabezados XLSX/);
+  assert.match(service,/catch\(error\)\{throwPreviewError\(error\);\}/);
+  assert.match(service,/displayError\.code=error\.message/);
+});
