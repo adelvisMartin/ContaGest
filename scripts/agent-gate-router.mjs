@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { gatesForFiles } from '../qa/support/domain-risk-catalog.mjs';
 import { routeTask } from './agent-system-v3-lib.mjs';
+import { planTicketReviewStages } from './agent-review-stages.mjs';
 
 const args=process.argv.slice(2);
 const valueOf=(flag)=>{const index=args.indexOf(flag);return index>=0?args[index+1]:'';};
@@ -64,6 +65,7 @@ const output={
   domains:domains.map(({id,severity})=>({id,severity})),
   agents:agentIds,
   agentProfiles:agentIds.filter((id)=>!['orchestrator'].includes(id)||true).map((id)=>`.agents/agents/${id}.md`),
+  reviewStages:planTicketReviewStages({type:taskType,risk:routed.risk}),
   skills:routed.skills.map((skill)=>`.agents/skills/${skill}/SKILL.md`),
   gates:unique(domains.flatMap((entry)=>entry.gates||[])),
   verification:routed.verification,

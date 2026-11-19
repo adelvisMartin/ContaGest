@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import './agent_ticket_review_stages_v1.test.mjs';
 
 const FULL_SHA='a'.repeat(40);
 const readJson=(file)=>JSON.parse(fs.readFileSync(file,'utf8'));
