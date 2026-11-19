@@ -25,14 +25,15 @@ Prerequisites: Docker Desktop in Linux-containers mode, Docker Compose v2, Node.
 git fetch origin
 git switch fix/837-hipico-consistent-canonical-read-20261119
 git pull --ff-only
+$prHead = ((git ls-remote origin refs/heads/fix/837-hipico-consistent-canonical-read-20261119) -split '\s+')[0]
 git rev-parse HEAD
 git status --short
-.\scripts\hipico-domain-snapshot-pg17-local.ps1
+.\scripts\hipico-domain-snapshot-pg17-local.ps1 -CandidateSha $prHead
 ```
 
 The script `scripts/hipico-domain-snapshot-pg17-local.ps1` performs and reports:
 
-- Dirty-worktree and Git SHA verification, environment fail-closed checks, Node22 + Docker Compose availability.
+- Required `-CandidateSha` and live `git ls-remote` checks before **and after** QA, refusing stale PR HEAD, the wrong branch or a dirty working tree; environment fail-closed checks, Node22 + Docker Compose availability. If the network cannot confirm the current remote PR head, the run is BLOCKED—not certified.
 - Dependency-free workflow/SQL static regression, reproducible backend npm-lock install, Agent System v3 router, backend lint/typecheck, Hípico test suite and build.
 - An isolated `postgres:17-alpine` Compose project with ephemeral host port bound only to `127.0.0.1`, **tmpfs only**, a random synthetic QA password and health-gated startup using `docker compose up --wait` (no fixed sleeps).
 - Creation of a unique `hipico_e2e_*` database; apply v14/v16/source-identity to an empty schema, seed a synthetic pre-existing aggregate+event, then apply the NEW `20261119144500_hipico_domain_recorded_order_index` migration and verify the historical evidence was preserved.
