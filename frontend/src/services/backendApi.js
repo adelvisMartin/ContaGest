@@ -3,9 +3,9 @@ import { resolveApprovedApiBase } from './apiBaseOriginPolicy.mjs';
 
 const API_BASE_KEY = 'contagest_api_base_url';
 const isBrowser = typeof window !== 'undefined';
-const isNativePlatform = isBrowser && window.Capacitor?.isNativePlatform?.() === true;
+const isNativePlatform = () => isBrowser && window.Capacitor?.isNativePlatform?.() === true;
 const isDevelopment = Boolean(import.meta?.env?.DEV);
-const isDevelopmentHost = isBrowser && isDevelopment && !isNativePlatform
+const isDevelopmentHost = isBrowser && isDevelopment && !isNativePlatform()
   && ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const ENV_API_BASE = import.meta?.env?.VITE_API_BASE_URL || '';
 const CONFIGURED_API_ORIGINS = [
@@ -24,7 +24,7 @@ function normalizeBaseUrl(value) {
     currentOrigin: isBrowser ? window.location.origin : '',
     configuredOrigins: CONFIGURED_API_ORIGINS,
     development: isDevelopment,
-    native: isNativePlatform
+    native: isNativePlatform()
   });
 }
 
@@ -157,7 +157,7 @@ function isUnsafeMethod(method = 'GET') {
 }
 
 function sameOriginFallback(baseUrl) {
-  if (!isBrowser || isDevelopmentHost || isNativePlatform || window.location.protocol !== 'https:') return '';
+  if (!isBrowser || isDevelopmentHost || isNativePlatform() || window.location.protocol !== 'https:') return '';
   const normalized = String(baseUrl || '');
   if (normalized === SAME_ORIGIN_API_BASE || normalized.endsWith(SAME_ORIGIN_API_BASE) && normalized.startsWith(window.location.origin)) return '';
   return SAME_ORIGIN_API_BASE;
