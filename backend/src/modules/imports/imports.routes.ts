@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant, requirePermission } from '../../shared/middleware/context.js';
 import { validateBody } from '../../shared/middleware/validate.js';
+import { scanExternalFile } from '../../shared/security/external-file-scan.js';
 import { decimalSchema } from '../../shared/financial/zod.js';
 import { serializeDecimal, ZERO } from '../../shared/financial/decimal.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
@@ -16,6 +17,33 @@ import { MASTER_EXPORT_COLUMNS, projectMasterExportRows } from './master-export-
 
 const router = Router();
 router.use(requireTenant, requirePermission('admin.manage'));
+
+// Binary preflight is always authorized server-side before the browser parses
+// any local CSV, JSON or XLSX file. The backend never persists raw scan bytes.
+const FILE_SCAN_LIMIT_BYTES = 5 * 1024 * 1024;
+const filenameSchema = z.string().min(5).max(180).refine(value =>
+  !/[\\/\u0000-\u001f\u007f]/.test(value) &&
+  /\.(csv|tsv|txt|json|xlsx)$/i.test(value) &&
+  !/\.(exe|dll|bat|cmd|ps1|vbs|js|jar|scr|com|msi)\./i.test(value),
+  'Nombre o extensión de importación no admitidos.'
+);
+
+router.post('/file-scan',
+  express.raw({ type: 'application/octet-stream', limit: FILE_SCAN_LIMIT_BYTES }),
+  asyncHandler(async (req, res) => {
+    const filename = filenameSchema.parse(req.header('x-import-filename'));
+    const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (!bytes.length) throw new HttpError(422, 'El archivo de importación está vacío.');
+    if (bytes.length > FILE_SCAN_LIMIT_BYTES) throw new HttpError(413, 'El archivo supera 5 MB.');
+    if (filename.toLowerCase().endsWith('.xlsx') &&
+        (bytes.length < 4 || !bytes.subarray(0,4).equals(Buffer.from([0x50,0x4b,0x03,0x04])))) {
+      throw new HttpError(422, 'El archivo XLSX no tiene una firma ZIP válida.');
+    }
+    await scanExternalFile(bytes);
+    res.setHeader('Cache-Control', 'private, no-store');
+    ok(res, { status: 'clean', sha256: createHash('sha256').update(bytes).digest('hex') });
+  })
+);
 
 const importTypeSchema = z.enum(['clients','suppliers','inventory','accounts','payroll']);
 const duplicatePolicySchema = z.enum(['update','skip','error']);

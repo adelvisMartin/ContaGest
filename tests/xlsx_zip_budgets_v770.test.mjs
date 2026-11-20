@@ -52,3 +52,15 @@ test('#770 ZIP CRC32 catches mutated XML payload before parsing',()=>{
   const service=readFileSync(new URL('../frontend/src/services/dataImportService.js',import.meta.url),'utf8');
   assert.match(service,/assertZipCrc32\(content,crc\)/);
 });
+
+test('#1391 refuses XLSX macros, OLE, external connections and uninspected relationships',()=>{
+  for(const malicious of [
+    'xl/vbaProject.bin','xl/vbaProjectSignature.bin','xl/activeX/activeX1.bin',
+    'xl/embeddings/oleObject1.bin','xl/externalLinks/externalLink1.xml',
+    'xl/connections.xml','xl/queryTables/queryTable1.xml',
+    'xl/webExtensions/webextension1.xml','customUI/customUI.xml',
+    'xl/worksheets/_rels/sheet1.xml.rels'
+  ]) assert.throws(()=>assertXlsxZipEntryName(malicious),{message:'XLSX_UNTRUSTED_CONTENT'});
+  assert.equal(assertXlsxZipEntryName('xl/worksheets/sheet1.xml'),'xl/worksheets/sheet1.xml');
+  assert.equal(assertXlsxZipEntryName('xl/_rels/workbook.xml.rels'),'xl/_rels/workbook.xml.rels');
+});

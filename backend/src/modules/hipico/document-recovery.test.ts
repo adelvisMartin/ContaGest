@@ -72,7 +72,7 @@ test('a transient extraction failure becomes failed and retrying the same hash r
       return { text: 'PROGRAMA DE CARRERAS\nCARRERA 1', method: 'native_text', parserVersion: 'recovery-fixture', pageCount: 1 };
     }
   };
-  const service = new DocumentIngestionService(store, extractor);
+  const service = new DocumentIngestionService(store,extractor,8000,async()=>{});
   const input = {
     ownerId,
     groupKey,
@@ -110,7 +110,7 @@ test('a duplicate observed while extraction is already processing does not start
     capability: () => ({ configured: true, nativeText: true, ocr: false, parserVersion: 'fixture' }),
     async extract() { attempts += 1; return { text: 'PROGRAMA DE CARRERAS', method: 'native_text', parserVersion: 'fixture' }; }
   };
-  const service = new DocumentIngestionService(store, extractor);
+  const service = new DocumentIngestionService(store,extractor,8000,async()=>{});
   const result = await service.ingest({
     ownerId, groupKey, pdf, filename: 'processing.pdf',
     provenance: { sourceChannel: 'operator', receivedAt: '2026-09-12T18:00:00.000Z', authority: 'operator' }
@@ -138,7 +138,7 @@ test('manual reprocess claims the document and invalidates a prior approval befo
     capability: () => ({ configured: true, nativeText: true, ocr: false, parserVersion: 'fixture' }),
     async extract() { return { text: 'RESULTADO OFICIAL\nCARRERA 1', method: 'native_text', parserVersion: 'fixture', pageCount: 1 }; }
   };
-  const service = new DocumentIngestionService(store, extractor);
+  const service = new DocumentIngestionService(store,extractor,8000,async()=>{});
   const result = await service.reprocessExisting({ id: store.row.id, ownerId, groupKey, filename: 'approved.pdf' });
   assert.equal(result.extractionStatus, 'extracted');
   assert.equal(store.row.approvedAt, null);

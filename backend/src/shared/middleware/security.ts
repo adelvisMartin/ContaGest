@@ -44,7 +44,8 @@ export const corsPolicy = cors({
   allowedHeaders: [
     'Content-Type', 'Authorization', 'x-request-id', 'x-admin-register-key', 'x-csrf-token', 'Idempotency-Key',
     'x-hipico-operator-token', 'x-hipico-group-key', 'x-hipico-source-channel', 'x-hipico-document-authority',
-    'x-hipico-received-at', 'x-hipico-supersedes-id', 'x-hipico-filename', 'x-hipico-source-message-id', 'x-hipico-sender'
+    'x-hipico-received-at', 'x-hipico-supersedes-id', 'x-hipico-filename', 'x-hipico-source-message-id', 'x-hipico-sender',
+    'X-Import-Filename', 'X-Clinical-Metadata', 'X-File-Name'
   ],
   exposedHeaders: ['x-request-id', 'Idempotency-Replayed', 'X-Pagination-Has-More', 'X-Pagination-Next-Skip'],
   maxAge: 600

@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
+import { scanExternalFile } from '../../shared/security/external-file-scan.js';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant } from '../../shared/middleware/context.js';
@@ -187,6 +188,25 @@ function validateClinicalMagic(bytes: Buffer, mime: string) {
   return extension;
 }
 
+/**
+ * Signature validation alone does not disable PDF actions. Clinical PDFs must
+ * be passive and structurally recognizable before an antivirus scan or upload.
+ * This is defense in depth; ClamAV clean is still required.
+ */
+function assertPassiveClinicalPdf(bytes: Buffer, mime: string) {
+  if (mime !== 'application/pdf') return;
+  const source = bytes.toString('latin1');
+  const tail = source.slice(Math.max(0, source.length - 2048));
+  if (!/%%EOF\s*$/.test(tail) || !/\bobj\b[\s\S]*\bendobj\b/.test(source)) {
+    throw new HttpError(422, 'El documento PDF clínico no tiene una estructura válida.');
+  }
+  const decodedNames = source.replace(/#([0-9a-fA-F]{2})/g,
+    (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
+  if (/\/(?:JavaScript|JS|EmbeddedFile|Filespec|Launch|OpenAction|RichMedia|AA|SubmitForm|ImportData|GoToR|URI|XFA|AcroForm|Encrypt|ObjStm)\b/i.test(decodedNames)) {
+    throw new HttpError(422, 'El PDF clínico contiene acciones, vínculos o elementos no autorizados.');
+  }
+}
+
 function safeFileName(value: unknown) {
   let decoded='';
   try{decoded=decodeURIComponent(String(value||''));}catch{decoded=String(value||'');}
@@ -252,6 +272,9 @@ router.post('/upload', asyncHandler(async (req, res) => {
   const context = (req as any).context as { tenantId: string; userId?: string };
   await authorize(req, body.entityType, body.entityId);
   const image = parseDataUrl(body.dataUrl);
+  // A matching MIME signature is not an antimalware verdict. Fail closed if
+  // the private scanner is absent, infected or returns an ambiguous result.
+  await scanExternalFile(image.bytes);
   const path = tenantPath(context.tenantId, body.entityType, body.entityId, image.extension);
   const storage = client();
   const { error } = await storage.storage.from(BUCKET).upload(path, image.bytes, {
@@ -305,7 +328,9 @@ router.get('/dental-attachments', asyncHandler(async (req,res)=>{
     const attachment=row.clinicalData?.dentalAttachment||{};
     const storagePath=String(attachment.storagePath||'');
     if(!storagePath.startsWith(`${context.tenantId}/dental-attachments/`)) return {...row,signedUrl:null};
-    const {data,error}=await storage.storage.from(DENTAL_BUCKET).createSignedUrl(storagePath,3600);
+    const {data,error}=await storage.storage.from(DENTAL_BUCKET).createSignedUrl(
+      storagePath,3600,attachment.mimeType==='application/pdf'?{download:true}:undefined
+    );
     return {...row,signedUrl:error?null:data.signedUrl,signError:error?.message||null};
   }));
   ok(res,records);
@@ -313,6 +338,8 @@ router.get('/dental-attachments', asyncHandler(async (req,res)=>{
 
 router.post(
   '/dental-attachments',
+  // Permission gate first: unauthorized clients cannot force a 15 MB raw read.
+  asyncHandler(async (req,_res,next)=>{await requireHealthManage(req);next();}),
   express.raw({type:['image/jpeg','image/png','image/webp','application/pdf'],limit:CLINICAL_MAX_BYTES}),
   asyncHandler(async (req,res)=>{
     const context=await requireHealthManage(req);
@@ -326,6 +353,8 @@ router.post(
     if(bytes.length>CLINICAL_MAX_BYTES) throw new HttpError(413,'El adjunto clínico no debe superar 15 MB.');
     const mime=String(req.headers['content-type']||'').split(';')[0].trim().toLowerCase();
     const extension=validateClinicalMagic(bytes,mime);
+    assertPassiveClinicalPdf(bytes,mime);
+    await scanExternalFile(bytes);
     const originalName=safeFileName(req.headers['x-file-name']);
     const storagePath=clinicalStoragePath(context.tenantId,metadata.patientId,extension);
     const sha256=crypto.createHash('sha256').update(bytes).digest('hex');
@@ -386,7 +415,9 @@ router.post(
       throw error;
     }
 
-    const {data:signed,error:signError}=await storage.storage.from(DENTAL_BUCKET).createSignedUrl(storagePath,3600);
+    const {data:signed,error:signError}=await storage.storage.from(DENTAL_BUCKET).createSignedUrl(
+      storagePath,3600,mime==='application/pdf'?{download:true}:undefined
+    );
     ok(res,{...encounter,signedUrl:signError?null:signed.signedUrl,signError:signError?.message||null},201);
   })
 );

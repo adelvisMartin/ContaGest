@@ -49,13 +49,25 @@ export async function resolveCanonicalPrice(input: ResolveCanonicalPriceInput) {
   const documentCurrency = input.documentCurrency.trim().toUpperCase();
 
   if (input.targetType === 'service') {
-    // #849 has not established a canonical service identity table on this baseline.
-    // Reject unverifiable references rather than accepting a cross-tenant opaque id.
-    throw new HttpError(409, 'El catálogo de servicios todavía no expone una identidad canónica verificable para pricing.', { code: 'PRICE_SERVICE_AUTHORITY_UNAVAILABLE' });
+    // Consume the #849 catalog authority; a caller-supplied targetId proves nothing.
+    const service = await prisma.serviceDefinition.findFirst({
+      where: { id: targetId, tenantId, status: 'active' },
+      select: { id: true, modality: true },
+    });
+    if (!service) throw new HttpError(404, 'Servicio activo no encontrado en el tenant.', { code: 'PRICE_SERVICE_NOT_FOUND' });
+    if (input.businessLocationId && service.modality !== 'remote') {
+      const assignment = await prisma.serviceLocationEligibility.findFirst({
+        where: { tenantId, serviceId: targetId, locationId: input.businessLocationId },
+        select: { id: true },
+      });
+      if (!assignment) {
+        throw new HttpError(422, 'El servicio no está habilitado en la sede indicada.', { code: 'PRICE_SERVICE_LOCATION_NOT_AVAILABLE' });
+      }
+    }
+  } else {
+    const product = await prisma.product.findFirst({ where: { id: targetId, tenantId }, select: { id: true } });
+    if (!product) throw new HttpError(404, 'Producto no encontrado en el tenant activo.', { code: 'PRICE_PRODUCT_NOT_FOUND' });
   }
-
-  const product = await prisma.product.findFirst({ where: { id: targetId, tenantId }, select: { id: true } });
-  if (!product) throw new HttpError(404, 'Producto no encontrado en el tenant activo.', { code: 'PRICE_PRODUCT_NOT_FOUND' });
 
   if (input.businessLocationId) {
     const locations = await prisma.$queryRaw<Array<{ id: string }>>`

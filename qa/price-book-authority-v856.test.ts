@@ -66,6 +66,21 @@ test('#856 PostgreSQL authority preserves legacy compatibility, tenant isolation
       /PRICE_PRODUCT_TENANT_MISMATCH/,
     );
 
+    // #1391: DB guard binds service prices to the caller's tenant.
+    const serviceA=randomUUID(),serviceB=randomUUID();
+    await client.query(
+      'INSERT INTO "ServiceDefinition" ("id","tenantId","name","durationMinutes","createdBy","status","modality") VALUES ($1,$2,$3,30,$4,\'active\',\'remote\'),($5,$6,$7,30,$4,\'active\',\'remote\')',
+      [serviceA,tenantA,'Servicio QA A','qa-v1391',serviceB,tenantB,'Servicio QA B'],
+    );
+    const serviceInsert='INSERT INTO "PriceEntry" ("id","tenantId","priceBookId","targetType","targetId","amount","effectiveFrom") VALUES ($1,$2,$3,\'service\',$4,$5,TIMESTAMP \'2000-01-01 00:00:00\')';
+    await expectPgError(client,serviceInsert,[randomUUID(),tenantA,bookA,serviceB,'12.34'],/PRICE_SERVICE_TENANT_MISMATCH/);
+    await client.query(serviceInsert,[randomUUID(),tenantA,bookA,serviceA,'12.34']);
+    const servicePrice=await client.query(
+      'SELECT "amount"::text AS amount FROM "PriceEntry" WHERE "tenantId"=$1 AND "priceBookId"=$2 AND "targetType"=\'service\' AND "targetId"=$3',
+      [tenantA,bookA,serviceA],
+    );
+    assert.equal(servicePrice.rows[0].amount,'12.34');
+
     const issuedInvoice = randomUUID();
     const issuedLine = randomUUID();
     await client.query(

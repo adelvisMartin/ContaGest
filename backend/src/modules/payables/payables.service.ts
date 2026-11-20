@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { HttpError } from '../../shared/http.js';
+import { scanExternalFile } from '../../shared/security/external-file-scan.js';
 import { lowConfidenceFields, parserForVersion, type PayableExtraction } from './payables.parser.js';
 
 export const PAYABLE_MAX_BYTES = 8 * 1024 * 1024;
@@ -142,6 +143,9 @@ async function findReferenceDuplicate(tenantId: string, documentId: string, supp
 
 export async function ingestPayableDocument(input: { tenantId:string; userId?:string; fileName:string; mimeType:string; bytes:Buffer; sourceMetadata?:Record<string,unknown> }) {
   const mimeType = validatePayableUpload(input.bytes, input.mimeType);
+  // Enforce the scanner at the service boundary: route or background callers
+  // must not persist, deduplicate or parse untrusted invoice files without it.
+  await scanExternalFile(input.bytes);
   const hash = createHash('sha256').update(input.bytes).digest('hex');
   const existing = await prisma.$queryRaw<DocumentRow[]>`SELECT "id","tenantId","supplierId","purchaseInvoiceId","duplicateOfId","documentHash","fileName","mimeType","sizeBytes","sourceMetadata","uploaderId","uploadedAt","state","suspectedDuplicate","supplierReference","parserName","parserVersion","parserResult","matchMode","matchResult","reviewedData","reviewStatus","reviewedBy","reviewedAt","retentionUntil","createdAt","updatedAt" FROM "PayableDocument" WHERE "tenantId"=${input.tenantId} AND "documentHash"=${hash} LIMIT 1`;
   if (existing[0]) return { document:existing[0], duplicate:true, exactHash:true };
@@ -164,6 +168,8 @@ export async function ingestPayableDocument(input: { tenantId:string; userId?:st
 
 export async function processPayableDocument(tenantId: string, documentId: string, version = '1.0.0') {
   const document = await getDocument(tenantId, documentId, true) as DocumentWithBytes;
+  // Reprocessing stored historical bytes is another trust boundary.
+  await scanExternalFile(Buffer.from(document.originalContent));
   const parser = parserForVersion(version);
   const runId = randomUUID();
   const started = Date.now();

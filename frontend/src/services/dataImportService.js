@@ -153,6 +153,24 @@ function normalizeRecord(record, type) {
 export const DataImportService = {
   async parseFile(file, type) {
     if(Number(file.size||0)>MAX_FILE_BYTES)throw new Error('El archivo supera el límite de 5 MB.');
+    // The server scans the original bytes before XLSX ZIP/XML or text parsing.
+    // A failed/ambiguous scanner verdict blocks staging entirely.
+    try{
+      await BackendApi.request('/imports/file-scan',{
+        method:'POST',
+        headers:{'Content-Type':'application/octet-stream','X-Import-Filename':String(file.name||'')},
+        body:file
+      });
+    }catch(error){
+      const code=error?.payload?.code||error?.code;
+      if(code==='EXTERNAL_FILE_MALWARE_DETECTED')
+        throw new Error('Archivo bloqueado: el análisis de seguridad detectó contenido peligroso.');
+      if(code==='EXTERNAL_FILE_SCAN_REJECTED')
+        throw new Error('Archivo rechazado: no se pudo confirmar que sea seguro.');
+      if(code==='EXTERNAL_FILE_SCAN_UNAVAILABLE'||error?.status===503)
+        throw new Error('La verificación antimalware no está disponible. No se importará el archivo.');
+      throw error;
+    }
     const name=file.name.toLowerCase();let rows=[];
     if(name.endsWith('.xlsx')){
       try{rows=await parseXlsx(file);}

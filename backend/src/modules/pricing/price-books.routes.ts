@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { canonicalPageInteger } from '../../shared/http-query-pagination.mjs';
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
@@ -60,6 +61,11 @@ const previewSchema = z.object({
   fxRate: decimalSchema('exchangeRate', { positive: true }).optional(),
   fxRateDate: z.coerce.date().optional(),
   fxRateSource: z.string().trim().min(2).max(120).optional(),
+}).strict();
+
+const serviceListQuery = z.object({
+  take: z.preprocess(canonicalPageInteger, z.number().int().min(1).max(200).default(100)),
+  skip: z.preprocess(canonicalPageInteger, z.number().int().min(0).max(100000).default(0)),
 }).strict();
 
 const ctx = (req: any) => req.context as { tenantId: string; userId?: string; ip?: string; userAgent?: string };
@@ -153,6 +159,21 @@ router.patch('/:id', requirePermission('sales.manage'), validateBody(bookPatchSc
   ok(res, updated);
 }));
 
+// Sales viewers need only active sellable service identities, not the
+// admin.manage Service Catalog API or private capability assignments.
+router.get('/services', requirePermission('sales.view'), asyncHandler(async (req, res) => {
+  const { take, skip } = serviceListQuery.parse(req.query);
+  const rows = await prisma.serviceDefinition.findMany({
+    where: { tenantId: ctx(req).tenantId, status: 'active' },
+    select: { id: true, name: true, modality: true },
+    orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    take: take + 1, skip,
+  });
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Pagination-Has-More', rows.length > take ? 'true' : 'false');
+  ok(res, rows.slice(0, take));
+}));
+
 router.get('/:id/entries', requirePermission('sales.view'), asyncHandler(async (req, res) => {
   const context = ctx(req);
   const rows = await prisma.$queryRaw<any[]>`
@@ -178,6 +199,18 @@ router.post('/:id/entries', requirePermission('sales.manage'), validateBody(entr
         hashtextextended(concat_ws(':', ${context.tenantId}::text, ${book.id}::text, ${body.targetType}::text, ${body.targetId}::text), 0)
       )
     `;
+    if (body.targetType === 'service') {
+      // Serialize pricing creation with Service Catalog's status transition.
+      // A plain snapshot read can otherwise race with archival.
+      const services = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM public."ServiceDefinition"
+        WHERE "tenantId"=${context.tenantId} AND "id"=${body.targetId} AND "status"='active'
+        FOR UPDATE
+      `;
+      if (services.length !== 1) {
+        throw new HttpError(422, 'Servicio ajeno, inexistente o no activo.', { code: 'PRICE_SERVICE_NOT_FOUND' });
+      }
+    }
     let version = 1;
     const versions = await tx.$queryRaw<Array<{ version: number }>>`
       SELECT COALESCE(max("version"),0)::int AS "version" FROM public."PriceEntry"
@@ -188,6 +221,7 @@ router.post('/:id/entries', requirePermission('sales.manage'), validateBody(entr
       const replaced = await tx.$queryRaw<any[]>`
         UPDATE public."PriceEntry" SET "effectiveTo"=${body.effectiveFrom}
         WHERE "id"=${body.replacesEntryId} AND "tenantId"=${context.tenantId} AND "priceBookId"=${book.id}
+          AND "targetType"=${body.targetType} AND "targetId"=${body.targetId} AND "status"='active'
           AND "effectiveFrom" < ${body.effectiveFrom} AND ("effectiveTo" IS NULL OR "effectiveTo" > ${body.effectiveFrom})
         RETURNING "id"
       `;

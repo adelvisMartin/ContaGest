@@ -153,6 +153,46 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
     method:'PATCH',body:JSON.stringify({expectedVersion:4,status:'active',visibility:'public'})
   });
   assert.equal(published.version,5);
+  // #1391: a published service is priced through the shared price-book API,
+  // not through a new vertical pricing ledger.
+  const priceServices=await h.ok('/price-books/services?take=100&skip=0');
+  assert.ok(priceServices.some((row:any)=>row.id===created.id));
+  const book=await h.ok('/price-books',{
+    method:'POST',body:JSON.stringify({
+      code:'SVC-'+suffix.toUpperCase(),name:'Tarifa clínica QA '+suffix,
+      currency:'VES',priceMode:'fixed',priority:900,locationScope:'global',locationIds:[]
+    })
+  });
+  const entry=await h.ok(`/price-books/${book.id}/entries`,{
+    method:'POST',body:JSON.stringify({
+      targetType:'service',targetId:created.id,amount:'12.34',
+      effectiveFrom:'2026-01-01T00:00:00.000Z'
+    })
+  });
+  assert.equal(entry.targetType,'service');
+  const resolved=await h.ok('/price-books/preview/resolve',{
+    method:'POST',body:JSON.stringify({
+      targetType:'service',targetId:created.id,currency:'VES',businessLocationId:location.id
+    })
+  });
+  assert.equal(resolved.amount,'12.34');
+  assert.equal(resolved.priceEntryId,entry.id);
+  await h.status('/price-books/preview/resolve',404,{
+    method:'POST',body:JSON.stringify({
+      targetType:'service',targetId:randomUUID(),currency:'VES'
+    })
+  });
+  await h.status('/price-books/preview/resolve',422,{
+    method:'POST',body:JSON.stringify({
+      targetType:'service',targetId:created.id,currency:'VES',businessLocationId:randomUUID()
+    })
+  });
+  await h.status(`/price-books/${book.id}/entries`,409,{
+    method:'POST',body:JSON.stringify({
+      targetType:'product',targetId:ownProduct.id,amount:'22.00',
+      effectiveFrom:'2026-10-01T00:00:00.000Z',replacesEntryId:entry.id
+    })
+  });
   projected=await h.ok('/service-catalog/public');
   const publicRow=projected.services.find((s:any)=>s.id===created.id);
   assert.ok(publicRow);

@@ -18,6 +18,13 @@ export function assertXlsxZipEntryName(name) {
       /[\u0000-\u001f\u007f]/u.test(name)) {
     throw new TypeError('XLSX_ZIP_ENTRY_NAME_INVALID');
   }
+  // Spreadsheet import is values-only. Never accept macro projects, embedded
+  // executable/OLE payloads, external connections or relationships that the
+  // previewer does not need (and therefore cannot inspect for outbound links).
+  if (/^(?:xl\/(?:vbaProject(?:Signature)?\.bin|activeX\/|embeddings\/|externalLinks\/|connections\.xml|queryTables\/|webExtensions\/|ctrlProps\/)|customUI\/|_xmlsignatures\/)/i.test(name) ||
+      (name.endsWith('.rels') && !['_rels/.rels','xl/_rels/workbook.xml.rels'].includes(name))) {
+    throw new TypeError('XLSX_UNTRUSTED_CONTENT');
+  }
   return name;
 }
 

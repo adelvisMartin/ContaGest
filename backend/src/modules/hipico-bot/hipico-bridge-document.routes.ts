@@ -46,6 +46,8 @@ const service=new DocumentIngestionService(store,extractor);
 function requestId(req:Request){return String((req as any).requestId||'').trim()||null;}
 function statusFor(code:string){
   if(code==='entity.too.large'||code==='PDF_TOO_LARGE')return 413;
+  if(code==='EXTERNAL_FILE_SCAN_UNAVAILABLE')return 503;
+  if(code==='EXTERNAL_FILE_MALWARE_DETECTED'||code==='EXTERNAL_FILE_SCAN_REJECTED'||code==='EXTERNAL_FILE_SCAN_INVALID')return 422;
   if(code==='HIPICO_BRIDGE_DOCUMENT_IDENTITY_MISMATCH')return 403;
   if(code==='HIPICO_BRIDGE_OWNER_NOT_CONFIGURED'||code==='HIPICO_BRIDGE_DOCUMENT_IDENTITY_NOT_CONFIGURED'||code==='HIPICO_DOCUMENT_EXTRACTOR_NOT_CONFIGURED')return 503;
   if(code==='HIPICO_DOCUMENT_EXTRACTION_TIMEOUT'||code==='HIPICO_DOCUMENT_TOOL_TIMEOUT')return 504;
