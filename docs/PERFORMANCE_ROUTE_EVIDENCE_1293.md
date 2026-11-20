@@ -292,3 +292,20 @@ correcto no certifica una ruta ni mide API/DB, INP de campo, dispositivos
 físicos o flujos monetarios. Si Actions no arranca por límite de cuota,
 el gate continúa **BLOCKED**, nunca PASS. Control Hípico conserva su matriz
 independiente y ninguna regla de apuestas/remates se modificó.
+
+## Comparación entre dos SHA — incremento de política de evidencia
+
+`npm run perf:routes:1293:delta` compara reportes `lab-campaign-comparison.json`
+previamente capturados con **5 a 30 campañas completas por SHA**. Define `CANDIDATE_SHA`
+igual al HEAD local y `CG_PERF1293_BASELINE_SHA` igual al SHA de referencia, y coloca
+ambos reportes bajo `artifacts/performance/v1293/<sha>/`. La comparación exige
+mismo CPU, navegador, red declarada, viewport, theme, reduced-motion y las 60 rutas
+en el mismo orden; rechaza métricas faltantes, fraguadas y estado PASS sin
+evidencia. Escribe `lab-before-after.json` bajo el SHA candidato.
+
+**Interpretación:** `deltaP75` es diferencia observada entre laboratorios
+(`candidato - baseline`), no prueba causal de mejora; no hay presupuestos
+ratificados, LCP/INP/CLS de campo ni API/DB medidos. Para cumplir #1293
+completo siguen pendientes pruebas de usuarios reales, API p95, EXPLAIN PG17,
+multi-navegador/móvil y comparación de condiciones reales. No alterar cachés ni
+servicios financieros basándose solo en este artefacto.
