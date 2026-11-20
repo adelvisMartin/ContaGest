@@ -7,6 +7,9 @@ const scanner = read('backend/src/shared/security/external-file-scan.ts');
 const media = read('backend/src/modules/media/media.routes.ts');
 const imports = read('backend/src/modules/imports/imports.routes.ts');
 const importClient = read('frontend/src/services/dataImportService.js');
+const bank = read('backend/src/modules/bank-reconciliation/bank-reconciliation.routes.ts');
+const payables = read('backend/src/modules/payables/payables.service.ts');
+const payableRoutes = read('backend/src/modules/payables/payables.routes.ts');
 const hipico = read('backend/src/modules/hipico/document-engine.ts');
 const hipicoOperator = read('backend/src/modules/hipico/document.routes.ts');
 const hipicoBridge = read('backend/src/modules/hipico-bot/hipico-bridge-document.routes.ts');
@@ -46,4 +49,20 @@ test('#1391 clinical media and Hípico block bytes before persistence/extraction
     assert.match(route, /EXTERNAL_FILE_SCAN_UNAVAILABLE/);
     assert.match(route, /EXTERNAL_FILE_MALWARE_DETECTED/);
   }
+});
+
+test('#1391 imported bank statements are scanned before any financial ingest',()=>{
+  assert.match(bank,/requirePermission\('banking\.manage'\)/);
+  assert.match(bank,/await scanExternalFile\(upload\.bytes\)/);
+  const handler=bank.split("router.post('/imports'")[1];
+  assert.ok(handler.indexOf('await scanExternalFile(upload.bytes)')<handler.indexOf('await importBankStatement('));
+});
+
+test('#1391 supplier invoices scan before DB persistence and on reprocessing',()=>{
+  assert.match(payableRoutes,/requirePermission\('purchases\.manage'\)/);
+  assert.match(payableRoutes,/Content-Disposition',`attachment;/);
+  const ingest=payables.split('export async function ingestPayableDocument(')[1].split('export async function processPayableDocument(')[0];
+  const reprocess=payables.split('export async function processPayableDocument(')[1].split('export async function listPayableDocuments(')[0];
+  assert.ok(ingest.indexOf('await scanExternalFile(input.bytes)')<ingest.indexOf('await prisma.$queryRaw'));
+  assert.ok(reprocess.indexOf('await scanExternalFile(Buffer.from(document.originalContent))')<reprocess.indexOf('await prisma.$executeRaw'));
 });
