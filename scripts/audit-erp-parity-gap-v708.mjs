@@ -18,13 +18,17 @@ export function auditErpParityMatrix(input,opts={}){
    errors.push('PARITY_BASELINE_INVALID');
  if(input.benchmarkSource!=='config/competitive-benchmark-v764.json')
    errors.push('PARITY_BENCHMARK_AUTHORITY_INVALID');
- if(!Array.isArray(input.rows)||input.rows.length!==10)errors.push('PARITY_GAP_COVERAGE_INVALID');
+ if(!Array.isArray(input.rows))return [...errors,'PARITY_GAP_COVERAGE_INVALID'];
+ if(input.rows.length!==ISSUE_IDS.size)errors.push('PARITY_GAP_COVERAGE_INVALID');
  const seen=new Set();
- for(const row of input.rows||[]){
+ const seenIssues=new Set();
+ for(const row of input.rows){
    if(!row||typeof row!=='object'||Array.isArray(row)){errors.push('PARITY_ROW_INVALID');continue;}
    if(typeof row.key!=='string'||!(/^[a-z][a-z0-9_]{2,40}$/.test(row.key))||seen.has(row.key))
      errors.push('PARITY_KEY_INVALID');
    seen.add(row.key);
+   if(seenIssues.has(row.issue)) errors.push('PARITY_OWNER_DUPLICATE');
+   seenIssues.add(row.issue);
    if(!ISSUE_IDS.has(row.issue)||!ALLOWED.has(row.classification)||typeof row.name!=='string'||!row.name||
       typeof row.gap!=='string'||row.gap.length<12)
      errors.push('PARITY_UNVERIFIED_GAP');
@@ -36,6 +40,7 @@ export function auditErpParityMatrix(input,opts={}){
      errors.push('PARITY_UNVERIFIED_SOURCE_CLAIM');
    }
  }
+ if([...ISSUE_IDS].some(issue=>!seenIssues.has(issue)))errors.push('PARITY_OWNER_MISSING');
  return errors;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
