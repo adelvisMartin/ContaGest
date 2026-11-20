@@ -10,6 +10,11 @@ const typeOptions=[
   {value:'accounts',label:'Plan de cuentas'},
   {value:'payroll',label:'Nómina / empleados'}
 ];
+const exportTypeOptions=typeOptions.filter(({value})=>value!=='payroll');
+const exportFormatOptions=[
+  {value:'csv',label:'CSV (seguro para hojas de cálculo)'},
+  {value:'json',label:'JSON (datos exactos)'}
+];
 const duplicateOptions=[
   {value:'error',label:'Error si ya existe'},
   {value:'update',label:'Actualizar si ya existe'},
@@ -34,6 +39,7 @@ export const DataImportPage = {
     const batchActions=batch?`<div class="cg-ui-row-wrap">${Badge(String(batch.status||'draft').toUpperCase(),statusTone)}${batch.status==='validated'?Button({id:'btnCommitImport',text:'Confirmar y aplicar',icon:'fa-database'}):''}${Button({id:'btnImportReport',text:'Descargar reporte',icon:'fa-file-arrow-down',variant:'secondary'})}</div>`:'';
     return `<section class="cg-page-stack">${PageHeader({eyebrow:'Administración · Datos',title:'Importación transaccional',description:'Dry-run reproducible, política de duplicados, confirmación explícita, idempotencia, rollback transaccional y auditoría por batch.',actions:Button({id:'btnDownloadTemplate',text:'Descargar plantilla CSV',icon:'fa-download',variant:'secondary'})})}
       ${Section({title:'Archivo y política',subtitle:'CSV, TSV, JSON y la primera hoja de XLSX. Máximo 5 MB y 5.000 filas. El backend vuelve a normalizar y validar todo; el navegador nunca es autoridad.',children:`<form id="importForm" class="cg-record-form"><div class="cg-record-fields cg-fields-compact">${Select({labelKey:'Tipo de importación',name:'importType',options:typeOptions,attrs:'id="importType"'})}${Select({labelKey:'Duplicados',name:'duplicatePolicy',options:duplicateOptions,attrs:'id="duplicatePolicy"'})}<label class="cgx-field cg-field-wide" for="importFile"><span class="cgx-label">Archivo</span><input id="importFile" class="input" type="file" accept=".csv,.txt,.tsv,.json,.xlsx" required></label></div><div class="cg-record-actions">${Button({text:'Ejecutar dry-run',icon:'fa-file-circle-check',type:'submit'})}</div></form>`})}
+      ${Section({title:'Exportar datos maestros',subtitle:'Solo lectura y con auditoría por empresa. Se exportan clientes, proveedores, productos y cuentas; no saldos de inventario ni datos de nómina.',children:`<div class="cg-record-fields cg-fields-compact">${Select({labelKey:'Datos para exportar',name:'exportType',options:exportTypeOptions,attrs:'id="exportType"'})}${Select({labelKey:'Formato',name:'exportFormat',options:exportFormatOptions,attrs:'id="exportFormat"'})}</div><div class="cg-record-actions">${Button({id:'btnExportMaster',text:'Descargar exportación',type:'button',icon:'fa-file-export'})}</div>`})}
       ${Section({title:'Campos esperados',subtitle:'Las plantillas son versionadas. Inventario importa datos maestros; stock y reservas no son columnas aceptadas porque deben entrar por movimientos auditables.',children:`<div class="cg-ui-grid cg-ui-grid-three">${fields}</div>`})}
       ${Section({title:'Resultado del dry-run',subtitle:batch?`${accepted} aceptadas · ${rejected} rechazadas · checksum ${safe(String(batch.checksum||'').slice(0,12))}… · expira ${safe(new Date(batch.expiresAt).toLocaleString())}`:'Sube un archivo para crear un batch de staging.',actions:batchActions,children:preview.length?DataTable({columns:[{key:'index',label:'#'},{key:'action',label:'Acción',render:(row)=>row.action},{key:'status',label:'Validación',render:(row)=>row.status},{key:'record',label:'Registro normalizado',render:(row)=>row.record}],rows}):batch?.status==='completed'?`<div class="cg-ui-row-wrap">${Badge('COMPLETED','success')}<span class="cg-ui-muted">${safe(batch.counts?.created||0)} creados · ${safe(batch.counts?.updated||0)} actualizados · ${safe(batch.counts?.skipped||0)} omitidos.</span></div>`:EmptyState({title:'Sin batch validado',description:'El dry-run persiste sólo staging administrativo; no modifica clientes, productos, cuentas ni empleados.',iconName:'fa-file-import'})})}
       ${batch?.status==='invalid'?Section({title:'Commit bloqueado',subtitle:'Corrige el archivo o cambia la política de duplicados y ejecuta un nuevo dry-run. Nunca se aplican parcialmente filas de un batch inválido.',children:`<div class="cg-ui-row-wrap">${Badge('NO BUSINESS WRITES','danger')}<span class="cg-ui-muted">${rejected} filas deben corregirse antes de confirmar.</span></div>`}):''}
@@ -42,6 +48,47 @@ export const DataImportPage = {
   },
   mount(_state, { Store, Toast, Loading }) {
     document.getElementById('btnDownloadTemplate')?.addEventListener('click',()=>{const type=document.getElementById('importType')?.value||'inventory';downloadText(DataImportService.buildTemplateCsv(type),`plantilla-${type}-v1.csv`);});
+    let exporting=false;
+    document.getElementById('btnExportMaster')?.addEventListener('click',async()=>{
+      if(exporting)return;
+      const button=document.getElementById('btnExportMaster');
+      const type=document.getElementById('exportType')?.value||'inventory';
+      const format=document.getElementById('exportFormat')?.value||'csv';
+      if(!exportTypeOptions.some(option=>option.value===type))return Toast.show('Selecciona un conjunto de datos autorizado.','warning');
+      exporting=true;
+      if(button){button.disabled=true;button.setAttribute('aria-busy','true');}
+      try{
+        Loading?.mount?.('Exportando datos maestros…');
+        const chunks=[];const records=[];let cursor=null;let pages=0;let count=0;
+        do{
+          const page=await DataImportService.exportMasterPage(type,{format,limit:500,cursor});
+          if(!page||page.type!==type||page.format!==format||!Number.isSafeInteger(page.count))
+            throw new Error('El servidor devolvió una página de exportación inválida.');
+          if(format==='json'){
+            if(!Array.isArray(page.records)||page.records.length!==page.count)
+              throw new Error('La página JSON está incompleta.');
+            records.push(...page.records);
+          }else{
+            if(typeof page.csv!=='string')throw new Error('La página CSV está incompleta.');
+            const headerEnd=page.csv.indexOf('\n');
+            if(headerEnd<0&&page.count>0)throw new Error('La página CSV carece de encabezados.');
+            chunks.push(pages===0?page.csv:(headerEnd<0?'':page.csv.slice(headerEnd+1)));
+          }
+          count+=page.count;pages++;
+          if(page.hasMore&&!page.nextCursor)throw new Error('El servidor no indicó cómo continuar la exportación.');
+          if(page.hasMore&&pages>=100)throw new Error('La exportación supera 50.000 registros; usa páginas más pequeñas.');
+          cursor=page.hasMore?page.nextCursor:null;
+        }while(cursor);
+        const text=format==='json'?JSON.stringify(records,null,2):chunks.filter((chunk)=>chunk.length).join('\n');
+        downloadText(text,`contagest-${type}-${new Date().toISOString().slice(0,10)}.${format}`,format==='json'?'application/json':'text/csv;charset=utf-8');
+        Toast.show(`Exportación completada: ${count} registros.`,'success');
+      }catch(error){Toast.show(`No se pudo exportar: ${error?.message||'Error inesperado'}`,'error');}
+      finally{
+        exporting=false;
+        if(button){button.disabled=false;button.removeAttribute('aria-busy');}
+        Loading?.unmount?.();
+      }
+    });
     document.getElementById('importForm')?.addEventListener('submit',async(event)=>{
       event.preventDefault();const type=document.getElementById('importType')?.value||'inventory';const duplicatePolicy=document.getElementById('duplicatePolicy')?.value||'error';const file=document.getElementById('importFile')?.files?.[0];if(!file)return Toast.show('Selecciona un archivo.','warning');
       try{Loading?.mount?.('Analizando y validando batch…');const parsed=await DataImportService.parseFile(file,type);const local=DataImportService.validateRows(parsed,type);if(local.some((row)=>!row.ok))Toast.show('El preflight local detectó campos requeridos faltantes; el servidor emitirá el detalle autoritativo.','warning');const batch=await DataImportService.preview({type,rows:parsed,filename:file.name,duplicatePolicy});Store.set({importBatch:batch,importPreview:batch.rows||[],importType:type});Toast.show(batch.status==='validated'?`${batch.accepted} filas listas para confirmar.`:`${batch.rejected} filas rechazadas; no se aplicó ningún cambio.`,batch.status==='validated'?'success':'warning');}catch(error){Toast.show(`No se pudo ejecutar el dry-run: ${error.message}`,'error');}finally{Loading?.unmount?.();}

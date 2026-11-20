@@ -166,3 +166,20 @@ The manifest validator rejects a forged `DOCUMENTED` flag without an official HT
 ## Evidence and safe reproduction
 
 Run `node scripts/verify-competitive-benchmark-v764.mjs` and `node --test tests/competitive_benchmark_v764.test.mjs`. CI/Playwright/PostgreSQL are **not substitutions** for product analysis; for this docs+contract increment, financial writes, login, DB migration and browser flows are **NOT_APPLICABLE**, while repository full lint/build and remote CI remain independently tracked. No direct production env, tenant data, secret, customer info or competitor code is read.
+
+## #707 — procedencia oficial de licencias, 19-11-2026
+
+La validación de `licenseEvidenceUrl` exige ahora procedencia atribuible al
+**mismo editor/repository** que `sourceUrl`, no sólo HTTPS: los enlaces GitHub
+deben pertenecer al repositorio exacto y los sitios alternos requieren una
+excepción por proveedor con URL exacta. No es una certificación legal ni un
+fetch vivo obligatorio en CI. Conservamos `sourceReuse=NONE`, incluso MIT.
+
+Verificación manual de fuentes oficiales en esta revisión: ERPNext (GPLv3,
+licencia del editor); Dolibarr (GPLv3+ y COPYING en repositorio); Akaunting
+(BSL 1.1, ahora `https://akaunting.com/license`); Tryton (GPL en
+`tryton/trytond` COPYRIGHT); Invoice Ninja (Elastic License 2.0,
+documentación oficial); wger (AGPLv3+). No se copiaron código ni assets.
+Las fuentes no contrastadas en vivo mantienen su categoría y no pasan a
+`EXISTS` sin evidencia de implementación ContaGest. Incidencias #720, #849,
+#1293, #1364 siguen sus propios criterios y gates.
