@@ -147,7 +147,17 @@ export const GymVerticalService = {
   classBookings(classId) { return BackendApi.get(`/verticals/gym/classes/${pathId(classId)}/bookings`); },
   bookClass(payload) { return BackendApi.post('/api/v1/verticals/gym/classes/bookings', payload); },
   payments(memberId = '') { return BackendApi.get(`/verticals/gym/payments${query({ memberId })}`); },
-  createPayment(payload) { return BackendApi.post('/api/v1/verticals/gym/payments', payload); }
+  createPayment(payload, { idempotencyKey } = {}) {
+    // The same user action must reuse its key when retried by a caller.
+    // Automatically generated keys cover retries of this HTTP request.
+    const key = idempotencyKey || globalThis.crypto?.randomUUID?.();
+    if (!key) throw new Error('Se requiere una conexión segura para registrar pagos.');
+    return BackendApi.request('/api/v1/verticals/gym/payments', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': key },
+      body: payload
+    });
+  }
 };
 
 export const CommunicationTemplateService = {
