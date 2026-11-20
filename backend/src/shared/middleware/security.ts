@@ -7,16 +7,8 @@ import { HttpError } from '../http.js';
 import { COOKIE_NAMES, readCookie } from '../auth/sessionCookies.js';
 import { recordRateLimit } from '../observability/metrics.js';
 import { requestLogger, requestRouteTemplate, sanitizeLogValue } from '../observability/logger.js';
+import { canonicalCorsOrigin } from './cors-origin.policy.mjs';
 
-function normalizeOrigin(value?: string) {
-  const trimmed = String(value || '').trim();
-  if (!trimmed) return '';
-  try {
-    return new URL(trimmed).origin;
-  } catch {
-    return '';
-  }
-}
 
 function explicitProductionSecretReady(value?: string) {
   const secret = String(value || '').trim();
@@ -26,7 +18,7 @@ function explicitProductionSecretReady(value?: string) {
 const allowedOrigins = new Set(
   env.CORS_ORIGIN
     .split(',')
-    .map(normalizeOrigin)
+    .map(canonicalCorsOrigin)
     .filter(Boolean)
 );
 
@@ -45,8 +37,8 @@ export const corsPolicy = cors({
   credentials: true,
   origin(origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.has(normalizeOrigin(origin))) return callback(null, true);
-    return callback(new HttpError(403, `Origen CORS no permitido: ${origin}`));
+    if (allowedOrigins.has(canonicalCorsOrigin(origin)) && canonicalCorsOrigin(origin)) return callback(null, true);
+    return callback(new HttpError(403, 'Origen CORS no permitido.'));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
@@ -223,9 +215,8 @@ function timingSafeTextEqual(left: string, right: string) {
 export function csrfProtection(req: Request, _res: Response, next: NextFunction) {
   const method = req.method.toUpperCase();
   if (READ_ONLY_METHODS.has(method) || csrfExemptPaths.has(req.path)) return next();
-  const authHeader = String(req.header('authorization') || '');
-  if (/^Bearer\s+/i.test(authHeader)) return next();
-
+  // requestContext prefers access cookies over bearer tokens. A forged Bearer
+  // header must not exempt a request authenticated by an ambient cookie.
   const accessCookie = readCookie(req, COOKIE_NAMES.access);
   const refreshCookie = readCookie(req, COOKIE_NAMES.refresh);
   if (!accessCookie && !refreshCookie) return next();
