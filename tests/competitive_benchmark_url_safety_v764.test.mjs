@@ -118,3 +118,14 @@ test('#707 GitHub license URL cannot impersonate another owner or repository',()
     assert.match(validateCompetitiveBenchmark(c).join(';'),/licensed source lacks evidence \(publisher mismatch\): dolibarr/);
   }
 });
+
+test('#707 cross-site license exceptions are bound to the reviewed publisher identity',()=>{
+  for(const sourceId of ['erpnext','akaunting','tryton','invoice-ninja']){
+    const c=fresh(),source=c.sources.find(row=>row.id===sourceId);
+    assert.ok(source,sourceId);
+    assert.deepEqual(validateCompetitiveBenchmark(c),[],sourceId);
+    source.sourceUrl='https://unrelated.example.org/clone';
+    assert.match(validateCompetitiveBenchmark(c).join(';'),
+      new RegExp('licensed source lacks evidence \\(publisher mismatch\\): '+sourceId));
+  }
+});
