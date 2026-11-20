@@ -43,3 +43,27 @@ test('#810 existing bearer token remains excluded from grant list response',()=>
     route.indexOf("router.post('/guardian-portal/grants'"));
  assert.doesNotMatch(get,/tokenSha256|rawToken|authorization|portalToken/i);
 });
+
+test('#711 reject accessor, inherited, hidden and symbol query keys without evaluating accessors',()=>{
+ const getter=Object.defineProperty({},'patientId',{
+   enumerable:true,get(){throw new Error('UNTRUSTED_GETTER_EXECUTED');}
+ });
+ assert.throws(()=>parse(getter),/VET_GUARDIAN_QUERY_INVALID/);
+ const prototype=Object.create({tenantId:'foreign'});
+ prototype.patientId=uuid;
+ assert.throws(()=>parse(prototype),/VET_GUARDIAN_QUERY_INVALID/);
+ const inheritedPatient=Object.create({patientId:uuid});
+ assert.throws(()=>parse(inheritedPatient),/VET_GUARDIAN_QUERY_INVALID/);
+ const hidden=Object.defineProperty({patientId:uuid},'tenantId',{value:'foreign'});
+ assert.throws(()=>parse(hidden),/VET_GUARDIAN_QUERY_INVALID/);
+ const symbol=Object.defineProperty({patientId:uuid},Symbol('tenant'),{value:'foreign'});
+ assert.throws(()=>parse(symbol),/VET_GUARDIAN_QUERY_INVALID/);
+});
+
+test('#711 allow legitimate null-prototype query without broadening filter scope',()=>{
+ const query=Object.create(null);
+ query.patientId=uuid;
+ assert.equal(parse(query),uuid);
+ assert.throws(()=>parse(new Date()),/VET_GUARDIAN_QUERY_INVALID/);
+ assert.throws(()=>parse(new Map([['patientId',uuid]])),/VET_GUARDIAN_QUERY_INVALID/);
+});

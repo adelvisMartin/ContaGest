@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { optionalText, dateText, jsonRecord, jsonArray } from './verticals.shared.js';
 import { immunizationDateIssues } from './veterinary-immunization-date-policy.js';
 import { dentalChartConsistencyIssues } from './dental-chart-consistency.js';
+import { normalizePeriodontalInteger } from './dental-periodontal-value.js';
 
 export const patientSchema = z.object({
   kind: z.enum(['human','animal']).default('human'),
@@ -106,10 +107,12 @@ export const dentalClinicalDataSchema = z.object({
 });
 
 const PERIODONTAL_SITE_KEYS = ['mesiobuccal','midbuccal','distobuccal','mesiolingual','midlingual','distolingual'] as const;
+const periodontalInteger = (min:number,max:number) =>
+  z.preprocess(normalizePeriodontalInteger,z.number().int().min(min).max(max));
 export const periodontalSiteSchema = z.object({
   site: z.enum(PERIODONTAL_SITE_KEYS),
-  probingDepthMm: z.coerce.number().int().min(0).max(15),
-  gingivalMarginMm: z.coerce.number().int().min(-10).max(20),
+  probingDepthMm: periodontalInteger(0,15),
+  gingivalMarginMm: periodontalInteger(-10,20),
   bleeding: z.boolean(),
   suppuration: z.boolean(),
   plaque: z.boolean()
@@ -118,8 +121,8 @@ export const periodontalClinicalDataSchema = z.object({
   periodontogram: z.object({
     dentition: z.enum(['permanent','primary']),
     tooth: z.string().trim().min(2).max(2),
-    mobilityGrade: z.coerce.number().int().min(0).max(3),
-    furcationGrade: z.coerce.number().int().min(0).max(3),
+    mobilityGrade: periodontalInteger(0,3),
+    furcationGrade: periodontalInteger(0,3),
     sites: z.array(periodontalSiteSchema).length(6)
   }).superRefine((value, refinement) => {
     const catalog = value.dentition === 'primary' ? DENTAL_PRIMARY_TEETH : DENTAL_PERMANENT_TEETH;

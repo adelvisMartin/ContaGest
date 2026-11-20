@@ -1,9 +1,18 @@
 import { BackendApi } from './backendApi.js';
+import { ACCESS_MANIFEST } from 'contagest-ve-backend/access-manifest';
+
+// Preview options come from the same server-owned manifest as licence grants.
+// Displaying an option never grants RBAC/entitlements by itself.
+const blockedDemoPermissions = new Set([
+  'admin.manage', 'audit.view', 'demos.manage', 'licenses.manage', 'modules.manage'
+]);
+const demoModules = Object.freeze(ACCESS_MANIFEST.modules
+  .filter((item) => !blockedDemoPermissions.has(item.permission) &&
+    !item.permission.startsWith('platform.'))
+  .map((item) => item.route));
 
 export const DemoAccessService = {
-  modules: [
-    'dashboard','ventas','pedidos','pos-sede','tracking-pedidos','delivery-mapa','cotizacion','clientes','inventario','inventario-scan','contabilidad','plan-cuentas','rrhh','analytics','qr','asistente-ia','soporte','vistas'
-  ],
+  modules: demoModules,
   defaultDemo() {
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString().slice(0, 10);
     return {
@@ -11,7 +20,8 @@ export const DemoAccessService = {
       prospect: 'Cliente potencial',
       email: 'demo@empresa.com',
       phone: '+584120000000',
-      enabledModules: ['dashboard','ventas','pedidos','pos-sede','tracking-pedidos','analytics'],
+      enabledModules: ['dashboard','ventas','pedidos','pos-sede','tracking-pedidos','analytics']
+        .filter((route) => demoModules.includes(route)),
       expiresAt,
       maxUsers: 3,
       status: 'active',

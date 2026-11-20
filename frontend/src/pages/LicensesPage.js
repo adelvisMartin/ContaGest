@@ -64,12 +64,13 @@ const exportColumns=[
 
 function credentialsCard(credentials) {
   if (!credentials) return '';
+  const hasTemporaryPassword = typeof credentials.temporaryPassword === 'string' && credentials.temporaryPassword.length > 0;
   const text = [
     `Empresa: ${credentials.companyName}`,
     `RIF: ${credentials.tenantRif}`,
     `Rubro: ${credentials.businessSector}`,
     `Correo: ${credentials.email}`,
-    `Contraseña temporal: ${credentials.temporaryPassword}`,
+    ...(hasTemporaryPassword ? [`Contraseña temporal: ${credentials.temporaryPassword}`] : ['Cuenta existente: conserva su contraseña actual']),
     `Licencia: ${credentials.licenseKey}`,
     `Vence: ${new Date(credentials.expiresAt).toLocaleString('es-VE')}`,
     `Módulos: ${(credentials.modules || []).join(', ')}`
@@ -77,8 +78,8 @@ function credentialsCard(credentials) {
   return `<article class="cg-license-once surface" data-license-credentials="${escapeHtml(text)}">
     <div class="cg-license-once-icon"><i class="fa-solid fa-shield-keyhole"></i></div>
     <div class="cg-license-once-copy"><p class="cgx-eyebrow">Credenciales mostradas una sola vez</p><h3>${escapeHtml(credentials.companyName || 'Empresa')} · ${escapeHtml(credentials.businessSector || '')}</h3>
-      <div class="cg-license-secret-grid"><span><small>RIF</small><strong>${escapeHtml(credentials.tenantRif)}</strong></span><span><small>Correo</small><strong>${escapeHtml(credentials.email)}</strong></span><span><small>Contraseña temporal</small><code>${escapeHtml(credentials.temporaryPassword)}</code></span><span><small>Licencia</small><code>${escapeHtml(credentials.licenseKey)}</code></span></div>
-      <p class="cg-license-warning"><i class="fa-solid fa-triangle-exclamation"></i> Guarda esta información ahora. La contraseña y la licencia completas no se recuperan después. El primer equipo recibirá una credencial HttpOnly emitida por el servidor.</p>
+      <div class="cg-license-secret-grid"><span><small>RIF</small><strong>${escapeHtml(credentials.tenantRif)}</strong></span><span><small>Correo</small><strong>${escapeHtml(credentials.email)}</strong></span>${hasTemporaryPassword ? `<span><small>Contraseña temporal</small><code>${escapeHtml(credentials.temporaryPassword)}</code></span>` : `<span><small>Cuenta existente</small><strong>Contraseña sin cambios</strong></span>`}<span><small>Licencia</small><code>${escapeHtml(credentials.licenseKey)}</code></span></div>
+      <p class="cg-license-warning"><i class="fa-solid fa-triangle-exclamation"></i> ${hasTemporaryPassword ? 'Guarda la licencia y la contraseña temporal: se muestran una sola vez.' : 'Guarda la licencia: se muestra una sola vez. La cuenta existente conserva sus credenciales.'} El primer equipo recibirá una credencial HttpOnly emitida por el servidor.</p>
     </div>
     <div class="cg-license-once-actions">${Button({ id:'btnCopyCredentials', text:'Copiar credenciales', icon:'fa-copy', variant:'primary' })}${Button({ id:'btnDismissCredentials', text:'Ocultar', icon:'fa-eye-slash', variant:'secondary' })}</div>
   </article>`;
@@ -239,7 +240,7 @@ export const LicensesPage = {
 
     document.getElementById('licenseForm')?.addEventListener('submit', async (event) => {
       event.preventDefault();const form = event.currentTarget;const modules = [...form.querySelectorAll('input[name="modules"]:checked')].map((node) => node.value);if (!modules.length) return Toast.show('Selecciona al menos un módulo.', 'warning');const button = document.getElementById('btnGenerateLicense');button?.setAttribute('disabled', 'disabled');
-      try {const result = await LicenseService.generate({fullName:element(form,'fullName').value,userEmail:element(form,'userEmail').value,businessSector:element(form,'businessSector').value,commercialUse:element(form,'commercialUse').value,plan:element(form,'plan').value,days:Number(element(form,'days').value),maxUsers:Number(element(form,'maxUsers').value),maxDevices:Number(element(form,'maxDevices').value),modules,...(element(form,'subscriptionId')?.value?{subscriptionId:element(form,'subscriptionId').value}:{})});Store.update((draft) => {draft.licenseCredentials=result.credentials;draft.licenses=[result,...(draft.licenses||[]).filter((item)=>item.id!==result.id)];});Toast.show('Licencia, usuario y contraseña temporal creados.','success');}
+      try {const result = await LicenseService.generate({fullName:element(form,'fullName').value,userEmail:element(form,'userEmail').value,businessSector:element(form,'businessSector').value,commercialUse:element(form,'commercialUse').value,plan:element(form,'plan').value,days:Number(element(form,'days').value),maxUsers:Number(element(form,'maxUsers').value),maxDevices:Number(element(form,'maxDevices').value),modules,...(element(form,'subscriptionId')?.value?{subscriptionId:element(form,'subscriptionId').value}:{})});const {licenseKey:_rawKey,temporaryPassword:_password,credentials:_oneTime, ...licenseSummary}=result;Store.update((draft) => {draft.licenseCredentials=result.credentials;draft.licenses=[licenseSummary,...(draft.licenses||[]).filter((item)=>item.id!==result.id)];});Toast.show(result.credentials?.temporaryPassword ? 'Licencia y credenciales de usuario nuevo creadas.' : 'Licencia creada. La cuenta existente conserva su contraseña.', 'success');}
       catch (error) {Toast.show(`No se pudo generar la licencia: ${error.message}`, 'error');} finally {button?.removeAttribute('disabled');}
     });
 

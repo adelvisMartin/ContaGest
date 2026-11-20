@@ -7,6 +7,18 @@ export const BUSINESS_SECTORS = [
 ] as const;
 export const COMMERCIAL_USES = ['evaluacion', 'demostracion', 'operacion', 'capacitacion', 'soporte'] as const;
 export const CANONICAL_LICENSE_MODULES = new Set(ACCESS_MANIFEST.modules.map((item) => item.route));
+const DEMO_DENIED_PERMISSIONS = new Set([
+  'admin.manage', 'audit.view', 'demos.manage', 'licenses.manage', 'modules.manage'
+]);
+export const PRIVILEGED_DEMO_ROUTES = new Set(
+  ACCESS_MANIFEST.modules.filter((item) =>
+    DEMO_DENIED_PERMISSIONS.has(item.permission) || item.permission.startsWith('platform.')
+  ).map((item) => item.route)
+);
+export const SAFE_DEMO_MODULES = new Set(
+  ACCESS_MANIFEST.modules.map((item) => item.route)
+    .filter((route) => !PRIVILEGED_DEMO_ROUTES.has(route))
+);
 export const LICENSE_ROUTE_ALLOWLIST = new Set(['login', ...CANONICAL_LICENSE_MODULES]);
 export const licenseModuleSchema = z.string().min(1).max(80).refine(
   (value) => CANONICAL_LICENSE_MODULES.has(value),
@@ -29,6 +41,15 @@ export const licenseSchema = z.object({
   maxDevices: z.coerce.number().int().min(1).max(20).default(1),
   subscriptionId: z.string().uuid().optional(),
   notes: z.string().trim().max(1000).optional()
+}).superRefine((data, context) => {
+  if (data.plan !== 'trial' && data.commercialUse !== 'demostracion') return;
+  if (data.modules.some((route) => PRIVILEGED_DEMO_ROUTES.has(route))) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['modules'],
+      message: 'Una demostración no puede conceder permisos administrativos ni de plataforma.'
+    });
+  }
 });
 
 export const validateSchema = z.object({
