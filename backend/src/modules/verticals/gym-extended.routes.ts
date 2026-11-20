@@ -292,7 +292,7 @@ router.patch('/gym/memberships/:id/status', requirePermission('gym.manage'), asy
     const saved=one(result,'No fue posible modificar la membresía.');
     await writeAudit({tenantId,userId:actorId,action:'gym.membership.status',
       entity:'GymMembership',entityId:current.id,before:current,after:saved,
-      ipAddress:context(req).ip,userAgent:context(req).userAgent},tx);
+      ipAddress:req.ip,userAgent:req.get('user-agent')},tx);
     return saved;
   });
   ok(res,updated);
