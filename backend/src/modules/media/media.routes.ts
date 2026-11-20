@@ -188,6 +188,25 @@ function validateClinicalMagic(bytes: Buffer, mime: string) {
   return extension;
 }
 
+/**
+ * Signature validation alone does not disable PDF actions. Clinical PDFs must
+ * be passive and structurally recognizable before an antivirus scan or upload.
+ * This is defense in depth; ClamAV clean is still required.
+ */
+function assertPassiveClinicalPdf(bytes: Buffer, mime: string) {
+  if (mime !== 'application/pdf') return;
+  const source = bytes.toString('latin1');
+  const tail = source.slice(Math.max(0, source.length - 2048));
+  if (!/%%EOF\s*$/.test(tail) || !/\bobj\b[\s\S]*\bendobj\b/.test(source)) {
+    throw new HttpError(422, 'El documento PDF clínico no tiene una estructura válida.');
+  }
+  const decodedNames = source.replace(/#([0-9a-fA-F]{2})/g,
+    (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
+  if (/\/(?:JavaScript|JS|EmbeddedFile|Filespec|Launch|OpenAction|RichMedia|AA|SubmitForm|ImportData|GoToR|URI|XFA|AcroForm|Encrypt|ObjStm)\b/i.test(decodedNames)) {
+    throw new HttpError(422, 'El PDF clínico contiene acciones, vínculos o elementos no autorizados.');
+  }
+}
+
 function safeFileName(value: unknown) {
   let decoded='';
   try{decoded=decodeURIComponent(String(value||''));}catch{decoded=String(value||'');}
@@ -330,6 +349,7 @@ router.post(
     if(bytes.length>CLINICAL_MAX_BYTES) throw new HttpError(413,'El adjunto clínico no debe superar 15 MB.');
     const mime=String(req.headers['content-type']||'').split(';')[0].trim().toLowerCase();
     const extension=validateClinicalMagic(bytes,mime);
+    assertPassiveClinicalPdf(bytes,mime);
     await scanExternalFile(bytes);
     const originalName=safeFileName(req.headers['x-file-name']);
     const storagePath=clinicalStoragePath(context.tenantId,metadata.patientId,extension);
