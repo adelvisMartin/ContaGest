@@ -81,3 +81,12 @@ test('draft POST uses a per-actor idempotency key and rejects mismatching replay
   assert.match(src, /requestFingerprint !== requestFingerprint/);
   assert.match(src, /409, 'La clave de reintento/);
 });
+
+test('#712 canonical cursor decoder prevents alternate serialized representations', () => {
+  const policy=fs.readFileSync('backend/src/modules/verticals/care-longitudinal-policy.ts','utf8');
+  assert.match(policy,/decoded\.toString\('base64url'\) !== value/);
+  assert.match(policy,/encodeCareTimelineCursor\(parsed\) !== value/);
+  const unit=fs.readFileSync('backend/src/modules/verticals/care-longitudinal-policy.test.ts','utf8');
+  assert.match(unit,/#712 timeline cursor rejects semantically equivalent but noncanonical encodings/);
+  assert.match(unit,/#712 timeline cursor rejects alternate base64url tail bits/);
+});

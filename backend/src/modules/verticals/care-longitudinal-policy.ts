@@ -87,7 +87,18 @@ export function decodeCareTimelineCursor(value: unknown): CareTimelineCursor | n
     throw new HttpError(422, 'Cursor clínico inválido.');
   }
   try {
-    return timelineItemSchema.parse(JSON.parse(Buffer.from(value, 'base64url').toString('utf8')));
+    // Node Buffer accepts noncanonical base64url spellings; those tokens
+    // cannot be used as alternate representations of the same patient cursor.
+    const decoded = Buffer.from(value, 'base64url');
+    if (decoded.toString('base64url') !== value) {
+      throw new Error('NONCANONICAL_CURSOR_ENCODING');
+    }
+    const parsed = timelineItemSchema.parse(JSON.parse(decoded.toString('utf8')));
+    // One exact serialized form for an opaque clinical pagination token.
+    if (encodeCareTimelineCursor(parsed) !== value) {
+      throw new Error('NONCANONICAL_CURSOR_PAYLOAD');
+    }
+    return parsed;
   } catch {
     throw new HttpError(422, 'Cursor clínico inválido.');
   }
