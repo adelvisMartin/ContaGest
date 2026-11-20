@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
+import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { ctx as context, one } from './verticals.shared.js';
 import { gymClassBookingSchema, gymMembershipStatusSchema, gymPaymentSchema } from './gym.schemas.js';
 
@@ -25,7 +26,24 @@ router.post('/gym/payments', requirePermission('gym.manage'), asyncHandler(async
   const tenantId = context(req).tenantId;
   // Posting a payment and applying its membership balance effect are one
   // transaction. Lock the tenant/member-owned membership before either write.
-  const payment = await prisma.$transaction(async tx => {
+  const execution = await runFinancialIdempotentMutation({
+    tenantId,
+    scope: 'gym.payment.create',
+    key: req.header('Idempotency-Key'),
+    request: body,
+    requestId: String(req.requestId || '') || null,
+    replay: async (tx, record) => {
+      if (record.resourceType !== 'GymPayment' || !record.resourceId) {
+        throw new HttpError(409, 'El pago original no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE' });
+      }
+      const prior = await tx.$queryRawUnsafe<any[]>(
+        'SELECT * FROM public."GymPayment" WHERE "tenantId"=$1 AND "id"=$2',
+        tenantId, record.resourceId
+      );
+      if (!prior.length) throw new HttpError(409, 'El pago original no está disponible.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE' });
+      return prior[0];
+    }
+  }, async tx => {
     // Some payments do not reference a membership. The member must still
     // belong to the authenticated tenant; a bare foreign member UUID is not
     // sufficient authority to create a payment or store personal data.
@@ -67,9 +85,11 @@ router.post('/gym/payments', requirePermission('gym.manage'), asyncHandler(async
       if (changed !== 1)
         throw new HttpError(409, 'El pago excede el saldo pendiente o la membresía cambió.');
     }
-    return one(rows);
+    const created = one(rows);
+    return {data:created,resourceType:'GymPayment',resourceId:created.id,responseCode:201};
   });
-  ok(res,payment,201);
+  res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
+  ok(res,execution.data,execution.replayed ? 200 : execution.responseCode);
 }));
 
 router.get('/gym/classes/:classId/bookings', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
