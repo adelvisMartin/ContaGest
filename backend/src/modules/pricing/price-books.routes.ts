@@ -200,11 +200,16 @@ router.post('/:id/entries', requirePermission('sales.manage'), validateBody(entr
       )
     `;
     if (body.targetType === 'service') {
-      const service = await tx.serviceDefinition.findFirst({
-        where: { tenantId: context.tenantId, id: body.targetId, status: 'active' },
-        select: { id: true },
-      });
-      if (!service) throw new HttpError(422, 'Servicio ajeno, inexistente o no activo.', { code: 'PRICE_SERVICE_NOT_FOUND' });
+      // Serialize pricing creation with Service Catalog's status transition.
+      // A plain snapshot read can otherwise race with archival.
+      const services = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM public."ServiceDefinition"
+        WHERE "tenantId"=${context.tenantId} AND "id"=${body.targetId} AND "status"='active'
+        FOR UPDATE
+      `;
+      if (services.length !== 1) {
+        throw new HttpError(422, 'Servicio ajeno, inexistente o no activo.', { code: 'PRICE_SERVICE_NOT_FOUND' });
+      }
     }
     let version = 1;
     const versions = await tx.$queryRaw<Array<{ version: number }>>`
