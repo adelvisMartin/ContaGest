@@ -10,7 +10,10 @@ export function canonicalCorsOrigin(value) {
   if (!raw || /[\u0000-\u001f\u007f]/u.test(value)) return '';
   try {
     const url = new URL(raw);
-    if ((url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    // Browser Origin is already serialized. Re-parsing can erase paths such as
+    // /%2e%2e and /./, or strip an explicit default port or surrounding spaces.
+    if (url.origin !== value ||
+        (url.protocol !== 'http:' && url.protocol !== 'https:') ||
         url.username || url.password || url.search || url.hash ||
         url.pathname !== '/') return '';
     return url.origin;
