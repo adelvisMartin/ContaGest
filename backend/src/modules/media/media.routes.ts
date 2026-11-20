@@ -328,7 +328,9 @@ router.get('/dental-attachments', asyncHandler(async (req,res)=>{
     const attachment=row.clinicalData?.dentalAttachment||{};
     const storagePath=String(attachment.storagePath||'');
     if(!storagePath.startsWith(`${context.tenantId}/dental-attachments/`)) return {...row,signedUrl:null};
-    const {data,error}=await storage.storage.from(DENTAL_BUCKET).createSignedUrl(storagePath,3600);
+    const {data,error}=await storage.storage.from(DENTAL_BUCKET).createSignedUrl(
+      storagePath,3600,attachment.mimeType==='application/pdf'?{download:true}:undefined
+    );
     return {...row,signedUrl:error?null:data.signedUrl,signError:error?.message||null};
   }));
   ok(res,records);
@@ -336,6 +338,8 @@ router.get('/dental-attachments', asyncHandler(async (req,res)=>{
 
 router.post(
   '/dental-attachments',
+  // Permission gate first: unauthorized clients cannot force a 15 MB raw read.
+  asyncHandler(async (req,_res,next)=>{await requireHealthManage(req);next();}),
   express.raw({type:['image/jpeg','image/png','image/webp','application/pdf'],limit:CLINICAL_MAX_BYTES}),
   asyncHandler(async (req,res)=>{
     const context=await requireHealthManage(req);
@@ -411,7 +415,9 @@ router.post(
       throw error;
     }
 
-    const {data:signed,error:signError}=await storage.storage.from(DENTAL_BUCKET).createSignedUrl(storagePath,3600);
+    const {data:signed,error:signError}=await storage.storage.from(DENTAL_BUCKET).createSignedUrl(
+      storagePath,3600,mime==='application/pdf'?{download:true}:undefined
+    );
     ok(res,{...encounter,signedUrl:signError?null:signed.signedUrl,signError:signError?.message||null},201);
   })
 );
