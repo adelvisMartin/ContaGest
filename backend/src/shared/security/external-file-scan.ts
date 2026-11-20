@@ -56,13 +56,16 @@ export async function scanExternalFile(
     const socket = connect({ host: '127.0.0.1', port });
     let settled = false;
     let reply = Buffer.alloc(0);
+    let deadline: ReturnType<typeof setTimeout> | undefined;
     const complete = (error?: ExternalFileScanError) => {
       if (settled) return;
       settled = true;
+      if (deadline) clearTimeout(deadline);
       socket.destroy();
       if (error) reject(error);
       else resolve();
     };
+    deadline = setTimeout(() => complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE')), timeoutMs);
     socket.setTimeout(timeoutMs, () => complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE')));
     socket.on('error', () => complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE')));
     const finishReply = () => {
@@ -92,15 +95,20 @@ export async function scanExternalFile(
       if (reply.includes(0) || reply.includes(10)) finishReply();
     });
     socket.on('connect', () => {
-      socket.write(Buffer.from('zINSTREAM\0'));
-      for (let offset = 0; offset < bytes.length; offset += CHUNK_SIZE) {
-        const slice = bytes.subarray(offset, Math.min(offset + CHUNK_SIZE, bytes.length));
-        const header = Buffer.allocUnsafe(4);
-        header.writeUInt32BE(slice.length, 0);
-        socket.write(header);
-        socket.write(slice);
-      }
-      socket.write(Buffer.alloc(4)); // Complete INSTREAM, remain open for verdict.
+      let offset = 0;
+      const sendNext = () => {
+        while (!settled && offset < bytes.length) {
+          const slice = bytes.subarray(offset, Math.min(offset + CHUNK_SIZE, bytes.length));
+          const frame = Buffer.allocUnsafe(4 + slice.length);
+          frame.writeUInt32BE(slice.length, 0);
+          slice.copy(frame, 4);
+          offset += slice.length;
+          // Do not buffer entire clinical files for concurrent scanner requests.
+          if (!socket.write(frame)) { socket.once('drain', sendNext); return; }
+        }
+        if (!settled) socket.write(Buffer.alloc(4)); // End of INSTREAM.
+      };
+      socket.write(Buffer.from('zINSTREAM\0'), sendNext);
     });
   });
 }
