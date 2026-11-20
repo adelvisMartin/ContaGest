@@ -21,6 +21,14 @@ El escáner de firmas reduce exposición, pero no garantiza ausencia de amenazas
   La UI exige ese preflight antes de extraer la tabla de entrada. Las rutas
   normales de `/imports/preview` siguen validando filas JSON escalares
   autorizadas; no reciben archivos ejecutables.
+- **/bank-reconciliation/imports:** los extractos bancarios de hasta 5 MB
+  pasan escaneo sobre los bytes originales tras RBAC `banking.manage` y antes
+  de que el servicio transaccional procese las líneas o cree movimientos.
+- **/payables/documents:** el servicio financiero exige escaneo de los
+  originales (máximo 8 MiB), antes de la consulta de duplicados o escritura en
+  PostgreSQL. Los reprocesamientos vuelven a escanear el contenido anterior.
+  La descarga autorizada responde `Content-Disposition: attachment` para
+  no renderizar documentos de proveedores directamente en la aplicación.
 - **XLSX:** el previsualizador existente limita expansión, entradas, CRC,
   referencias, celdas, fórmulas y XML DTD. Se bloquean macros/VBA, OLE/ActiveX,
   links/relaciones y conexiones que no se interpretan de forma segura.
