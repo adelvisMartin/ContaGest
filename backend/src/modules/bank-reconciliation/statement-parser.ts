@@ -185,7 +185,7 @@ function parseCamt(text:string,defaultCurrency:string): ParsedStatement {
     const currency=normalizeCurrency(currencyMatch?.[1]||defaultCurrency,defaultCurrency);
     return {
       bankLineId:safeText(xmlText(block,'AcctSvcrRef')||xmlText(block,'NtryRef'),`id:${index}`,240),
-      bookedAt:date(bookedRaw||xmlText(block,'Dt'),`booked:${index}`),
+      bookedAt:date(bookedRaw||(!valueRaw?xmlText(block,'Dt'):''),`booked:${index}`),
       valueDate:valueRaw?date(valueRaw,`value:${index}`):null,
       amount:signed,
       currency,
