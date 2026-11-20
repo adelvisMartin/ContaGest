@@ -118,7 +118,7 @@ router.get('/documents/:id',asyncHandler(async(req,res)=>{
 router.get('/documents/:id/content',asyncHandler(async(req,res)=>{
   const content=await getPayableContent(context(req).tenantId,req.params.id);
   res.setHeader('Content-Type',content.mimeType);
-  res.setHeader('Content-Disposition',`inline; filename="${safeFileName(content.fileName)}"`);
+  res.setHeader('Content-Disposition',`attachment; filename="${safeFileName(content.fileName)}"`);
   res.setHeader('Cache-Control','private, no-store');
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('ETag',`"sha256-${content.hash}"`);
