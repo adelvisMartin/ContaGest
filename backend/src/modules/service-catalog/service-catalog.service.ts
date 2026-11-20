@@ -232,6 +232,16 @@ export async function assignServiceLocation(ctx:CatalogActor,serviceId:string,
         tenantId:ctx.tenantId,serviceId,locationId,createdBy:actor(ctx)
       }});
     }else if(!enabled&&exists){
+      // Publication requires a location for onsite/hybrid services. Protect
+      // that invariant on later updates too, not only on initial activation.
+      // The service row is locked above, serializing concurrent removals.
+      if(service.status==='active'&&service.modality!=='remote'){
+        const locationCount=await tx.serviceLocationEligibility.count({
+          where:{tenantId:ctx.tenantId,serviceId}
+        });
+        if(locationCount<=1)denied('SERVICE_LOCATION_REQUIRED',
+          'Un servicio presencial activo debe conservar al menos una sede.');
+      }
       await tx.serviceLocationEligibility.deleteMany({where:{tenantId:ctx.tenantId,serviceId,locationId}});
     }
     if(Boolean(exists)!==enabled){
