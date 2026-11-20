@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
+import { scanExternalFile } from '../../shared/security/external-file-scan.js';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requireTenant } from '../../shared/middleware/context.js';
@@ -252,6 +253,9 @@ router.post('/upload', asyncHandler(async (req, res) => {
   const context = (req as any).context as { tenantId: string; userId?: string };
   await authorize(req, body.entityType, body.entityId);
   const image = parseDataUrl(body.dataUrl);
+  // A matching MIME signature is not an antimalware verdict. Fail closed if
+  // the private scanner is absent, infected or returns an ambiguous result.
+  await scanExternalFile(image.bytes);
   const path = tenantPath(context.tenantId, body.entityType, body.entityId, image.extension);
   const storage = client();
   const { error } = await storage.storage.from(BUCKET).upload(path, image.bytes, {
@@ -326,6 +330,7 @@ router.post(
     if(bytes.length>CLINICAL_MAX_BYTES) throw new HttpError(413,'El adjunto clínico no debe superar 15 MB.');
     const mime=String(req.headers['content-type']||'').split(';')[0].trim().toLowerCase();
     const extension=validateClinicalMagic(bytes,mime);
+    await scanExternalFile(bytes);
     const originalName=safeFileName(req.headers['x-file-name']);
     const storagePath=clinicalStoragePath(context.tenantId,metadata.patientId,extension);
     const sha256=crypto.createHash('sha256').update(bytes).digest('hex');
