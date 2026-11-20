@@ -12,6 +12,7 @@ import { runFinancialIdempotentMutation } from '../../shared/services/financial-
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { previewProductCsvImport } from '../portability/product-csv-import-preview.mjs';
 import { encodeImportReportCsvCell } from './import-report-csv-cell.js';
+import { MASTER_EXPORT_COLUMNS, projectMasterExportRows } from './master-export-fields.mjs';
 
 const router = Router();
 router.use(requireTenant, requirePermission('admin.manage'));
@@ -216,6 +217,57 @@ router.post('/preview', validateBody(previewSchema), asyncHandler(async(req,res)
     return created;
   });
   ok(res,publicBatch(batch));
+}));
+
+
+const exportTypeSchema = z.enum(['clients', 'suppliers', 'inventory', 'accounts']);
+const exportQuerySchema = z.object({
+  format: z.enum(['csv','json']).default('csv'),
+  limit: z.coerce.number().int().min(1).max(500).default(250),
+  cursor: z.string().uuid().optional()
+}).strict();
+
+// Bounded keyset pages prevent loading an entire tenant's dataset in memory.
+// This is a master-data export only; stock and payroll use separate authorities.
+router.get('/exports/:type', asyncHandler(async (req,res) => {
+  const ctx=context(req);
+  if (!ctx.userId) throw new HttpError(401, 'Se requiere un usuario autenticado para exportar datos.');
+  const type=exportTypeSchema.parse(req.params.type);
+  const {format,limit,cursor}=exportQuerySchema.parse(req.query);
+  const where={tenantId:ctx.tenantId,...(cursor?{id:{gt:cursor}}:{})};
+  const page=await prisma.$transaction(async (tx) => {
+    let records: unknown[];
+    if(type==='clients'){
+      records=await tx.client.findMany({where,orderBy:{id:'asc'},take:limit+1,
+        select:{id:true,rif:true,name:true,contact:true,email:true,phone:true,address:true,fiscalType:true}});
+    }else if(type==='suppliers'){
+      records=await tx.supplier.findMany({where,orderBy:{id:'asc'},take:limit+1,
+        select:{id:true,rif:true,name:true,contact:true,email:true,phone:true,address:true,retentionProfile:true}});
+    }else if(type==='inventory'){
+      records=await tx.product.findMany({where,orderBy:{id:'asc'},take:limit+1,
+        select:{id:true,sku:true,name:true,description:true,unit:true,cost:true,price:true,minStock:true,taxRate:true,barcode:true}});
+    }else{
+      records=await tx.chartAccount.findMany({where,orderBy:{id:'asc'},take:limit+1,
+        select:{id:true,code:true,name:true,type:true,nature:true,level:true,parentCode:true,allowPosting:true,description:true}});
+    }
+    const hasMore=records.length>limit;
+    const selected=records.slice(0,limit) as Array<Record<string,unknown>>;
+    const rows=projectMasterExportRows(type,selected);
+    const nextCursor=hasMore?String(selected[selected.length-1].id):null;
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'master.export',
+      entity:'MasterData',after:{type,format,limit,cursor:cursor||null,rows:rows.length,hasMore},
+      ipAddress:ctx.ip,userAgent:ctx.userAgent},tx);
+    return {rows,nextCursor,hasMore};
+  });
+  const headers=MASTER_EXPORT_COLUMNS[type];
+  const csv=format==='csv'?[headers.join(','),...page.rows.map((row) =>
+    headers.map((key:string)=>encodeImportReportCsvCell(row[key])).join(',')
+  )].join('\n'):undefined;
+  ok(res,{
+    type,format,filename:`contagest-${type}-${new Date().toISOString().slice(0,10)}.${format}`,
+    records:format==='json'?page.rows:undefined,csv,
+    count:page.rows.length,nextCursor:page.nextCursor,hasMore:page.hasMore
+  });
 }));
 
 router.get('/:id', asyncHandler(async(req,res)=>{
