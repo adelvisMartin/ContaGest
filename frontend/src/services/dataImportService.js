@@ -177,6 +177,11 @@ export const DataImportService = {
     return rows.map((row,index)=>{const missing=required.filter((field)=>row[field]===undefined||String(row[field]).trim()==='');return{index:index+1,ok:missing.length===0,missing,row};});
   },
   buildTemplateCsv(type) {return (IMPORT_TEMPLATES[type]||[]).join(',')+'\n';},
+  exportMasterPage(type,{format='csv',limit=500,cursor=null}={}){
+    const query=new URLSearchParams({format,limit:String(limit)});
+    if(cursor)query.set('cursor',cursor);
+    return BackendApi.get(`/imports/exports/${encodeURIComponent(type)}?${query.toString()}`);
+  },
   preview({type,rows,filename,duplicatePolicy='error'}) {return BackendApi.post('/imports/preview',{type,rows,filename,templateVersion:IMPORT_TEMPLATE_VERSION,duplicatePolicy});},
   getBatch(id){return BackendApi.get(`/imports/${encodeURIComponent(id)}`);},
   listBatches(){return BackendApi.get('/imports');},
