@@ -67,3 +67,13 @@ test('#849 category archival must serialize against service creation and preserv
   assert.match(category,/await audit\(tx,ctx,'service-category\.status'/);
   assert.doesNotMatch(category,/serviceStep\.delete|serviceDefinitionRevision\.delete|serviceDefinition\.delete/);
 });
+
+test('#849 active onsite/hybrid services never lose their final eligible location',()=>{
+  const body=service.split('export async function assignServiceLocation(')[1]
+    .split('export async function setServiceStatus(')[0];
+  assert.match(body,/await lockService\(tx,ctx\.tenantId,serviceId\)/);
+  assert.match(body,/if\(service\.status==='active'&&service\.modality!=='remote'\)/);
+  assert.match(body,/await tx\.serviceLocationEligibility\.count\(\{\s*where:\{tenantId:ctx\.tenantId,serviceId\}/);
+  assert.match(body,/locationCount<=1\)denied\('SERVICE_LOCATION_REQUIRED'/);
+  assert.ok(body.indexOf('locationCount<=1') < body.indexOf('await tx.serviceLocationEligibility.deleteMany('));
+});

@@ -96,3 +96,36 @@ test('#707 unresolved and secondary sources cannot claim documented official par
   row.referenceEvidenceUrl=null;
   assert.ok(!validateCompetitiveBenchmark(c).some(x=>x.includes('unsupported reference feature claim: VEOSS-010')));
 });
+
+test('#707 license proof stays on publisher repository or explicitly reviewed official URL',()=>{
+  for(const sourceId of ['dolibarr','wger','opendentist','openvpm','erpnext','akaunting','tryton','invoice-ninja']){
+    const c=fresh(),s=c.sources.find(x=>x.id===sourceId);
+    assert.ok(s,sourceId);
+    assert.deepEqual(validateCompetitiveBenchmark(c),[],sourceId);
+    s.licenseEvidenceUrl='https://unrelated.example.org/legitimate-looking-license';
+    assert.match(validateCompetitiveBenchmark(c).join(';'),
+      new RegExp('licensed source lacks evidence \\(publisher mismatch\\): '+sourceId));
+  }
+});
+test('#707 GitHub license URL cannot impersonate another owner or repository',()=>{
+  const c=fresh(),s=c.sources.find(x=>x.id==='dolibarr');
+  for(const url of [
+    'https://github.com/other/dolibarr/blob/main/COPYING',
+    'https://github.com/Dolibarr/dolibarr-copy/blob/main/COPYING',
+    'https://github.com/Dolibarr/another/blob/main/COPYING'
+  ]) {
+    s.licenseEvidenceUrl=url;
+    assert.match(validateCompetitiveBenchmark(c).join(';'),/licensed source lacks evidence \(publisher mismatch\): dolibarr/);
+  }
+});
+
+test('#707 cross-site license exceptions are bound to the reviewed publisher identity',()=>{
+  for(const sourceId of ['erpnext','akaunting','tryton','invoice-ninja']){
+    const c=fresh(),source=c.sources.find(row=>row.id===sourceId);
+    assert.ok(source,sourceId);
+    assert.deepEqual(validateCompetitiveBenchmark(c),[],sourceId);
+    source.sourceUrl='https://unrelated.example.org/clone';
+    assert.match(validateCompetitiveBenchmark(c).join(';'),
+      new RegExp('licensed source lacks evidence \\(publisher mismatch\\): '+sourceId));
+  }
+});
