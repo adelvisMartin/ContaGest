@@ -153,6 +153,13 @@ function normalizeRecord(record, type) {
 export const DataImportService = {
   async parseFile(file, type) {
     if(Number(file.size||0)>MAX_FILE_BYTES)throw new Error('El archivo supera el límite de 5 MB.');
+    // The server scans the original bytes before XLSX ZIP/XML or text parsing.
+    // A failed/ambiguous scanner verdict blocks staging entirely.
+    await BackendApi.request('/imports/file-scan',{
+      method:'POST',
+      headers:{'Content-Type':'application/octet-stream','X-Import-Filename':String(file.name||'')},
+      body:file
+    });
     const name=file.name.toLowerCase();let rows=[];
     if(name.endsWith('.xlsx')){
       try{rows=await parseXlsx(file);}
