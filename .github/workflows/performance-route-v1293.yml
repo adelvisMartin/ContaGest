@@ -5,6 +5,8 @@ on:
     paths:
       - 'scripts/performance-route-evidence-v1293.mjs'
       - 'scripts/performance-route-campaign-v1293.mjs'
+      - 'scripts/compare-performance-route-heads-v1293.mjs'
+      - 'tests/performance_route_heads_delta_v1293.test.mjs'
       - 'qa/performance-route-v1293.spec.mjs'
       - 'tests/performance_route_evidence_v1293.test.mjs'
       - 'tests/performance_route_campaign_v1293.test.mjs'
