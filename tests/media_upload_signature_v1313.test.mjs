@@ -256,3 +256,27 @@ test('#1313 DB update rollback and pre-upload authorization remain enforced', as
   await assert.rejects(unauthorised.execute(), error => error.status === 403);
   assert.deepEqual(unauthorised.events, ['authorize']);
 });
+
+test('#1391 clinical PDF import rejects embedded actions, remote links and encryption', () => {
+  const { assertPassiveClinicalPdf } = runInNewContext(
+    stripTypeScriptTypes(section('assertPassiveClinicalPdf', 'safeFileName')) + '\n({assertPassiveClinicalPdf})',
+    {Buffer, HttpError}
+  );
+  const pdf = (inner='') => Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog ' + inner + ' >> endobj\n%%EOF\n', 'latin1');
+  assert.equal(assertPassiveClinicalPdf(pdf(), 'application/pdf'),undefined);
+  for (const element of ['/JavaScript 2 0 R','/J#53 2 0 R','/OpenAction 3 0 R',
+    '/URI (https://external.example)','/EmbeddedFile 4 0 R','/Encrypt 7 0 R','/ObjStm 8 0 R']) {
+    assert.throws(() => assertPassiveClinicalPdf(pdf(element), 'application/pdf'),
+      error => error.status === 422 && /no autorizados/.test(error.message), element);
+  }
+  assert.throws(()=>assertPassiveClinicalPdf(Buffer.from('%PDF-1.7'), 'application/pdf'),
+    error => error.status===422 && /estructura/.test(error.message));
+});
+test('#1391 clinical and generic media writes must scan before uploading',()=>{
+  const upload = source.split("router.post('/upload'")[1].split("router.get('/dental-attachments'")[0];
+  const clinical = source.split("'/dental-attachments',")[1].split("router.post('/sign'")[0];
+  assert.ok(upload.indexOf('await scanExternalFile(image.bytes)')>=0);
+  assert.ok(upload.indexOf('await scanExternalFile(image.bytes)')<upload.indexOf('.upload(path, image.bytes'));
+  assert.ok(clinical.indexOf('assertPassiveClinicalPdf(bytes,mime)')>=0);
+  assert.ok(clinical.indexOf('await scanExternalFile(bytes)')<clinical.indexOf('.upload(storagePath,bytes'));
+});
