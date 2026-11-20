@@ -33,6 +33,8 @@ test('#1391 only authorized, bounded import files reach scanner', () => {
   assert.match(imports, /createHash\('sha256'\)/);
   assert.match(cors, /X-Import-Filename/);
   const parseFile=importClient.split('async parseFile(file, type)')[1].split('validateRows(')[0];
+  assert.ok(parseFile.includes("BackendApi.request('/imports/file-scan'"));
+  assert.ok(parseFile.includes("if(name.endsWith('.xlsx'))"));
   assert.ok(parseFile.indexOf("BackendApi.request('/imports/file-scan'") < parseFile.indexOf("if(name.endsWith('.xlsx'))"));
   assert.match(parseFile, /await BackendApi\.request/);
 });
@@ -55,6 +57,8 @@ test('#1391 imported bank statements are scanned before any financial ingest',()
   assert.match(bank,/requirePermission\('banking\.manage'\)/);
   assert.match(bank,/await scanExternalFile\(upload\.bytes\)/);
   const handler=bank.split("router.post('/imports'")[1];
+  assert.ok(handler.includes('await scanExternalFile(upload.bytes)'));
+  assert.ok(handler.includes('await importBankStatement('));
   assert.ok(handler.indexOf('await scanExternalFile(upload.bytes)')<handler.indexOf('await importBankStatement('));
 });
 
@@ -63,6 +67,8 @@ test('#1391 supplier invoices scan before DB persistence and on reprocessing',()
   assert.match(payableRoutes,/Content-Disposition',`attachment;/);
   const ingest=payables.split('export async function ingestPayableDocument(')[1].split('export async function processPayableDocument(')[0];
   const reprocess=payables.split('export async function processPayableDocument(')[1].split('export async function listPayableDocuments(')[0];
+  assert.ok(ingest.includes('await scanExternalFile(input.bytes)') && ingest.includes('await prisma.$queryRaw'));
   assert.ok(ingest.indexOf('await scanExternalFile(input.bytes)')<ingest.indexOf('await prisma.$queryRaw'));
+  assert.ok(reprocess.includes('await scanExternalFile(Buffer.from(document.originalContent))') && reprocess.includes('await prisma.$executeRaw'));
   assert.ok(reprocess.indexOf('await scanExternalFile(Buffer.from(document.originalContent))')<reprocess.indexOf('await prisma.$executeRaw'));
 });
