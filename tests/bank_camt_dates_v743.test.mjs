@@ -16,3 +16,9 @@ test('#743 reject malformed or ambiguous nested dates rather than guessing',()=>
  assert.throws(()=>camtDateField('<ValDt><Bad>wrong</Bad></ValDt>', 'ValDt'), /MALFORMED/);
  assert.throws(()=>camtDateField(entry,'Amt'),/FIELD_INVALID/);
 });
+
+test('#743 a value date cannot stand in for a missing booking date',()=>{
+ const valueOnly='<Ntry><ValDt><Dt>2026-11-12</Dt></ValDt></Ntry>';
+ assert.equal(camtDateField(valueOnly,'BookgDt'),'');
+ assert.equal(camtDateField(valueOnly,'ValDt'),'2026-11-12');
+});
