@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { HttpError } from '../../shared/http.js';
 import { normalizeCamtDirection, signedCamtAmount } from './camt-direction.mjs';
+import { camtDateField } from './camt-date-fields.mjs';
 import { parseStatementCsvRows, StatementCsvStructureError } from './statement-csv-structure.js';
 import { resolveStatementCsvHeaders, StatementCsvHeadersError } from './statement-csv-headers.js';
 import { money, serializeDecimal } from '../../shared/financial/decimal.js';
@@ -156,6 +157,15 @@ function parseCamt(text:string,defaultCurrency:string): ParsedStatement {
   const entries=text.match(/<(?:\w+:)?Ntry(?:\s[^>]*)?>[\s\S]*?<\/(?:\w+:)?Ntry>/gi)||[];
   if(!entries.length) throw new HttpError(422,'CAMT sin Ntry.',{code:'BANK_STATEMENT_CAMT_EMPTY'});
   const lines=entries.map((block,index)=>{
+    let bookedRaw:string, valueRaw:string;
+    try {
+      bookedRaw=camtDateField(block,'BookgDt');
+      valueRaw=camtDateField(block,'ValDt');
+    } catch {
+      throw new HttpError(422,'Fecha CAMT con estructura inválida.',{
+        code:'BANK_CAMT_DATE_FIELD_MALFORMED',row:index+1
+      });
+    }
     const amountValue=amount(xmlText(block,'Amt'));
     let indicator: string;
     try { indicator=normalizeCamtDirection(xmlText(block,'CdtDbtInd')); }
@@ -175,8 +185,8 @@ function parseCamt(text:string,defaultCurrency:string): ParsedStatement {
     const currency=normalizeCurrency(currencyMatch?.[1]||defaultCurrency,defaultCurrency);
     return {
       bankLineId:safeText(xmlText(block,'AcctSvcrRef')||xmlText(block,'NtryRef'),`id:${index}`,240),
-      bookedAt:date(xmlText(block,'BookgDt')||xmlText(block,'Dt'),`booked:${index}`),
-      valueDate:xmlText(block,'ValDt')?date(xmlText(block,'ValDt'),`value:${index}`):null,
+      bookedAt:date(bookedRaw||xmlText(block,'Dt'),`booked:${index}`),
+      valueDate:valueRaw?date(valueRaw,`value:${index}`):null,
       amount:signed,
       currency,
       reference:safeText(xmlText(block,'EndToEndId')||xmlText(block,'AcctSvcrRef'),`reference:${index}`,240),
