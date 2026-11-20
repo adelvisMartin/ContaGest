@@ -13,6 +13,7 @@ test('#709 active membership resumes only for valid active member in period',()=
 test('#709 cancelled membership never resurrects',()=>{
  assert.throws(()=>guard({...input,current:'cancelled'}),/CANCELLED_FINAL/);
  assert.equal(guard({...input,current:'cancelled',target:'cancelled'}),true);
+ assert.throws(()=>guard({...input,current:'expired'}),/EXPIRED_FINAL/);
 });
 test('#709 invalid states and counts fail closed',()=>{
  for(const n of [-1,0.2,Infinity,NaN])assert.throws(()=>guard({...input,otherActiveCount:n}),/STATE_INVALID/);
