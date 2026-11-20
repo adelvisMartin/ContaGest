@@ -95,10 +95,22 @@ function isHttps(url) {
  * Structural provenance is not legal advice or a live content attestation.
  */
 const OFFICIAL_LICENSE_EXCEPTIONS = Object.freeze({
-  erpnext:'https://erpnext.com/license-trademark',
-  akaunting:'https://akaunting.com/license',
-  tryton:'https://github.com/tryton/trytond/blob/develop/COPYRIGHT',
-  'invoice-ninja':'https://invoiceninja.github.io/docs/legal/license'
+  erpnext: {
+    publisher: 'https://github.com/frappe/erpnext',
+    license: 'https://erpnext.com/license-trademark'
+  },
+  akaunting: {
+    publisher: 'https://github.com/akaunting/akaunting',
+    license: 'https://akaunting.com/license'
+  },
+  tryton: {
+    publisher: 'https://docs.tryton.org/latest/server/topics/install.html',
+    license: 'https://github.com/tryton/trytond/blob/develop/COPYRIGHT'
+  },
+  'invoice-ninja': {
+    publisher: 'https://github.com/invoiceninja/invoiceninja',
+    license: 'https://invoiceninja.github.io/docs/legal/license'
+  }
 });
 
 export function isPublisherLicenseEvidence(url,source) {
@@ -112,7 +124,8 @@ export function isPublisherLicenseEvidence(url,source) {
     return publisher.length===2&&publisher[0].toLowerCase()===actual[0]?.toLowerCase()&&
       publisher[1].toLowerCase()===actual[1]?.toLowerCase();
   }
-  return OFFICIAL_LICENSE_EXCEPTIONS[source.id]===url;
+  const reviewed=OFFICIAL_LICENSE_EXCEPTIONS[source.id];
+  return Boolean(reviewed && reviewed.publisher===source.sourceUrl && reviewed.license===url);
 }
 
 /**
