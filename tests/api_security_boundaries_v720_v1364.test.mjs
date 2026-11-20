@@ -13,7 +13,14 @@ test('#1364 accepts only canonical CORS origins, not full URLs or credentials',(
     'https://erp.example.org/tenant/a', 'https://erp.example.org?access_token=x',
     'https://erp.example.org/#fragment', 'https://u:p@erp.example.org',
     'javascript:alert(1)', 'file:///etc/passwd', 'null', 'https://erp.example.org\n',
-    'https://erp.example.org:invalid', '', 12
+    'https://erp.example.org:invalid',
+    // WHATWG URL normalization must not turn non-Origin URLs into allowed
+    // Origin headers (including dot segments, whitespace, or default ports).
+    'https://erp.example.org/', 'https://erp.example.org/./',
+    'https://erp.example.org/%2e%2e', 'https://erp.example.org/%2e',
+    ' https://erp.example.org ', 'https://erp.example.org:443',
+    'HTTPS://erp.example.org', 'https://ERP.EXAMPLE.ORG',
+    '', 12
   ]) {
     assert.equal(canonicalCorsOrigin(invalid), '', JSON.stringify(invalid));
   }
