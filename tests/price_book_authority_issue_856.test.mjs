@@ -44,7 +44,15 @@ test('#856 pricing is one tenant-scoped authority with immutable used-price evid
   assert.doesNotMatch(policy,/parseFloat|toNumber\(|Math\.round/);
   assert.doesNotMatch(service,/product\.price|select:\s*\{[^}]*price\s*:/s);
   assert.match(service,/targetType: 'product' \| 'service'/);
-  assert.match(service,/PRICE_SERVICE_AUTHORITY_UNAVAILABLE/);
+  assert.match(service,/prisma\.serviceDefinition\.findFirst/);
+  assert.match(service,/PRICE_SERVICE_NOT_FOUND/);
+  assert.match(service,/serviceLocationEligibility\.findFirst/);
+  assert.doesNotMatch(service,/PRICE_SERVICE_AUTHORITY_UNAVAILABLE/);
+  assert.match(routes,/router\.get\('\/services'/);
+  const serviceMigration=read('backend/prisma/migrations/20261120035000_issue_1391_service_price_bridge/migration.sql');
+  assert.match(serviceMigration,/PRICE_SERVICE_TENANT_MISMATCH/);
+  assert.match(serviceMigration,/ServiceDefinition/);
+  assert.doesNotMatch(serviceMigration,/PRICE_SERVICE_AUTHORITY_UNAVAILABLE/);
   assert.match(middleware,/resolved\.amount\.toFixed\(2\)/);
   assert.ok(index.indexOf('enforceCanonicalSalesPricing')<index.indexOf('mountModuleRouteManifest(router)'),'pricing must run before Sales route totals');
   assert.match(manifest,/id: 'price-books'.*path: '\/price-books'/s);
