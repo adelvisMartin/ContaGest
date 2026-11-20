@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { prisma } from '../../database/prisma.js';
 import { asyncHandler, HttpError, ok } from '../../shared/http.js';
 import { requirePermission } from '../../shared/middleware/context.js';
+import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
+import { writeAudit } from '../../shared/services/audit.service.js';
+import { assertGymMembershipTransition } from './gym-membership-transition.mjs';
 import { ctx as context, one } from './verticals.shared.js';
 import { gymClassBookingSchema, gymMembershipStatusSchema, gymPaymentSchema } from './gym.schemas.js';
 
@@ -25,7 +28,24 @@ router.post('/gym/payments', requirePermission('gym.manage'), asyncHandler(async
   const tenantId = context(req).tenantId;
   // Posting a payment and applying its membership balance effect are one
   // transaction. Lock the tenant/member-owned membership before either write.
-  const payment = await prisma.$transaction(async tx => {
+  const execution = await runFinancialIdempotentMutation({
+    tenantId,
+    scope: 'gym.payment.create',
+    key: req.header('Idempotency-Key'),
+    request: body,
+    requestId: String(req.requestId || '') || null,
+    replay: async (tx, record) => {
+      if (record.resourceType !== 'GymPayment' || !record.resourceId) {
+        throw new HttpError(409, 'El pago original no puede reconstruirse.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE' });
+      }
+      const prior = await tx.$queryRawUnsafe<any[]>(
+        'SELECT * FROM public."GymPayment" WHERE "tenantId"=$1 AND "id"=$2',
+        tenantId, record.resourceId
+      );
+      if (!prior.length) throw new HttpError(409, 'El pago original no está disponible.', { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE' });
+      return prior[0];
+    }
+  }, async tx => {
     // Some payments do not reference a membership. The member must still
     // belong to the authenticated tenant; a bare foreign member UUID is not
     // sufficient authority to create a payment or store personal data.
@@ -67,9 +87,11 @@ router.post('/gym/payments', requirePermission('gym.manage'), asyncHandler(async
       if (changed !== 1)
         throw new HttpError(409, 'El pago excede el saldo pendiente o la membresía cambió.');
     }
-    return one(rows);
+    const created = one(rows);
+    return {data:created,resourceType:'GymPayment',resourceId:created.id,responseCode:201};
   });
-  ok(res,payment,201);
+  res.setHeader('Idempotency-Replayed', execution.replayed ? 'true' : 'false');
+  ok(res,execution.data,execution.replayed ? 200 : execution.responseCode);
 }));
 
 router.get('/gym/classes/:classId/bookings', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
@@ -224,15 +246,58 @@ router.post('/gym/classes/bookings', requirePermission('gym.manage'), asyncHandl
 
 router.patch('/gym/memberships/:id/status', requirePermission('gym.manage'), asyncHandler(async (req, res) => {
   const body = gymMembershipStatusSchema.parse(req.body || {});
-  const rows = await prisma.$queryRawUnsafe<any[]>(`
-    UPDATE public."GymMembership"
-    SET "status" = $3,
-        "endsAt" = COALESCE($4::timestamptz, "endsAt"),
-        "updatedAt" = now()
-    WHERE "id" = $1 AND "tenantId" = $2
-    RETURNING *
-  `, req.params.id, context(req).tenantId, body.status, body.endsAt || null);
-  ok(res, one(rows, 'Membresía no encontrada.'));
+  const tenantId = context(req).tenantId;
+  const actorId = String(context(req).userId || '').trim();
+  if(!actorId)throw new HttpError(401,'Se requiere una sesión autenticada para modificar la membresía.');
+  const updated=await prisma.$transaction(async tx => {
+    const reference=await tx.$queryRawUnsafe<Array<{memberId:string}>>(
+      'SELECT "memberId" FROM public."GymMembership" WHERE "id"=$1 AND "tenantId"=$2',
+      req.params.id,tenantId
+    );
+    const memberId=one(reference,'Membresía no encontrada.').memberId;
+    // Lock member before membership, matching activation and check-in lock order.
+    const members=await tx.$queryRawUnsafe<Array<{id:string;status:string}>>(
+      'SELECT "id","status" FROM public."GymMember" WHERE "id"=$1 AND "tenantId"=$2 FOR UPDATE',
+      memberId,tenantId
+    );
+    const member=one(members,'Miembro no encontrado en esta empresa.');
+    const existing=await tx.$queryRawUnsafe<Array<{id:string;memberId:string;status:string;startsAt:Date;endsAt:Date}>>(
+      'SELECT * FROM public."GymMembership" WHERE "id"=$1 AND "tenantId"=$2 FOR UPDATE',
+      req.params.id,tenantId
+    );
+    const current=one(existing,'Membresía no encontrada.');
+    if(current.memberId!==memberId)throw new HttpError(409,'La membresía cambió durante la actualización.');
+    const endsAt=body.endsAt?new Date(body.endsAt):current.endsAt;
+    if(!Number.isFinite(endsAt.getTime())||endsAt<=current.startsAt)
+      throw new HttpError(422,'La fecha final de membresía debe ser posterior a su inicio.');
+    if(current.status===body.status&&endsAt.getTime()===current.endsAt.getTime())return current;
+    if(['cancelled','expired'].includes(current.status)&&endsAt.getTime()!==current.endsAt.getTime())
+      throw new HttpError(409,'La vigencia de una membresía finalizada no puede reescribirse.');
+    const other=body.status==='active' ? await tx.$queryRawUnsafe<Array<{taken:number}>>(
+      `SELECT count(*)::int AS taken FROM public."GymMembership"
+        WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='active' AND "id"<>$3`,
+      tenantId,memberId,current.id
+    ) : [];
+    try{
+      assertGymMembershipTransition({current:current.status,target:body.status,memberStatus:member.status,
+        startsAt:current.startsAt,endsAt,now:new Date(),otherActiveCount:other[0]?.taken??0});
+    }catch(error){
+      if(error instanceof TypeError && error.message.startsWith('GYM_MEMBERSHIP_'))
+        throw new HttpError(409,'La transición de membresía no está permitida.',{code:error.message});
+      throw error;
+    }
+    const result=await tx.$queryRawUnsafe<any[]>(
+      `UPDATE public."GymMembership" SET "status"=$3,"endsAt"=$4::timestamptz,"updatedAt"=now()
+        WHERE "id"=$1 AND "tenantId"=$2 RETURNING *`,
+      current.id,tenantId,body.status,endsAt.toISOString()
+    );
+    const saved=one(result,'No fue posible modificar la membresía.');
+    await writeAudit({tenantId,userId:actorId,action:'gym.membership.status',
+      entity:'GymMembership',entityId:current.id,before:current,after:saved,
+      ipAddress:req.ip,userAgent:req.get('user-agent')},tx);
+    return saved;
+  });
+  ok(res,updated);
 }));
 
 export default router;
