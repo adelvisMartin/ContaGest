@@ -111,7 +111,7 @@
       "name": "Akaunting",
       "sourceUrl": "https://github.com/akaunting/akaunting",
       "license": "BSL-1.1",
-      "licenseEvidenceUrl": "https://api.akaunting.com/license",
+      "licenseEvidenceUrl": "https://akaunting.com/license",
       "sourceLevel": "OFFICIAL",
       "kind": "PRODUCT",
       "sourceReuse": "NONE"
@@ -121,7 +121,7 @@
       "name": "Tryton",
       "sourceUrl": "https://docs.tryton.org/latest/server/topics/install.html",
       "license": "GPL-3.0",
-      "licenseEvidenceUrl": "https://www.tryton.org/",
+      "licenseEvidenceUrl": "https://github.com/tryton/trytond/blob/develop/COPYRIGHT",
       "sourceLevel": "OFFICIAL",
       "kind": "PRODUCT",
       "sourceReuse": "NONE"
@@ -131,7 +131,7 @@
       "name": "Invoice Ninja",
       "sourceUrl": "https://github.com/invoiceninja/invoiceninja",
       "license": "ELv2",
-      "licenseEvidenceUrl": "https://invoiceninja.github.io/en/legal/license/",
+      "licenseEvidenceUrl": "https://invoiceninja.github.io/docs/legal/license",
       "sourceLevel": "OFFICIAL",
       "kind": "PRODUCT",
       "sourceReuse": "NONE"

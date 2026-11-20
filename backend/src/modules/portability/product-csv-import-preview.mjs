@@ -65,15 +65,22 @@ export function previewProductCsvImport(input){
  for(let i=1;i<rows.length;i++){
   const cells=rows[i];
   const rowNo=i+1;
-  if(cells.length!==header.length){errors.push(Object.freeze({row:rowNo,code:'COLUMN_COUNT'}));continue;}
+  if(cells.length!==header.length){
+   errors.push(Object.freeze({row:rowNo,code:'COLUMN_COUNT',column:null}));continue;
+  }
   const values=Object.fromEntries(header.map((h,k)=>[h,cells[k].trim()]));
   const sku=values.sku||'',name=values.name||'',description=values.description||'';
-  if(!SKU.test(sku)){errors.push(Object.freeze({row:rowNo,code:'INVALID_SKU'}));continue;}
-  if(name.length<2||name.length>160||description.length>1000
-     ||/[\x00-\x1f]/.test(name+description)||HIDDEN_TEXT_CONTROL.test(name+description)
-     ||FORMULA_PREFIX.test(name)
-     ||FORMULA_PREFIX.test(description)){
-   errors.push(Object.freeze({row:rowNo,code:'UNSAFE_TEXT'}));continue;
+  if(!SKU.test(sku)){
+   errors.push(Object.freeze({row:rowNo,code:'INVALID_SKU',column:'sku'}));continue;
+  }
+  const unsafeText=value=>value.length>0 && (
+   /[\x00-\x1f]/.test(value)||HIDDEN_TEXT_CONTROL.test(value)||FORMULA_PREFIX.test(value)
+  );
+  if(name.length<2||name.length>160||unsafeText(name)){
+   errors.push(Object.freeze({row:rowNo,code:'UNSAFE_TEXT',column:'name'}));continue;
+  }
+  if(description.length>1000||unsafeText(description)){
+   errors.push(Object.freeze({row:rowNo,code:'UNSAFE_TEXT',column:'description'}));continue;
   }
   const identity=sku.toUpperCase();
   if(seen.has(identity)){errors.push(Object.freeze({row:rowNo,code:'DUPLICATE_SKU'}));continue;}
