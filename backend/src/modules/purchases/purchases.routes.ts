@@ -39,7 +39,9 @@ const purchaseSchema = z.object({
   exchangeRate: decimalSchema('exchangeRate', { defaultValue: 1, positive: true }),
   exchangeRateDate: z.coerce.date().optional(),
   exchangeRateSource: z.string().trim().min(2).max(120).optional(),
-  status: z.enum(['draft', 'issued', 'paid', 'overdue']).default('issued'),
+  // A new purchase cannot start paid/overdue without payment or ageing events.
+  // Those states are derived from the existing AP/payment lifecycle, not trusted from JSON.
+  status: z.enum(['draft', 'issued']).default('issued'),
   ocrStatus: z.string().optional(),
   lines: z.array(lineSchema).min(1)
 });
