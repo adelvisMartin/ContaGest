@@ -5,6 +5,8 @@ export function assertGymMembershipTransition({current,target,memberStatus,start
     throw new TypeError('GYM_MEMBERSHIP_STATE_INVALID');
   if (current === 'cancelled' && target !== 'cancelled')
     throw new TypeError('GYM_MEMBERSHIP_CANCELLED_FINAL');
+  if (current === 'expired' && target !== 'expired')
+    throw new TypeError('GYM_MEMBERSHIP_EXPIRED_FINAL');
   if (target !== 'active') return true;
   if (memberStatus !== 'active') throw new TypeError('GYM_MEMBERSHIP_MEMBER_NOT_ACTIVE');
   if (![startsAt,endsAt,now].every(date => date instanceof Date && Number.isFinite(date.getTime())) ||
