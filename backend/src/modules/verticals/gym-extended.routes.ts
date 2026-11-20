@@ -271,6 +271,8 @@ router.patch('/gym/memberships/:id/status', requirePermission('gym.manage'), asy
     if(!Number.isFinite(endsAt.getTime())||endsAt<=current.startsAt)
       throw new HttpError(422,'La fecha final de membresía debe ser posterior a su inicio.');
     if(current.status===body.status&&endsAt.getTime()===current.endsAt.getTime())return current;
+    if(['cancelled','expired'].includes(current.status)&&endsAt.getTime()!==current.endsAt.getTime())
+      throw new HttpError(409,'La vigencia de una membresía finalizada no puede reescribirse.');
     const other=body.status==='active' ? await tx.$queryRawUnsafe<Array<{taken:number}>>(
       `SELECT count(*)::int AS taken FROM public."GymMembership"
         WHERE "tenantId"=$1 AND "memberId"=$2 AND "status"='active' AND "id"<>$3`,
