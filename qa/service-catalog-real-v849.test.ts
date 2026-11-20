@@ -156,6 +156,18 @@ test('#849 catalog end-to-end: tenant binding, versioned steps and bilateral ass
   projected=await h.ok('/service-catalog/public');
   const publicRow=projected.services.find((s:any)=>s.id===created.id);
   assert.ok(publicRow);
+  // A later location assignment must not invalidate a live service.
+  const locationPath=`/service-catalog/services/${created.id}/locations/${location.id}`;
+  await h.status(locationPath,409,{method:'DELETE'});
+  const preserved=await h.prisma.serviceDefinition.findFirst({
+    where:{tenantId:h.tenant.id,id:created.id},
+    include:{locations:true}
+  });
+  assert.equal(preserved?.status,'active');
+  assert.equal(preserved?.version,5,'a rejected mutation must not increment the version');
+  assert.deepEqual(preserved?.locations.map(row=>row.locationId),[location.id]);
+  const unchanged=await h.ok(locationPath,{method:'PUT'});
+  assert.equal(unchanged.changed,false,'idempotent assignment must remain a no-op');
 
   // Admin filters stay tenant-bound, bounded, and deterministic without
   // changing the existing unfiltered list contract.
