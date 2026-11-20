@@ -60,3 +60,92 @@ test('#698 policy boundary remains presentation/client-side only and does not be
   assert.doesNotMatch(source,/BackendApi|fetch\(|Prisma|tenantId\s*=|permission\s*=/);
   assert.match(source,/canAccessByRole/);
 });
+
+test('#1362: reissuing a license cannot silently overwrite an existing account password or status',()=>{
+  const routes=fs.readFileSync('backend/src/modules/licenses/licenses.routes.ts','utf8');
+  assert.match(routes,/const user = existingUser \|\| await tx\.userProfile\.create/);
+  assert.doesNotMatch(routes,/tx\.userProfile\.update\(\{[\s\S]*?passwordHash/);
+  assert.match(routes,/temporaryPassword: issuedPassword/);
+  assert.match(routes,/const issuedPassword=createdUser\?temporaryPassword:null/);
+});
+
+test('#1362: reused account receives a clear license-only UX, never a fake temporary password',()=>{
+  const page=fs.readFileSync('frontend/src/pages/LicensesPage.js','utf8');
+  assert.match(page,/hasTemporaryPassword/);
+  assert.match(page,/Cuenta existente: conserva su contraseña actual/);
+  assert.match(page,/Contraseña sin cambios/);
+  assert.match(page,/La cuenta existente conserva su contraseña/);
+});
+
+test('#1362 one-time licence secrets never enter scoped browser persistence or exported state',async()=>{
+  const {stripSensitivePersistedState}=await import('../frontend/src/state/persistedStatePolicy.js');
+  const snapshot={
+    profile:{id:'staff-test'},
+    healthVertical:{secretClinicalData:'must-not-persist'},
+    licenseCredentials:{licenseKey:'CG-RAW-SECRET',temporaryPassword:'TEMP-SECRET'},
+    licenseKey:'CG-RAW-SECRET',
+    temporaryPassword:'TEMP-SECRET',
+    licenses:[
+      {id:'new-license',licenseKey:'CG-RAW-SECRET',temporaryPassword:'TEMP-SECRET',
+       credentials:{licenseKey:'CG-RAW-SECRET'},keyPreview:'CG-••••'},
+      {id:'previous',keyPreview:'PREVIEW'}
+    ]
+  };
+  const durable=stripSensitivePersistedState(snapshot);
+  assert.equal('healthVertical' in durable,false);
+  assert.equal('licenseCredentials' in durable,false);
+  assert.equal('licenseKey' in durable,false);
+  assert.equal('temporaryPassword' in durable,false);
+  assert.deepEqual(durable.licenses,[
+    {id:'new-license',keyPreview:'CG-••••'},
+    {id:'previous',keyPreview:'PREVIEW'}
+  ]);
+  assert.equal(snapshot.licenses[0].licenseKey,'CG-RAW-SECRET',
+    'Sanitizing persistence cannot destroy the one-time in-memory UI state');
+  const stored=JSON.stringify(durable);
+  assert.doesNotMatch(stored,/CG-RAW-SECRET|TEMP-SECRET|secretClinicalData/);
+});
+
+test('#1362 every Store persistence/export boundary uses the secret-free projection',()=>{
+  const store=fs.readFileSync('frontend/src/state/store.js','utf8');
+  const page=fs.readFileSync('frontend/src/pages/LicensesPage.js','utf8');
+  assert.match(store,/import \{ stripSensitivePersistedState \} from '\.\/persistedStatePolicy\.js'/);
+  assert.match(store,/return stripSensitivePersistedState\(snapshot\)/);
+  assert.match(store,/JSON\.stringify\(withoutClinicalCache\(state\)\)/);
+  assert.match(store,/JSON\.stringify\(withoutClinicalCache\(state\), null, 2\)/);
+  assert.match(page,/credentials:_oneTime, \.\.\.licenseSummary/);
+  assert.match(page,/draft\.licenses=\[licenseSummary,/);
+});
+
+test('#1362 shared clinical permission cannot cross Vet and Care route families in a demo',()=>{
+  const middleware=fs.readFileSync('backend/src/shared/middleware/context.ts','utf8');
+  const policy=fs.readFileSync('backend/src/shared/licensing/clinicalDemoRoutePolicy.ts','utf8');
+  assert.match(middleware,/clinicalDemoRouteAllowed\(permission, modules, originalUrl\)/);
+  assert.match(middleware,/enforceClientLicense\(ctx, permission, req\.originalUrl\)/);
+  assert.match(middleware,/license\.plan === 'trial' \|\| config\.commercialUse === 'demostracion'/);
+  assert.match(policy,/modules\.includes\('veterinaria'\)/);
+  assert.match(policy,/modules\.includes\('salud'\) \|\| modules\.includes\('odontologia'\)/);
+  assert.doesNotMatch(policy,/client\.tenantId|req\.query\.tenantId/);
+});
+
+test('#1362 prospect options and records use canonical manifest without admin routes',()=>{
+  const ui=fs.readFileSync('frontend/src/services/demoAccessService.js','utf8');
+  const routes=fs.readFileSync('backend/src/modules/demos/demos.routes.ts','utf8');
+  const contracts=fs.readFileSync('backend/src/modules/demos/demos.contracts.ts','utf8');
+  const license=fs.readFileSync('backend/src/modules/licenses/licenses.contracts.ts','utf8');
+  assert.match(ui,/ACCESS_MANIFEST\.modules/);
+  assert.match(ui,/blockedDemoPermissions\.has\(item\.permission\)/);
+  assert.doesNotMatch(ui,/modules:\s*\[/);
+  assert.match(routes,/from '\.\/demos\.contracts\.js'/);
+  assert.match(contracts,/SAFE_DEMO_MODULES\.has\(value\)/);
+  assert.match(contracts,/\.strict\(\)/);
+  assert.match(license,/SAFE_DEMO_MODULES/);
+});
+
+test('#1362 legacy scope hydration removes old stored secrets, not just in-memory copies',()=>{
+  const store=fs.readFileSync('frontend/src/state/store.js','utf8');
+  assert.match(store,/const sanitized = withoutClinicalCache\(saved\)/);
+  assert.match(store,/if \(current !== safe\)/);
+  assert.match(store,/localStorage\.setItem\(key, safe\)/);
+  assert.match(store,/localStorage\.removeItem\(key\)/);
+});

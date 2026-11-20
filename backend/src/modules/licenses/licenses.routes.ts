@@ -246,14 +246,13 @@ router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res
       throw new HttpError(409, 'No se puede reemplazar la credencial de un usuario administrativo mediante una licencia comercial.');
     }
 
-    const user = existingUser
-      ? await tx.userProfile.update({
-          where: { id: existingUser.id },
-          data: { fullName: body.fullName, passwordHash, status: 'active' }
-        })
-      : await tx.userProfile.create({
-          data: { tenantId: ctx.tenantId, email: normalizedEmail, fullName: body.fullName, passwordHash, status: 'active' }
-        });
+    // Reissuing a license must never reset an existing person's password,
+    // silently revive a suspended account or overwrite their identity.
+    // Only new account provisioning receives a one-time temporary password.
+    const createdUser = !existingUser;
+    const user = existingUser || await tx.userProfile.create({
+      data: { tenantId: ctx.tenantId, email: normalizedEmail, fullName: body.fullName, passwordHash, status: 'active' }
+    });
 
     const membership = await ensureAccountMembership({
       tenantId:ctx.tenantId,
@@ -301,26 +300,29 @@ router.post('/', requirePermission('admin.manage'), asyncHandler(async (req, res
     const extension=await extensionByLicenseId(record.id,tx);
     const publicData=publicLicense(record,tenant,extension||undefined);
     await audit(req,'license.create',record.id,publicData,tx);
-    return{record,publicData};
+    return{record,publicData,createdUser};
   });
 
-  const {record,publicData}=provisioned;
+  const {record,publicData,createdUser}=provisioned;
+  const issuedPassword=createdUser?temporaryPassword:null;
 
   ok(res, {
     ...publicData,
     licenseKey: rawKey,
-    temporaryPassword,
+    temporaryPassword: issuedPassword,
     credentials: {
       tenantRif: tenant.rif,
       companyName: tenant.name,
       businessSector: body.businessSector,
       email: normalizedEmail,
-      temporaryPassword,
+      temporaryPassword: issuedPassword,
       licenseKey: rawKey,
       expiresAt: expiresAt.toISOString(),
       modules: body.modules
     },
-    warning: 'La licencia y la contraseña se muestran una sola vez. El primer dispositivo autorizado recibirá además una credencial segura del servidor.'
+    warning: createdUser
+      ? 'La licencia y la contraseña se muestran una sola vez. El primer dispositivo autorizado recibirá además una credencial segura del servidor.'
+      : 'La licencia nueva se muestra una sola vez. La cuenta ya existía: su contraseña, nombre y estado no fueron modificados.'
   }, 201);
 }));
 
