@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { scanExternalFile } from '../../shared/security/external-file-scan.js';
 import { parseHorseRacingDocument, reconcileDocumentExtraction } from './document-parser.js';
 
 export const DOCUMENT_CLASSIFICATIONS = ['RACE_PROGRAM','ENTRIES','SCRATCHES','ARRIVAL','RESULT','OFFICIAL_RESULT','ANNOUNCEMENT','UNKNOWN'] as const;
@@ -164,6 +165,9 @@ export class DocumentIngestionService {
   async ingest(input:{ownerId:string;groupKey:string;pdf:Buffer;filename?:string;mimeType?:string;provenance:DocumentProvenance;supersedesId?:string|null}){
     const provenance=validateDocumentProvenance(input.provenance);
     const envelope=validatePdfEnvelope(input.pdf,input.filename,input.mimeType??'application/pdf');
+    // Central ingestion authority for operator and LAB bridge. Nothing is
+    // persisted or sent to an extractor before the local malware verdict.
+    await scanExternalFile(input.pdf);
     const base=await this.store.put({ownerId:input.ownerId,groupKey:input.groupKey,envelope,pdf:input.pdf,provenance,classification:'UNKNOWN',confidence:0,parserVersion:null,extraction:{status:'not_extracted'},supersedesId:input.supersedesId});
     if(!this.extractor?.capability().configured)return {...base,envelope,classification:'UNKNOWN' as const,extractionStatus:base.duplicate?'duplicate' as const:'not_configured' as const};
     const claimed=await this.store.claimExtraction(base.id,input.ownerId,input.groupKey,false);
@@ -179,7 +183,9 @@ export class DocumentIngestionService {
   async reprocessExisting(input:{id:string;ownerId:string;groupKey:string;filename?:string}){
     if (!this.extractor?.capability().configured) throw codedError('HIPICO_DOCUMENT_EXTRACTOR_NOT_CONFIGURED');
     const pdf=await this.store.getRaw(input.ownerId,input.groupKey,input.id);if(!pdf)throw codedError('HIPICO_DOCUMENT_NOT_FOUND');
-    const envelope=validatePdfEnvelope(pdf,input.filename??'document.pdf');const authority=await this.store.getAuthority(input.ownerId,input.groupKey,input.id);
+    const envelope=validatePdfEnvelope(pdf,input.filename??'document.pdf');
+    await scanExternalFile(pdf);
+    const authority=await this.store.getAuthority(input.ownerId,input.groupKey,input.id);
     const claimed=await this.store.claimExtraction(input.id,input.ownerId,input.groupKey,true);if(!claimed)throw codedError('HIPICO_DOCUMENT_EXTRACTION_IN_PROGRESS');
     const extracted=await this.extractAndPersist({id:input.id,ownerId:input.ownerId,groupKey:input.groupKey,pdf,envelope,authority});
     return {id:input.id,envelope,...extracted};
