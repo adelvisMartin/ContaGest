@@ -148,7 +148,7 @@
     "perf:routes:1293:delta": "node scripts/compare-performance-route-heads-v1293.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "1.65.0"
+    "@playwright/test": "1.65.1"
   },
   "overrides": {
     "deepmerge-ts": "8.0.2",
