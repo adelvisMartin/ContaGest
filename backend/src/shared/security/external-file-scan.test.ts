@@ -119,3 +119,18 @@ test('classify only exact clean or well-formed malware verdicts', () => {
   }
   assert.equal(classifyExternalFileScanReply(Buffer.alloc(0)), 'EXTERNAL_FILE_SCAN_UNAVAILABLE');
 });
+
+test('scanner admits four concurrent requests, rejects overflow and releases capacity on timeout', async () => {
+  await withDaemon('stream: OK\0', async port => {
+    const active = Array.from({ length: 4 }, () => assert.rejects(
+      scanExternalFile(content, { port, timeoutMs: 150 }),
+      matches('EXTERNAL_FILE_SCAN_UNAVAILABLE')
+    ));
+    try {
+      await assert.rejects(scanExternalFile(content, { port, timeoutMs: 1000 }), matches('EXTERNAL_FILE_SCAN_UNAVAILABLE'));
+    } finally {
+      await Promise.all(active);
+    }
+  }, { keepOpen: true });
+  await withDaemon('stream: OK\0', port => scanExternalFile(content, { port, timeoutMs: 1000 }));
+});
