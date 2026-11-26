@@ -38,7 +38,7 @@ export const DataImportPage = {
     const statusTone=batch?.status==='completed'?'success':batch?.status==='validated'?'brand':batch?.status==='invalid'?'danger':'warning';
     const batchActions=batch?`<div class="cg-ui-row-wrap">${Badge(String(batch.status||'draft').toUpperCase(),statusTone)}${batch.status==='validated'?Button({id:'btnCommitImport',text:'Confirmar y aplicar',icon:'fa-database'}):''}${Button({id:'btnImportReport',text:'Descargar reporte',icon:'fa-file-arrow-down',variant:'secondary'})}</div>`:'';
     return `<section class="cg-page-stack">${PageHeader({eyebrow:'Administración · Datos',title:'Importación transaccional',description:'Dry-run reproducible, política de duplicados, confirmación explícita, idempotencia, rollback transaccional y auditoría por batch.',actions:Button({id:'btnDownloadTemplate',text:'Descargar plantilla CSV',icon:'fa-download',variant:'secondary'})})}
-      ${Section({title:'Archivo y política',subtitle:'CSV, TSV, JSON y primera hoja XLSX. Máximo 5 MB y 5.000 filas. Cada archivo debe aprobar el análisis antimalware local antes de abrirse o crear el dry-run; sin veredicto limpio no se importa.',children:`<form id="importForm" class="cg-record-form"><div class="cg-record-fields cg-fields-compact">${Select({labelKey:'Tipo de importación',name:'importType',options:typeOptions,attrs:'id="importType"'})}${Select({labelKey:'Duplicados',name:'duplicatePolicy',options:duplicateOptions,attrs:'id="duplicatePolicy"'})}<label class="cgx-field cg-field-wide" for="importFile"><span class="cgx-label">Archivo</span><input id="importFile" class="input" type="file" accept=".csv,.txt,.tsv,.json,.xlsx" required></label></div><div class="cg-record-actions">${Button({text:'Ejecutar dry-run',icon:'fa-file-circle-check',type:'submit'})}</div></form>`})}
+      ${Section({title:'Archivo y política',subtitle:'CSV, TSV, JSON y primera hoja XLSX. Máximo 5 MB y 5.000 filas. Cada archivo debe aprobar el análisis antimalware local antes de abrirse o crear el dry-run; sin veredicto limpio no se importa.',children:`<form id="importForm" class="cg-record-form"><div class="cg-record-fields cg-fields-compact">${Select({labelKey:'Tipo de importación',name:'importType',options:typeOptions,attrs:'id="importType"'})}${Select({labelKey:'Duplicados',name:'duplicatePolicy',options:duplicateOptions,attrs:'id="duplicatePolicy"'})}<label class="cgx-field cg-field-wide" for="importFile"><span class="cgx-label">Archivo</span><input id="importFile" class="input" type="file" accept=".csv,.txt,.tsv,.json,.xlsx" aria-describedby="importFileStatus" required></label></div><div class="cg-record-actions">${Button({text:'Ejecutar dry-run',icon:'fa-file-circle-check',type:'submit'})}</div><p id="importFileStatus" class="cg-ui-muted" role="status" aria-live="polite" aria-atomic="true">Selecciona un archivo para verificarlo antes de la importación.</p></form>`})}
       ${Section({title:'Exportar datos maestros',subtitle:'Solo lectura y con auditoría por empresa. Se exportan clientes, proveedores, productos y cuentas; no saldos de inventario ni datos de nómina.',children:`<div class="cg-record-fields cg-fields-compact">${Select({labelKey:'Datos para exportar',name:'exportType',options:exportTypeOptions,attrs:'id="exportType"'})}${Select({labelKey:'Formato',name:'exportFormat',options:exportFormatOptions,attrs:'id="exportFormat"'})}</div><div class="cg-record-actions">${Button({id:'btnExportMaster',text:'Descargar exportación',type:'button',icon:'fa-file-export'})}</div>`})}
       ${Section({title:'Campos esperados',subtitle:'Las plantillas son versionadas. Inventario importa datos maestros; stock y reservas no son columnas aceptadas porque deben entrar por movimientos auditables.',children:`<div class="cg-ui-grid cg-ui-grid-three">${fields}</div>`})}
       ${Section({title:'Resultado del dry-run',subtitle:batch?`${accepted} aceptadas · ${rejected} rechazadas · checksum ${safe(String(batch.checksum||'').slice(0,12))}… · expira ${safe(new Date(batch.expiresAt).toLocaleString())}`:'Sube un archivo para crear un batch de staging.',actions:batchActions,children:preview.length?DataTable({columns:[{key:'index',label:'#'},{key:'action',label:'Acción',render:(row)=>row.action},{key:'status',label:'Validación',render:(row)=>row.status},{key:'record',label:'Registro normalizado',render:(row)=>row.record}],rows}):batch?.status==='completed'?`<div class="cg-ui-row-wrap">${Badge('COMPLETED','success')}<span class="cg-ui-muted">${safe(batch.counts?.created||0)} creados · ${safe(batch.counts?.updated||0)} actualizados · ${safe(batch.counts?.skipped||0)} omitidos.</span></div>`:EmptyState({title:'Sin batch validado',description:'El dry-run persiste sólo staging administrativo; no modifica clientes, productos, cuentas ni empleados.',iconName:'fa-file-import'})})}
@@ -95,11 +95,33 @@ export const DataImportPage = {
       if(importing)return;
       const type=document.getElementById('importType')?.value||'inventory';const duplicatePolicy=document.getElementById('duplicatePolicy')?.value||'error';const file=document.getElementById('importFile')?.files?.[0];if(!file)return Toast.show('Selecciona un archivo.','warning');
       importing=true;
-      const submitButton=event.currentTarget?.querySelector('button[type="submit"]');
-      if(submitButton){submitButton.disabled=true;submitButton.setAttribute('aria-busy','true');}
-      try{Loading?.mount?.('Verificando seguridad y validando batch…');const parsed=await DataImportService.parseFile(file,type);const local=DataImportService.validateRows(parsed,type);if(local.some((row)=>!row.ok))Toast.show('El preflight local detectó campos requeridos faltantes; el servidor emitirá el detalle autoritativo.','warning');const batch=await DataImportService.preview({type,rows:parsed,filename:file.name,duplicatePolicy});Store.set({importBatch:batch,importPreview:batch.rows||[],importType:type});Toast.show(batch.status==='validated'?`${batch.accepted} filas listas para confirmar.`:`${batch.rejected} filas rechazadas; no se aplicó ningún cambio.`,batch.status==='validated'?'success':'warning');}catch(error){Toast.show(`No se pudo ejecutar el dry-run: ${error.message}`,'error');}finally{
+      const form=event.currentTarget;
+      const controls=Array.from(form.querySelectorAll('input, select, button')).filter(control=>!control.disabled);
+      const status=form.querySelector('#importFileStatus');
+      const announce=message=>{if(status?.isConnected)status.textContent=message;};
+      const submitButton=form.querySelector('button[type="submit"]');
+      submitButton?.setAttribute('aria-busy','true');
+      controls.forEach(control=>{control.disabled=true;});
+      announce('Verificando la seguridad del archivo. Aún no se aplicó ningún cambio.');
+      try {
+        Loading?.mount?.('Verificando seguridad y validando batch…');
+        const parsed=await DataImportService.parseFile(file,type);
+        announce('Archivo analizado. Validando los registros en el servidor…');
+        const local=DataImportService.validateRows(parsed,type);
+        if(local.some(row=>!row.ok))Toast.show('La revisión local detectó campos requeridos faltantes; el servidor emitirá el detalle autoritativo.','warning');
+        const batch=await DataImportService.preview({type,rows:parsed,filename:file.name,duplicatePolicy});
+        const message=batch.status==='validated'? `${batch.accepted} filas listas para confirmar.` : `${batch.rejected} filas rechazadas; no se aplicó ningún cambio.`;
+        announce(message);
+        Store.set({importBatch:batch,importPreview:batch.rows||[],importType:type});
+        Toast.show(message,batch.status==='validated'?'success':'warning');
+      }catch(error){
+        const message=`No se pudo ejecutar el dry-run: ${error.message}`;
+        announce(message+' Si hay un resultado anterior, sigue correspondiendo al archivo anterior.');
+        Toast.show(message,'error');
+      }finally{
         importing=false;
-        if(submitButton){submitButton.disabled=false;submitButton.removeAttribute('aria-busy');}
+        controls.forEach(control=>{control.disabled=false;});
+        submitButton?.removeAttribute('aria-busy');
         Loading?.unmount?.();
       }
     });
