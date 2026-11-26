@@ -175,7 +175,7 @@ const uploadEnd = source.indexOf("router.get('/dental-attachments'", uploadStart
 assert.ok(uploadStart >= 0 && uploadEnd > uploadStart, 'generic upload handler must be located');
 const uploadHandlerSource = stripTypeScriptTypes(source.slice(uploadStart, uploadEnd));
 
-function buildUploadScenario({ signFailure = false, emptySign = false, updateFailure = false, cleanupError = false, authFailure = false } = {}) {
+function buildUploadScenario({ signFailure = false, emptySign = false, updateFailure = false, cleanupError = false, authFailure = false, scanFailure = false } = {}) {
   const events = [];
   let uploadHandler;
   const provider = {
@@ -203,6 +203,13 @@ function buildUploadScenario({ signFailure = false, emptySign = false, updateFai
       mime: 'image/png', extension: 'png',
       bytes: Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a])
     }),
+    // Isolated handler boundary: record scan ordering and exercise fail-closed rejection.
+    // The real scanner protocol is exercised separately in external-file-scan.test.ts.
+    scanExternalFile: async bytes => {
+      events.push('scan');
+      assert.deepEqual(bytes, cases.find(item => item.mime === 'image/png').bytes);
+      if (scanFailure) throw new HttpError(422, 'EXTERNAL_FILE_MALWARE_DETECTED');
+    },
     tenantPath: () => 'tenant-a/profile/profile-1/file.png',
     client: () => ({ storage: { from: () => provider } }),
     registerStorageObject: async () => { events.push('register'); },
@@ -227,7 +234,7 @@ function buildUploadScenario({ signFailure = false, emptySign = false, updateFai
 test('#1313 media signing succeeds before the entity photo is committed', async () => {
   const { events, res, execute } = buildUploadScenario();
   await execute();
-  assert.deepEqual(events, ['authorize', 'upload', 'register', 'sign', 'update', 'ok']);
+  assert.deepEqual(events, ['authorize', 'scan', 'upload', 'register', 'sign', 'update', 'ok']);
   assert.equal(res.status, 201);
   assert.equal(res.data.signedUrl, 'signed.local');
 });
@@ -237,24 +244,31 @@ test('#1313 failed or empty signing cleans up without changing the photo', async
     const { events, execute } = buildUploadScenario(options);
     await assert.rejects(execute(), error =>
       error.status === 502 && !error.message.includes('provider-private-path'));
-    assert.deepEqual(events, ['authorize', 'upload', 'register', 'sign', 'remove', 'mark-deleted']);
+    assert.deepEqual(events, ['authorize', 'scan', 'upload', 'register', 'sign', 'remove', 'mark-deleted']);
   }
 });
 
 test('#1313 cleanup failure does not claim a failed removal was deleted', async () => {
   const { events, execute } = buildUploadScenario({ signFailure:true, cleanupError:true });
   await assert.rejects(execute(), error => error.status === 502);
-  assert.deepEqual(events, ['authorize', 'upload', 'register', 'sign', 'remove']);
+  assert.deepEqual(events, ['authorize', 'scan', 'upload', 'register', 'sign', 'remove']);
 });
 
 test('#1313 DB update rollback and pre-upload authorization remain enforced', async () => {
   const dbFailure = buildUploadScenario({ updateFailure:true });
   await assert.rejects(dbFailure.execute(), /database failed/);
-  assert.deepEqual(dbFailure.events, ['authorize', 'upload', 'register', 'sign', 'update', 'remove', 'mark-deleted']);
+  assert.deepEqual(dbFailure.events, ['authorize', 'scan', 'upload', 'register', 'sign', 'update', 'remove', 'mark-deleted']);
 
   const unauthorised = buildUploadScenario({ authFailure:true });
   await assert.rejects(unauthorised.execute(), error => error.status === 403);
   assert.deepEqual(unauthorised.events, ['authorize']);
+});
+
+test('#1391 rejected media scan has no storage, signing or database effects', async () => {
+  const scenario = buildUploadScenario({ scanFailure: true });
+  await assert.rejects(scenario.execute(), error => error.status === 422 && error.message === 'EXTERNAL_FILE_MALWARE_DETECTED');
+  assert.deepEqual(scenario.events, ['authorize', 'scan']);
+  assert.deepEqual(scenario.res, {});
 });
 
 test('#1391 clinical PDF import rejects embedded actions, remote links and encryption', () => {
@@ -274,9 +288,15 @@ test('#1391 clinical PDF import rejects embedded actions, remote links and encry
 });
 test('#1391 clinical and generic media writes must scan before uploading',()=>{
   const upload = source.split("router.post('/upload'")[1].split("router.get('/dental-attachments'")[0];
-  const clinical = source.split("'/dental-attachments',")[1].split("router.post('/sign'")[0];
-  assert.ok(upload.indexOf('await scanExternalFile(image.bytes)')>=0);
-  assert.ok(upload.indexOf('await scanExternalFile(image.bytes)')<upload.indexOf('.upload(path, image.bytes'));
-  assert.ok(clinical.indexOf('assertPassiveClinicalPdf(bytes,mime)')>=0);
-  assert.ok(clinical.indexOf('await scanExternalFile(bytes)')<clinical.indexOf('.upload(storagePath,bytes'));
+  const clinicalStart = source.search(/router\.post\(\s*'\/dental-attachments',/);
+  const clinicalEnd = source.indexOf("router.post('/sign'", clinicalStart);
+  assert.ok(clinicalStart >= 0 && clinicalEnd > clinicalStart, 'clinical POST handler must be located');
+  const clinical = source.slice(clinicalStart, clinicalEnd);
+  const genericScan = upload.indexOf('await scanExternalFile(image.bytes)');
+  const genericWrite = upload.indexOf('.upload(path, image.bytes');
+  assert.ok(genericScan >= 0 && genericWrite > genericScan);
+  const pdfGuard = clinical.indexOf('assertPassiveClinicalPdf(bytes,mime)');
+  const clinicalScan = clinical.indexOf('await scanExternalFile(bytes)');
+  const clinicalWrite = clinical.indexOf('.upload(storagePath,bytes');
+  assert.ok(pdfGuard >= 0 && clinicalScan > pdfGuard && clinicalWrite > clinicalScan);
 });
