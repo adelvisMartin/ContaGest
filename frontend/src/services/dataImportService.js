@@ -205,7 +205,7 @@ export const DataImportService = {
     if(cursor)query.set('cursor',cursor);
     return BackendApi.get(`/imports/exports/${encodeURIComponent(type)}?${query.toString()}`);
   },
-  async previewJsonFile(file,type,duplicatePolicy='error') {
+  async previewOriginalFile(file,type,duplicatePolicy='error') {
     if(Number(file.size||0)>MAX_FILE_BYTES)throw new Error('El archivo supera el límite de 5 MB.');
     const query=new URLSearchParams({type,duplicatePolicy});
     try {
