@@ -106,8 +106,8 @@ export const DataImportPage = {
       try {
         Loading?.mount?.('Verificando seguridad y validando batch…');
         let batch;
-        if(file.name.toLowerCase().endsWith('.json')){
-          batch=await DataImportService.previewJsonFile(file,type,duplicatePolicy);
+        if(/\.(json|csv|tsv|txt)$/i.test(file.name)){
+          batch=await DataImportService.previewOriginalFile(file,type,duplicatePolicy);
         }else{
           const parsed=await DataImportService.parseFile(file,type);
           announce('Archivo analizado. Validando los registros en el servidor…');
