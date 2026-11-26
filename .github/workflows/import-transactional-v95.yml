@@ -9,6 +9,10 @@ on:
       - 'frontend/src/pages/DataImportPage.js'
       - 'frontend/src/services/dataImportService.js'
       - 'qa/import-transactional-v95.test.ts'
+      - 'qa/import-original-file-v1391.test.ts'
+      - 'backend/scripts/prisma-deploy-safe.mjs'
+      - 'backend/src/shared/security/external-file-scan*'
+      - 'scripts/qa-clamav-real-v1391.sh'
       - 'tests/import_pipeline_issue_95.test.mjs'
       - 'docs/ADR_TRANSACTIONAL_IMPORT_V95.md'
       - '.github/workflows/import-transactional-v95.yml'
@@ -75,5 +79,7 @@ jobs:
         run: node --test tests/import_pipeline_issue_95.test.mjs
       - name: Import PostgreSQL suite
         run: npm --workspace backend exec -- tsx --test ../qa/import-transactional-v95.test.ts
+      - name: Original-file and historical-read real PostgreSQL and ClamAV acceptance
+        run: bash scripts/qa-clamav-real-v1391.sh npm --workspace backend exec -- tsx --test ../qa/import-original-file-v1391.test.ts
       - name: Build
         run: npm run build
