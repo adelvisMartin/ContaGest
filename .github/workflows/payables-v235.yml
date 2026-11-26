@@ -12,6 +12,8 @@ on:
       - 'frontend/src/services/payablesService.js'
       - 'frontend/src/pages/PurchasesPage.js'
       - 'qa/payables-v235*'
+      - 'backend/src/shared/security/external-file-scan*'
+      - 'scripts/qa-clamav-real-v1391.sh'
       - 'docs/payables-v235.md'
       - '.github/workflows/payables-v235.yml'
   workflow_dispatch:
@@ -66,7 +68,7 @@ jobs:
           mkdir -p artifacts/qa
           npm --workspace backend exec -- tsx --test ../qa/payables-v235-accuracy.test.ts 2>&1 | tee artifacts/qa/payables-v235-accuracy.txt
       - name: Tenant, dedupe and 2-way/3-way DB acceptance
-        run: npm --workspace backend exec -- tsx --test ../qa/payables-v235.integration.test.ts
+        run: bash scripts/qa-clamav-real-v1391.sh npm --workspace backend exec -- tsx --test ../qa/payables-v235.integration.test.ts
       - name: Install Chromium for UI acceptance
         run: npx playwright install --with-deps chromium
       - name: Human review browser flow
