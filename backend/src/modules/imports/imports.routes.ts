@@ -100,7 +100,7 @@ type ImportType=z.infer<typeof importTypeSchema>;
 type DuplicatePolicy=z.infer<typeof duplicatePolicySchema>;
 type RowAction='create'|'update'|'skip'|'error';
 type StagedRow={index:number;key:string;action:RowAction;normalized:any;errors:Array<{field:string;code:string;message:string}>};
-type BatchPayload={version:1;templateVersion:'v1';checksum:string;duplicatePolicy:DuplicatePolicy;filename:string|null;createdBy:string|null;rows?:StagedRow[];report?:Array<{index:number;key:string;action:RowAction;status:string;errors:string[];entityId?:string}>;counts:{total:number;valid:number;invalid:number;created:number;updated:number;skipped:number};completedAt?:string};
+type BatchPayload={version:1;templateVersion:'v1';checksum:string;duplicatePolicy:DuplicatePolicy;filename:string|null;createdBy:string|null;sourceSha256?:string;rows?:StagedRow[];report?:Array<{index:number;key:string;action:RowAction;status:string;errors:string[];entityId?:string}>;counts:{total:number;valid:number;invalid:number;created:number;updated:number;skipped:number};completedAt?:string};
 
 const context=(req:any)=>req.context as {tenantId:string;userId?:string;ip?:string;userAgent?:string};
 const requestId=(req:any)=>String(req.requestId||'')||null;
@@ -180,7 +180,7 @@ async function stageRows(type:ImportType,tenantId:string,rawRows:Array<Record<st
 
 function payloadOf(batch:any):BatchPayload{return (batch.payload||{}) as BatchPayload;}
 function publicBatch(batch:any){
-  const payload=payloadOf(batch);return {id:batch.id,type:batch.type,status:batch.status,filename:batch.filename,accepted:batch.accepted,rejected:batch.rejected,createdAt:batch.createdAt,expiresAt:expiresAt(batch.createdAt).toISOString(),checksum:payload.checksum,templateVersion:payload.templateVersion,duplicatePolicy:payload.duplicatePolicy,counts:payload.counts,rows:payload.rows?.map(({normalized,...row})=>({...row,row:normalized}))||undefined,report:payload.report};
+  const payload=payloadOf(batch);return {id:batch.id,type:batch.type,status:batch.status,filename:batch.filename,accepted:batch.accepted,rejected:batch.rejected,createdAt:batch.createdAt,expiresAt:expiresAt(batch.createdAt).toISOString(),checksum:payload.checksum,sourceSha256:payload.sourceSha256,templateVersion:payload.templateVersion,duplicatePolicy:payload.duplicatePolicy,counts:payload.counts,rows:payload.rows?.map(({normalized,...row})=>({...row,row:normalized}))||undefined,report:payload.report};
 }
 
 async function applyRow(tx:Prisma.TransactionClient,type:ImportType,tenantId:string,row:StagedRow){
@@ -230,23 +230,45 @@ router.post('/products/csv/preview', validateBody(productCsvPreviewSchema), asyn
     nextStep:'Use authenticated /imports/preview with deliberate mapping and DB checks; no direct CSV commit.'});
 }));
 
-router.post('/preview', validateBody(previewSchema), asyncHandler(async(req,res)=>{
-  const ctx=context(req);const input=req.body as z.infer<typeof previewSchema>;
+async function createImportPreview(req:any,input:z.infer<typeof previewSchema>,sourceSha256?:string){
+  const ctx=context(req);
   const serializedSize=Buffer.byteLength(JSON.stringify(input.rows),'utf8');
   if(serializedSize>5_000_000)throw new HttpError(413,'El contenido supera el límite de 5 MB para staging.',{code:'IMPORT_PAYLOAD_TOO_LARGE'});
   const rows=await stageRows(input.type,ctx.tenantId,input.rows,input.duplicatePolicy);
   const digest=checksum(input.type,input.templateVersion,rows.map((row)=>({key:row.key,action:row.action,normalized:row.normalized,errors:row.errors})));
   const accepted=rows.filter((row)=>row.action!=='error').length;const rejected=rows.length-accepted;
-  const payload:BatchPayload={version:1,templateVersion:input.templateVersion,checksum:digest,duplicatePolicy:input.duplicatePolicy,filename:sanitizedFilename(input.filename),createdBy:ctx.userId||null,rows,counts:{total:rows.length,valid:accepted,invalid:rejected,created:0,updated:0,skipped:rows.filter((r)=>r.action==='skip').length}};
+  const payload:BatchPayload={version:1,templateVersion:input.templateVersion,checksum:digest,...(sourceSha256?{sourceSha256}:{}),duplicatePolicy:input.duplicatePolicy,filename:sanitizedFilename(input.filename),createdBy:ctx.userId||null,rows,counts:{total:rows.length,valid:accepted,invalid:rejected,created:0,updated:0,skipped:rows.filter((r)=>r.action==='skip').length}};
   const batch=await prisma.$transaction(async(tx)=>{
     const created=await tx.importBatch.create({data:{tenantId:ctx.tenantId,userId:ctx.userId||null,type:input.type,filename:sanitizedFilename(input.filename),accepted,rejected,status:rejected?'invalid':'validated',payload:payload as any}});
     // A failed audit must roll back the staging batch, not leave an untracked import.
-    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'import.dry-run',entity:'ImportBatch',entityId:created.id,after:{type:input.type,status:created.status,checksum:digest,counts:payload.counts,duplicatePolicy:input.duplicatePolicy},ipAddress:ctx.ip,userAgent:ctx.userAgent},tx);
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'import.dry-run',entity:'ImportBatch',entityId:created.id,after:{type:input.type,status:created.status,checksum:digest,...(sourceSha256?{sourceSha256}:{}),counts:payload.counts,duplicatePolicy:input.duplicatePolicy},ipAddress:ctx.ip,userAgent:ctx.userAgent},tx);
     return created;
   });
-  ok(res,publicBatch(batch));
+  return publicBatch(batch);
+}
+
+router.post('/preview', validateBody(previewSchema), asyncHandler(async(req,res)=>{
+  ok(res,await createImportPreview(req,req.body as z.infer<typeof previewSchema>));
 }));
 
+// File provenance is authoritative only when the server derives rows from the
+// same scanned bytes. Direct scalar JSON API submissions retain their contract.
+router.post('/preview-file', express.raw({type:'application/octet-stream',limit:FILE_SCAN_LIMIT_BYTES}), asyncHandler(async(req,res)=>{
+  const filename=filenameSchema.parse(req.header('x-import-filename'));
+  if(!filename.toLowerCase().endsWith('.json')) throw new HttpError(415,'Este endpoint admite archivos JSON.');
+  const options=z.object({type:importTypeSchema,duplicatePolicy:duplicatePolicySchema.default('error')}).strict().parse(req.query);
+  const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
+  if(!bytes.length) throw new HttpError(422,'El archivo de importación está vacío.');
+  if(bytes.length>FILE_SCAN_LIMIT_BYTES) throw new HttpError(413,'El archivo supera 5 MB.');
+  await scanExternalFile(bytes);
+  let rows:unknown;
+  try{rows=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}
+  catch{throw new HttpError(422,'El archivo JSON no es válido o no está en UTF-8.');}
+  const input=previewSchema.parse({...options,filename,rows,templateVersion:'v1'});
+  const sourceSha256=createHash('sha256').update(bytes).digest('hex');
+  res.setHeader('Cache-Control','private, no-store');
+  ok(res,await createImportPreview(req,input,sourceSha256));
+}));
 
 const exportTypeSchema = z.enum(['clients', 'suppliers', 'inventory', 'accounts']);
 const exportQuerySchema = z.object({
@@ -316,7 +338,7 @@ router.post('/:id/commit', validateBody(commitSchema), asyncHandler(async(req,re
     const finalPayload:BatchPayload={...payload,rows:undefined,report,counts:{...payload.counts,created,updated,skipped},completedAt:new Date().toISOString()};
     const completed=await tx.importBatch.update({where:{id:batch.id},data:{status:'completed',payload:finalPayload as any}});
     const committed=publicBatch(completed);
-    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'import.commit',entity:'ImportBatch',entityId:completed.id,after:{type:committed.type,status:committed.status,checksum:committed.checksum,counts:committed.counts},ipAddress:ctx.ip,userAgent:ctx.userAgent},tx);
+    await writeAudit({tenantId:ctx.tenantId,userId:ctx.userId,action:'import.commit',entity:'ImportBatch',entityId:completed.id,after:{type:committed.type,status:committed.status,checksum:committed.checksum,...(committed.sourceSha256?{sourceSha256:committed.sourceSha256}:{}),counts:committed.counts},ipAddress:ctx.ip,userAgent:ctx.userAgent},tx);
     return {data:committed,resourceType:'ImportBatch',resourceId:batch.id};
   });
   res.setHeader('Idempotency-Replayed',execution.replayed?'true':'false');
