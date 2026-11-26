@@ -205,6 +205,19 @@ export const DataImportService = {
     if(cursor)query.set('cursor',cursor);
     return BackendApi.get(`/imports/exports/${encodeURIComponent(type)}?${query.toString()}`);
   },
+  async previewJsonFile(file,type,duplicatePolicy='error') {
+    if(Number(file.size||0)>MAX_FILE_BYTES)throw new Error('El archivo supera el límite de 5 MB.');
+    const query=new URLSearchParams({type,duplicatePolicy});
+    try {
+      return await BackendApi.request(`/imports/preview-file?${query}`,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Import-Filename':file.name},body:file});
+    } catch(error) {
+      const code=error?.payload?.code||error?.code;
+      if(code==='EXTERNAL_FILE_MALWARE_DETECTED')throw new Error('Archivo bloqueado por seguridad. No lo vuelvas a cargar; solicita una copia confiable.');
+      if(code==='EXTERNAL_FILE_SCAN_UNAVAILABLE'||error?.status===503)throw new Error('La verificación de seguridad no está disponible. No se importó el archivo. Vuelve a intentar más tarde.');
+      if(code==='EXTERNAL_FILE_SCAN_REJECTED')throw new Error('No se pudo validar la seguridad del archivo. Solicita una copia válida y vuelve a intentar.');
+      throw error;
+    }
+  },
   preview({type,rows,filename,duplicatePolicy='error'}) {return BackendApi.post('/imports/preview',{type,rows,filename,templateVersion:IMPORT_TEMPLATE_VERSION,duplicatePolicy});},
   getBatch(id){return BackendApi.get(`/imports/${encodeURIComponent(id)}`);},
   listBatches(){return BackendApi.get('/imports');},
