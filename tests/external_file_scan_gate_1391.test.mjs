@@ -98,3 +98,15 @@ test('#1391 import client does not parse a file on missing or malformed scan evi
     }
   }
 });
+
+test('#1391 historical payable originals are integrity-checked and rescanned before download', () => {
+  const start=payables.indexOf('export async function getPayableContent(');
+  const end=payables.indexOf('function mergedField(',start);
+  assert.ok(start>=0 && end>start);
+  const content=payables.slice(start,end);
+  const readAt=content.indexOf('await getDocument(tenantId, id, true)');
+  const hashAt=content.indexOf("createHash('sha256').update(bytes).digest('hex')");
+  const scanAt=content.indexOf('await scanExternalFile(bytes)');
+  const returnAt=content.indexOf('return { bytes,');
+  assert.ok(readAt>=0 && hashAt>readAt && scanAt>hashAt && returnAt>scanAt);
+});
