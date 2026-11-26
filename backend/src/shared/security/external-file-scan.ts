@@ -25,6 +25,21 @@ const MAX_SCAN_BYTES = 15 * 1024 * 1024;
 const CHUNK_SIZE = 64 * 1024;
 const MAX_RESPONSE_BYTES = 1024;
 const DEFAULT_PORT = 3310;
+const CLEAN_REPLY = Buffer.from('stream: OK\0');
+
+/** Classify a complete zINSTREAM reply at EOF; null is the only clean verdict. */
+export function classifyExternalFileScanReply(reply: Buffer): ExternalFileScanCode | null {
+  if (reply.length === 0) return 'EXTERNAL_FILE_SCAN_UNAVAILABLE';
+  if (reply.length > MAX_RESPONSE_BYTES || reply.indexOf(0) !== reply.length - 1) {
+    return 'EXTERNAL_FILE_SCAN_REJECTED';
+  }
+  if (reply.equals(CLEAN_REPLY)) return null;
+  // A signature is diagnostic only; never return its contents to callers.
+  const text = reply.subarray(0, -1).toString('latin1');
+  return /^stream: [\x20-\x7e]{1,400} FOUND$/.test(text)
+    ? 'EXTERNAL_FILE_MALWARE_DETECTED'
+    : 'EXTERNAL_FILE_SCAN_REJECTED';
+}
 
 function scannerPort(value: string | undefined): number {
   if (value === undefined || value === '') return DEFAULT_PORT;
@@ -56,7 +71,8 @@ export async function scanExternalFile(
     const socket = connect({ host: '127.0.0.1', port });
     let settled = false;
     let requestComplete = false;
-    let reply = Buffer.alloc(0);
+    const reply = Buffer.alloc(MAX_RESPONSE_BYTES);
+    let replyLength = 0;
     let deadline: ReturnType<typeof setTimeout> | undefined;
     const complete = (error?: ExternalFileScanError) => {
       if (settled) return;
@@ -69,38 +85,25 @@ export async function scanExternalFile(
     deadline = setTimeout(() => complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE')), timeoutMs);
     socket.setTimeout(timeoutMs, () => complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE')));
     socket.on('error', () => complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE')));
-    const finishReply = () => {
-      const terminator = reply.indexOf(0);
-      // zINSTREAM uses exactly one NUL-terminated response on a single-command connection.
-      if (!requestComplete || terminator < 0 || terminator !== reply.length - 1) {
-        return complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_REJECTED'));
-      }
-      const text = reply.subarray(0, terminator).toString('utf8');
-      if (text === 'stream: OK') return complete();
-      if (/^stream: [^\r\n\u0000]{1,400} FOUND$/.test(text)) {
-        return complete(new ExternalFileScanError('EXTERNAL_FILE_MALWARE_DETECTED'));
-      }
-      complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_REJECTED'));
-    };
     socket.on('end', () => {
-      if (!settled) {
-        if (!reply.length) complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE'));
-        else finishReply();
-      }
+      if (settled) return;
+      const code = requestComplete
+        ? classifyExternalFileScanReply(reply.subarray(0, replyLength))
+        : 'EXTERNAL_FILE_SCAN_UNAVAILABLE';
+      complete(code === null ? undefined : new ExternalFileScanError(code));
     });
     socket.on('close', () => {
       if (!settled) complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE'));
     });
     socket.on('data', (chunk: Buffer) => {
       if (settled) return;
-      if (reply.length + chunk.length > MAX_RESPONSE_BYTES) {
+      if (!requestComplete || replyLength + chunk.length > MAX_RESPONSE_BYTES || chunk.includes(10)) {
         return complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_REJECTED'));
       }
-      reply = Buffer.concat([reply, chunk]);
-      // Wait for EOF before accepting a verdict: extra frames may arrive in later TCP chunks.
-      if (!requestComplete || reply.includes(10)) {
-        return complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_REJECTED'));
-      }
+      // One bounded allocation; no repeated concatenation for fragmented TCP replies.
+      chunk.copy(reply, replyLength);
+      replyLength += chunk.length;
+      // Wait for EOF: extra frames may arrive in later TCP chunks.
     });
     socket.on('connect', () => {
       let offset = 0;
