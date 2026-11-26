@@ -198,7 +198,11 @@ test('PostgreSQL 17 canonical snapshot stays consistent under a concurrent write
   const denied = async (role: 'anon' | 'authenticated', action: 'read' | 'write') => {
     await assert.rejects(
       prisma.$transaction(async tx => {
-        await tx.$executeRawUnsafe(`SET LOCAL ROLE ${role}`);
+        // PostgreSQL role identifiers are not bind parameters; select only the two
+        // literal statements under test instead of interpolating an identifier.
+        if (role === 'anon') await tx.$executeRawUnsafe('SET LOCAL ROLE anon');
+        else if (role === 'authenticated') await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
+        else throw new Error('Unexpected synthetic QA role');
         if (action === 'read') {
           await tx.$queryRaw`
             SELECT id FROM public.hipico_domain_events
