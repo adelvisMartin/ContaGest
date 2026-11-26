@@ -18,6 +18,8 @@ import {
 import { planHistoricalProjection } from './migration-compat-plan-v626.mjs';
 
 const { Client } = pg;
+const RECORDED_ORDER_MIGRATION = '20261119144500_hipico_domain_recorded_order_index';
+const RECORDED_ORDER_SHA256 = '119e54b3ef51500c8270d6b7d662b6bb36d58dc1622c0d0d0f0f443ddd0c99d9';
 
 export const EPHEMERAL_DATABASE_PATTERN = /(_e2e|_drill|_restore)$/;
 export const LEGACY_BASELINE_MIGRATIONS = Object.freeze([
@@ -56,7 +58,8 @@ function runPrisma(args) {
 // source. Never silently bless drift on a customer database.
 export const REVIEWED_HISTORICAL_SQL_REPAIRS = Object.freeze([
   '20261022171000_issue_849_service_catalog_foundation',
-  '20261022173000_issue_751_reviewed_fiscal_rule_governance'
+  '20261022173000_issue_751_reviewed_fiscal_rule_governance',
+  RECORDED_ORDER_MIGRATION
 ]);
 
 export async function assertReviewedMigrationChecksums({ databaseUrl, migrationsRoot }) {
@@ -160,6 +163,69 @@ async function deployPrefix({ schemaPath, migrationsRoot, migrationNames, label 
   return prefix;
 }
 
+// Only a disposable loopback database may use the reviewed compatibility path.
+function isLocalEphemeralPair(databaseUrl, directUrl) {
+  try {
+    const a = new URL(databaseUrl), b = new URL(directUrl);
+    const loopback = new Set(['127.0.0.1', 'localhost', '[::1]']);
+    return isEphemeralDatabase(databaseUrl) && isEphemeralDatabase(directUrl)
+      && loopback.has(a.hostname) && a.hostname === b.hostname
+      && (a.port || '5432') === (b.port || '5432')
+      && databaseNameFromUrl(databaseUrl) === databaseNameFromUrl(directUrl)
+      && (a.searchParams.get('schema') || 'public') === 'public'
+      && (b.searchParams.get('schema') || 'public') === 'public';
+  } catch { return false; }
+}
+
+async function executeRecordedOrderMigration({ databaseUrl, schemaPath, migrationsRoot, temporaryPrefixes }) {
+  const state = await migrationProjectionState(migrationsRoot, RECORDED_ORDER_MIGRATION);
+  if (!state.available) return;
+  const original = await readFile(path.join(migrationsRoot, RECORDED_ORDER_MIGRATION, 'migration.sql'), 'utf8');
+  if (createHash('sha256').update(original).digest('hex') !== RECORDED_ORDER_SHA256) {
+    throw new Error('RECORDED_ORDER_MIGRATION_SOURCE_DRIFT');
+  }
+  const boundary = original.indexOf('\nDO $\n');
+  if (boundary < 0) throw new Error('RECORDED_ORDER_MIGRATION_BOUNDARY_INVALID');
+  const client = new Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    // This is not Prisma's migration lock. It protects this exact compatibility
+    // operation between cooperative local test runners.
+    const lock = await client.query('SELECT pg_try_advisory_lock(1391, 837) AS acquired');
+    if (!lock.rows[0]?.acquired) throw new Error('RECORDED_ORDER_MIGRATION_BUSY');
+    const table = await client.query(`SELECT to_regclass('public."_prisma_migrations"') AS migration_table`);
+    const records = table.rows[0]?.migration_table
+      ? await client.query(`SELECT checksum, finished_at FROM public."_prisma_migrations"
+        WHERE migration_name=$1 AND rolled_back_at IS NULL`, [RECORDED_ORDER_MIGRATION])
+      : { rows: [] };
+    if (records.rows.some(row => !row.finished_at)) {
+      throw new Error('RECORDED_ORDER_MIGRATION_FAILED_HISTORY_REQUIRES_REVIEW');
+    }
+    if (records.rows.length) {
+      if (records.rows.length !== 1 || records.rows[0].checksum !== RECORDED_ORDER_SHA256) {
+        throw new Error('RECORDED_ORDER_MIGRATION_HISTORY_DRIFT');
+      }
+      await client.query(original.slice(boundary)); // Check physical index even on retry.
+      return;
+    }
+
+    const prefix = await deployPrefix({
+      schemaPath, migrationsRoot, migrationNames: state.before, label: RECORDED_ORDER_MIGRATION
+    });
+    if (prefix) temporaryPrefixes.push(prefix);
+    // PostgreSQL rejects CREATE INDEX CONCURRENTLY in a multi-statement query.
+    // Execute the exact immutable DDL and its exact assertion in separate calls,
+    // without BEGIN/COMMIT and without rewriting or projecting the original SQL.
+    await client.query(original.slice(0, boundary));
+    await client.query(original.slice(boundary));
+    // Record only after the original physical validation has succeeded.
+    runPrisma(['migrate', 'resolve', '--applied', RECORDED_ORDER_MIGRATION, '--schema', schemaPath]);
+    console.log('[prisma-compat] verified concurrent index and recorded immutable migration');
+  } finally {
+    await client.end();
+  }
+}
+
 export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } = {}) {
   const databaseUrl = String(process.env.DATABASE_URL || '').trim();
   if (!databaseUrl) throw new Error('DATABASE_URL_REQUIRED_FOR_PRISMA_DEPLOY');
@@ -227,6 +293,9 @@ export async function deployMigrations({ schemaPath = 'prisma/schema.prisma' } =
       }
     }
 
+    if (isLocalEphemeralPair(databaseUrl, String(process.env.DIRECT_DATABASE_URL || '').trim())) {
+      await executeRecordedOrderMigration({ databaseUrl, schemaPath, migrationsRoot, temporaryPrefixes });
+    }
     runPrisma(['migrate', 'deploy', '--schema', schemaPath]);
   } finally {
     for (const prefix of temporaryPrefixes) {
