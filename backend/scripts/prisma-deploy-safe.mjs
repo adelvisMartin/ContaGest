@@ -184,7 +184,7 @@ async function executeRecordedOrderMigration({ databaseUrl, schemaPath, migratio
   if (createHash('sha256').update(original).digest('hex') !== RECORDED_ORDER_SHA256) {
     throw new Error('RECORDED_ORDER_MIGRATION_SOURCE_DRIFT');
   }
-  const boundary = original.indexOf('\nDO $\n');
+  const boundary = original.indexOf('\nDO $$\n');
   if (boundary < 0) throw new Error('RECORDED_ORDER_MIGRATION_BOUNDARY_INVALID');
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
