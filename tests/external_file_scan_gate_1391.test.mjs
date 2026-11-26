@@ -110,3 +110,18 @@ test('#1391 historical payable originals are integrity-checked and rescanned bef
   const returnAt=content.indexOf('return { bytes,');
   assert.ok(readAt>=0 && hashAt>readAt && scanAt>hashAt && returnAt>scanAt);
 });
+
+test('#1391 JSON file staging derives rows and provenance from scanned bytes', () => {
+  const start=imports.indexOf("router.post('/preview-file'");
+  const end=imports.indexOf('const exportTypeSchema',start);
+  assert.ok(start>=0 && end>start);
+  const route=imports.slice(start,end);
+  const scan=route.indexOf('await scanExternalFile(bytes)');
+  const parse=route.indexOf('JSON.parse(new TextDecoder');
+  const schema=route.indexOf('previewSchema.parse');
+  const hash=route.indexOf("createHash('sha256').update(bytes)");
+  const stage=route.indexOf('await createImportPreview(req,input,sourceSha256)');
+  assert.ok(scan>=0 && parse>scan && schema>parse && hash>schema && stage>hash);
+  assert.match(importClient,/previewJsonFile/);
+  assert.match(read('frontend/src/pages/DataImportPage.js'),/await DataImportService\.previewJsonFile\(file,type,duplicatePolicy\)/);
+});
