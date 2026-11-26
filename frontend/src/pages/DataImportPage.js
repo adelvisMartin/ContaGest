@@ -105,11 +105,16 @@ export const DataImportPage = {
       announce('Verificando la seguridad del archivo. Aún no se aplicó ningún cambio.');
       try {
         Loading?.mount?.('Verificando seguridad y validando batch…');
-        const parsed=await DataImportService.parseFile(file,type);
-        announce('Archivo analizado. Validando los registros en el servidor…');
-        const local=DataImportService.validateRows(parsed,type);
-        if(local.some(row=>!row.ok))Toast.show('La revisión local detectó campos requeridos faltantes; el servidor emitirá el detalle autoritativo.','warning');
-        const batch=await DataImportService.preview({type,rows:parsed,filename:file.name,duplicatePolicy});
+        let batch;
+        if(file.name.toLowerCase().endsWith('.json')){
+          batch=await DataImportService.previewJsonFile(file,type,duplicatePolicy);
+        }else{
+          const parsed=await DataImportService.parseFile(file,type);
+          announce('Archivo analizado. Validando los registros en el servidor…');
+          const local=DataImportService.validateRows(parsed,type);
+          if(local.some(row=>!row.ok))Toast.show('La revisión local detectó campos requeridos faltantes; el servidor emitirá el detalle autoritativo.','warning');
+          batch=await DataImportService.preview({type,rows:parsed,filename:file.name,duplicatePolicy});
+        }
         const message=batch.status==='validated'? `${batch.accepted} filas listas para confirmar.` : `${batch.rejected} filas rechazadas; no se aplicó ningún cambio.`;
         announce(message);
         Store.set({importBatch:batch,importPreview:batch.rows||[],importType:type});
