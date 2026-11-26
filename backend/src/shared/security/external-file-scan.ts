@@ -25,6 +25,9 @@ const MAX_SCAN_BYTES = 15 * 1024 * 1024;
 const CHUNK_SIZE = 64 * 1024;
 const MAX_RESPONSE_BYTES = 1024;
 const DEFAULT_PORT = 3310;
+// Per-process admission control: no unbounded queue of sensitive buffers.
+const MAX_ACTIVE_SCANS = 4;
+let activeScans = 0;
 const CLEAN_REPLY = Buffer.from('stream: OK\0');
 
 /** Classify a complete zINSTREAM reply at EOF; null is the only clean verdict. */
@@ -67,6 +70,18 @@ export async function scanExternalFile(
     throw new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE');
   }
 
+  if (activeScans >= MAX_ACTIVE_SCANS) {
+    throw new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE');
+  }
+  activeScans++;
+  try {
+    await scanStream(bytes, port, timeoutMs);
+  } finally {
+    activeScans--;
+  }
+}
+
+async function scanStream(bytes: Buffer, port: number, timeoutMs: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const socket = connect({ host: '127.0.0.1', port });
     let settled = false;
