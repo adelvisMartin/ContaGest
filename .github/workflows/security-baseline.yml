@@ -56,33 +56,5 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - name: Install ClamAV and update official signatures
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clamav-daemon clamav-freshclam clamdscan
-          sudo systemctl stop clamav-freshclam.service
-          sudo freshclam --stdout
-      - name: Run real daemon and security regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          config="$(mktemp)"
-          log="$(mktemp)"
-          cat > "$config" <<'CONF'
-          Foreground yes
-          TCPAddr 127.0.0.1
-          TCPSocket 3310
-          DatabaseDirectory /var/lib/clamav
-          StreamMaxLength 16M
-          MaxFileSize 16M
-          MaxScanSize 100M
-          AlertExceedsMax yes
-          MaxThreads 4
-          MaxQueue 8
-          CONF
-          clamd --config-file="$config" > "$log" 2>&1 &
-          pid=$!
-          trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; cat "$log"; rm -f "$config" "$log"' EXIT
-          clamdscan --config-file="$config" --ping=60:1
-          clamdscan --config-file="$config" --version
-          node --experimental-strip-types --test backend/src/shared/security/external-file-scan.clamd.test.mjs
+      - name: Run real ClamAV with official signatures
+        run: bash scripts/qa-clamav-real-v1391.sh node --experimental-strip-types --test backend/src/shared/security/external-file-scan.clamd.test.mjs
