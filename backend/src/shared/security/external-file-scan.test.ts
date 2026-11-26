@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createServer } from 'node:net';
-import { scanExternalFile, ExternalFileScanError } from './external-file-scan.js';
+import { scanExternalFile, ExternalFileScanError, classifyExternalFileScanReply } from './external-file-scan.js';
 
 // Synthetic ClamAV protocol fixture: no real patient bytes or network provider.
 async function withDaemon(reply: string, exercise: (port: number) => Promise<void>, options: { closeEarly?: boolean; keepOpen?: boolean; splitReply?: boolean } = {}) {
@@ -79,4 +79,43 @@ test('oversized response is rejected', async () => {
   await withDaemon('stream: ' + 'X'.repeat(1024) + '\0', async port => {
     await assert.rejects(scanExternalFile(content, { port, timeoutMs: 1000 }), matches('EXTERNAL_FILE_SCAN_REJECTED'));
   });
+});
+
+test('100000 deterministic malformed verdicts never classify as clean', () => {
+  const clean = Buffer.from('stream: OK\0');
+  let seed = 0x1396cafe;
+  const next = () => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return seed >>> 0;
+  };
+  for (let i = 0; i < 100_000; i++) {
+    let mutated: Buffer;
+    switch (i % 5) {
+      case 0: {
+        mutated = Buffer.from(clean);
+        mutated[next() % clean.length] ^= 1 + next() % 255;
+        break;
+      }
+      case 1: mutated = clean.subarray(0, next() % clean.length); break;
+      case 2: mutated = Buffer.concat([clean, Buffer.from([next() & 255, next() & 255])]); break;
+      case 3: mutated = Buffer.concat([Buffer.from([next() & 255]), clean]); break;
+      default: {
+        mutated = Buffer.alloc(1 + next() % 1024);
+        for (let j = 0; j < mutated.length; j++) mutated[j] = next() & 255;
+        if (mutated.equals(clean)) mutated[0] ^= 1;
+      }
+    }
+    assert.notEqual(classifyExternalFileScanReply(mutated), null, `iteration ${i}`);
+    assert.equal(classifyExternalFileScanReply(clean), null);
+  }
+});
+
+test('classify only exact clean or well-formed malware verdicts', () => {
+  assert.equal(classifyExternalFileScanReply(Buffer.from('stream: Eicar-Test-Signature FOUND\0')), 'EXTERNAL_FILE_MALWARE_DETECTED');
+  for (const malformed of ['stream: X\r FOUND\0', 'stream: X\x1b FOUND\0', 'stream: X\x7f FOUND\0', 'stream: OK\0\0']) {
+    assert.equal(classifyExternalFileScanReply(Buffer.from(malformed)), 'EXTERNAL_FILE_SCAN_REJECTED');
+  }
+  assert.equal(classifyExternalFileScanReply(Buffer.alloc(0)), 'EXTERNAL_FILE_SCAN_UNAVAILABLE');
 });
