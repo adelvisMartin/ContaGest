@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 
@@ -127,4 +128,23 @@ test('#1391 text and JSON file staging derives rows and provenance from scanned 
   assert.match(read('frontend/src/pages/DataImportPage.js'),/await DataImportService\.previewOriginalFile\(file,type,duplicatePolicy\)/);
   assert.match(imports,/IMPORT_SOURCE_INTEGRITY_MISMATCH/);
   assert.match(imports,/checksum\(input\.type,input\.templateVersion,[\s\S]*?sourceSha256\)/);
+});
+
+test('#1391 immutable concurrent index SQL is split at the exact assertion boundary', () => {
+  const original=read('backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/migration.sql');
+  const runner=read('backend/scripts/prisma-deploy-safe.mjs');
+  const literal=runner.match(/const boundary = original\.indexOf\(('(?:[^'\\]|\\.)*')\);/);
+  assert.ok(literal,'migration runner must declare the exact boundary');
+  const separator=runInNewContext(literal[1],{});
+  assert.equal(separator,'\nDO $$\n');
+  const boundary=original.indexOf(separator);
+  assert.ok(boundary>0);
+  assert.match(original.slice(0,boundary),/CREATE INDEX CONCURRENTLY IF NOT EXISTS/);
+  assert.doesNotMatch(original.slice(0,boundary),/\bDO \$\$/);
+  assert.match(original.slice(boundary),/HIPICO_DOMAIN_RECORDED_ORDER_INDEX_NOT_READY/);
+  assert.ok(runner.includes(createHash('sha256').update(original).digest('hex')));
+  const execute=runner.indexOf('await client.query(original.slice(0, boundary))');
+  const verify=runner.indexOf('await client.query(original.slice(boundary))',execute);
+  const record=runner.indexOf("runPrisma(['migrate', 'resolve', '--applied', RECORDED_ORDER_MIGRATION",verify);
+  assert.ok(execute>=0 && verify>execute && record>verify);
 });
