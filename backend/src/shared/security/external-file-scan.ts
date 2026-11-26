@@ -55,6 +55,7 @@ export async function scanExternalFile(
   await new Promise<void>((resolve, reject) => {
     const socket = connect({ host: '127.0.0.1', port });
     let settled = false;
+    let requestComplete = false;
     let reply = Buffer.alloc(0);
     let deadline: ReturnType<typeof setTimeout> | undefined;
     const complete = (error?: ExternalFileScanError) => {
@@ -70,7 +71,11 @@ export async function scanExternalFile(
     socket.on('error', () => complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_UNAVAILABLE')));
     const finishReply = () => {
       const terminator = reply.indexOf(0);
-      const text = reply.subarray(0, terminator < 0 ? reply.length : terminator).toString('utf8').trim();
+      // zINSTREAM uses exactly one NUL-terminated response on a single-command connection.
+      if (!requestComplete || terminator < 0 || terminator !== reply.length - 1) {
+        return complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_REJECTED'));
+      }
+      const text = reply.subarray(0, terminator).toString('utf8');
       if (text === 'stream: OK') return complete();
       if (/^stream: [^\r\n\u0000]{1,400} FOUND$/.test(text)) {
         return complete(new ExternalFileScanError('EXTERNAL_FILE_MALWARE_DETECTED'));
@@ -92,7 +97,10 @@ export async function scanExternalFile(
         return complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_REJECTED'));
       }
       reply = Buffer.concat([reply, chunk]);
-      if (reply.includes(0) || reply.includes(10)) finishReply();
+      // Wait for EOF before accepting a verdict: extra frames may arrive in later TCP chunks.
+      if (!requestComplete || reply.includes(10)) {
+        return complete(new ExternalFileScanError('EXTERNAL_FILE_SCAN_REJECTED'));
+      }
     });
     socket.on('connect', () => {
       let offset = 0;
@@ -106,7 +114,10 @@ export async function scanExternalFile(
           // Do not buffer entire clinical files for concurrent scanner requests.
           if (!socket.write(frame)) { socket.once('drain', sendNext); return; }
         }
-        if (!settled) socket.write(Buffer.alloc(4)); // End of INSTREAM.
+        if (!settled) {
+          requestComplete = true;
+          socket.write(Buffer.alloc(4)); // End of INSTREAM.
+        }
       };
       socket.write(Buffer.from('zINSTREAM\0'), sendNext);
     });
