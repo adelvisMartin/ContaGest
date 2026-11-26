@@ -12,6 +12,7 @@ import { serializeDecimal, ZERO } from '../../shared/financial/decimal.js';
 import { runFinancialIdempotentMutation } from '../../shared/services/financial-idempotency.service.js';
 import { writeAudit } from '../../shared/services/audit.service.js';
 import { previewProductCsvImport } from '../portability/product-csv-import-preview.mjs';
+import { parseDelimitedImport } from './delimitedImportParser.mjs';
 import { encodeImportReportCsvCell } from './import-report-csv-cell.js';
 import { MASTER_EXPORT_COLUMNS, projectMasterExportRows } from './master-export-fields.mjs';
 
@@ -109,7 +110,7 @@ const cleanString=(value:unknown)=>{const text=String(value??'').trim();return t
 const bool=(value:unknown,defaultValue=true)=>{if(value===undefined||value===null||value==='')return defaultValue;const text=String(value).trim().toLowerCase();return !['false','0','no','n'].includes(text);};
 const sanitizedFilename=(value?:string)=>{const clean=String(value||'import').replace(/[^a-zA-Z0-9._ -]/g,'_').slice(0,180);return clean||'import';};
 const stable=(value:any):any=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'&&!Prisma.Decimal.isDecimal(value)&&!(value instanceof Date)?Object.fromEntries(Object.keys(value).sort().map((key)=>[key,stable(value[key])])):value instanceof Date?value.toISOString():Prisma.Decimal.isDecimal(value)?value.toString():value;
-const checksum=(type:ImportType,version:string,rows:any[])=>createHash('sha256').update(JSON.stringify(stable({type,version,rows}))).digest('hex');
+const checksum=(type:ImportType,version:string,rows:any[],sourceSha256?:string)=>createHash('sha256').update(JSON.stringify(stable({type,version,rows,...(sourceSha256?{sourceSha256}:{})}))).digest('hex');
 const expiresAt=(createdAt:Date)=>new Date(createdAt.getTime()+24*60*60*1000);
 const ensureFresh=(batch:any)=>{if(Date.now()>expiresAt(batch.createdAt).getTime())throw new HttpError(409,'El batch de importación expiró; ejecuta un dry-run nuevo.',{code:'IMPORT_BATCH_EXPIRED'});};
 
@@ -235,7 +236,7 @@ async function createImportPreview(req:any,input:z.infer<typeof previewSchema>,s
   const serializedSize=Buffer.byteLength(JSON.stringify(input.rows),'utf8');
   if(serializedSize>5_000_000)throw new HttpError(413,'El contenido supera el límite de 5 MB para staging.',{code:'IMPORT_PAYLOAD_TOO_LARGE'});
   const rows=await stageRows(input.type,ctx.tenantId,input.rows,input.duplicatePolicy);
-  const digest=checksum(input.type,input.templateVersion,rows.map((row)=>({key:row.key,action:row.action,normalized:row.normalized,errors:row.errors})));
+  const digest=checksum(input.type,input.templateVersion,rows.map((row)=>({key:row.key,action:row.action,normalized:row.normalized,errors:row.errors})),sourceSha256);
   const accepted=rows.filter((row)=>row.action!=='error').length;const rejected=rows.length-accepted;
   const payload:BatchPayload={version:1,templateVersion:input.templateVersion,checksum:digest,...(sourceSha256?{sourceSha256}:{}),duplicatePolicy:input.duplicatePolicy,filename:sanitizedFilename(input.filename),createdBy:ctx.userId||null,rows,counts:{total:rows.length,valid:accepted,invalid:rejected,created:0,updated:0,skipped:rows.filter((r)=>r.action==='skip').length}};
   const batch=await prisma.$transaction(async(tx)=>{
@@ -255,15 +256,22 @@ router.post('/preview', validateBody(previewSchema), asyncHandler(async(req,res)
 // same scanned bytes. Direct scalar JSON API submissions retain their contract.
 router.post('/preview-file', express.raw({type:'application/octet-stream',limit:FILE_SCAN_LIMIT_BYTES}), asyncHandler(async(req,res)=>{
   const filename=filenameSchema.parse(req.header('x-import-filename'));
-  if(!filename.toLowerCase().endsWith('.json')) throw new HttpError(415,'Este endpoint admite archivos JSON.');
+  const name=filename.toLowerCase();
+  if(!/\.(json|csv|tsv|txt)$/.test(name)) throw new HttpError(415,'Este endpoint admite archivos JSON, CSV, TSV y TXT.');
   const options=z.object({type:importTypeSchema,duplicatePolicy:duplicatePolicySchema.default('error')}).strict().parse(req.query);
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
   if(!bytes.length) throw new HttpError(422,'El archivo de importación está vacío.');
   if(bytes.length>FILE_SCAN_LIMIT_BYTES) throw new HttpError(413,'El archivo supera 5 MB.');
   await scanExternalFile(bytes);
+  let text:string;
+  try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}
+  catch{throw new HttpError(422,'El archivo no está en UTF-8.');}
   let rows:unknown;
-  try{rows=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}
-  catch{throw new HttpError(422,'El archivo JSON no es válido o no está en UTF-8.');}
+  try{rows=name.endsWith('.json')?JSON.parse(text):parseDelimitedImport(text,name.endsWith('.csv')?',':'\t');}
+  catch(error){
+    const code=error instanceof Error && /^IMPORT_DELIMITED_[A-Z_]+$/.test(error.message)?error.message:'IMPORT_FILE_FORMAT_INVALID';
+    throw new HttpError(422,'El archivo tiene un formato inválido. Revisa los encabezados y los datos.',{code});
+  }
   const input=previewSchema.parse({...options,filename,rows,templateVersion:'v1'});
   const sourceSha256=createHash('sha256').update(bytes).digest('hex');
   res.setHeader('Cache-Control','private, no-store');
@@ -332,6 +340,9 @@ router.post('/:id/commit', validateBody(commitSchema), asyncHandler(async(req,re
     if(payload.checksum!==input.checksum)throw new HttpError(409,'El checksum no coincide con el dry-run confirmado.',{code:'IMPORT_CHECKSUM_MISMATCH'});
     if(batch.status==='completed')return {data:publicBatch(batch),resourceType:'ImportBatch',resourceId:batch.id};
     if(batch.status!=='validated'||batch.rejected>0||!payload.rows)throw new HttpError(409,'Sólo se puede confirmar un batch validado sin filas rechazadas.',{code:'IMPORT_BATCH_NOT_VALIDATED',status:batch.status,rejected:batch.rejected});
+    if(payload.sourceSha256 && (!/^[a-f0-9]{64}$/.test(payload.sourceSha256) || checksum(batch.type as ImportType,payload.templateVersion,payload.rows.map(row=>({key:row.key,action:row.action,normalized:row.normalized,errors:row.errors})),payload.sourceSha256)!==payload.checksum)) {
+      throw new HttpError(409,'La evidencia del archivo y las filas no coincide con el dry-run.',{code:'IMPORT_SOURCE_INTEGRITY_MISMATCH'});
+    }
     await tx.importBatch.update({where:{id:batch.id},data:{status:'committing'}});
     const report:Array<{index:number;key:string;action:RowAction;status:string;errors:string[];entityId?:string}>=[];let created=0,updated=0,skipped=0;
     for(const row of payload.rows){const result=await applyRow(tx,batch.type as ImportType,ctx.tenantId,row);if(result.status==='created')created++;else if(result.status==='updated')updated++;else skipped++;report.push({index:row.index,key:row.key,action:row.action,status:result.status,errors:[],entityId:result.entityId});}
