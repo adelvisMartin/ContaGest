@@ -361,6 +361,13 @@
       "reason": "Domain-specific adapter; do not treat as redundant without consumer and path-trigger proof"
     },
     {
+      "file": ".github/workflows/hipico-domain-snapshot-pg17.yml",
+      "classification": "ADAPTER",
+      "owner": "hipico",
+      "status": "ACTIVE",
+      "reason": "Exact-SHA isolated PostgreSQL 17 canonical snapshot, upgrade and tenant isolation gate (#837); retain independently of general ERP migration checks."
+    },
+    {
       "file": ".github/workflows/hipico-golden-adversarial-v10.yml",
       "classification": "ADAPTER",
       "owner": "hipico",
