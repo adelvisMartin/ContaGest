@@ -6,6 +6,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const backendRoot = resolve(here, '..');
 const assets = [
   {
+    source: 'src/modules/imports/delimitedImportParser.mjs',
+    target: 'dist/src/modules/imports/delimitedImportParser.mjs'
+  },
+  {
     source: 'src/shared/contracts/accessManifestRuntime.js',
     target: 'dist/src/shared/contracts/accessManifestRuntime.js'
   },

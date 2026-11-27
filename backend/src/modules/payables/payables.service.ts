@@ -211,7 +211,14 @@ export async function getPayableDocument(tenantId: string, id: string) {
 
 export async function getPayableContent(tenantId: string, id: string) {
   const document = await getDocument(tenantId, id, true) as DocumentWithBytes;
-  return { bytes:Buffer.from(document.originalContent), fileName:document.fileName, mimeType:document.mimeType, hash:document.documentHash };
+  const bytes = Buffer.from(document.originalContent);
+  if (createHash('sha256').update(bytes).digest('hex') !== document.documentHash) {
+    throw new HttpError(422, 'No se pudo verificar la integridad del documento.', { code: 'PAYABLE_CONTENT_INTEGRITY_FAILED' });
+  }
+  // Revalidate historical originals at the authorized download boundary; never
+  // delete or alter the accounting record on a failed or unavailable scan.
+  await scanExternalFile(bytes);
+  return { bytes, fileName:document.fileName, mimeType:document.mimeType, hash:document.documentHash };
 }
 
 function mergedField(extraction: PayableExtraction, corrections: Record<string,unknown>, key: keyof PayableExtraction) {

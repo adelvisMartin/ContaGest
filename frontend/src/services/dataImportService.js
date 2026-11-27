@@ -156,19 +156,24 @@ export const DataImportService = {
     // The server scans the original bytes before XLSX ZIP/XML or text parsing.
     // A failed/ambiguous scanner verdict blocks staging entirely.
     try{
-      await BackendApi.request('/imports/file-scan',{
+      const verdict = await BackendApi.request('/imports/file-scan',{
         method:'POST',
         headers:{'Content-Type':'application/octet-stream','X-Import-Filename':String(file.name||'')},
         body:file
       });
+      if (verdict?.status !== 'clean' || typeof verdict.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(verdict.sha256)) {
+        const error = new Error('Respuesta de seguridad inválida.');
+        error.code = 'EXTERNAL_FILE_SCAN_REJECTED';
+        throw error;
+      }
     }catch(error){
       const code=error?.payload?.code||error?.code;
       if(code==='EXTERNAL_FILE_MALWARE_DETECTED')
-        throw new Error('Archivo bloqueado: el análisis de seguridad detectó contenido peligroso.');
+        throw new Error('Archivo bloqueado por seguridad. No lo vuelvas a cargar; solicita una copia confiable.');
       if(code==='EXTERNAL_FILE_SCAN_REJECTED')
-        throw new Error('Archivo rechazado: no se pudo confirmar que sea seguro.');
+        throw new Error('No se pudo validar la seguridad del archivo. Solicita una copia válida y vuelve a intentar.');
       if(code==='EXTERNAL_FILE_SCAN_UNAVAILABLE'||error?.status===503)
-        throw new Error('La verificación antimalware no está disponible. No se importará el archivo.');
+        throw new Error('La verificación de seguridad no está disponible. No se importó el archivo. Vuelve a intentar más tarde.');
       throw error;
     }
     const name=file.name.toLowerCase();let rows=[];
@@ -199,6 +204,19 @@ export const DataImportService = {
     const query=new URLSearchParams({format,limit:String(limit)});
     if(cursor)query.set('cursor',cursor);
     return BackendApi.get(`/imports/exports/${encodeURIComponent(type)}?${query.toString()}`);
+  },
+  async previewOriginalFile(file,type,duplicatePolicy='error') {
+    if(Number(file.size||0)>MAX_FILE_BYTES)throw new Error('El archivo supera el límite de 5 MB.');
+    const query=new URLSearchParams({type,duplicatePolicy});
+    try {
+      return await BackendApi.request(`/imports/preview-file?${query}`,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Import-Filename':file.name},body:file});
+    } catch(error) {
+      const code=error?.payload?.code||error?.code;
+      if(code==='EXTERNAL_FILE_MALWARE_DETECTED')throw new Error('Archivo bloqueado por seguridad. No lo vuelvas a cargar; solicita una copia confiable.');
+      if(code==='EXTERNAL_FILE_SCAN_UNAVAILABLE'||error?.status===503)throw new Error('La verificación de seguridad no está disponible. No se importó el archivo. Vuelve a intentar más tarde.');
+      if(code==='EXTERNAL_FILE_SCAN_REJECTED')throw new Error('No se pudo validar la seguridad del archivo. Solicita una copia válida y vuelve a intentar.');
+      throw error;
+    }
   },
   preview({type,rows,filename,duplicatePolicy='error'}) {return BackendApi.post('/imports/preview',{type,rows,filename,templateVersion:IMPORT_TEMPLATE_VERSION,duplicatePolicy});},
   getBatch(id){return BackendApi.get(`/imports/${encodeURIComponent(id)}`);},

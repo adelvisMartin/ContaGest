@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const read = (path) => readFileSync(new URL('../'+path, import.meta.url), 'utf8');
 const scanner = read('backend/src/shared/security/external-file-scan.ts');
@@ -71,4 +73,78 @@ test('#1391 supplier invoices scan before DB persistence and on reprocessing',()
   assert.ok(ingest.indexOf('await scanExternalFile(input.bytes)')<ingest.indexOf('await prisma.$queryRaw'));
   assert.ok(reprocess.includes('await scanExternalFile(Buffer.from(document.originalContent))') && reprocess.includes('await prisma.$executeRaw'));
   assert.ok(reprocess.indexOf('await scanExternalFile(Buffer.from(document.originalContent))')<reprocess.indexOf('await prisma.$executeRaw'));
+});
+
+test('#1391 import client does not parse a file on missing or malformed scan evidence', async () => {
+  const start=importClient.indexOf('  async parseFile(file, type)');
+  const end=importClient.indexOf('  validateRows(',start);
+  assert.ok(start>=0 && end>start);
+  const sha='a'.repeat(64);
+  for (const verdict of [undefined, {}, {status:'unknown',sha256:sha}, {status:'clean'}, {status:'clean',sha256:'invalid'}, {status:'clean',sha256:sha}]) {
+    let reads=0;
+    const {parseFile}=runInNewContext('({' + importClient.slice(start,end) + '})',{
+      MAX_FILE_BYTES:5*1024*1024,
+      BackendApi:{request:async()=>verdict},
+      decoder:new TextDecoder(),
+      normalizeRecord:record=>record,
+    });
+    const file={name:'example.json',size:2,arrayBuffer:async()=>{reads++;return new TextEncoder().encode('[]');}};
+    if(verdict?.status==='clean' && verdict.sha256===sha){
+      const rows=await parseFile(file,'clients');
+      assert.equal(rows.length,0);
+      assert.equal(reads,1);
+    }else{
+      await assert.rejects(parseFile(file,'clients'),/No se pudo validar la seguridad/);
+      assert.equal(reads,0);
+    }
+  }
+});
+
+test('#1391 historical payable originals are integrity-checked and rescanned before download', () => {
+  const start=payables.indexOf('export async function getPayableContent(');
+  const end=payables.indexOf('function mergedField(',start);
+  assert.ok(start>=0 && end>start);
+  const content=payables.slice(start,end);
+  const readAt=content.indexOf('await getDocument(tenantId, id, true)');
+  const hashAt=content.indexOf("createHash('sha256').update(bytes).digest('hex')");
+  const scanAt=content.indexOf('await scanExternalFile(bytes)');
+  const returnAt=content.indexOf('return { bytes,');
+  assert.ok(readAt>=0 && hashAt>readAt && scanAt>hashAt && returnAt>scanAt);
+});
+
+test('#1391 text and JSON file staging derives rows and provenance from scanned bytes', () => {
+  const start=imports.indexOf("router.post('/preview-file'");
+  const end=imports.indexOf('const exportTypeSchema',start);
+  assert.ok(start>=0 && end>start);
+  const route=imports.slice(start,end);
+  const scan=route.indexOf('await scanExternalFile(bytes)');
+  const parse=route.indexOf('JSON.parse(text)');
+  assert.match(route,/parseDelimitedImport\(text,/);
+  const schema=route.indexOf('previewSchema.parse');
+  const hash=route.indexOf("createHash('sha256').update(bytes)");
+  const stage=route.indexOf('await createImportPreview(req,input,sourceSha256)');
+  assert.ok(scan>=0 && parse>scan && schema>parse && hash>schema && stage>hash);
+  assert.match(importClient,/previewOriginalFile/);
+  assert.match(read('frontend/src/pages/DataImportPage.js'),/await DataImportService\.previewOriginalFile\(file,type,duplicatePolicy\)/);
+  assert.match(imports,/IMPORT_SOURCE_INTEGRITY_MISMATCH/);
+  assert.match(imports,/checksum\(input\.type,input\.templateVersion,[\s\S]*?sourceSha256\)/);
+});
+
+test('#1391 immutable concurrent index SQL is split at the exact assertion boundary', () => {
+  const original=read('backend/prisma/migrations/20261119144500_hipico_domain_recorded_order_index/migration.sql');
+  const runner=read('backend/scripts/prisma-deploy-safe.mjs');
+  const literal=runner.match(/const boundary = original\.indexOf\(('(?:[^'\\]|\\.)*')\);/);
+  assert.ok(literal,'migration runner must declare the exact boundary');
+  const separator=runInNewContext(literal[1],{});
+  assert.equal(separator,'\nDO $$\n');
+  const boundary=original.indexOf(separator);
+  assert.ok(boundary>0);
+  assert.match(original.slice(0,boundary),/CREATE INDEX CONCURRENTLY IF NOT EXISTS/);
+  assert.doesNotMatch(original.slice(0,boundary),/\bDO \$\$/);
+  assert.match(original.slice(boundary),/HIPICO_DOMAIN_RECORDED_ORDER_INDEX_NOT_READY/);
+  assert.ok(runner.includes(createHash('sha256').update(original).digest('hex')));
+  const execute=runner.indexOf('await client.query(original.slice(0, boundary))');
+  const verify=runner.indexOf('await client.query(original.slice(boundary))',execute);
+  const record=runner.indexOf("runPrisma(['migrate', 'resolve', '--applied', RECORDED_ORDER_MIGRATION",verify);
+  assert.ok(execute>=0 && verify>execute && record>verify);
 });

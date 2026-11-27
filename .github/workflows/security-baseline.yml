@@ -46,3 +46,15 @@ jobs:
         run: node --test tests/admin_session_revocation_v1312.test.mjs tests/admin_privileged_stepup_v1312.test.mjs
       - name: PostgreSQL audit rollback trigger syntax contract
         run: node --test tests/qa_audit_rollback_trigger_contract_v1289_1313.test.mjs
+
+  real-clamav:
+    name: ClamAV real loopback and EICAR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Run real ClamAV with official signatures
+        run: bash scripts/qa-clamav-real-v1391.sh node --experimental-strip-types --test backend/src/shared/security/external-file-scan.clamd.test.mjs
